@@ -52,9 +52,32 @@ public class MyTenantController : ControllerBase
             })
             .FirstOrDefaultAsync();
 
-        return tenant is null
-            ? NotFound(new { message = $"'{slug}' icin tenant kaydi bulunamadi" })
-            : Ok(tenant);
+        if (tenant is null)
+            return NotFound(new { message = $"'{slug}' icin tenant kaydi bulunamadi" });
+
+        // NOT: employeeCount alani daha once HICBIR ZAMAN donmuyordu -
+        // frontend (SettingsPage.tsx) "tenant.employeeCount ?? quotaUsed"
+        // ile sessizce 0'a dusuyordu (kod icindeki kendi yorumu: "Kiraci
+        // ucu calisan sayisini dondurmuyorsa 0 kalir"), yani "Calisan
+        // kotasi" GERCEK kullanimdan bagimsiz olarak HER ZAMAN "0 / N"
+        // gosteriyordu - bir kiraci kotasini tamamen doldursa bile
+        // (hardcore test sirasinda bulundu: 1 calisan olusturulunca panel
+        // hala "0 / 25" gosterdi). employee_employees, DepartmentsController.
+        // Delete'teki assignedEmployeeCount sorgusuyla ayni desende, paylasilan
+        // fiziksel veritabanindan dogrudan SAYILIR - ayri bir HTTP servisi
+        // kurmaya gerek yok.
+        var employeeCount = await _db.Database
+            .SqlQuery<int>($@"SELECT COUNT(*)::int AS ""Value"" FROM employee_employees
+                               WHERE ""TenantSlug"" = {slug}")
+            .FirstAsync();
+
+        return Ok(new
+        {
+            tenant.Id, tenant.Name, tenant.Slug, tenant.Status, tenant.Plan,
+            tenant.MaxEmployees, tenant.CreatedAt, tenant.LogoUrl, tenant.PrimaryColorHex,
+            tenant.HasCustomSmtp, tenant.SmtpFromAddress, tenant.SmtpFromName,
+            EmployeeCount = employeeCount,
+        });
     }
 
     /// <summary>

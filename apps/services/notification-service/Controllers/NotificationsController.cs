@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using NotificationService.Data;
 using NotificationService.Models;
+using NotificationService.Services;
 
 namespace NotificationService.Controllers;
 
@@ -13,7 +14,12 @@ namespace NotificationService.Controllers;
 public partial class NotificationsController : ControllerBase
 {
     private readonly NotificationDbContext _db;
-    public NotificationsController(NotificationDbContext db) => _db = db;
+    private readonly EmployeeDirectoryClient _employees;
+    public NotificationsController(NotificationDbContext db, EmployeeDirectoryClient employees)
+    {
+        _db = db;
+        _employees = employees;
+    }
 
     [GeneratedRegex(@"\{\{(\w+)\}\}")]
     private static partial Regex PlaceholderRegex();
@@ -72,6 +78,19 @@ public partial class NotificationsController : ControllerBase
             Subject = string.IsNullOrWhiteSpace(subject) ? null : subject,
             Body = body
         };
+
+        // NOT: RecipientEmail burada doldurulmadan once bu uc her zaman
+        // null birakiyordu - Email kanalli her bildirim EmailSenderWorker'a
+        // ulastiginda "Alici e-posta adresi yok" ile kesin basarisiz
+        // oluyordu (hardcore test sirasinda bulundu). Sadece Email kanali
+        // icin cozuyoruz - diger kanallar (InApp/Push/Sms) buna ihtiyac
+        // duymuyor ve gereksiz bir cross-service cagridan kacinilmis olur.
+        // Cozulemezse (calisan bulunamadi, servis erisilemez) sessizce null
+        // birakilir - EmailSenderWorker zaten bunu acik bir hata mesajiyla
+        // Failed'e dusurup onceki (guvenli) davranisi korur.
+        if (request.Channel == NotificationChannel.Email)
+            notification.RecipientEmail = await _employees.GetEmailAsync(request.RecipientEmployeeId, HttpContext.RequestAborted);
+
         _db.Notifications.Add(notification);
         await _db.SaveChangesAsync();
         return Created($"/api/notifications/{notification.Id}", notification);

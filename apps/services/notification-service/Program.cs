@@ -23,6 +23,10 @@ builder.Services.AddHostedService<HrEventConsumer>();
 builder.Services.AddSingleton(EmailOptions.FromEnvironment());
 builder.Services.AddSingleton<SmtpCredentialProtector>();
 builder.Services.AddHttpClient<TenantBrandingClient>();
+// NOT: POST /api/notifications (Email kanali) icin calisanin e-postasini
+// employee-service'ten cozer - bkz. EmployeeDirectoryClient yorumu.
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddHttpClient<EmployeeDirectoryClient>();
 builder.Services.AddHostedService<EmailSenderWorker>();
 
 builder.Services.AddDbContext<NotificationDbContext>(options =>

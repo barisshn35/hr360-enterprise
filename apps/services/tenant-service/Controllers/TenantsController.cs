@@ -30,7 +30,38 @@ public class TenantsController : ControllerBase
     {
         var q = _db.Tenants.AsQueryable();
         if (status.HasValue) q = q.Where(t => t.Status == status.Value);
-        return Ok(await q.OrderByDescending(t => t.CreatedAt).ToListAsync());
+        var tenants = await q.OrderByDescending(t => t.CreatedAt).ToListAsync();
+
+        // NOT: Tenant modelinde EmployeeCount alani hic yoktu - frontend
+        // (TenantsPage.tsx) her satirda "employeeCount ?? 0" ile sessizce
+        // 0'a dusuyordu, yani platform-admin'in kota/kapasite gorunumu HER
+        // kiraci icin HER ZAMAN "0 / N" gosteriyordu (MyTenantController'daki
+        // ayni koku bulunan bir hatanin parcasi olarak bulundu - hardcore
+        // test, 2. tur). Tum kiracilar icin TEK bir gruplu sorguyla (N+1
+        // kaçınılır) employee_employees'ten (paylasilan fiziksel veritabani)
+        // dogrudan sayilir.
+        var counts = await _db.Database
+            .SqlQuery<TenantEmployeeCount>(
+                $@"SELECT ""TenantSlug"" AS ""Slug"", COUNT(*)::int AS ""Count""
+                   FROM employee_employees GROUP BY ""TenantSlug""")
+            .ToDictionaryAsync(c => c.Slug, c => c.Count);
+
+        // NOT: Onceki halinde bu uc ham Tenant entity'sini donuyordu - bu,
+        // frontend'in ihtiyaci olmayan SmtpPasswordEncrypted/SmtpHost/
+        // SmtpUser/AdminUserId gibi ic alanlari da (parola SIFRELI olsa
+        // da) platform-admin API yanitina sizdiriyordu. MyTenantController
+        // ZATEN bu alanlari gizleyip sadece HasCustomSmtp donuyordu - ayni
+        // guvenli deseni burada da uyguluyoruz.
+        return Ok(tenants.Select(t => new
+        {
+            t.Id, t.Name, t.Slug, t.Status, t.Plan, t.MaxEmployees, t.CreatedAt,
+            t.EmailDomain, t.TaxNumber, t.AdminEmail, t.LogoUrl, t.PrimaryColorHex,
+            t.SuspendedAt,
+            SuspensionReason = t.SuspendReason,
+            HasCustomSmtp = t.SmtpHost != null,
+            t.SmtpFromAddress, t.SmtpFromName,
+            EmployeeCount = counts.GetValueOrDefault(t.Slug, 0),
+        }));
     }
 
     [HttpGet("{id}")]
@@ -44,8 +75,36 @@ public class TenantsController : ControllerBase
             .OrderBy(l => l.OccurredAt)
             .ToListAsync();
 
-        return Ok(new { tenant, provisioningLog = logs });
+        var employeeCount = await _db.Database
+            .SqlQuery<int>($@"SELECT COUNT(*)::int AS ""Value"" FROM employee_employees
+                               WHERE ""TenantSlug"" = {tenant.Slug}")
+            .FirstAsync();
+
+        // NOT: Onceki halinde bu uc { tenant: {...}, employeeCount,
+        // provisioningLog } seklinde IC ICE (nested) donuyordu - ama
+        // frontend'in TenantDetail tipi (api/tenant.ts) Tenant'i DUZ
+        // (flat) genisletiyor ve TenantsPage.tsx alanlari dogrudan
+        // "detail.data.name", "detail.data.status", "detail.data.adminEmail"
+        // vb. OKUYORDU (detail.data.tenant.xxx DEGIL). Sonuc: platform-admin
+        // panelinde bir kiraciya tiklayip detay actiginda "Kiraci detayi"
+        // basligindan sonra TUM alanlar (durum, plan, yonetici e-postasi,
+        // askiya alma bilgisi...) undefined/bos gorunuyordu (hardcore test
+        // sirasinda bulundu, 2. tur). GetAll ile ayni guvenli/duz sekle
+        // (SmtpPasswordEncrypted gibi ic alanlar olmadan) getiriliyor.
+        return Ok(new
+        {
+            tenant.Id, tenant.Name, tenant.Slug, tenant.Status, tenant.Plan, tenant.MaxEmployees,
+            tenant.CreatedAt, tenant.EmailDomain, tenant.TaxNumber, tenant.AdminEmail,
+            tenant.LogoUrl, tenant.PrimaryColorHex, tenant.SuspendedAt,
+            SuspensionReason = tenant.SuspendReason,
+            HasCustomSmtp = tenant.SmtpHost != null,
+            tenant.SmtpFromAddress, tenant.SmtpFromName,
+            EmployeeCount = employeeCount,
+            ProvisioningLog = logs,
+        });
     }
+
+    private record TenantEmployeeCount(string Slug, int Count);
 
     /// <summary>Tenant'i askiya alir; yonetici hesabi da devre disi birakilir.</summary>
     [HttpPost("{id}/suspend")]

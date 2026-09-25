@@ -75,5 +75,15 @@ public class Tenant
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? ActivatedAt { get; set; }
     public DateTimeOffset? SuspendedAt { get; set; }
+
+    /// <summary>
+    /// NOT: JsonPropertyName olmadan bu alan JSON'a "suspendReason" olarak
+    /// cikardi - ama frontend (TenantsPage.tsx / api/tenant.ts) hep
+    /// "suspensionReason" okuyordu. Sonuc: askiya alirken girilen sebep
+    /// veritabanina DOGRU yaziliyordu (Suspend ucu calisiyordu) ama
+    /// platform-admin ekraninda hicbir zaman GORUNMUYORDU, hep "—"
+    /// gosteriyordu (hardcore test sirasinda bulundu, 2. tur).
+    /// </summary>
+    [System.Text.Json.Serialization.JsonPropertyName("suspensionReason")]
     public string? SuspendReason { get; set; }
 }

@@ -277,6 +277,14 @@ services:
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
       KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
       TENANT_SERVICE_URL: "http://tenant-service:8080"
+      # NOT: POST /api/notifications (Email kanali), calisanin e-postasini
+      # cozmek icin EmployeeDirectoryClient ile employee-service'e HTTP
+      # cagrisi yapiyor (hardcore test, 2. tur) - bu degisken tanimlanmadan
+      # istemci koddaki kullanilamaz varsayilan adrese (172.33.55.2) dusuyor
+      # ve GERCEK network'te yaniti hicbir zaman almadigi icin cagri
+      # dakikalarca askida kaliyor (POST /api/notifications zaman asimina
+      # ugruyordu). Diger tum servisler bu degiskeni zaten tanimliyor.
+      EMPLOYEE_SERVICE_URL: "http://employee-service:8080"
       TENANT_SECRET_KEY: ${TENANT_SECRET_KEY}
       ASPNETCORE_ENVIRONMENT: "Production"
       SMTP_HOST: ${SMTP_HOST}
