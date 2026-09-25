@@ -1,21 +1,25 @@
 import { useMemo } from 'react'
-import { useEmployees } from '@/api/queries'
-import { fullName } from './format'
+import { useDirectory } from '@/api/directory'
 
 /**
  * Kimlikten çalışan adı çözer.
  *
  * Modül uçları çoğu yerde yalnızca `employeeId` döndürüyor; ekranda ham
- * kimlik göstermek İK ekranlarında okunmaz olurdu. Çalışan listesi zaten
- * önbellekte olduğu için ek istek doğurmaz. Ad henüz yüklenmediyse ya da
- * kayıt silinmişse kimliğin kendisi görünür — bilgi kaybolmaz.
+ * kimlik göstermek okunmaz olurdu. Ad henüz yüklenmediyse ya da kayıt
+ * silinmişse kimliğin kendisi görünür — bilgi kaybolmaz.
+ *
+ * NOT: Önceden tam çalışan listesi (`/api/employee/employees`) kullanılıyordu;
+ * bu uç yönetici yetkisi istediği için düz çalışanlar 403 alıyor ve İzin,
+ * Masraf, İK vakaları, Eğitim, Onay kutusu ekranlarında isim yerine ham
+ * kimlik görüyordu. Herkese açık dizin (yalnızca ad) kullanılır; AppShell
+ * zaten açılışta çektiği için ek istek doğurmaz.
  */
 export function useEmployeeName(): (employeeId: string | null | undefined) => string {
-  const employees = useEmployees()
+  const directory = useDirectory()
 
   return useMemo(() => {
     const byId = new Map<string, string>()
-    for (const e of employees.data ?? []) byId.set(e.id, fullName(e))
+    for (const e of directory.data ?? []) byId.set(e.id, e.fullName || `${e.firstName} ${e.lastName}`.trim())
     return (id) => (id ? (byId.get(id) ?? id) : '—')
-  }, [employees.data])
+  }, [directory.data])
 }

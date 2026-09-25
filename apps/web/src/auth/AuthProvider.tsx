@@ -132,7 +132,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isAuthenticated = status === 'authenticated'
   const canSwitchTenant = isAuthenticated && can('platform:manage')
 
-  const myTenant = useMyTenant(isAuthenticated)
+  // Kiracıya bağlı olmayan oturum (platform.admin) için /my-tenant her sayfada 404
+  // dönüyordu; kiracı bilgisi yoksa istenmez.
+  const myTenant = useMyTenant(isAuthenticated && Boolean(tenantSlug))
   const allTenants = useTenants({}, canSwitchTenant)
 
   // Enterprise plan bir marka rengi ayarlamışsa çalışma zamanında uygula;

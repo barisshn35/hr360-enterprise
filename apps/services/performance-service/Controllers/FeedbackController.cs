@@ -174,13 +174,25 @@ public class FeedbackController : ControllerBase
     /// veriliyor, ton dagilimi nasil. Yoneticiye ekibin geri bildirim
     /// kulturu hakkinda fikir verir.
     /// </summary>
+    /// <summary>
+    /// NOT: Onceden yalnizca yonetici+ - ama "Geri bildirim" ekrani calisana KENDI
+    /// ozetini gosteriyor ve 403 aliyordu. Calisan kendi ozetini gorebilir (gizli
+    /// notlar sayilmaz); tum kiraci/baskasinin ozeti yonetici+'ya ozel.
+    /// </summary>
     [HttpGet("summary")]
-    [Authorize(Policy = "RequireManagerOrAbove")]
     public async Task<IActionResult> Summary(
         [FromQuery] Guid? employeeId,
-        [FromQuery] DateTimeOffset? since)
+        [FromQuery] DateTimeOffset? since,
+        CancellationToken ct = default)
     {
+        var isManager = User.IsManagerOrAbove();
+        if (!isManager)
+        {
+            var me = await _directory.FindMeAsync(ct);
+            if (me is null || employeeId != me.Id) return Forbid();
+        }
         var q = _db.Feedback.AsQueryable();
+        if (!isManager) q = q.Where(f => f.VisibleToEmployee);
         if (employeeId.HasValue) q = q.Where(f => f.ToEmployeeId == employeeId.Value);
         if (since.HasValue) q = q.Where(f => f.CreatedAt >= since.Value);
 

@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { ArrowDown, LoaderCircle, Plus, X } from 'lucide-react'
 import { workflowApi } from '@/api/workflows'
 import { useEmployees, useMyEmployeeId } from '@/api/queries'
+import { useDirectory } from '@/api/directory'
 import { useAuth } from '@/auth/useAuth'
 import { workflowTypeLabels, type WorkflowType } from '@/api/types'
 import { Modal, ErrorSummary, type SummaryItem } from '@/components/ui/Modal'
@@ -37,7 +38,12 @@ export function NewWorkflowModal({
   const toast = useToast()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const employees = useEmployees()
+  // Tam liste yönetici yetkisi ister; çalışan rolünde 403 dönüyordu. Onaycı seçimi
+  // için ad yeterli - herkese açık dizin kullanılır.
+  const { can } = useAuth()
+  const canSeeAll = can('employee:viewAll')
+  const employees = useEmployees({ enabled: canSeeAll })
+  const directory = useDirectory(!canSeeAll)
 
   const [type, setType] = useState<WorkflowType>(defaultType ?? 'LeaveRequest')
   // İK dışındakiler yalnızca kendi adlarına talep açabilir (backend 403 döner).
@@ -66,7 +72,13 @@ export function NewWorkflowModal({
     }
   }, [open, defaultType])
 
-  const people = employees.data ?? []
+  const people = useMemo(
+    () =>
+      canSeeAll
+        ? (employees.data ?? [])
+        : (directory.data ?? []).map((d) => ({ id: d.id, firstName: d.firstName, lastName: d.lastName, email: '' })),
+    [canSeeAll, employees.data, directory.data],
+  )
   const nameOf = useMemo(() => {
     const map = new Map<string, string>()
     for (const e of people) map.set(e.id, fullName(e))
@@ -190,7 +202,7 @@ export function NewWorkflowModal({
               setApprovers((prev) => prev.filter((id) => id !== v))
               if (submitted) setErrors(validate())
             }}
-            options={people.map((e) => ({ value: e.id, label: `${fullName(e)} — ${e.email}` }))}
+            options={people.map((e) => ({ value: e.id, label: e.email ? `${fullName(e)} — ${e.email}` : fullName(e) }))}
             placeholder="Çalışan seçin"
             error={errors.requester}
           />

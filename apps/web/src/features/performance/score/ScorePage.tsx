@@ -40,7 +40,8 @@ export function ScorePage() {
   const cycle = cycles.find((c) => c.id === cycleId)
 
   const score = useScore(employeeId || undefined, cycleId || undefined)
-  const history = useScoringHistory()
+  // Ayar geçmişi yönetici verisi; çalışan için istenmez (403 dönüyordu).
+  const history = useScoringHistory(can('performance:manage'))
   const currentCfg = useScoringConfig()
 
   // Eşikler ve (yanıtta yoksa) paylar için puanın hesaplandığı ayar sürümü.
