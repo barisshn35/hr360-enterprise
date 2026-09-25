@@ -256,6 +256,7 @@ services:
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
       KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
       TENANT_SERVICE_URL: "http://tenant-service:8080"
+      TENANT_SECRET_KEY: ${TENANT_SECRET_KEY}
       ASPNETCORE_ENVIRONMENT: "Production"
       SMTP_HOST: ${SMTP_HOST}
       SMTP_PORT: ${SMTP_PORT}

@@ -11,11 +11,18 @@ namespace NotificationService.Email;
 
 /// <summary>
 /// Pending durumundaki Email kanalli bildirimleri periyodik olarak tarar
-/// ve Brevo SMTP uzerinden gonderir. Bu, tum tenant'lar icin calisan
-/// sistem geneli bir arka plan isi oldugundan, kendi DbContext scope'unda
+/// ve gonderir. Bu, tum tenant'lar icin calisan sistem geneli bir arka
+/// plan isi oldugundan, kendi DbContext scope'unda
 /// TenantContext.IsPlatformAdmin=true ayarlanir - boylece tenant filtresi
 /// devre disi kalir ve hangi tenant'a ait olursa olsun butun bekleyen
 /// bildirimler gorunur (bkz. TenantDbContextExtensions.ApplyTenantFilters).
+///
+/// Her bildirim, KENDI kiracisinin ozel SMTP sunucusu ayarlanmissa
+/// (Ayarlar > Marka, sadece Enterprise) o sunucu uzerinden; yoksa
+/// platformun varsayilan SMTP'si uzerinden gonderilir. Bir turdaki
+/// bildirimler, gereksiz yere baglanti acip kapatmamak icin hedef SMTP'ye
+/// gore gruplanir (ayni kiracinin ardisik bildirimleri TEK baglantidan
+/// gider).
 ///
 /// Basarisiz gonderimler 3 denemeye kadar Pending'de birakilir (bir
 /// sonraki turda tekrar denenir); 3. denemeden sonra Failed'e duser.
@@ -40,7 +47,7 @@ public class EmailSenderWorker : BackgroundService
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation(
-            "EmailSenderWorker basladi. SMTP: {Host}:{Port}, gonderen: {From}",
+            "EmailSenderWorker basladi. Varsayilan SMTP: {Host}:{Port}, gonderen: {From}",
             _options.SmtpHost, _options.SmtpPort, _options.FromAddress);
 
         while (!stoppingToken.IsCancellationRequested)
@@ -57,6 +64,12 @@ public class EmailSenderWorker : BackgroundService
             await Task.Delay(PollInterval, stoppingToken);
         }
     }
+
+    /// <summary>Bir bildirimin hangi SMTP sunucusundan, hangi marka bilgisiyle gonderilecegini tasir.</summary>
+    private record SendPlan(
+        string Host, int Port, string? User, string? Password,
+        string FromAddress, string FromName,
+        string? LogoUrl, string? CompanyName);
 
     private async Task ProcessBatchAsync(CancellationToken ct)
     {
@@ -79,28 +92,83 @@ public class EmailSenderWorker : BackgroundService
 
         _logger.LogInformation("{Count} bekleyen e-posta bulundu, gonderiliyor", pending.Count);
 
+        // Her bildirim icin gonderim plani (SMTP hedefi + marka) onceden
+        // cikarilir - hem gruplamak hem de baglanti asamasinda ayri bir
+        // cross-service cagriya ihtiyac duymamak icin.
+        var plans = new Dictionary<Guid, SendPlan>();
+        foreach (var n in pending)
+        {
+            var tenantBranding = await branding.GetBrandingAsync(n.TenantSlug, ct);
+            var tenantSmtp = await branding.GetSmtpConfigAsync(n.TenantSlug, ct);
+
+            plans[n.Id] = tenantSmtp is not null
+                ? new SendPlan(
+                    tenantSmtp.Host, tenantSmtp.Port, tenantSmtp.User, tenantSmtp.Password,
+                    FromAddress: string.IsNullOrWhiteSpace(tenantSmtp.FromAddress) ? _options.FromAddress : tenantSmtp.FromAddress,
+                    FromName: string.IsNullOrWhiteSpace(tenantSmtp.FromName) ? _options.FromName : tenantSmtp.FromName,
+                    LogoUrl: tenantBranding?.LogoUrl, CompanyName: tenantBranding?.Name)
+                : new SendPlan(
+                    _options.SmtpHost, _options.SmtpPort, _options.SmtpUser, _options.SmtpPassword,
+                    FromAddress: _options.FromAddress, FromName: _options.FromName,
+                    LogoUrl: tenantBranding?.LogoUrl, CompanyName: tenantBranding?.Name);
+        }
+
+        // Ayni SMTP hedefine (host+port+user) sahip bildirimleri grupla -
+        // tek baglanti/kimlik dogrulama ile hepsi gonderilsin. Sozluk
+        // sirasi .NET'te "ekleme sirasi" olma egiliminde olsa da garanti
+        // degildir; burada onemli degil, her grup bagimsiz islenir.
+        var groups = pending.GroupBy(n => (plans[n.Id].Host, plans[n.Id].Port, plans[n.Id].User));
+
+        foreach (var group in groups)
+        {
+            await SendGroupAsync(group.ToList(), plans, ct);
+        }
+
+        await db.SaveChangesAsync(ct);
+    }
+
+    private async Task SendGroupAsync(
+        List<Notification> group, Dictionary<Guid, SendPlan> plans, CancellationToken ct)
+    {
+        var target = plans[group[0].Id];
+
         using var smtp = new SmtpClient();
 
         try
         {
-            await smtp.ConnectAsync(_options.SmtpHost, _options.SmtpPort, SecureSocketOptions.StartTls, ct);
-            await smtp.AuthenticateAsync(_options.SmtpUser, _options.SmtpPassword, ct);
+            // Auto: sunucu STARTTLS destekliyorsa kullanir, desteklemiyorsa
+            // (orn. varsayilan kurulumdaki Mailpit - sertifika tanimlanmadan
+            // STARTTLS sunmaz) duz baglantiya duser. Sabit StartTls burada
+            // KULLANILMAZ - gercek bir SMTP saglayicisi (Brevo vb.) ile
+            // calisirken sorun cikarmaz, ama Mailpit'e karsi baglantiyi
+            // TAMAMEN reddederdi.
+            await smtp.ConnectAsync(target.Host, target.Port, SecureSocketOptions.Auto, ct);
+
+            // Sunucu kimlik dogrulama desteklemiyorsa (yine Mailpit'in
+            // varsayilan hali) AuthenticateAsync cagirmak istisna firlatir -
+            // bu yuzden sadece sunucu gercekten destekliyorsa deneriz.
+            if (smtp.Capabilities.HasFlag(SmtpCapabilities.Authentication)
+                && !string.IsNullOrEmpty(target.User))
+            {
+                await smtp.AuthenticateAsync(target.User, target.Password, ct);
+            }
         }
         catch (Exception ex)
         {
-            // Baglanti/kimlik dogrulama hatasi butun batch'i etkiler - hicbir
-            // notification'i Failed olarak isaretlemeden bu turu atla, bir
-            // sonraki turda (30sn sonra) tekrar denenir. DB'ye hic yazilmadigi
-            // icin AttemptCount de artmaz - yanlislikla Failed'e dusmezler.
+            // Baglanti/kimlik dogrulama hatasi bu grubu etkiler - hicbir
+            // notification'i Failed olarak isaretlemeden atla, bir sonraki
+            // turda (30sn sonra) tekrar denenir. DB'ye hic yazilmadigi icin
+            // AttemptCount de artmaz - yanlislikla Failed'e dusmezler.
             _logger.LogError(ex,
-                "SMTP baglantisi/kimlik dogrulamasi basarisiz, bu tur atlaniyor - bekleyen {Count} e-posta bir sonraki turda tekrar denenecek",
-                pending.Count);
+                "SMTP baglantisi/kimlik dogrulamasi basarisiz ({Host}:{Port}), bu grup atlaniyor - " +
+                "bekleyen {Count} e-posta bir sonraki turda tekrar denenecek",
+                target.Host, target.Port, group.Count);
             if (smtp.IsConnected)
                 await smtp.DisconnectAsync(true, ct);
             return;
         }
 
-        foreach (var notification in pending)
+        foreach (var notification in group)
         {
             try
             {
@@ -111,7 +179,7 @@ public class EmailSenderWorker : BackgroundService
                     continue;
                 }
 
-                var message = await BuildMessageAsync(notification, branding, ct);
+                var message = BuildMessage(notification, plans[notification.Id]);
                 await smtp.SendAsync(message, ct);
 
                 notification.Status = NotificationStatus.Sent;
@@ -140,10 +208,10 @@ public class EmailSenderWorker : BackgroundService
                 }
 
                 // Baglanti koptuysa (tek bir gonderim hatasindan farkli olarak)
-                // bu turun geri kalanini da atla - hepsi ayni sebeple basarisiz olur.
+                // bu grubun geri kalanini da atla - hepsi ayni sebeple basarisiz olur.
                 if (!smtp.IsConnected)
                 {
-                    _logger.LogError("SMTP baglantisi koptu, bu turun geri kalani atlaniyor");
+                    _logger.LogError("SMTP baglantisi koptu, bu grubun geri kalani atlaniyor");
                     break;
                 }
             }
@@ -151,28 +219,20 @@ public class EmailSenderWorker : BackgroundService
 
         if (smtp.IsConnected)
             await smtp.DisconnectAsync(true, ct);
-
-        await db.SaveChangesAsync(ct);
     }
 
-    private async Task<MimeMessage> BuildMessageAsync(
-        Notification notification, TenantBrandingClient branding, CancellationToken ct)
+    private static MimeMessage BuildMessage(Notification notification, SendPlan plan)
     {
         var message = new MimeMessage();
-        message.From.Add(new MailboxAddress(_options.FromName, _options.FromAddress));
+        message.From.Add(new MailboxAddress(plan.FromName, plan.FromAddress));
         message.To.Add(MailboxAddress.Parse(notification.RecipientEmail!));
         message.Subject = notification.Subject ?? "HR360 Enterprise Bildirimi";
-
-        // Kiracinin kendi logosu varsa (Ayarlar > Marka'dan yuklenmis) e-posta
-        // basliginda o gosterilir - bulunamazsa/cagri basarisiz olursa
-        // (best-effort) varsayilan HR360 markasina sessizce dusulur.
-        var tenantBranding = await branding.GetBrandingAsync(notification.TenantSlug, ct);
 
         var html = EmailTemplateRenderer.Render(
             subject: message.Subject,
             bodyPlainText: notification.Body,
-            logoUrl: tenantBranding?.LogoUrl,
-            companyName: tenantBranding?.Name);
+            logoUrl: plan.LogoUrl,
+            companyName: plan.CompanyName);
 
         message.Body = new BodyBuilder
         {

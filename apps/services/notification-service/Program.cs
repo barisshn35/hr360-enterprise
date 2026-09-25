@@ -8,6 +8,7 @@ using Microsoft.IdentityModel.Tokens;
 using NotificationService.Data;
 using NotificationService.Email;
 using NotificationService.Messaging;
+using NotificationService.Security;
 using NotificationService.Services;
 using NotificationService.Tenancy;
 
@@ -20,6 +21,7 @@ builder.Services.AddScoped<TenantContext>();
 builder.Services.AddScoped<ITenantContext>(sp => sp.GetRequiredService<TenantContext>());
 builder.Services.AddHostedService<HrEventConsumer>();
 builder.Services.AddSingleton(EmailOptions.FromEnvironment());
+builder.Services.AddSingleton<SmtpCredentialProtector>();
 builder.Services.AddHttpClient<TenantBrandingClient>();
 builder.Services.AddHostedService<EmailSenderWorker>();
 
