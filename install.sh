@@ -150,6 +150,19 @@ if [ -f .env ]; then
     info "Mevcut .env korunuyor (guncelleme): once veritabani goclerini uyguluyorum."
     set -a; . ./.env; set +a
 
+    # Keycloak artik sabit genel adresle (KC_HOSTNAME) calisiyor; eski .env'lerde
+    # PUBLIC_ORIGIN yok - PUBLIC_URL ve GATEWAY_PORT'tan uretilir.
+    if [ -z "${PUBLIC_ORIGIN:-}" ]; then
+      if [[ "${PUBLIC_URL%/}" =~ ://[^/]+:[0-9]+$ ]] || [ -z "${GATEWAY_PORT:-}" ] \
+         || [ "${GATEWAY_PORT}" = "80" ] || [ "${GATEWAY_PORT}" = "443" ]; then
+        PUBLIC_ORIGIN="${PUBLIC_URL%/}"
+      else
+        PUBLIC_ORIGIN="${PUBLIC_URL%/}:${GATEWAY_PORT}"
+      fi
+      echo "PUBLIC_ORIGIN=${PUBLIC_ORIGIN}" >> .env
+      info "PUBLIC_ORIGIN=${PUBLIC_ORIGIN} .env'e eklendi (Keycloak genel adresi)."
+    fi
+
     # NOT: Onceden bu yol yalnizca "docker compose up --build" calistiriyordu -
     # scripts/sql altindaki goc betikleri hic uygulanmiyordu (yeni kolon eksik
     # kalinca ilgili servis tum sorgularda 500 veriyordu).
@@ -196,6 +209,22 @@ PUBLIC_URL=${PUBLIC_URL:-http://localhost}
 
 read -r -p "Gateway'in disariya acacagi port [80]: " GATEWAY_PORT || true
 GATEWAY_PORT=${GATEWAY_PORT:-80}
+
+echo ""
+echo "Keycloak yonetim paneline erisim:"
+echo "  1) Herkese acik (varsayilan)"
+echo "  2) Yalnizca belirli IP/CIDR'ler (nginx ile)"
+echo "  3) Ayri port (8090) - erisimi firewall ile siz kisitlarsiniz"
+read -r -p "Seciminiz [1]: " KC_ADMIN_CHOICE || true
+KEYCLOAK_ADMIN_ALLOWED_IPS=""
+case "${KC_ADMIN_CHOICE:-1}" in
+  2) KEYCLOAK_ADMIN_MODE=ip
+     read -r -p "Izinli IP/CIDR'ler (virgulle, orn. 203.0.113.10,10.0.0.0/8): " KEYCLOAK_ADMIN_ALLOWED_IPS || true
+     [ -n "$KEYCLOAK_ADMIN_ALLOWED_IPS" ] || { warn "IP verilmedi; panel herkese acik birakiliyor."; KEYCLOAK_ADMIN_MODE=open; } ;;
+  3) KEYCLOAK_ADMIN_MODE=port
+     read -r -p "Ek olarak nginx'te izinli IP/CIDR'ler (bos = yalnizca firewall): " KEYCLOAK_ADMIN_ALLOWED_IPS || true ;;
+  *) KEYCLOAK_ADMIN_MODE=open ;;
+esac
 
 ask_secret HR360_DB_PASSWORD          "PostgreSQL (hr360admin) parolasi"
 ask_secret KEYCLOAK_ADMIN_PASSWORD    "Keycloak master admin parolasi"
@@ -271,6 +300,13 @@ sed \
   deploy/keycloak/realm-export.template.json > deploy/keycloak/realm-export.json
 info "Keycloak realm sablonu dolduruldu."
 
+# Keycloak'in genel adresi (KC_HOSTNAME) bu kokenden uretilir.
+if grep -q "^PUBLIC_ORIGIN=" .env; then
+  sed -i "s#^PUBLIC_ORIGIN=.*#PUBLIC_ORIGIN=${PUBLIC_ORIGIN}#" .env
+else
+  echo "PUBLIC_ORIGIN=${PUBLIC_ORIGIN}" >> .env
+fi
+
 # --- 5) Ayaga kaldir --------------------------------------------------------
 info "Imajlar build ediliyor ve servisler baslatiliyor (ilk calistirmada birkac dakika surebilir)..."
 docker compose up -d --build
@@ -291,11 +327,20 @@ until curl -sf "http://localhost:${GATEWAY_PORT}/auth/realms/hr360" >/dev/null 2
   sleep 3
 done
 
+info "Keycloak yonetim paneli erisimi ayarlaniyor (${KEYCLOAK_ADMIN_MODE})..."
+if [ "$KEYCLOAK_ADMIN_MODE" = "open" ]; then
+  scripts/keycloak-admin-access.sh open || warn "Panel erisimi ayarlanamadi; sonra scripts/keycloak-admin-access.sh ile deneyin."
+else
+  scripts/keycloak-admin-access.sh "$KEYCLOAK_ADMIN_MODE" "$KEYCLOAK_ADMIN_ALLOWED_IPS" \
+    || warn "Panel erisimi ayarlanamadi; sonra scripts/keycloak-admin-access.sh ile deneyin."
+fi
+
 echo ""
 echo "${GREEN}${BOLD}Kurulum tamamlandi.${RESET}"
 echo "----------------------------------------------"
-echo "Uygulama:         ${PUBLIC_URL}:${GATEWAY_PORT}"
-echo "Keycloak admin:   ${PUBLIC_URL}:${GATEWAY_PORT}/auth  (kullanici: ${KEYCLOAK_ADMIN_USER})"
+echo "Uygulama:         ${PUBLIC_ORIGIN}"
+echo "Keycloak admin:   $(scripts/keycloak-admin-access.sh status | grep 'Konsol adresi' | awk '{print $3}' | grep . || echo "${PUBLIC_ORIGIN}/auth")/admin/  (kullanici: ${KEYCLOAK_ADMIN_USER})"
+echo "                  Erisimi degistirmek icin: scripts/keycloak-admin-access.sh open|ip|port"
 echo "MinIO konsolu:    http://localhost:9001"
 echo "Mailpit (e-posta):http://localhost:8025"
 echo "MLflow:           http://localhost:5000"

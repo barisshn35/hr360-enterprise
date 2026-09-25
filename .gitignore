@@ -27,3 +27,6 @@ __pycache__/
 *.bak2
 *.bak3
 *.bak4
+
+# scripts/keycloak-admin-access.sh ciktisi (ortama ozel)
+deploy/nginx/keycloak-admin/*.conf

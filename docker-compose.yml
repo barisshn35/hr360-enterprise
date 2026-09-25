@@ -139,12 +139,28 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    command: ["start-dev", "--import-realm", "--http-relative-path=/auth", "--features=organization"]
+    # GUVENLIK: Onceden "start-dev" (gelistirme modu) + KC_HOSTNAME_STRICT=false ile
+    # calisiyordu: Keycloak disari verdigi adresleri (parola sifirlama e-postasindaki
+    # baglanti dahil) istegin Host / X-Forwarded-Host basligindan uretiyordu - sahte
+    # bir baslikla sifirlama baglantisi saldirganin alan adina yonlendirilebilirdi.
+    # Artik uretim modu ("start"), genel adres sabit (KC_HOSTNAME = uygulamanin
+    # tarayicidaki koken + /auth). Servislerin ic agdan (keycloak:8080) yaptigi
+    # istekler icin adres istege gore uretilir (backchannel dinamik). TLS gateway'de
+    # ya da onundeki dengeleyicide sonlanir; Keycloak arkada HTTP konusur.
+    command: ["start", "--import-realm", "--http-relative-path=/auth", "--features=organization"]
     environment:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN_USER}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
       KC_PROXY_HEADERS: xforwarded
-      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth"
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      # Yonetim konsolu ayri bir adresten (ornegin firewall ile kisitlanan ayri
+      # port) yayinlanacaksa onun adresi. Bos = ana adresle ayni. Bkz.
+      # docs/runbooks/keycloak-yonetim-paneli-erisimi.md
+      KC_HOSTNAME_ADMIN: "${KEYCLOAK_ADMIN_URL:-}"
+      KC_CACHE: local
+      KC_HEALTH_ENABLED: "true"
       # GUVENLIK/VERI KALICILIGI: Onceden KC_DB tanimli degildi - start-dev,
       # konteyner icindeki dosya veritabanini (dev-file) kullaniyordu ve volume
       # yoktu. Konteyner her yeniden olusturuldugunda (imaj guncellemesi, compose
@@ -392,6 +408,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./deploy/nginx/keycloak-admin:/etc/nginx/keycloak-admin:ro
     depends_on:
       - web
       - keycloak
@@ -400,3 +417,6 @@ services:
     mem_limit: "128m"
     ports:
       - "${GATEWAY_PORT:-80}:80"
+      # Keycloak yonetim paneli icin ayri giris ("port" modu). Varsayilan yalnizca
+      # sunucunun kendisinden erisilebilir; bkz. scripts/keycloak-admin-access.sh
+      - "${KEYCLOAK_ADMIN_BIND:-127.0.0.1}:${KEYCLOAK_ADMIN_PORT:-8090}:8090"
