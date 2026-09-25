@@ -631,6 +631,7 @@ CREATE TABLE expense_claims (
     "TotalAmount" numeric NOT NULL,
     "Status" text NOT NULL,
     "WorkflowRequestId" uuid,
+    "ApprovedByEmployeeId" uuid,
     "CreatedAt" timestamptz NOT NULL,
     "SubmittedAt" timestamptz,
     "PaidAt" timestamptz,

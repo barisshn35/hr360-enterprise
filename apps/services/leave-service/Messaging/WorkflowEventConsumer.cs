@@ -46,6 +46,17 @@ public class WorkflowEventConsumer : KafkaConsumerBase
             return;
         }
 
+        // GUVENLIK: Akis ile talep yalnizca WorkflowRequestId ile eslesiyordu; akisin
+        // talep sahibi iznin sahibi degilse karar UYGULANMAZ (bkz. expense-service'teki
+        // ayni duzeltme - baskasinin akisini kendi kaydina baglayip onaylatma).
+        if (evt.RequesterEmployeeId != leave.EmployeeId)
+        {
+            Logger.LogWarning(
+                "Workflow {Wf} talep sahibi ({Req}) izin talebi {Leave} sahibiyle ({Owner}) eşleşmiyor - karar uygulanmadı",
+                evt.WorkflowRequestId, evt.RequesterEmployeeId, leave.Id, leave.EmployeeId);
+            return;
+        }
+
         if (leave.Status != LeaveRequestStatus.Submitted)
         {
             Logger.LogInformation(
@@ -100,8 +111,4 @@ public class WorkflowEventConsumer : KafkaConsumerBase
         string? Subject, bool Approved, Guid DecidedByEmployeeId,
         string? Comment, DateTimeOffset OccurredAt);
 
-    /// <summary>timeshift-service (ve ileride baskalari) bu sekli bekler.</summary>
-    private record LeaveDecidedEvent(
-        string TenantSlug, Guid LeaveRequestId, Guid EmployeeId,
-        DateOnly StartDate, DateOnly EndDate, bool Approved, DateTimeOffset OccurredAt);
 }

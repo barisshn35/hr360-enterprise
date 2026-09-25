@@ -3,7 +3,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { ArrowDown, LoaderCircle, Plus, X } from 'lucide-react'
 import { workflowApi } from '@/api/workflows'
-import { useEmployees } from '@/api/queries'
+import { useEmployees, useMyEmployeeId } from '@/api/queries'
+import { useAuth } from '@/auth/useAuth'
 import { workflowTypeLabels, type WorkflowType } from '@/api/types'
 import { Modal, ErrorSummary, type SummaryItem } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/button'
@@ -39,7 +40,12 @@ export function NewWorkflowModal({
   const employees = useEmployees()
 
   const [type, setType] = useState<WorkflowType>(defaultType ?? 'LeaveRequest')
-  const [requester, setRequester] = useState('')
+  // İK dışındakiler yalnızca kendi adlarına talep açabilir (backend 403 döner).
+  const { roles } = useAuth()
+  const isHr = roles.some((r) => r === 'hr-admin' || r === 'tenant-admin' || r === 'platform-admin')
+  const me = useMyEmployeeId(!isHr)
+  const [pickedRequester, setRequester] = useState('')
+  const requester = isHr ? pickedRequester : (me.employeeId ?? '')
   const [subject, setSubject] = useState('')
   const [payload, setPayload] = useState('')
   const [slaHours, setSlaHours] = useState('48')
@@ -173,20 +179,28 @@ export function NewWorkflowModal({
           />
         </div>
 
-        <SelectField
-          id="workflow-requester"
-          label="Talep eden"
-          required
-          value={requester}
-          onChange={(v) => {
-            setRequester(v)
-            setApprovers((prev) => prev.filter((id) => id !== v))
-            if (submitted) setErrors(validate())
-          }}
-          options={people.map((e) => ({ value: e.id, label: `${fullName(e)} — ${e.email}` }))}
-          placeholder="Çalışan seçin"
-          error={errors.requester}
-        />
+        {isHr ? (
+          <SelectField
+            id="workflow-requester"
+            label="Talep eden"
+            required
+            value={requester}
+            onChange={(v) => {
+              setRequester(v)
+              setApprovers((prev) => prev.filter((id) => id !== v))
+              if (submitted) setErrors(validate())
+            }}
+            options={people.map((e) => ({ value: e.id, label: `${fullName(e)} — ${e.email}` }))}
+            placeholder="Çalışan seçin"
+            error={errors.requester}
+          />
+        ) : (
+          <p className="text-[13px] text-muted-foreground">
+            {me.notLinked
+              ? 'Hesabınıza bağlı çalışan kaydı bulunamadı; talep açamazsınız.'
+              : 'Talep sizin adınıza oluşturulacak.'}
+          </p>
+        )}
 
         <TextField
           id="workflow-subject"

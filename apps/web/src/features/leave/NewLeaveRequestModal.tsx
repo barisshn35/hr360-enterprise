@@ -7,7 +7,8 @@ import { SelectField, TextAreaField, TextField } from '@/components/ui/Field'
 import { EmployeePicker } from '@/components/ui/EmployeePicker'
 import { useToast } from '@/components/ui/Toast'
 import { leaveApi } from '@/api/leave'
-import { useLeaveBalances } from '@/api/queries'
+import { useLeaveBalances, useMyEmployeeId } from '@/api/queries'
+import { useAuth } from '@/auth/useAuth'
 import { leaveTypeLabels, type LeaveType } from '@/api/types'
 import { formatNumber } from '@/lib/format'
 
@@ -17,13 +18,22 @@ interface Errors {
   days?: string
 }
 
-/** Bitiş dahil, gün farkı. Hafta sonu/tatil hesabı backend'in işi. */
+/**
+ * Bitiş dahil İŞ GÜNÜ sayısı (Pzt–Cum). Backend gün sayısını artık kendisi aynı
+ * kuralla hesaplıyor (istemcinin gönderdiği değere güvenmiyor); önizleme ondan
+ * sapmasın. Tarihler UTC olarak ayrıştırılır ki yerel saat dilimi günü kaydırmasın.
+ */
 function daysBetween(start: string, end: string): number {
   if (!start || !end) return 0
-  const a = new Date(start).getTime()
-  const b = new Date(end).getTime()
+  const a = Date.parse(`${start}T00:00:00Z`)
+  const b = Date.parse(`${end}T00:00:00Z`)
   if (Number.isNaN(a) || Number.isNaN(b) || b < a) return 0
-  return Math.round((b - a) / 86_400_000) + 1
+  let count = 0
+  for (let t = a; t <= b; t += 86_400_000) {
+    const dow = new Date(t).getUTCDay()
+    if (dow !== 0 && dow !== 6) count++
+  }
+  return count
 }
 
 export function NewLeaveRequestModal({
@@ -38,6 +48,12 @@ export function NewLeaveRequestModal({
   const toast = useToast()
   const queryClient = useQueryClient()
 
+  // İK dışındakiler yalnızca kendi adlarına talep açabilir (backend 403 döner);
+  // bu yüzden seçici İK'ya gösterilir, diğerleri için çalışan sabit "siz"dir.
+  const { roles } = useAuth()
+  const isHr = roles.some((r) => r === 'hr-admin' || r === 'tenant-admin' || r === 'platform-admin')
+  const me = useMyEmployeeId(!isHr)
+
   const [employeeId, setEmployeeId] = useState(defaultEmployeeId)
   const [type, setType] = useState<LeaveType>('Annual')
   const [startDate, setStartDate] = useState('')
@@ -48,7 +64,7 @@ export function NewLeaveRequestModal({
 
   useEffect(() => {
     if (open) {
-      setEmployeeId(defaultEmployeeId)
+      setEmployeeId(isHr ? defaultEmployeeId : (me.employeeId ?? ''))
     } else {
       setType('Annual')
       setStartDate('')
@@ -57,7 +73,7 @@ export function NewLeaveRequestModal({
       setErrors({})
       setSubmitted(false)
     }
-  }, [open, defaultEmployeeId])
+  }, [open, defaultEmployeeId, isHr, me.employeeId])
 
   const year = startDate ? new Date(startDate).getFullYear() : new Date().getFullYear()
   const balances = useLeaveBalances(employeeId || undefined, year, Boolean(employeeId))
@@ -158,12 +174,20 @@ export function NewLeaveRequestModal({
       <form id="new-leave-form" onSubmit={handleSubmit} noValidate className="space-y-4">
         <ErrorSummary items={summary} />
 
-        <EmployeePicker
-          id="leave-employee"
-          value={employeeId}
-          onChange={handleEmployeeChange}
-          hint={submitted ? errors.employeeId : undefined}
-        />
+        {isHr ? (
+          <EmployeePicker
+            id="leave-employee"
+            value={employeeId}
+            onChange={handleEmployeeChange}
+            hint={submitted ? errors.employeeId : undefined}
+          />
+        ) : (
+          <p className="text-[13px] text-muted-foreground">
+            {me.notLinked
+              ? 'Hesabınıza bağlı çalışan kaydı bulunamadı; izin talebi açamazsınız.'
+              : 'Talep sizin adınıza oluşturulacak.'}
+          </p>
+        )}
 
         <SelectField
           id="leave-type"

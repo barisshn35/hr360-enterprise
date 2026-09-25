@@ -49,7 +49,19 @@ public class WorkflowEventConsumer : KafkaConsumerBase
             return;
         }
 
+        // GUVENLIK: Akis ile beyan yalnizca WorkflowRequestId ile eslestiriliyordu.
+        // Akisin talep sahibi beyanin sahibi degilse (baska birinin akisi bu beyana
+        // baglanmissa) karar UYGULANMAZ.
+        if (evt.RequesterEmployeeId != claim.EmployeeId)
+        {
+            Logger.LogWarning(
+                "Workflow {Wf} talep sahibi ({Req}) masraf beyanı {Claim} sahibiyle ({Owner}) eşleşmiyor - karar uygulanmadı",
+                evt.WorkflowRequestId, evt.RequesterEmployeeId, claim.Id, claim.EmployeeId);
+            return;
+        }
+
         claim.Status = evt.Approved ? ClaimStatus.Approved : ClaimStatus.Rejected;
+        if (evt.Approved) claim.ApprovedByEmployeeId = evt.DecidedByEmployeeId;
 
         Logger.LogInformation(
             "Masraf beyanı {Id} workflow kararıyla {Status} yapıldı", claim.Id, claim.Status);

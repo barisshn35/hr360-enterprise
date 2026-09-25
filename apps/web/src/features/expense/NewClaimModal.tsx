@@ -9,6 +9,8 @@ import { SelectField, TextField } from '@/components/ui/Field'
 import { EmployeePicker } from '@/components/ui/EmployeePicker'
 import { useToast } from '@/components/ui/Toast'
 import { expenseApi } from '@/api/expense'
+import { useMyEmployeeId } from '@/api/queries'
+import { useAuth } from '@/auth/useAuth'
 import { expenseCategoryLabels, type ExpenseCategory, type ExpenseItem } from '@/api/types'
 import { formatMoney } from '@/lib/format'
 
@@ -115,7 +117,15 @@ export function NewClaimModal({ open, onClose }: { open: boolean; onClose: () =>
   const queryClient = useQueryClient()
   const reduced = useReducedMotion()
 
-  const [employeeId, setEmployeeId] = useState('')
+  // Başkası adına beyan yalnızca İK/muhasebe açabilir (backend 403 döner);
+  // diğerleri için talep sahibi her zaman kendileridir.
+  const { roles } = useAuth()
+  const canPickOthers = roles.some((r) =>
+    r === 'hr-admin' || r === 'tenant-admin' || r === 'platform-admin' || r === 'accounting')
+  const me = useMyEmployeeId(!canPickOthers)
+
+  const [pickedEmployeeId, setEmployeeId] = useState('')
+  const employeeId = canPickOthers ? pickedEmployeeId : (me.employeeId ?? '')
   const [title, setTitle] = useState('')
   const [items, setItems] = useState<DraftItem[]>([emptyItem()])
   const [errors, setErrors] = useState<Errors>({})
@@ -259,15 +269,23 @@ export function NewClaimModal({ open, onClose }: { open: boolean; onClose: () =>
       <form id="new-claim" onSubmit={submit} noValidate className="space-y-5">
         <ErrorSummary items={summary} />
 
-        <EmployeePicker
-          id="claim-employee"
-          value={employeeId}
-          onChange={(next) => {
-            setEmployeeId(next)
-            if (submitted) setErrors(validate(next))
-          }}
-          hint={submitted ? errors.employeeId : undefined}
-        />
+        {canPickOthers ? (
+          <EmployeePicker
+            id="claim-employee"
+            value={employeeId}
+            onChange={(next) => {
+              setEmployeeId(next)
+              if (submitted) setErrors(validate(next))
+            }}
+            hint={submitted ? errors.employeeId : undefined}
+          />
+        ) : (
+          <p className="text-[13px] text-muted-foreground">
+            {me.notLinked
+              ? 'Hesabınıza bağlı çalışan kaydı bulunamadı; masraf beyanı açamazsınız.'
+              : 'Beyan sizin adınıza oluşturulacak.'}
+          </p>
+        )}
         <TextField
           id="claim-title"
           label="Başlık"

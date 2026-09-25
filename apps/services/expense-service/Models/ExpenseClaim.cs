@@ -15,6 +15,11 @@ public class ExpenseClaim : ITenantOwned
     public ClaimStatus Status { get; set; } = ClaimStatus.Draft;
     /// <summary>Workflow Service'teki onay akisi.</summary>
     public Guid? WorkflowRequestId { get; set; }
+    /// <summary>
+    /// Beyani onaylayan calisan (workflow karari ya da elle sonuclandirma). Gorev
+    /// ayriligi icin: onaylayan kisi ayni beyani "odendi" isaretleyemez.
+    /// </summary>
+    public Guid? ApprovedByEmployeeId { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? SubmittedAt { get; set; }
     public DateTimeOffset? PaidAt { get; set; }

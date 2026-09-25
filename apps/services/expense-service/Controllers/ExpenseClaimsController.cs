@@ -35,6 +35,12 @@ public class ExpenseClaimsController : ControllerBase
     ///   - Calisan: yalnizca KENDI employeeId'sini sorgulayabilir; farkli
     ///     bir ID verirse ya da hic vermezse 403 doner.
     /// </summary>
+    private bool IsHr => User.IsInRole("hr-admin") || User.IsInRole("tenant-admin")
+        || User.IsInRole("platform-admin");
+
+    /// <summary>Tum beyanlari okuyabilen roller (GetAll'daki mevcut kuralla ayni).</summary>
+    private bool CanReadAll => IsHr || User.IsInRole("manager") || User.IsInRole("accounting");
+
     [HttpGet]
     public async Task<IActionResult> GetAll(
         [FromQuery] Guid? employeeId, [FromQuery] ClaimStatus? status, CancellationToken ct)
@@ -58,20 +64,51 @@ public class ExpenseClaimsController : ControllerBase
     }
 
     [HttpGet("{id}")]
-    public async Task<IActionResult> GetById(Guid id)
+    public async Task<IActionResult> GetById(Guid id, CancellationToken ct)
     {
-        var c = await _db.Claims.Include(x => x.Items).FirstOrDefaultAsync(x => x.Id == id);
-        return c is null ? NotFound() : Ok(c);
+        var c = await _db.Claims.Include(x => x.Items).FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (c is null) return NotFound();
+        // GUVENLIK: Onceden herhangi bir calisan, kimligini bildigi her beyani
+        // okuyabiliyordu (liste ucundaki sahiplik kurali burada yoktu).
+        if (!CanReadAll)
+        {
+            var me = await _approvals.FindMyEmployeeIdAsync(ct);
+            if (me is null || me.Value != c.EmployeeId) return NotFound();
+        }
+        return Ok(c);
     }
 
     [HttpPost]
-    public async Task<IActionResult> Create([FromBody] CreateClaimRequest request)
+    public async Task<IActionResult> Create([FromBody] CreateClaimRequest request, CancellationToken ct)
     {
+        // GUVENLIK: EmployeeId istek govdesinden geliyordu - herkes baskasi adina
+        // beyan acabiliyordu. IK/muhasebe disindakiler yalnizca kendi adina.
+        if (!IsHr && !User.IsInRole("accounting"))
+        {
+            var me = await _approvals.FindMyEmployeeIdAsync(ct);
+            if (me is null) return Forbid();
+            if (request.EmployeeId != me.Value)
+                return StatusCode(StatusCodes.Status403Forbidden,
+                    new { message = "Yalnızca kendi adınıza masraf beyanı oluşturabilirsiniz" });
+        }
+        if (string.IsNullOrWhiteSpace(request.Title) || request.Title.Length > 200)
+            return BadRequest("Başlık zorunlu ve en fazla 200 karakter olabilir");
+        var currency = (request.Currency ?? "").Trim().ToUpperInvariant();
+        if (!System.Text.RegularExpressions.Regex.IsMatch(currency, "^[A-Z]{3}$"))
+            return BadRequest("Para birimi 3 harfli ISO kodu olmalı (örn. TRY)");
+        if (request.Items is null || request.Items.Count == 0 || request.Items.Count > 50)
+            return BadRequest("Beyanda 1-50 arası kalem olmalı");
+        var latestAllowed = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(1));
+        if (request.Items.Any(i => i.ExpenseDate > latestAllowed))
+            return BadRequest("Harcama tarihi gelecekte olamaz");
+        if (request.Items.Any(i => i.Amount > 1_000_000m))
+            return BadRequest("Kalem tutarı en fazla 1.000.000 olabilir");
+
         var claim = new ExpenseClaim
         {
             EmployeeId = request.EmployeeId,
-            Title = request.Title,
-            Currency = request.Currency
+            Title = request.Title.Trim(),
+            Currency = currency
         };
 
         foreach (var item in request.Items)
@@ -101,6 +138,13 @@ public class ExpenseClaimsController : ControllerBase
         if (claim.Status != ClaimStatus.Draft) return BadRequest("Yalnizca taslak beyan gonderilebilir");
         if (claim.Items.Count == 0) return BadRequest("Beyanda en az bir kalem olmali");
 
+        // GUVENLIK: Sahiplik kontrolu yoktu - herkes baskasinin taslagini gonderebiliyordu.
+        if (!IsHr)
+        {
+            var me = await _approvals.FindMyEmployeeIdAsync(ct);
+            if (me is null || me.Value != claim.EmployeeId) return NotFound();
+        }
+
         claim.Status = ClaimStatus.Submitted;
         claim.SubmittedAt = DateTimeOffset.UtcNow;
 
@@ -108,8 +152,12 @@ public class ExpenseClaimsController : ControllerBase
         // (bugune kadar hep boyle oldu) departman basina otomatik bir onay
         // workflow'u ac - bu olmadan "Onay kutusu" sayfasi bu beyani hicbir
         // zaman gostermiyordu.
-        claim.WorkflowRequestId = request.WorkflowRequestId
-            ?? await _approvals.StartExpenseApprovalAsync(claim.EmployeeId, claim.Title, ct);
+        // GUVENLIK: Istemcinin verdigi WorkflowRequestId ARTIK KULLANILMIYOR. Onceden
+        // bir yonetici kendi actigi sahte bir akisi (onayci = kendisi) kendi beyanina
+        // baglayip onaylayarak KENDI beyanini onaylatabiliyordu (canli dogrulandi).
+        // Onay akisini yalnizca sunucu, departman basina yonlendirerek baslatir.
+        claim.WorkflowRequestId =
+            await _approvals.StartExpenseApprovalAsync(claim.EmployeeId, claim.Title, ct);
 
         await _db.SaveChangesAsync();
         return Ok(claim);
@@ -133,19 +181,38 @@ public class ExpenseClaimsController : ControllerBase
         if (myEmployeeId is null || myEmployeeId.Value == claim.EmployeeId)
             return Forbid();
 
+        // GUVENLIK: Onay akisi olan bir beyan bu uctan sonuclandirilamaz - onceden
+        // herhangi bir yonetici, departman basini atlayip tenant'taki her beyani
+        // (akis Pending kalirken) buradan onaylayabiliyordu. Bu uc yalnizca akis
+        // baslatilamamis (orn. departman basi atanmamis) beyanlar icin.
+        if (claim.WorkflowRequestId is not null)
+            return Conflict(new { message = "Bu beyan onay akışı üzerinden sonuçlandırılmalı" });
+
         claim.Status = request.Approved ? ClaimStatus.Approved : ClaimStatus.Rejected;
+        if (request.Approved) claim.ApprovedByEmployeeId = myEmployeeId.Value;
         await _db.SaveChangesAsync();
         return Ok(claim);
     }
 
     [HttpPost("{id}/mark-paid")]
     [Authorize(Policy = "RequireExpenseMarkPaid")]
-    public async Task<IActionResult> MarkPaid(Guid id)
+    public async Task<IActionResult> MarkPaid(Guid id, CancellationToken ct)
     {
-        var claim = await _db.Claims.FirstOrDefaultAsync(c => c.Id == id);
+        var claim = await _db.Claims.FirstOrDefaultAsync(c => c.Id == id, ct);
         if (claim is null) return NotFound();
         if (claim.Status != ClaimStatus.Approved)
             return BadRequest("Yalnızca onaylanmış beyan ödenmiş işaretlenebilir");
+
+        // GUVENLIK / gorev ayriligi: beyan sahibi ya da onu onaylayan kisi odemeyi
+        // isaretleyemez (onceden hr-admin tek basina tum dongunu kapatabiliyordu).
+        // Kimligi olmayan platform hesaplari da bu kontrolu atlayamaz.
+        var me = await _approvals.FindMyEmployeeIdAsync(ct);
+        if (me is null)
+            return StatusCode(StatusCodes.Status403Forbidden,
+                new { message = "Ödeme işaretlemek için çalışan kaydına bağlı bir hesap gerekli" });
+        if (me.Value == claim.EmployeeId || me.Value == claim.ApprovedByEmployeeId)
+            return StatusCode(StatusCodes.Status403Forbidden,
+                new { message = "Kendi beyanınızı ya da onayladığınız beyanı ödendi işaretleyemezsiniz" });
 
         claim.Status = ClaimStatus.Paid;
         claim.PaidAt = DateTimeOffset.UtcNow;

@@ -23,26 +23,78 @@ public class WorkflowsController : ControllerBase
         _employees = employees;
     }
 
+    /// <summary>Tum is akislarini gorebilen/yonetebilen roller.</summary>
+    private bool IsHr => User.IsInRole("hr-admin") || User.IsInRole("tenant-admin")
+        || User.IsInRole("platform-admin");
+
+    /// <summary>
+    /// GUVENLIK: Liste/detay/gecikenler onceden yalnizca [Authorize] ile korunuyordu -
+    /// her calisan kiracidaki TUM taleplerin konusunu ve payload'unu gorebiliyordu
+    /// (ornegin "5 gunluk Sick talebi" = saglik bilgisi; canli dogrulandi). Artik
+    /// IK rolleri disindakiler yalnizca talep sahibi, onaycisi ya da vekili
+    /// olduklari akislari gorur. Kimlik cozulemezse bos/403 (fail-closed).
+    /// </summary>
+    private IQueryable<WorkflowRequest> VisibleTo(IQueryable<WorkflowRequest> q, Guid me) =>
+        q.Where(w => w.RequesterEmployeeId == me
+            || w.Steps.Any(s => s.ApproverEmployeeId == me || s.DelegatedToEmployeeId == me));
+
     [HttpGet]
-    public async Task<IActionResult> GetAll([FromQuery] WorkflowStatus? status, [FromQuery] Guid? requesterId)
+    public async Task<IActionResult> GetAll([FromQuery] WorkflowStatus? status, [FromQuery] Guid? requesterId, CancellationToken ct)
     {
         var query = _db.WorkflowRequests.Include(w => w.Steps).AsQueryable();
+        if (!IsHr)
+        {
+            var me = await _employees.FindMyEmployeeIdAsync(ct);
+            if (me is null) return Forbid();
+            query = VisibleTo(query, me.Value);
+        }
         if (status.HasValue) query = query.Where(w => w.Status == status.Value);
         if (requesterId.HasValue) query = query.Where(w => w.RequesterEmployeeId == requesterId.Value);
         return Ok(await query.OrderByDescending(w => w.CreatedAt).ToListAsync());
     }
 
     [HttpGet("{id}")]
-    public async Task<IActionResult> GetById(Guid id)
+    public async Task<IActionResult> GetById(Guid id, CancellationToken ct)
     {
-        var wf = await _db.WorkflowRequests.Include(w => w.Steps.OrderBy(s => s.Order))
-            .FirstOrDefaultAsync(w => w.Id == id);
+        var q = _db.WorkflowRequests.Include(w => w.Steps.OrderBy(s => s.Order)).AsQueryable();
+        if (!IsHr)
+        {
+            var me = await _employees.FindMyEmployeeIdAsync(ct);
+            if (me is null) return Forbid();
+            q = VisibleTo(q, me.Value);
+        }
+        var wf = await q.FirstOrDefaultAsync(w => w.Id == id, ct);
         return wf is null ? NotFound() : Ok(wf);
     }
 
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateWorkflowRequest request, CancellationToken ct)
     {
+        // GUVENLIK: Talep eden ve onaycilar tamamen istemciden geliyordu. Bir
+        // yonetici "talep eden = bir meslektas, onayci = kendisi" olan sahte bir
+        // akis acip kendi masraf beyanina baglayarak KENDI beyanini onaylayabiliyordu
+        // (canli dogrulandi: 49.999 TL). Artik IK rolleri disinda talep eden
+        // HER ZAMAN cagiranin kendisidir; onaycilar dogrulanir.
+        if (!IsHr)
+        {
+            var me = await _employees.FindMyEmployeeIdAsync(ct);
+            if (me is null) return Forbid();
+            if (request.RequesterEmployeeId != me.Value)
+                return StatusCode(StatusCodes.Status403Forbidden,
+                    new { message = "Yalnızca kendi adınıza talep oluşturabilirsiniz" });
+        }
+        var approvers = request.ApproverEmployeeIds ?? new List<Guid>();
+        if (approvers.Count == 0 || approvers.Count > 10)
+            return BadRequest(new { message = "En az 1, en fazla 10 onaycı gerekli" });
+        if (approvers.Contains(Guid.Empty) || approvers.Distinct().Count() != approvers.Count)
+            return BadRequest(new { message = "Onaycı listesi geçersiz ya da tekrar içeriyor" });
+        if (approvers.Contains(request.RequesterEmployeeId))
+            return BadRequest(new { message = "Talep eden kendi talebinin onaycısı olamaz" });
+        if (request.SlaHours is < 1 or > 24 * 90)
+            return BadRequest(new { message = "SLA 1 saat ile 90 gün arasında olmalı" });
+        if (request.Subject is { Length: > 300 })
+            return BadRequest(new { message = "Konu en fazla 300 karakter olabilir" });
+
         var wf = new WorkflowRequest
         {
             Type = request.Type,
@@ -55,7 +107,7 @@ public class WorkflowsController : ControllerBase
         };
 
         int order = 1;
-        foreach (var approverId in request.ApproverEmployeeIds)
+        foreach (var approverId in approvers)
         {
             wf.Steps.Add(new ApprovalStep
             {
@@ -100,6 +152,12 @@ public class WorkflowsController : ControllerBase
     [Authorize(Policy = "RequireManagerOrAbove")]
     public async Task<IActionResult> Decide(Guid id, Guid stepId, [FromBody] DecideRequest request, CancellationToken ct)
     {
+        // NOT: Onceden "Delegated"/"Pending" da kabul ediliyordu - "Delegated" adimi
+        // karar verilmis sayip onaylamadan birakiyor, akis bir daha asla
+        // tamamlanamiyordu. Karar yalnizca Onay ya da Red olabilir.
+        if (request.Decision is not (StepDecision.Approved or StepDecision.Rejected))
+            return BadRequest(new { message = "Karar yalnızca Approved ya da Rejected olabilir" });
+
         var wf = await _db.WorkflowRequests.Include(w => w.Steps).FirstOrDefaultAsync(w => w.Id == id);
         if (wf is null) return NotFound("Workflow not found");
         if (wf.Status != WorkflowStatus.Pending) return BadRequest("Workflow is not pending");
@@ -133,7 +191,10 @@ public class WorkflowsController : ControllerBase
 
         var isAdminOverride = User.IsInRole("hr-admin") || User.IsInRole("tenant-admin")
             || User.IsInRole("platform-admin");
-        if (!isAdminOverride && myEmployeeId.Value != step.ApproverEmployeeId)
+        // Vekalet: adim baskasina devredildiyse vekil de karar verebilir (onceden
+        // DelegatedToEmployeeId hic okunmuyordu, devretme ozelligi calismiyordu).
+        if (!isAdminOverride && myEmployeeId.Value != step.ApproverEmployeeId
+            && myEmployeeId.Value != step.DelegatedToEmployeeId)
             return Forbid();
 
         // Sirali onay: onceki adimlar tamamlanmadan bu adim karar veremez
@@ -203,7 +264,9 @@ public class WorkflowsController : ControllerBase
                     _db.CurrentTenantSlug ?? "",
                     wf.Id, wf.Type.ToString(), wf.RequesterEmployeeId, wf.Subject,
                     wf.Status == WorkflowStatus.Approved,
-                    step.ApproverEmployeeId, step.Comment, DateTimeOffset.UtcNow)),
+                    // Denetim izi: karari GERCEKTEN veren kisi (vekil ya da IK
+                    // mudahalesi olabilir) - onceden adimin atanmis onaycisi yaziliyordu.
+                    myEmployeeId.Value, step.Comment, DateTimeOffset.UtcNow)),
             });
         }
 
@@ -213,11 +276,27 @@ public class WorkflowsController : ControllerBase
 
     [HttpPost("{id}/steps/{stepId}/delegate")]
     [Authorize(Policy = "RequireManagerOrAbove")]
-    public async Task<IActionResult> Delegate(Guid id, Guid stepId, [FromBody] DelegateRequest request)
+    public async Task<IActionResult> Delegate(Guid id, Guid stepId, [FromBody] DelegateRequest request, CancellationToken ct)
     {
-        var step = await _db.ApprovalSteps.FirstOrDefaultAsync(s => s.Id == stepId && s.WorkflowRequestId == id);
+        var wf = await _db.WorkflowRequests.Include(w => w.Steps).FirstOrDefaultAsync(w => w.Id == id, ct);
+        if (wf is null) return NotFound("Workflow not found");
+        var step = wf.Steps.FirstOrDefault(s => s.Id == stepId);
         if (step is null) return NotFound("Step not found");
+        if (wf.Status != WorkflowStatus.Pending) return BadRequest("Workflow is not pending");
         if (step.Decision != StepDecision.Pending) return BadRequest("Step already decided");
+
+        // GUVENLIK: Onceden herhangi bir yonetici, kendisine ait olmayan herhangi bir
+        // adimi istedigi kisiye (kendisine dahil) devredebiliyordu. Artik yalnizca
+        // adimin onaycisi ya da IK devredebilir; talep sahibine devredilemez.
+        if (!IsHr)
+        {
+            var me = await _employees.FindMyEmployeeIdAsync(ct);
+            if (me is null || me.Value != step.ApproverEmployeeId) return Forbid();
+            if (request.DelegateToEmployeeId == me.Value)
+                return BadRequest(new { message = "Adımı kendinize devredemezsiniz" });
+        }
+        if (request.DelegateToEmployeeId == Guid.Empty || request.DelegateToEmployeeId == wf.RequesterEmployeeId)
+            return BadRequest(new { message = "Adım talep sahibine devredilemez" });
 
         step.DelegatedToEmployeeId = request.DelegateToEmployeeId;
         step.Comment = request.Comment;
@@ -226,10 +305,17 @@ public class WorkflowsController : ControllerBase
     }
 
     [HttpGet("overdue")]
-    public async Task<IActionResult> GetOverdue()
+    public async Task<IActionResult> GetOverdue(CancellationToken ct)
     {
         var now = DateTimeOffset.UtcNow;
-        var overdue = await _db.WorkflowRequests
+        var q = _db.WorkflowRequests.AsQueryable();
+        if (!IsHr)
+        {
+            var me = await _employees.FindMyEmployeeIdAsync(ct);
+            if (me is null) return Forbid();
+            q = VisibleTo(q, me.Value);
+        }
+        var overdue = await q
             .Where(w => w.Status == WorkflowStatus.Pending && w.SlaDueAt != null && w.SlaDueAt < now)
             .Include(w => w.Steps)
             .ToListAsync();
