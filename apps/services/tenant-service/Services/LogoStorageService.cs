@@ -38,7 +38,7 @@ public class LogoStorageService
         var secretKey = Environment.GetEnvironmentVariable("MINIO_SECRET_KEY")
             ?? throw new InvalidOperationException("MINIO_SECRET_KEY tanimli olmali");
         _publicBaseUrl = (Environment.GetEnvironmentVariable("LOGO_PUBLIC_BASE_URL")
-            ?? "https://staffware.com.tr/logos").TrimEnd('/');
+            ?? "https://hr360.local/logos").TrimEnd('/');
 
         _client = new AmazonS3Client(
             new BasicAWSCredentials(accessKey, secretKey),

@@ -1,5 +1,5 @@
 /**
- * Staffware'ın liste deseni.
+ * HR360'ın liste deseni.
  *
  * Kaynak: 21st.dev "Users List Datatable" (shadcnstore, id 25159). Oradaki
  * kullanıcı listesine özel yapı genelleştirildi: sütunlar dışarıdan tanımlanıyor,

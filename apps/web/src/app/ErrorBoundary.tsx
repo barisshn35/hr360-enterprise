@@ -13,7 +13,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error('Staffware render hatası:', error, info.componentStack)
+    console.error('HR360 render hatası:', error, info.componentStack)
   }
 
   render() {

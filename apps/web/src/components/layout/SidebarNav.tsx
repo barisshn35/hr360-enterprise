@@ -1,10 +1,10 @@
 /**
- * Staffware kenar çubuğu navigasyonu.
+ * HR360 kenar çubuğu navigasyonu.
  *
  * Kaynak: 21st.dev "Dashboard Sidebar" (arunjdass) — çok katmanlı katlanabilir
  * navigasyon, workspace switcher ve komut paleti kancası hazır geliyordu.
  *
- * Staffware uyarlamaları:
+ * HR360 uyarlamaları:
  *  - WorkspaceSwitcher → TenantSwitcher: çok kiracılı mimaride kullanıcının
  *    bağlı olduğu şirketi gösterir. platform-admin ise tenant'lar arasında
  *    geçiş yapabilir; normal kullanıcı yalnızca kendi şirketini görür.
@@ -170,7 +170,7 @@ function TenantSwitcher() {
   const { tenant, canSwitchTenant, availableTenants, switchTenant } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
 
-  const name = tenant?.name ?? 'Staffware';
+  const name = tenant?.name ?? 'HR360';
   const planLabel = tenant?.plan ? planLabels[tenant.plan] : '—';
 
   return (

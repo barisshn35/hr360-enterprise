@@ -1,5 +1,5 @@
 /**
- * Staffware hareket sözlüğü.
+ * HR360 hareket sözlüğü.
  *
  * İki kural:
  *  1. Hareket bilgi taşır — dekorasyon değil. Bir şey belirdiğinde nereden

@@ -72,7 +72,7 @@ export function initKeycloak(): Promise<boolean> {
       window.setTimeout(() => {
         if (!keycloak.authenticated) {
           console.warn(
-            '[Staffware] Sessiz SSO kontrolü zaman aşımına uğradı. ' +
+            '[HR360] Sessiz SSO kontrolü zaman aşımına uğradı. ' +
               'hr360-web client redirect URI listesinde ' +
               `${window.location.origin}/* kayıtlı mı kontrol edin.`,
           )

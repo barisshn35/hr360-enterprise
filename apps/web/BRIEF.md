@@ -14,7 +14,7 @@ HR360'ın arayüzünü **21st.dev bileşenleri üzerine baştan** kur. Mevcut fr
 2. Tüm görsel dil 21st.dev kataloğundan gelecek — `21ST-MANIFEST.md`'de hangi
    bileşenin nereye gideceği ve kurulum komutu yazılı
 
-**Canlı:** https://staffware.com.tr
+**Canlı:** https://hr360.local
 
 ---
 
@@ -46,7 +46,7 @@ Tailwind **v4** kullanıyoruz — `index.css` `@import 'tailwindcss'` ve
 
 ```
 Realm:       hr360
-Auth URL:    https://staffware.com.tr/auth
+Auth URL:    https://hr360.local/auth
 Client:      hr360-web  (public, PKCE/S256)
 Scope:       openid organization        ← "organization" ZORUNLU
 ```

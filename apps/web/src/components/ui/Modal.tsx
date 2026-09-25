@@ -13,7 +13,7 @@ import { cn } from '@/lib/utils'
  * Modal sarmalayıcı.
  *
  * fe14'te odak tuzağı, Esc ve gövde kilidi elle yazılmıştı; artık Radix
- * Dialog bunların hepsini sağlıyor. Burada yalnızca Staffware'ın başlık/not/
+ * Dialog bunların hepsini sağlıyor. Burada yalnızca HR360'ın başlık/not/
  * gövde/alt bant düzeni ve mobilde tam yükseklik davranışı var.
  */
 export function Modal({

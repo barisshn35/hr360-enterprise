@@ -32,5 +32,5 @@ export async function startMocks() {
     onUnhandledRequest: 'bypass',
     quiet: true,
   })
-  console.info('[Staffware] Mock API etkin — veriler src/mocks/ altından geliyor.')
+  console.info('[HR360] Mock API etkin — veriler src/mocks/ altından geliyor.')
 }

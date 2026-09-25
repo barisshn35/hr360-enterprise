@@ -5,10 +5,10 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
 // Dev sırasında backend'e (Cloudflare üzerinden public olan gateway) proxy'lenir.
-// VPN gerekmez: https://staffware.com.tr hem /auth hem /api/* hem /ml/* servis ediyor.
+// VPN gerekmez: https://hr360.local hem /auth hem /api/* hem /ml/* servis ediyor.
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
-  const target = env.VITE_DEV_PROXY_TARGET || 'https://staffware.com.tr'
+  const target = env.VITE_DEV_PROXY_TARGET || 'https://hr360.local'
   const proxy = { target, changeOrigin: true, secure: true }
 
   // Mock anahtarları derleme anında sabite dönüşür. Kapalıyken (varsayılan)

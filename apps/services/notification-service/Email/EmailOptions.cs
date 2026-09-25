@@ -11,7 +11,7 @@ public class EmailOptions
     public required string SmtpUser { get; init; }
     public required string SmtpPassword { get; init; }
     public required string FromAddress { get; init; }
-    public string FromName { get; init; } = "Staffware";
+    public string FromName { get; init; } = "HR360";
 
     public static EmailOptions FromEnvironment()
     {
@@ -24,8 +24,8 @@ public class EmailOptions
             SmtpPort = int.Parse(Environment.GetEnvironmentVariable("SMTP_PORT") ?? "587"),
             SmtpUser = Req("SMTP_USER"),
             SmtpPassword = Req("SMTP_PASSWORD"),
-            FromAddress = Environment.GetEnvironmentVariable("SMTP_FROM_ADDRESS") ?? "noreply@staffware.com.tr",
-            FromName = Environment.GetEnvironmentVariable("SMTP_FROM_NAME") ?? "Staffware",
+            FromAddress = Environment.GetEnvironmentVariable("SMTP_FROM_ADDRESS") ?? "noreply@hr360.local",
+            FromName = Environment.GetEnvironmentVariable("SMTP_FROM_NAME") ?? "HR360",
         };
     }
 }

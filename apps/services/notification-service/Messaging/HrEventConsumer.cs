@@ -35,7 +35,7 @@ public class HrEventConsumer : KafkaConsumerBase
                     RecipientEmail = e.Email,
                     Channel = NotificationChannel.Email,
                     TemplateCode = "employee.hired",
-                    Subject = "Staffware'a hoş geldiniz",
+                    Subject = "HR360'a hoş geldiniz",
                     Body = $"Merhaba {e.FirstName} {e.LastName}, " +
                            $"{e.HireDate:dd.MM.yyyy} tarihli işe başlangıcınız sisteme kaydedildi. " +
                            "İşe uyum görevleriniz Onboarding modülünde sizi bekliyor.",

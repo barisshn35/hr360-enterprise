@@ -158,7 +158,7 @@ public class EmailSenderWorker : BackgroundService
         var message = new MimeMessage();
         message.From.Add(new MailboxAddress(_options.FromName, _options.FromAddress));
         message.To.Add(MailboxAddress.Parse(notification.RecipientEmail!));
-        message.Subject = notification.Subject ?? "Staffware Enterprise Bildirimi";
+        message.Subject = notification.Subject ?? "HR360 Enterprise Bildirimi";
 
         var html = EmailTemplateRenderer.Render(
             subject: message.Subject,

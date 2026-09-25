@@ -1,7 +1,7 @@
 namespace NotificationService.Email;
 
 /// <summary>
-/// Bildirimin duz metin Subject/Body'sini, Staffware marka kimligiyle
+/// Bildirimin duz metin Subject/Body'sini, HR360 marka kimligiyle
 /// (zumrut yesili, logo, sade bir govde) saran responsive bir HTML e-posta
 /// govdesine cevirir. Tum e-posta istemcilerinde (Outlook dahil) tutarli
 /// gorunmesi icin inline stil ve table-tabanli duzen kullanilir - modern
@@ -76,7 +76,7 @@ public static class EmailTemplateRenderer
                             </table>
                           </td>
                           <td style="vertical-align:middle;">
-                            <span style="color:{TextDark};font-size:20px;font-weight:600;letter-spacing:-0.02em;">Staffware</span>
+                            <span style="color:{TextDark};font-size:20px;font-weight:600;letter-spacing:-0.02em;">HR360</span>
                           </td>
                         </tr>
                       </table>
@@ -105,7 +105,7 @@ public static class EmailTemplateRenderer
                   <tr>
                     <td style="padding:20px 32px 28px 32px;">
                       <p style="margin:0;font-size:12px;line-height:1.6;color:{TextMuted};">
-                        Bu e-posta Staffware Enterprise tarafından otomatik olarak gönderilmiştir.
+                        Bu e-posta HR360 Enterprise tarafından otomatik olarak gönderilmiştir.
                         Bir işlem yapmanız gerekmiyorsa herhangi bir şey yapmanıza gerek yoktur.
                       </p>
                     </td>

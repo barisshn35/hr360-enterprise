@@ -1,7 +1,7 @@
 /**
  * `progress-metric-card` (21st.dev, makviesainte) bu modülü içe aktarıyor ama
  * kayıt paketinde GELMİYOR — registry yalnızca üst dosyayı gönderiyor. Burası
- * o eksik parçanın Staffware karşılığı: aynı dışa aktarım adları, aynı prop'lar.
+ * o eksik parçanın HR360 karşılığı: aynı dışa aktarım adları, aynı prop'lar.
  *
  * Renkler `index.css`'teki chart token'larından geliyor; tema değişince
  * grafik de değişiyor.

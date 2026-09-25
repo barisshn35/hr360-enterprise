@@ -2,7 +2,7 @@
  * İlk açılış iskeleti — oturum doğrulanırken tam sayfa.
  *
  * Kaynak: 21st.dev "Sidebar Dashboard Skeleton" (cnippet-dev, id 19009).
- * Demo sabit 320px'lik bir kutuydu; Staffware'ın gerçek kabuğuna ölçeklendi
+ * Demo sabit 320px'lik bir kutuydu; HR360'ın gerçek kabuğuna ölçeklendi
  * (260px sidebar, 56px üst bant) ki içerik gelince sayfa yerinden oynamasın.
  * Bileşenin kendi shimmer keyframe'i `index.css`'e yazılmak istiyordu;
  * token dosyasına dokunmamak için standart `Skeleton` kullanıldı.

@@ -291,7 +291,7 @@ export function RegisterCompanyWizard() {
             aria-hidden="true"
             className="size-7 shrink-0"
           />
-          Staffware
+          HR360
         </Link>
 
         <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Şirketinizi kaydedin</h1>

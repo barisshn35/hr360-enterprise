@@ -20,7 +20,7 @@ import { navGroups } from './SidebarNav'
 export function titleForPath(pathname: string): string {
   if (pathname === '/panel' || pathname === '/panel/') return 'Genel bakış'
   let best = ''
-  let title = 'Staffware'
+  let title = 'HR360'
   for (const group of navGroups) {
     for (const item of group.items) {
       for (const node of [item, ...(item.children ?? [])]) {

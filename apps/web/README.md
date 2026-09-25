@@ -15,7 +15,7 @@ npm run dev
 ```
 
 `http://localhost:5173` açılır. Vite dev sunucusu `/api`, `/ml`, `/auth` ve `/gateway`
-isteklerini `https://staffware.com.tr` adresine proxy'ler — **VPN gerekmez**.
+isteklerini `https://hr360.local` adresine proxy'ler — **VPN gerekmez**.
 
 > **Önkoşul:** Keycloak `hr360` realm'indeki `hr360-web` client'ının *Valid redirect URIs*
 > listesinde `http://localhost:5173/*` bulunmalı; aksi hâlde sessiz SSO isteği `400` döner
@@ -40,7 +40,7 @@ isteklerini `https://staffware.com.tr` adresine proxy'ler — **VPN gerekmez**.
 | `VITE_KEYCLOAK_REALM` | `hr360` | Realm adı |
 | `VITE_KEYCLOAK_CLIENT_ID` | `hr360-web` | Public client (PKCE S256) |
 | `VITE_API_BASE` | *(boş)* | Boşsa aynı origin kullanılır |
-| `VITE_DEV_PROXY_TARGET` | `https://staffware.com.tr` | Yalnızca `npm run dev` |
+| `VITE_DEV_PROXY_TARGET` | `https://hr360.local` | Yalnızca `npm run dev` |
 
 ## Çok kiracılılık
 

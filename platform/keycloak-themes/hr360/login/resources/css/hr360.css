@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Staffware — Keycloak giriş teması
+   HR360 — Keycloak giriş teması
 
    Uygulamanın /giris ekranıyla aynı görsel dil:
      zemin  zinc-950   (240 10% 4%)
@@ -108,7 +108,7 @@ body::after {
 }
 
 .pf-v5-c-brand::before {
-  /* Staffware markasi ("Strata"): uc kaydirilmis yuvarlak cubuk.
+  /* HR360 markasi ("Strata"): uc kaydirilmis yuvarlak cubuk.
      SVG data URI olarak gomulu - ek bir HTTP istegi olmuyor, 299 byte.
      Kaynak dosya: img/icon-purple.svg */
   content: '';
@@ -122,7 +122,7 @@ body::after {
 }
 
 .pf-v5-c-brand::after {
-  content: 'Staffware';
+  content: 'HR360';
   font-size: 1.0625rem;
   font-weight: 600;
   color: var(--sw-fg);

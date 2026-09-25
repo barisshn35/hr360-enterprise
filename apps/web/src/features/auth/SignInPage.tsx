@@ -5,7 +5,7 @@
  * (solda tanıtım paneli, sağda giriş) korundu.
  *
  * Uyarlamalar:
- *  - Sosyal giriş butonları ve e-posta/parola alanları KALDIRILDI. Staffware'ta
+ *  - Sosyal giriş butonları ve e-posta/parola alanları KALDIRILDI. HR360'ta
  *    kimlik doğrulama yalnızca Keycloak üzerinden (Authorization Code + PKCE);
  *    parola bu uygulamaya hiç girilmez, Keycloak'ın kendi ekranında alınır.
  *  - Sol paneldeki galeri yerine rol açıklamaları (önceki sürümde beğenilmişti).
@@ -59,7 +59,7 @@ export function SignInPage() {
                 aria-hidden="true"
                 className="size-7 shrink-0"
               />
-              Staffware Enterprise
+              HR360 Enterprise
             </Link>
 
             <p className="mt-8 text-2xl leading-tight font-medium">
@@ -104,7 +104,7 @@ export function SignInPage() {
           <div className="w-full max-w-md">
             <h1 className="text-3xl font-semibold tracking-tight">Giriş yapın</h1>
             <p className="mt-2.5 text-[14px] leading-relaxed text-muted-foreground">
-              Staffware, kurumsal kimlik sunucusu üzerinden doğrulama yapar. Devam ettiğinizde
+              HR360, kurumsal kimlik sunucusu üzerinden doğrulama yapar. Devam ettiğinizde
               şirketinizin oturum açma ekranına yönlendirilirsiniz.
             </p>
 

@@ -24,7 +24,7 @@ async function prepare() {
 }
 
 void prepare()
-  .catch((e: unknown) => console.error('[Staffware] Mock katmanı başlatılamadı:', e))
+  .catch((e: unknown) => console.error('[HR360] Mock katmanı başlatılamadı:', e))
   .finally(() => {
     createRoot(container).render(
       <StrictMode>

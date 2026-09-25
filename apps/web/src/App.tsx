@@ -25,7 +25,6 @@ function page<N extends string>(
   return lazy(async () => ({ default: (await loader())[name] }))
 }
 
-const LandingPage = page(() => import('@/features/landing/LandingPage'), 'LandingPage')
 const SignInPage = page(() => import('@/features/auth/SignInPage'), 'SignInPage')
 const RegisterCompanyWizard = page(
   () => import('@/features/registration/RegisterCompanyWizard'),
@@ -105,14 +104,8 @@ export function App() {
             <BrowserRouter>
               <Routes>
                 {/* ------------------------------ Herkese açık ------------------------------ */}
-                <Route
-                  path="/"
-                  element={
-                    <Suspense fallback={<FullPageSpinner />}>
-                      <LandingPage />
-                    </Suspense>
-                  }
-                />
+                {/* Ayrı bir tanıtım/ana sayfası yok — kök adres doğrudan girişe yönlenir. */}
+                <Route path="/" element={<Navigate to="/giris" replace />} />
                 <Route
                   path="/giris"
                   element={
@@ -282,7 +275,7 @@ export function App() {
                   </Route>
                 </Route>
 
-                {/* Panel dışındaki bilinmeyen adresler landing'e döner */}
+                {/* Panel dışındaki bilinmeyen adresler girişe döner */}
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </BrowserRouter>
