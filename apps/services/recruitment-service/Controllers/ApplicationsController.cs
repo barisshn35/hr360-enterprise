@@ -69,6 +69,20 @@ public class ApplicationsController : ControllerBase
                        or ApplicationStatus.Withdrawn)
             return BadRequest("Sonuclanmis basvurunun durumu degistirilemez");
 
+        // NOT: Onceden herhangi bir gecis serbestti (Basvuru -> Ise alindi, kapali ilana
+        // ise alim). Ise alim yalnizca Teklif asamasindan ve acik bir ilanda yapilir;
+        // asamalar arasi geri tasima (yeniden degerlendirme) serbest birakildi.
+        if (request.Status == app.Status)
+            return BadRequest("Başvuru zaten bu aşamada");
+        if (request.Status == ApplicationStatus.Hired)
+        {
+            if (app.Status != ApplicationStatus.Offer)
+                return BadRequest("İşe alım yalnızca teklif aşamasındaki başvurudan yapılabilir");
+            var posting = await _db.JobPostings.FirstOrDefaultAsync(p => p.Id == app.JobPostingId);
+            if (posting is null || posting.Status == JobPostingStatus.Closed)
+                return BadRequest("Kapalı ilana işe alım yapılamaz");
+        }
+
         app.Status = request.Status;
         app.StatusChangedAt = DateTimeOffset.UtcNow;
         if (!string.IsNullOrWhiteSpace(request.Notes)) app.Notes = request.Notes;

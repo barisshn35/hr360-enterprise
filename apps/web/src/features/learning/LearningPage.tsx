@@ -544,10 +544,12 @@ export function LearningPage() {
         description="Eğitim kataloğu, kayıtlar ve sertifika takibi."
         actions={
           <>
-            <Button variant="outline" className="cursor-pointer" onClick={() => setCertModal(true)}>
-              <Plus className="size-4" />
-              Sertifika ekle
-            </Button>
+{canManage && (
+                          <Button variant="outline" className="cursor-pointer" onClick={() => setCertModal(true)}>
+                <Plus className="size-4" />
+                Sertifika ekle
+              </Button>
+            )}
             {canManage && (
               <Button className="cursor-pointer" onClick={() => setCourseModal(true)}>
                 <Plus className="size-4" />

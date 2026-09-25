@@ -100,6 +100,9 @@ builder.Services.AddControllers()
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddHttpClient<OnboardingService.Services.EmployeeDirectoryClient>();
+
 var app = builder.Build();
 
 app.UseSwagger();

@@ -12,23 +12,48 @@ namespace RecruitmentService.Controllers;
 public class JobPostingsController : ControllerBase
 {
     private readonly RecruitmentDbContext _db;
-    public JobPostingsController(RecruitmentDbContext db) => _db = db;
+    private readonly IAuthorizationService _authz;
+    public JobPostingsController(RecruitmentDbContext db, IAuthorizationService authz)
+    {
+        _db = db;
+        _authz = authz;
+    }
+
+    /// <summary>Aday verisini gorebilenler - CandidatesController ile ayni politika.</summary>
+    private async Task<bool> CanSeeCandidatesAsync() =>
+        (await _authz.AuthorizeAsync(User, "RequireManagerOrAbove")).Succeeded;
 
     [HttpGet]
     public async Task<IActionResult> GetAll([FromQuery] JobPostingStatus? status)
     {
         var q = _db.JobPostings.AsQueryable();
+        // Taslak (yayinlanmamis, gizli olabilecek) ilanlar yalnizca yetkililere.
+        if (!await CanSeeCandidatesAsync()) q = q.Where(p => p.Status != JobPostingStatus.Draft);
         if (status.HasValue) q = q.Where(p => p.Status == status.Value);
         return Ok(await q.OrderByDescending(p => p.CreatedAt).ToListAsync());
     }
 
+    /// <summary>
+    /// GUVENLIK: Ilan detayi basvurulari ve adaylari (ad, e-posta, telefon, CV anahtari,
+    /// basvuru notlari) de iceriyordu ve yalnizca [Authorize] ile korunuyordu - her
+    /// calisan, aday listesinin yonetici+ kisitini bu uctan atlayarak aday kisisel
+    /// verilerini okuyabiliyordu (canli dogrulandi). Yetkisizlere basvurusuz ilan doner.
+    /// </summary>
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(Guid id)
     {
+        if (await CanSeeCandidatesAsync())
+        {
+            var full = await _db.JobPostings
+                .Include(x => x.Applications).ThenInclude(a => a.Candidate)
+                .FirstOrDefaultAsync(x => x.Id == id);
+            return full is null ? NotFound() : Ok(full);
+        }
         var p = await _db.JobPostings
-            .Include(x => x.Applications).ThenInclude(a => a.Candidate)
-            .FirstOrDefaultAsync(x => x.Id == id);
-        return p is null ? NotFound() : Ok(p);
+            .FirstOrDefaultAsync(x => x.Id == id && x.Status != JobPostingStatus.Draft);
+        if (p is null) return NotFound();
+        p.Applications = new();
+        return Ok(p);
     }
 
     [HttpPost]

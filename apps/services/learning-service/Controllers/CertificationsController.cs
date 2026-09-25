@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using LearningService.Data;
 using LearningService.Models;
+using LearningService.Services;
 
 namespace LearningService.Controllers;
 
@@ -12,19 +13,40 @@ namespace LearningService.Controllers;
 public class CertificationsController : ControllerBase
 {
     private readonly LearningDbContext _db;
-    public CertificationsController(LearningDbContext db) => _db = db;
+    private readonly EmployeeDirectoryClient _employees;
+    public CertificationsController(LearningDbContext db, EmployeeDirectoryClient employees)
+    {
+        _db = db;
+        _employees = employees;
+    }
 
     [HttpGet]
-    public async Task<IActionResult> GetAll([FromQuery] Guid? employeeId)
+    public async Task<IActionResult> GetAll([FromQuery] Guid? employeeId, CancellationToken ct)
     {
+        // GUVENLIK: Onceden herkes tum sertifikalari (CredentialId dahil) listeliyordu.
+        var isManager = User.IsInRole("manager") || User.IsInRole("hr-admin")
+            || User.IsInRole("tenant-admin") || User.IsInRole("platform-admin")
+            || User.IsInRole("ext-learning-manage");
+        if (!isManager)
+        {
+            var me = await _employees.FindMyEmployeeIdAsync(ct);
+            if (me is null) return Forbid();
+            if (employeeId.HasValue && employeeId.Value != me.Value) return Forbid();
+            employeeId = me;
+        }
         var q = _db.Certifications.AsQueryable();
         if (employeeId.HasValue) q = q.Where(c => c.EmployeeId == employeeId.Value);
         return Ok(await q.OrderByDescending(c => c.IssuedOn).ToListAsync());
     }
 
+    /// <summary>GUVENLIK: Sertifika kaydi IK'ya ozel - onceden herkes kendine (ya da
+    /// baskasina) sertifika uydurabiliyordu.</summary>
     [HttpPost]
+    [Authorize(Policy = "RequireHrAdmin")]
     public async Task<IActionResult> Create([FromBody] CreateCertificationRequest request)
     {
+        if (string.IsNullOrWhiteSpace(request.Name) || request.Name.Length > 200)
+            return BadRequest("Sertifika adı zorunlu ve en fazla 200 karakter olabilir");
         if (request.ExpiresOn.HasValue && request.ExpiresOn < request.IssuedOn)
             return BadRequest("Gecerlilik bitisi, veril tarihinden once olamaz");
 

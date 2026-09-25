@@ -104,7 +104,17 @@ public class AssetsController : ControllerBase
         asset.Status = AssetStatus.Assigned;
 
         _db.AssetAssignments.Add(assignment);
-        await _db.SaveChangesAsync();
+        try
+        {
+            await _db.SaveChangesAsync();
+        }
+        catch (DbUpdateException)
+        {
+            // Esz. zamanli ikinci atama: tek acik atama kisitina (UX_onboarding_asset_
+            // assignments_open) takildi. Onceden bu durum iki acik atama birakiyor ve
+            // tum zimmet listesi 500 veriyordu.
+            return Conflict("Bu zimmet az önce başka birine atandı");
+        }
         return CreatedAtAction(nameof(GetById), new { id }, assignment);
     }
 
@@ -120,6 +130,8 @@ public class AssetsController : ControllerBase
             .OrderByDescending(a => a.AssignedOn)
             .FirstOrDefaultAsync();
         if (open is null) return BadRequest("Bu zimmetin acik atamasi yok");
+        if (request.ReturnedOn < open.AssignedOn)
+            return BadRequest("İade tarihi, atama tarihinden önce olamaz");
 
         open.ReturnedOn = request.ReturnedOn;
         open.ConditionOnReturn = request.Condition;

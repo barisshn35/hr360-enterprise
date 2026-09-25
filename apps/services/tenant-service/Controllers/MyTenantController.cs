@@ -92,6 +92,43 @@ public class MyTenantController : ControllerBase
     private static readonly System.Text.RegularExpressions.Regex HexColorPattern =
         new(@"^#[0-9A-Fa-f]{6}$");
 
+    private static readonly HashSet<int> AllowedSmtpPorts = new() { 25, 465, 587, 2525 };
+
+    /// <summary>
+    /// GUVENLIK: Ozel SMTP sunucusu/portu hic dogrulanmiyordu. notification-service bu
+    /// adrese baglandigi icin bir kiraci yoneticisi ic agdaki servisleri (postgres,
+    /// keycloak, minio...) hedef gosterip port taramasi yapabiliyordu (SSRF). Yalnizca
+    /// standart SMTP portlari ve genel (internete acik) adresler kabul edilir.
+    /// </summary>
+    private static async Task<string?> ValidateSmtpTargetAsync(string host, int port)
+    {
+        if (!AllowedSmtpPorts.Contains(port))
+            return "SMTP portu 25, 465, 587 ya da 2525 olmalı";
+        if (host.Length > 253 || !System.Text.RegularExpressions.Regex.IsMatch(host, @"^[A-Za-z0-9.-]+$") || !host.Contains('.'))
+            return "SMTP sunucusu tam bir alan adı olmalı (örn. smtp.sirket.com)";
+        System.Net.IPAddress[] addresses;
+        try { addresses = await System.Net.Dns.GetHostAddressesAsync(host); }
+        catch (Exception) { return "SMTP sunucusunun adı çözümlenemedi"; }
+        if (addresses.Length == 0) return "SMTP sunucusunun adı çözümlenemedi";
+        foreach (var ip in addresses)
+        {
+            var a = ip.IsIPv4MappedToIPv6 ? ip.MapToIPv4() : ip;
+            if (System.Net.IPAddress.IsLoopback(a) || a.IsIPv6LinkLocal || a.IsIPv6SiteLocal || a.IsIPv6UniqueLocal)
+                return "SMTP sunucusu iç ağ adresine işaret edemez";
+            if (a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+            {
+                var b = a.GetAddressBytes();
+                var isPrivate = b[0] == 10 || b[0] == 127 || b[0] == 0
+                    || (b[0] == 172 && b[1] >= 16 && b[1] <= 31)
+                    || (b[0] == 192 && b[1] == 168)
+                    || (b[0] == 169 && b[1] == 254)
+                    || (b[0] == 100 && b[1] >= 64 && b[1] <= 127);
+                if (isPrivate) return "SMTP sunucusu iç ağ adresine işaret edemez";
+            }
+        }
+        return null;
+    }
+
     [HttpPut("branding")]
     [Authorize(Policy = "RequireTenantAdmin")]
     public async Task<IActionResult> UpdateBranding([FromBody] UpdateBrandingRequest request)
@@ -142,7 +179,9 @@ public class MyTenantController : ControllerBase
             }
             else
             {
-                tenant.SmtpHost = request.SmtpHost;
+                if (await ValidateSmtpTargetAsync(request.SmtpHost.Trim(), request.SmtpPort ?? 587) is { } smtpError)
+                    return BadRequest(new { message = smtpError });
+                tenant.SmtpHost = request.SmtpHost.Trim();
                 tenant.SmtpPort = request.SmtpPort ?? 587;
                 tenant.SmtpUser = request.SmtpUser;
                 if (!string.IsNullOrEmpty(request.SmtpPassword))

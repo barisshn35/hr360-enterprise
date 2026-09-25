@@ -12,7 +12,29 @@ namespace OnboardingService.Controllers;
 public class OnboardingPlansController : ControllerBase
 {
     private readonly OnboardingDbContext _db;
-    public OnboardingPlansController(OnboardingDbContext db) => _db = db;
+    private readonly OnboardingService.Services.EmployeeDirectoryClient _employees;
+    public OnboardingPlansController(OnboardingDbContext db, OnboardingService.Services.EmployeeDirectoryClient employees)
+    {
+        _db = db;
+        _employees = employees;
+    }
+
+    /// <summary>"RequireOnboardingManage" ile ayni rol kumesi.</summary>
+    private bool CanManage => User.IsInRole("manager") || User.IsInRole("hr-admin")
+        || User.IsInRole("tenant-admin") || User.IsInRole("platform-admin")
+        || User.IsInRole("ext-onboarding-manage");
+
+    /// <summary>
+    /// GUVENLIK: Planlar onceden herkese acikti. Yonetenler disindakiler yalnizca
+    /// kendisi hakkindaki ya da kendisine gorev atanmis planlari gorur.
+    /// </summary>
+    private async Task<IQueryable<OnboardingPlan>?> VisiblePlansAsync(IQueryable<OnboardingPlan> q, CancellationToken ct)
+    {
+        if (CanManage) return q;
+        var me = await _employees.FindMyEmployeeIdAsync(ct);
+        if (me is null) return null;
+        return q.Where(p => p.EmployeeId == me.Value || p.Tasks.Any(t => t.AssigneeEmployeeId == me.Value));
+    }
 
     /// <summary>Standart ise baslangic gorevleri - plan olusturulurken otomatik eklenir.</summary>
     private static readonly (string Title, TaskCategory Category, int Offset)[] DefaultTasks =
@@ -28,20 +50,21 @@ public class OnboardingPlansController : ControllerBase
     };
 
     [HttpGet]
-    public async Task<IActionResult> GetAll([FromQuery] Guid? employeeId, [FromQuery] PlanStatus? status)
+    public async Task<IActionResult> GetAll([FromQuery] Guid? employeeId, [FromQuery] PlanStatus? status, CancellationToken ct)
     {
-        var q = _db.Plans.Include(p => p.Tasks).AsQueryable();
+        var q = await VisiblePlansAsync(_db.Plans.Include(p => p.Tasks).AsQueryable(), ct);
+        if (q is null) return Forbid();
         if (employeeId.HasValue) q = q.Where(p => p.EmployeeId == employeeId.Value);
         if (status.HasValue) q = q.Where(p => p.Status == status.Value);
         return Ok(await q.OrderByDescending(p => p.CreatedAt).ToListAsync());
     }
 
     [HttpGet("{id}")]
-    public async Task<IActionResult> GetById(Guid id)
+    public async Task<IActionResult> GetById(Guid id, CancellationToken ct)
     {
-        var p = await _db.Plans
-            .Include(x => x.Tasks.OrderBy(t => t.Order))
-            .FirstOrDefaultAsync(x => x.Id == id);
+        var q = await VisiblePlansAsync(_db.Plans.Include(x => x.Tasks.OrderBy(t => t.Order)).AsQueryable(), ct);
+        if (q is null) return Forbid();
+        var p = await q.FirstOrDefaultAsync(x => x.Id == id, ct);
         return p is null ? NotFound() : Ok(p);
     }
 
@@ -100,10 +123,26 @@ public class OnboardingPlansController : ControllerBase
 
     [HttpPost("{id}/tasks/{taskId}/status")]
     public async Task<IActionResult> UpdateTaskStatus(
-        Guid id, Guid taskId, [FromBody] UpdateTaskStatusRequest request)
+        Guid id, Guid taskId, [FromBody] UpdateTaskStatusRequest request, CancellationToken ct)
     {
-        var task = await _db.Tasks.FirstOrDefaultAsync(t => t.Id == taskId && t.PlanId == id);
+        var task = await _db.Tasks.FirstOrDefaultAsync(t => t.Id == taskId && t.PlanId == id, ct);
         if (task is null) return NotFound();
+        var planState = await _db.Plans.Where(p => p.Id == id)
+            .Select(p => new { p.EmployeeId, p.Status }).FirstAsync(ct);
+
+        // GUVENLIK: Onceden yalnizca [Authorize] - her calisan herhangi bir gorevi
+        // (orn. Hukuk: sozlesme imzalama) "tamamlandi" yapip plani otomatik
+        // kapatabiliyordu. Yetkili: yonetenler, gorevin atandigi kisi ve - hukuki
+        // gorevler haric - planin sahibi (yeni calisanin kendi adimlari).
+        if (!CanManage)
+        {
+            var me = await _employees.FindMyEmployeeIdAsync(ct);
+            var isAssignee = me is not null && task.AssigneeEmployeeId == me.Value;
+            var isOwner = me is not null && planState.EmployeeId == me.Value && task.Category != TaskCategory.Legal;
+            if (!isAssignee && !isOwner) return NotFound();
+        }
+        if (planState.Status == PlanStatus.Cancelled)
+            return BadRequest("İptal edilmiş plandaki görev değiştirilemez");
 
         task.Status = request.Status;
         task.CompletedAt = request.Status == OnboardingTaskStatus.Done ? DateTimeOffset.UtcNow : null;

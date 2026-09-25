@@ -92,6 +92,9 @@ builder.Services.AddControllers()
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddHttpClient<LearningService.Services.EmployeeDirectoryClient>();
+
 var app = builder.Build();
 
 app.UseSwagger();

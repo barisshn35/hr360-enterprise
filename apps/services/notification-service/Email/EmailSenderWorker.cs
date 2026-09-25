@@ -84,7 +84,9 @@ public class EmailSenderWorker : BackgroundService
 
         var pending = await db.Notifications
             .Where(n => n.Channel == NotificationChannel.Email && n.Status == NotificationStatus.Pending)
-            .OrderBy(n => n.CreatedAt)
+            // Az denenmis olanlar once: bir kiracinin bozuk SMTP'sine takilan eski
+            // kayitlar, saglikli kiracilarin yeni e-postalarini bekletmesin.
+            .OrderBy(n => n.AttemptCount).ThenBy(n => n.CreatedAt)
             .Take(BatchSize)
             .ToListAsync(ct);
 
@@ -117,7 +119,11 @@ public class EmailSenderWorker : BackgroundService
         // tek baglanti/kimlik dogrulama ile hepsi gonderilsin. Sozluk
         // sirasi .NET'te "ekleme sirasi" olma egiliminde olsa da garanti
         // degildir; burada onemli degil, her grup bagimsiz islenir.
-        var groups = pending.GroupBy(n => (plans[n.Id].Host, plans[n.Id].Port, plans[n.Id].User));
+        // GUVENLIK: Gruplama onceden yalnizca (Host, Port, User) idi ve grup, ILK
+        // bildirimin parolasiyla dogrulaniyordu - iki kiraci ayni sunucu/kullanici adini
+        // girerse, biri digerinin kimligi dogrulanmis oturumundan (kendi sectigi
+        // gonderen adresiyle) e-posta gonderebiliyordu. Grup artik kiraci bazli.
+        var groups = pending.GroupBy(n => (n.TenantSlug, plans[n.Id].Host, plans[n.Id].Port, plans[n.Id].User));
 
         foreach (var group in groups)
         {
@@ -162,10 +168,19 @@ public class EmailSenderWorker : BackgroundService
             // notification'i Failed olarak isaretlemeden atla, bir sonraki
             // turda (30sn sonra) tekrar denenir. DB'ye hic yazilmadigi icin
             // AttemptCount de artmaz - yanlislikla Failed'e dusmezler.
+            // NOT: Onceden baglanti hatasi deneme sayilmiyordu - erisilemeyen ozel SMTP
+            // sunucusu tanimlamis tek bir kiracinin 20+ bekleyen e-postasi her turda
+            // ilk 20'yi doldurup TUM platformun e-postalarini suresiz durduruyordu.
+            // Artik baglanti hatasi da deneme sayilir; MaxAttempts sonrasi Failed.
             _logger.LogError(ex,
-                "SMTP baglantisi/kimlik dogrulamasi basarisiz ({Host}:{Port}), bu grup atlaniyor - " +
-                "bekleyen {Count} e-posta bir sonraki turda tekrar denenecek",
+                "SMTP baglantisi/kimlik dogrulamasi basarisiz ({Host}:{Port}), {Count} e-posta icin deneme sayildi",
                 target.Host, target.Port, group.Count);
+            foreach (var n in group)
+            {
+                n.AttemptCount++;
+                n.FailureReason = "SMTP sunucusuna bağlanılamadı";
+                if (n.AttemptCount >= MaxAttempts) n.Status = NotificationStatus.Failed;
+            }
             if (smtp.IsConnected)
                 await smtp.DisconnectAsync(true, ct);
             return;

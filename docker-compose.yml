@@ -209,6 +209,7 @@ services:
     <<: *dotnet-service
     build: ./apps/services/onboarding-service
     environment:
+      EMPLOYEE_SERVICE_URL: "http://employee-service:8080"
       ONBOARDING_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD}"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
       ASPNETCORE_ENVIRONMENT: "Production"
@@ -242,6 +243,7 @@ services:
     <<: *dotnet-service
     build: ./apps/services/learning-service
     environment:
+      EMPLOYEE_SERVICE_URL: "http://employee-service:8080"
       LEARNING_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD}"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
       ASPNETCORE_ENVIRONMENT: "Production"
