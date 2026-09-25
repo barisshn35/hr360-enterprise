@@ -1,0 +1,48 @@
+# ops-01'de /opt/hr360/ops/prometheus/prometheus.yml dosyasinin
+# scrape_configs bolumune eklenecek. Port'lar servislerin hangi node'a
+# deploy edildigine gore guncellenmelidir (asagida app-01 varsayilmistir).
+
+  - job_name: "recruitment_service"
+    static_configs:
+      - targets: ["172.33.55.2:5005"]
+        labels: { role: "backend", module: "recruitment" }
+
+  - job_name: "onboarding_service"
+    static_configs:
+      - targets: ["172.33.55.2:5006"]
+        labels: { role: "backend", module: "onboarding" }
+
+  - job_name: "leave_service"
+    static_configs:
+      - targets: ["172.33.55.2:5004"]
+        labels: { role: "backend", module: "leave" }
+
+  - job_name: "timeshift_service"
+    static_configs:
+      - targets: ["172.33.55.3:5007"]
+        labels: { role: "backend", module: "timeshift" }
+
+  - job_name: "performance_service"
+    static_configs:
+      - targets: ["172.33.55.3:5008"]
+        labels: { role: "backend", module: "performance" }
+
+  - job_name: "learning_service"
+    static_configs:
+      - targets: ["172.33.55.3:5009"]
+        labels: { role: "backend", module: "learning" }
+
+  - job_name: "compensation_service"
+    static_configs:
+      - targets: ["172.33.55.2:5010"]
+        labels: { role: "backend", module: "compensation" }
+
+  - job_name: "expense_service"
+    static_configs:
+      - targets: ["172.33.55.2:5011"]
+        labels: { role: "backend", module: "expense" }
+
+  - job_name: "notification_service"
+    static_configs:
+      - targets: ["172.33.55.3:5012"]
+        labels: { role: "backend", module: "notification" }

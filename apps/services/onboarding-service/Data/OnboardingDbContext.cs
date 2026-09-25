@@ -1,0 +1,58 @@
+using Microsoft.EntityFrameworkCore;
+using OnboardingService.Models;
+using OnboardingService.Tenancy;
+
+namespace OnboardingService.Data;
+
+public class OnboardingDbContext : DbContext, ITenantAwareContext
+{
+    private readonly ITenantContext _tenant;
+
+    public OnboardingDbContext(DbContextOptions<OnboardingDbContext> options, ITenantContext tenant)
+        : base(options) => _tenant = tenant;
+
+    public string? CurrentTenantSlug => _tenant.TenantSlug;
+    public bool CurrentIsPlatformAdmin => _tenant.IsPlatformAdmin;
+
+    public override Task<int> SaveChangesAsync(CancellationToken ct = default)
+    {
+        this.StampTenant(_tenant);
+        return base.SaveChangesAsync(ct);
+    }
+
+    public DbSet<OnboardingPlan> Plans => Set<OnboardingPlan>();
+    public DbSet<OnboardingTask> Tasks => Set<OnboardingTask>();
+    public DbSet<Asset> Assets => Set<Asset>();
+    public DbSet<AssetAssignment> AssetAssignments => Set<AssetAssignment>();
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<OnboardingPlan>().ConfigureTenantColumn();
+        modelBuilder.Entity<OnboardingPlan>().ToTable("onboarding_plans");
+        modelBuilder.Entity<OnboardingPlan>().Property(p => p.Status).HasConversion<string>();
+        modelBuilder.Entity<OnboardingPlan>().HasIndex(p => p.EmployeeId);
+
+        modelBuilder.Entity<OnboardingTask>().ConfigureTenantColumn();
+        modelBuilder.Entity<OnboardingTask>().ToTable("onboarding_tasks");
+        modelBuilder.Entity<OnboardingTask>().Property(t => t.Category).HasConversion<string>();
+        modelBuilder.Entity<OnboardingTask>().Property(t => t.Status).HasConversion<string>();
+        modelBuilder.Entity<OnboardingTask>()
+            .HasOne(t => t.Plan).WithMany(p => p.Tasks)
+            .HasForeignKey(t => t.PlanId).OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<Asset>().ConfigureTenantColumn();
+        modelBuilder.Entity<Asset>().ToTable("onboarding_assets");
+        modelBuilder.Entity<Asset>().Property(a => a.Type).HasConversion<string>();
+        modelBuilder.Entity<Asset>().Property(a => a.Status).HasConversion<string>();
+        modelBuilder.Entity<Asset>().HasIndex(a => a.AssetTag).IsUnique();
+
+        modelBuilder.Entity<AssetAssignment>().ConfigureTenantColumn();
+        modelBuilder.Entity<AssetAssignment>().ToTable("onboarding_asset_assignments");
+        modelBuilder.Entity<AssetAssignment>()
+            .HasOne(a => a.Asset).WithMany(x => x.Assignments)
+            .HasForeignKey(a => a.AssetId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<AssetAssignment>().HasIndex(a => a.EmployeeId);
+    
+        modelBuilder.ApplyTenantFilters(this);
+    }
+}

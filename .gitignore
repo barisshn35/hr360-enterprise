@@ -1,0 +1,29 @@
+# Kurulum sirasinda uretilen sirlar
+.env
+deploy/keycloak/realm-export.json
+
+# .NET
+bin/
+obj/
+*.user
+
+# Node / web
+node_modules/
+dist/
+apps/web/dist/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Eski / yedek dosyalar
+*.bak
+*.bak2
+*.bak3
+*.bak4

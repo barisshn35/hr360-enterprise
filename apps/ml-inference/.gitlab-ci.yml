@@ -1,0 +1,28 @@
+stages:
+  - test
+  - build
+
+syntax_check:
+  stage: test
+  image: python:3.11-slim
+  tags:
+    - hr360
+    - ops
+  script:
+    - python -m py_compile main.py
+    - echo "Python syntax kontrolü geçti"
+
+build:
+  stage: build
+  image:
+    name: gcr.io/kaniko-project/executor:v1.23.2-debug
+    entrypoint: [""]
+  tags:
+    - hr360
+    - ops
+  script:
+    - /kaniko/executor
+      --context "${CI_PROJECT_DIR}"
+      --dockerfile "${CI_PROJECT_DIR}/Dockerfile"
+      --no-push
+      --destination "hr360-ml-inference:${CI_COMMIT_SHORT_SHA}"

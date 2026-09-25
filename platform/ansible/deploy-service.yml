@@ -1,0 +1,153 @@
+---
+# HR360 Enterprise - Servis deployment playbook'u
+#
+# Kullanim: ansible-playbook -i inventory.yml deploy-service.yml \
+#             -e "service_name=notification-service" \
+#             -e "target_host=hr360-prd-ml-01" \
+#             -e "image_tag=abc1234" \
+#             -e "health_port=5012"
+#
+# Akis: registry login -> compose dosyasini guncelle -> pull -> up ->
+# health check (5 deneme, 3sn arayla) -> basarisizsa onceki tag'e rollback.
+#
+# NOT: Bu, planin tam 21 adimli pipeline tasariminin (NSX-V Edge pool
+# member yonetimi, SLO kontrolu, E2E test dahil) GERCEK COGRAFI/AG
+# erisimi gerektiren kismini KAPSAMAZ - o kisim icin NSX-V Edge API
+# erisimi ve kimlik bilgisi gerekir, bu depoda tanimli degil. Bu
+# playbook "tek dugumu guncelle, health check yap, basarisizsa geri
+# don" cekirdegini uygular; NSX-V pool pasif/aktif etme adimi ayri
+# bir sonraki surumde eklenebilir.
+
+- name: "HR360 servis deploy: {{ service_name }}"
+  hosts: "{{ target_host }}"
+  gather_facts: false
+  vars:
+    registry: registry.gitlab.com/baris-holding-group/hr360-enterprise
+    # KRITIK: mevcut PRODUCTION klasoruyle AYNI YOL kullanilmali.
+    # Farkli bir yoldan (orn. /opt/hr360/deploy/...) calistirmak, docker
+    # compose'un AYNI PROJE ADIYLA (klasor adindan turer) ama FARKLI
+    # KONUMDAN calisan IKINCI bir kopya olusturmasina yol acar - bu da
+    # container adi catismasi veya mevcut servisin YANLISLIKLA yerinde
+    # birakilip yeni bir container'in yaninda kalmasi riski tasir.
+    # Backend servisleri /opt/hr360/modules/<ad>/ altinda, ml-inference
+    # gibi digerleri farkli bir yolda olabilir - service_path_override
+    # extra-var'i ile bu VARSAYILAN GEÇERSİZ KILINABİLİR.
+    service_path: "{{ service_path_override | default('/opt/hr360/modules/' + service_name) }}"
+    # Repo icindeki docker-compose.yml konumu da servis turune gore
+    # degisebilir (backend servisleri apps/services/<ad>/, ml-inference
+    # gibi digerleri apps/<ad>/).
+    repo_service_dir: "{{ repo_service_dir_override | default('services/' + service_name) }}"
+
+  tasks:
+    - name: "Registry'ye giris yap"
+      community.docker.docker_login:
+        registry_url: "https://{{ registry.split('/')[0] }}"
+        username: "{{ lookup('env', 'REGISTRY_PULL_USER') }}"
+        password: "{{ lookup('env', 'REGISTRY_PULL_TOKEN') }}"
+
+    - name: "Servis dizinini olustur"
+      ansible.builtin.file:
+        path: "{{ service_path }}"
+        state: directory
+        mode: "0755"
+
+    - name: "Mevcut (deploy oncesi) tag'i oku - rollback icin"
+      ansible.builtin.shell: |
+        set -o pipefail
+        grep -oP '(?<=IMAGE_TAG=).*' {{ service_path }}/.env 2>/dev/null || echo "latest"
+      args:
+        executable: /bin/bash
+      register: previous_tag
+      changed_when: false
+
+    - name: "docker-compose.yml'i guncel halinden kopyala"
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../../apps/{{ repo_service_dir }}/docker-compose.yml"
+        dest: "{{ service_path }}/docker-compose.yml"
+        mode: "0644"
+
+    - name: "Yeni IMAGE_TAG'i .env dosyasina yaz"
+      ansible.builtin.copy:
+        content: |
+          IMAGE_TAG={{ image_tag }}
+        dest: "{{ service_path }}/.env"
+        mode: "0600"
+
+    - name: "Yeni image'i cek"
+      community.docker.docker_compose_v2:
+        project_src: "{{ service_path }}"
+        pull: always
+        state: present
+      environment:
+        HR360_DB_PASSWORD: "{{ lookup('env', 'HR360_DB_PASSWORD') }}"
+        # tenant-service disindaki servisler bu ikisini kullanmiyor,
+        # ama fazladan gecmek zararsiz - docker compose yalnizca
+        # kendi docker-compose.yml'inin ihtiyac duydugunu interpole eder.
+        KEYCLOAK_ADMIN_USER: "{{ lookup('env', 'KEYCLOAK_ADMIN_USER') }}"
+        KEYCLOAK_ADMIN_PASSWORD: "{{ lookup('env', 'KEYCLOAK_ADMIN_PASSWORD') }}"
+        ML_KEYCLOAK_CLIENT_SECRET: "{{ lookup('env', 'ML_KEYCLOAK_CLIENT_SECRET') }}"
+        ML_AWS_SECRET_ACCESS_KEY: "{{ lookup('env', 'ML_AWS_SECRET_ACCESS_KEY') }}"
+        SMTP_USER: "{{ lookup('env', 'SMTP_USER') }}"
+        SMTP_PASSWORD: "{{ lookup('env', 'SMTP_PASSWORD') }}"
+        TENANT_SECRET_KEY: "{{ lookup('env', 'TENANT_SECRET_KEY') }}"
+        MINIO_LOGO_SECRET_KEY: "{{ lookup('env', 'MINIO_LOGO_SECRET_KEY') }}"
+      register: pull_result
+
+    - name: "Health check (5 deneme, 3sn arayla)"
+      ansible.builtin.uri:
+        url: "http://localhost:{{ health_port }}/health"
+        status_code: 200
+        timeout: 5
+      register: health_result
+      until: health_result.status == 200
+      retries: 5
+      delay: 3
+      ignore_errors: true
+
+    - name: "BASARILI: yeni surum ayakta"
+      ansible.builtin.debug:
+        msg: "{{ service_name }} basariyla {{ image_tag }} surumune guncellendi."
+      when: health_result.status == 200
+
+    - name: "BASARISIZ: onceki tag'e rollback yap"
+      when: health_result.status is not defined or health_result.status != 200
+      block:
+        - name: "Onceki tag'e geri don"
+          ansible.builtin.copy:
+            content: |
+              IMAGE_TAG={{ previous_tag.stdout }}
+            dest: "{{ service_path }}/.env"
+            mode: "0600"
+
+        - name: "Onceki surumle yeniden baslat"
+          community.docker.docker_compose_v2:
+            project_src: "{{ service_path }}"
+            state: present
+          environment:
+            HR360_DB_PASSWORD: "{{ lookup('env', 'HR360_DB_PASSWORD') }}"
+            KEYCLOAK_ADMIN_USER: "{{ lookup('env', 'KEYCLOAK_ADMIN_USER') }}"
+            KEYCLOAK_ADMIN_PASSWORD: "{{ lookup('env', 'KEYCLOAK_ADMIN_PASSWORD') }}"
+            ML_KEYCLOAK_CLIENT_SECRET: "{{ lookup('env', 'ML_KEYCLOAK_CLIENT_SECRET') }}"
+            ML_AWS_SECRET_ACCESS_KEY: "{{ lookup('env', 'ML_AWS_SECRET_ACCESS_KEY') }}"
+            SMTP_USER: "{{ lookup('env', 'SMTP_USER') }}"
+            SMTP_PASSWORD: "{{ lookup('env', 'SMTP_PASSWORD') }}"
+            TENANT_SECRET_KEY: "{{ lookup('env', 'TENANT_SECRET_KEY') }}"
+            MINIO_LOGO_SECRET_KEY: "{{ lookup('env', 'MINIO_LOGO_SECRET_KEY') }}"
+
+        - name: "Rollback dogrulama - health check"
+          ansible.builtin.uri:
+            url: "http://localhost:{{ health_port }}/health"
+            status_code: 200
+            timeout: 5
+          register: rollback_health
+          until: rollback_health.status == 200
+          retries: 5
+          delay: 3
+
+        - name: "Pipeline'i basarisiz olarak isaretle"
+          ansible.builtin.fail:
+            msg: >
+              {{ service_name }} icin {{ image_tag }} surumu health check'i
+              gecemedi. {{ previous_tag.stdout }} surumune rollback yapildi
+              ve dogrulandi. Deploy BASARISIZ sayilmali, pipeline kirmizi
+              olmali.

@@ -1,0 +1,108 @@
+---
+# HR360 Enterprise - Web (frontend) deployment playbook'u
+#
+# Backend servislerden farkli: docker-compose degil "docker run" kullanir,
+# VE IKI sunucuda (app-01, app-02) calisir - Gateway bu ikisi arasinda yuk
+# dengeler. "serial: 1" ile SIRAYLA guncellenir (biri bitmeden digerine
+# GECILMEZ) - boylece HER IKI node AYNI ANDA KESINTIYE UGRAMAZ, Gateway
+# her zaman en az bir SAGLIKLI node'a yonlendirebilir.
+#
+# Kullanim: ansible-playbook -i inventory.yml deploy-web.yml \
+#             -e "image_tag=abc1234"
+
+- name: "HR360 web deploy (rolling, node basina)"
+  hosts: web_servers
+  serial: 1
+  gather_facts: false
+  vars:
+    registry: registry.gitlab.com/baris-holding-group/hr360-enterprise
+    image: "{{ registry }}/web:{{ image_tag }}"
+
+  tasks:
+    - name: "Registry'ye giris yap"
+      community.docker.docker_login:
+        registry_url: "https://{{ registry.split('/')[0] }}"
+        username: "{{ lookup('env', 'REGISTRY_PULL_USER') }}"
+        password: "{{ lookup('env', 'REGISTRY_PULL_TOKEN') }}"
+
+    - name: "Mevcut (deploy oncesi) image'i kaydet - rollback icin"
+      ansible.builtin.shell: |
+        set -o pipefail
+        docker inspect hr360-web --format '{{ "{{" }}.Config.Image{{ "}}" }}' 2>/dev/null || echo "NONE"
+      args:
+        executable: /bin/bash
+      register: previous_image
+      changed_when: false
+
+    - name: "Yeni image'i cek"
+      community.docker.docker_image:
+        name: "{{ image }}"
+        source: pull
+
+    - name: "Eski container'i durdur ve sil"
+      community.docker.docker_container:
+        name: hr360-web
+        state: absent
+
+    - name: "Yeni container'i baslat"
+      community.docker.docker_container:
+        name: hr360-web
+        image: "{{ image }}"
+        state: started
+        restart_policy: unless-stopped
+        published_ports:
+          - "8081:8080"
+
+    - name: "Health check (5 deneme, 3sn arayla)"
+      ansible.builtin.uri:
+        url: "http://localhost:8081/"
+        status_code: 200
+        timeout: 5
+      register: health_result
+      until: health_result.status == 200
+      retries: 5
+      delay: 3
+      ignore_errors: true
+
+    - name: "BASARILI: yeni surum ayakta"
+      ansible.builtin.debug:
+        msg: "web ({{ inventory_hostname }}) basariyla {{ image_tag }} surumune guncellendi."
+      when: health_result.status == 200
+
+    - name: "BASARISIZ: onceki image'e rollback yap"
+      when: >
+        (health_result.status is not defined or health_result.status != 200)
+        and previous_image.stdout != "NONE"
+      block:
+        - name: "Bozuk container'i durdur ve sil"
+          community.docker.docker_container:
+            name: hr360-web
+            state: absent
+
+        - name: "Onceki image ile yeniden baslat"
+          community.docker.docker_container:
+            name: hr360-web
+            image: "{{ previous_image.stdout }}"
+            state: started
+            restart_policy: unless-stopped
+            published_ports:
+              - "8081:8080"
+
+        - name: "Rollback dogrulama - health check"
+          ansible.builtin.uri:
+            url: "http://localhost:8081/"
+            status_code: 200
+            timeout: 5
+          register: rollback_health
+          until: rollback_health.status == 200
+          retries: 5
+          delay: 3
+
+        - name: "Pipeline'i basarisiz olarak isaretle"
+          ansible.builtin.fail:
+            msg: >
+              web ({{ inventory_hostname }}) icin {{ image_tag }} surumu
+              health check'i gecemedi. Onceki surume ({{ previous_image.stdout }})
+              rollback yapildi ve dogrulandi. Deploy BASARISIZ sayilmali,
+              pipeline kirmizi olmali, diger node'a GECILMEMELI ("serial: 1"
+              bunu zaten durdurur).

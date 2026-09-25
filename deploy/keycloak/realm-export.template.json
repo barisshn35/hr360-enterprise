@@ -1,0 +1,61 @@
+{
+  "realm": "hr360",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+  "organizationsEnabled": true,
+  "roles": {
+    "realm": [
+      { "name": "employee", "description": "Standart çalışan" },
+      { "name": "manager", "description": "Departman yöneticisi" },
+      { "name": "accounting", "description": "Muhasebe / bordro uzmanı" },
+      { "name": "hr-admin", "description": "İK yöneticisi" },
+      { "name": "tenant-admin", "description": "Şirket yöneticisi" },
+      { "name": "platform-admin", "description": "Platform süper yöneticisi" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "hr360-web",
+      "publicClient": true,
+      "protocol": "openid-connect",
+      "enabled": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["*"],
+      "webOrigins": ["*"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      }
+    },
+    {
+      "clientId": "hr360-ml-inference",
+      "publicClient": false,
+      "protocol": "openid-connect",
+      "enabled": true,
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "secret": "__ML_KEYCLOAK_CLIENT_SECRET__"
+    }
+  ],
+  "users": [
+    {
+      "username": "demo.admin",
+      "email": "demo.admin@hr360.local",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Demo",
+      "lastName": "Admin",
+      "credentials": [
+        { "type": "password", "value": "__DEMO_ADMIN_PASSWORD__", "temporary": false }
+      ],
+      "realmRoles": ["tenant-admin", "platform-admin"]
+    }
+  ]
+}

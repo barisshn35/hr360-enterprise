@@ -1,0 +1,98 @@
+/* ==========================================================================
+   Departman şeması — bağlantı çizgileri.
+
+   İç içe <ul>/<li>: her düğüm kardeşlerine uzanan yatay yarıyı ve kendi
+   inişini çizer; her alt liste ebeveyninden aşağı bir sap indirir.
+   Performans modülündeki ekip diyagramıyla aynı teknik, ayrı önekle
+   (`.dept-chart`) — iki ekran birbirinin stilini etkilemesin.
+   ========================================================================== */
+
+.dept-chart {
+  --gap: 28px;
+  --line-w: 1.5px;
+  --line: hsl(var(--border));
+}
+
+.dept-chart ul {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  margin: 0;
+  padding: var(--gap) 0 0;
+  list-style: none;
+}
+
+.dept-chart > ul {
+  padding-top: 0;
+}
+
+.dept-chart li {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--gap) 10px 0;
+}
+
+.dept-chart > ul > li {
+  padding-top: 0;
+}
+
+.dept-chart li::before,
+.dept-chart li::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 50%;
+  width: 50%;
+  height: var(--gap);
+  border-top: var(--line-w) solid var(--line);
+}
+
+.dept-chart li::after {
+  right: auto;
+  left: 50%;
+  border-left: var(--line-w) solid var(--line);
+}
+
+.dept-chart li:first-child::before,
+.dept-chart li:last-child::after {
+  border: 0 none;
+}
+
+.dept-chart li:last-child::before {
+  border-right: var(--line-w) solid var(--line);
+  border-radius: 0 10px 0 0;
+}
+
+.dept-chart li:first-child::after {
+  border-radius: 10px 0 0 0;
+}
+
+.dept-chart li:only-child::before {
+  display: none;
+}
+
+.dept-chart li:only-child::after {
+  left: 50%;
+  width: 0;
+  border-top: 0 none;
+  border-left: var(--line-w) solid var(--line);
+  border-radius: 0;
+}
+
+.dept-chart > ul > li::before,
+.dept-chart > ul > li::after {
+  display: none;
+}
+
+/* Şirket düğümünden kök departmanlara inen sap */
+.dept-chart .dept-root::before,
+.dept-chart ul ul::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  height: var(--gap);
+  border-left: var(--line-w) solid var(--line);
+}

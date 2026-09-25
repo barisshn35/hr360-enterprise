@@ -1,0 +1,129 @@
+using System.Text.RegularExpressions;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using NotificationService.Data;
+using NotificationService.Models;
+
+namespace NotificationService.Controllers;
+
+[ApiController]
+[Route("api/notifications")]
+[Authorize]
+public partial class NotificationsController : ControllerBase
+{
+    private readonly NotificationDbContext _db;
+    public NotificationsController(NotificationDbContext db) => _db = db;
+
+    [GeneratedRegex(@"\{\{(\w+)\}\}")]
+    private static partial Regex PlaceholderRegex();
+
+    /// <summary>{{key}} yer tutucularini verilen degerlerle degistirir.</summary>
+    private static string Render(string template, IDictionary<string, string>? data)
+    {
+        if (data is null || data.Count == 0) return template;
+        return PlaceholderRegex().Replace(template, m =>
+            data.TryGetValue(m.Groups[1].Value, out var value) ? value : m.Value);
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> GetAll(
+        [FromQuery] Guid? recipientId, [FromQuery] NotificationStatus? status, [FromQuery] int limit = 50)
+    {
+        var q = _db.Notifications.AsQueryable();
+        if (recipientId.HasValue) q = q.Where(n => n.RecipientEmployeeId == recipientId.Value);
+        if (status.HasValue) q = q.Where(n => n.Status == status.Value);
+        return Ok(await q.OrderByDescending(n => n.CreatedAt).Take(Math.Clamp(limit, 1, 200)).ToListAsync());
+    }
+
+    /// <summary>Serbest metinle veya sablon koduyla bildirim kuyruga alinir.</summary>
+    [HttpPost]
+    [Authorize(Policy = "RequireManagerOrAbove")]
+    public async Task<IActionResult> Create([FromBody] CreateNotificationRequest request)
+    {
+        string subject;
+        string body;
+
+        if (!string.IsNullOrWhiteSpace(request.TemplateCode))
+        {
+            var tpl = await _db.Templates.FirstOrDefaultAsync(t =>
+                t.Code == request.TemplateCode &&
+                t.Channel == request.Channel &&
+                t.Locale == (request.Locale ?? "tr") &&
+                t.IsActive);
+            if (tpl is null) return BadRequest("Sablon bulunamadi");
+
+            subject = Render(tpl.SubjectTemplate ?? string.Empty, request.Data);
+            body = Render(tpl.BodyTemplate, request.Data);
+        }
+        else
+        {
+            if (string.IsNullOrWhiteSpace(request.Body))
+                return BadRequest("Sablon kodu ya da govde metni verilmeli");
+            subject = request.Subject ?? string.Empty;
+            body = request.Body;
+        }
+
+        var notification = new Notification
+        {
+            RecipientEmployeeId = request.RecipientEmployeeId,
+            Channel = request.Channel,
+            TemplateCode = request.TemplateCode,
+            Subject = string.IsNullOrWhiteSpace(subject) ? null : subject,
+            Body = body
+        };
+        _db.Notifications.Add(notification);
+        await _db.SaveChangesAsync();
+        return Created($"/api/notifications/{notification.Id}", notification);
+    }
+
+    /// <summary>Gonderim worker'i tarafindan cagrilir.</summary>
+    [HttpPost("{id}/mark-sent")]
+    [Authorize(Policy = "RequireManagerOrAbove")]
+    public async Task<IActionResult> MarkSent(Guid id, [FromBody] MarkSentRequest request)
+    {
+        var n = await _db.Notifications.FirstOrDefaultAsync(x => x.Id == id);
+        if (n is null) return NotFound();
+
+        n.AttemptCount++;
+        if (request.Success)
+        {
+            n.Status = NotificationStatus.Sent;
+            n.SentAt = DateTimeOffset.UtcNow;
+            n.FailureReason = null;
+        }
+        else
+        {
+            n.Status = NotificationStatus.Failed;
+            n.FailureReason = request.FailureReason;
+        }
+
+        await _db.SaveChangesAsync();
+        return Ok(n);
+    }
+
+    [HttpPost("{id}/mark-read")]
+    public async Task<IActionResult> MarkRead(Guid id)
+    {
+        var n = await _db.Notifications.FirstOrDefaultAsync(x => x.Id == id);
+        if (n is null) return NotFound();
+
+        n.Status = NotificationStatus.Read;
+        n.ReadAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync();
+        return Ok(n);
+    }
+
+    [HttpGet("unread-count")]
+    public async Task<IActionResult> GetUnreadCount([FromQuery] Guid recipientId)
+    {
+        var count = await _db.Notifications.CountAsync(n =>
+            n.RecipientEmployeeId == recipientId && n.Status != NotificationStatus.Read);
+        return Ok(new { recipientId, unreadCount = count });
+    }
+}
+
+public record CreateNotificationRequest(
+    Guid RecipientEmployeeId, NotificationChannel Channel, string? TemplateCode,
+    string? Locale, string? Subject, string? Body, Dictionary<string, string>? Data);
+public record MarkSentRequest(bool Success, string? FailureReason);

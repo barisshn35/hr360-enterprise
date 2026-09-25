@@ -1,0 +1,458 @@
+# HR360 Enterprise - CI/CD Pipeline
+#
+# Runner kaynak kisiti (bilinçli, plan §9.3): tek runner, "concurrent = 1",
+# 1 vCPU / 1.5 GB. Bu yuzden butun servisleri her commit'te yeniden build
+# ETMEYIZ - "rules: changes:" ile SADECE degisen servisin job'u calisir.
+#
+# Asama 1 (bu surum): test + build + registry push.
+# Asama 2 (sonraki surum): Ansible ile rolling deploy, health check, rollback.
+
+stages:
+  - test
+  - build
+  - deploy
+
+variables:
+  DOTNET_NOLOGO: "1"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+
+# ============================================================
+# ORTAK SABLONLAR
+# ============================================================
+
+.dotnet_test_template:
+  stage: test
+  image: mcr.microsoft.com/dotnet/sdk:9.0
+  tags: [hr360, ops]
+  script:
+    - cd "$SERVICE_DIR"
+    - dotnet build --nologo -v q
+
+.kaniko_build_template:
+  stage: build
+  image:
+    name: gcr.io/kaniko-project/executor:v1.23.2-debug
+    entrypoint: [""]
+  tags: [hr360, ops]
+  before_script:
+    - mkdir -p /kaniko/.docker
+    - echo "{\"auths\":{\"${CI_REGISTRY}\":{\"auth\":\"$(printf "%s:%s" "${CI_REGISTRY_USER}" "${CI_REGISTRY_PASSWORD}" | base64 | tr -d '\n')\"}}}" > /kaniko/.docker/config.json
+  script:
+    - /kaniko/executor
+      --context "${CI_PROJECT_DIR}/${SERVICE_DIR}"
+      --dockerfile "${CI_PROJECT_DIR}/${SERVICE_DIR}/Dockerfile"
+      --destination "${CI_REGISTRY_IMAGE}/${SERVICE_NAME}:${CI_COMMIT_SHORT_SHA}"
+      --destination "${CI_REGISTRY_IMAGE}/${SERVICE_NAME}:latest"
+
+# ============================================================
+# .NET SERVISLERI - her biri sadece kendi klasoru degistiginde calisir
+# ============================================================
+
+test:employee-service:
+  extends: .dotnet_test_template
+  variables:
+    SERVICE_DIR: apps/services/employee-service
+  rules:
+    - changes: [apps/services/employee-service/**/*]
+build:employee-service:
+  extends: .kaniko_build_template
+  variables:
+    SERVICE_DIR: apps/services/employee-service
+    SERVICE_NAME: employee-service
+  rules:
+    - changes: [apps/services/employee-service/**/*]
+
+test:organization-service:
+  extends: .dotnet_test_template
+  variables:
+    SERVICE_DIR: apps/services/organization-service
+  rules:
+    - changes: [apps/services/organization-service/**/*]
+build:organization-service:
+  extends: .kaniko_build_template
+  variables:
+    SERVICE_DIR: apps/services/organization-service
+    SERVICE_NAME: organization-service
+  rules:
+    - changes: [apps/services/organization-service/**/*]
+
+test:tenant-service:
+  extends: .dotnet_test_template
+  variables:
+    SERVICE_DIR: apps/services/tenant-service
+  rules:
+    - changes: [apps/services/tenant-service/**/*]
+build:tenant-service:
+  extends: .kaniko_build_template
+  variables:
+    SERVICE_DIR: apps/services/tenant-service
+    SERVICE_NAME: tenant-service
+  rules:
+    - changes: [apps/services/tenant-service/**/*]
+
+test:workflow-service:
+  extends: .dotnet_test_template
+  variables:
+    SERVICE_DIR: apps/services/workflow-service
+  rules:
+    - changes: [apps/services/workflow-service/**/*]
+build:workflow-service:
+  extends: .kaniko_build_template
+  variables:
+    SERVICE_DIR: apps/services/workflow-service
+    SERVICE_NAME: workflow-service
+  rules:
+    - changes: [apps/services/workflow-service/**/*]
+
+test:leave-service:
+  extends: .dotnet_test_template
+  variables:
+    SERVICE_DIR: apps/services/leave-service
+  rules:
+    - changes: [apps/services/leave-service/**/*]
+build:leave-service:
+  extends: .kaniko_build_template
+  variables:
+    SERVICE_DIR: apps/services/leave-service
+    SERVICE_NAME: leave-service
+  rules:
+    - changes: [apps/services/leave-service/**/*]
+
+test:timeshift-service:
+  extends: .dotnet_test_template
+  variables:
+    SERVICE_DIR: apps/services/timeshift-service
+  rules:
+    - changes: [apps/services/timeshift-service/**/*]
+build:timeshift-service:
+  extends: .kaniko_build_template
+  variables:
+    SERVICE_DIR: apps/services/timeshift-service
+    SERVICE_NAME: timeshift-service
+  rules:
+    - changes: [apps/services/timeshift-service/**/*]
+
+test:performance-service:
+  extends: .dotnet_test_template
+  variables:
+    SERVICE_DIR: apps/services/performance-service
+  rules:
+    - changes: [apps/services/performance-service/**/*]
+build:performance-service:
+  extends: .kaniko_build_template
+  variables:
+    SERVICE_DIR: apps/services/performance-service
+    SERVICE_NAME: performance-service
+  rules:
+    - changes: [apps/services/performance-service/**/*]
+
+test:learning-service:
+  extends: .dotnet_test_template
+  variables:
+    SERVICE_DIR: apps/services/learning-service
+  rules:
+    - changes: [apps/services/learning-service/**/*]
+build:learning-service:
+  extends: .kaniko_build_template
+  variables:
+    SERVICE_DIR: apps/services/learning-service
+    SERVICE_NAME: learning-service
+  rules:
+    - changes: [apps/services/learning-service/**/*]
+
+test:compensation-service:
+  extends: .dotnet_test_template
+  variables:
+    SERVICE_DIR: apps/services/compensation-service
+  rules:
+    - changes: [apps/services/compensation-service/**/*]
+build:compensation-service:
+  extends: .kaniko_build_template
+  variables:
+    SERVICE_DIR: apps/services/compensation-service
+    SERVICE_NAME: compensation-service
+  rules:
+    - changes: [apps/services/compensation-service/**/*]
+
+test:expense-service:
+  extends: .dotnet_test_template
+  variables:
+    SERVICE_DIR: apps/services/expense-service
+  rules:
+    - changes: [apps/services/expense-service/**/*]
+build:expense-service:
+  extends: .kaniko_build_template
+  variables:
+    SERVICE_DIR: apps/services/expense-service
+    SERVICE_NAME: expense-service
+  rules:
+    - changes: [apps/services/expense-service/**/*]
+
+test:recruitment-service:
+  extends: .dotnet_test_template
+  variables:
+    SERVICE_DIR: apps/services/recruitment-service
+  rules:
+    - changes: [apps/services/recruitment-service/**/*]
+build:recruitment-service:
+  extends: .kaniko_build_template
+  variables:
+    SERVICE_DIR: apps/services/recruitment-service
+    SERVICE_NAME: recruitment-service
+  rules:
+    - changes: [apps/services/recruitment-service/**/*]
+
+test:onboarding-service:
+  extends: .dotnet_test_template
+  variables:
+    SERVICE_DIR: apps/services/onboarding-service
+  rules:
+    - changes: [apps/services/onboarding-service/**/*]
+build:onboarding-service:
+  extends: .kaniko_build_template
+  variables:
+    SERVICE_DIR: apps/services/onboarding-service
+    SERVICE_NAME: onboarding-service
+  rules:
+    - changes: [apps/services/onboarding-service/**/*]
+
+test:notification-service:
+  extends: .dotnet_test_template
+  variables:
+    SERVICE_DIR: apps/services/notification-service
+  rules:
+    - changes: [apps/services/notification-service/**/*]
+build:notification-service:
+  extends: .kaniko_build_template
+  variables:
+    SERVICE_DIR: apps/services/notification-service
+    SERVICE_NAME: notification-service
+  rules:
+    - changes: [apps/services/notification-service/**/*]
+
+# ============================================================
+# FRONTEND
+# ============================================================
+
+test:web:
+  stage: test
+  image: node:20-slim
+  tags: [hr360, ops]
+  rules:
+    - changes: [apps/web/**/*]
+  script:
+    - cd apps/web
+    - npm install
+    - npm run build
+
+build:web:
+  extends: .kaniko_build_template
+  variables:
+    SERVICE_DIR: apps/web
+    SERVICE_NAME: web
+  rules:
+    - changes: [apps/web/**/*]
+
+# ============================================================
+# ML INFERENCE (Python)
+# ============================================================
+
+test:ml-inference:
+  stage: test
+  image: python:3.11-slim
+  tags: [hr360, ops]
+  rules:
+    - changes: [apps/ml-inference/**/*]
+  script:
+    - cd apps/ml-inference
+    - python -m py_compile main.py performance_ml.py
+
+build:ml-inference:
+  extends: .kaniko_build_template
+  variables:
+    SERVICE_DIR: apps/ml-inference
+    SERVICE_NAME: ml-inference
+  rules:
+    - changes: [apps/ml-inference/**/*]
+
+# ============================================================
+# DEPLOY - ortak sablon + her servis icin ayri job
+# ============================================================
+
+.deploy_template:
+  stage: deploy
+  image: python:3.12-slim
+  tags: [hr360, ops]
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq openssh-client sshpass >/dev/null
+    - pip install --quiet ansible
+    - ansible-galaxy collection install -r platform/ansible/requirements.yml
+    # SSH_DEPLOY_KEY (File type, cok satirli) yapistirma sirasinda bir
+    # satir kaybetmisti ("error in libcrypto"). SSH_DEPLOY_KEY_B64 (tek
+    # satir, base64) bu riski ortadan kaldirir - kendi tarafimda uretilen
+    # anahtardan birebir kodlanmis, decode edip dogrulayarak kullaniyoruz.
+    - echo "$SSH_DEPLOY_KEY_B64" | base64 -d > /tmp/deploy_key
+    - chmod 600 /tmp/deploy_key
+    - echo "Anahtar dogrulama (public key uretimi):" && ssh-keygen -y -f /tmp/deploy_key
+  script:
+    - cd platform/ansible
+    - >
+      ansible-playbook -i inventory.yml deploy-service.yml
+      -e "service_name=${SERVICE_NAME}"
+      -e "target_host=${TARGET_HOST}"
+      -e "image_tag=${CI_COMMIT_SHORT_SHA}"
+      -e "health_port=${HEALTH_PORT}"
+
+deploy:notification-service:
+  extends: .deploy_template
+  needs: ["build:notification-service"]
+  rules:
+    - changes: [apps/services/notification-service/**/*]
+  variables:
+    SERVICE_NAME: notification-service
+    TARGET_HOST: hr360-prd-ml-01
+    HEALTH_PORT: "5012"
+
+# ============================================================
+# DEPLOY - kalan 12 servis (notification-service zaten yukarida)
+# ============================================================
+
+deploy:tenant-service:
+  extends: .deploy_template
+  needs: ["build:tenant-service"]
+  rules:
+    - changes: [apps/services/tenant-service/**/*]
+  variables:
+    SERVICE_NAME: tenant-service
+    TARGET_HOST: hr360-prd-app-01
+    HEALTH_PORT: "5013"
+deploy:organization-service:
+  extends: .deploy_template
+  needs: ["build:organization-service"]
+  rules:
+    - changes: [apps/services/organization-service/**/*]
+  variables:
+    SERVICE_NAME: organization-service
+    TARGET_HOST: hr360-prd-app-01
+    HEALTH_PORT: "5001"
+deploy:employee-service:
+  extends: .deploy_template
+  needs: ["build:employee-service"]
+  rules:
+    - changes: [apps/services/employee-service/**/*]
+  variables:
+    SERVICE_NAME: employee-service
+    TARGET_HOST: hr360-prd-app-01
+    HEALTH_PORT: "5002"
+deploy:leave-service:
+  extends: .deploy_template
+  needs: ["build:leave-service"]
+  rules:
+    - changes: [apps/services/leave-service/**/*]
+  variables:
+    SERVICE_NAME: leave-service
+    TARGET_HOST: hr360-prd-app-01
+    HEALTH_PORT: "5004"
+deploy:compensation-service:
+  extends: .deploy_template
+  needs: ["build:compensation-service"]
+  rules:
+    - changes: [apps/services/compensation-service/**/*]
+  variables:
+    SERVICE_NAME: compensation-service
+    TARGET_HOST: hr360-prd-app-01
+    HEALTH_PORT: "5010"
+deploy:expense-service:
+  extends: .deploy_template
+  needs: ["build:expense-service"]
+  rules:
+    - changes: [apps/services/expense-service/**/*]
+  variables:
+    SERVICE_NAME: expense-service
+    TARGET_HOST: hr360-prd-app-01
+    HEALTH_PORT: "5011"
+deploy:workflow-service:
+  extends: .deploy_template
+  needs: ["build:workflow-service"]
+  rules:
+    - changes: [apps/services/workflow-service/**/*]
+  variables:
+    SERVICE_NAME: workflow-service
+    TARGET_HOST: hr360-prd-app-02
+    HEALTH_PORT: "5003"
+deploy:performance-service:
+  extends: .deploy_template
+  needs: ["build:performance-service"]
+  rules:
+    - changes: [apps/services/performance-service/**/*]
+  variables:
+    SERVICE_NAME: performance-service
+    TARGET_HOST: hr360-prd-app-02
+    HEALTH_PORT: "5008"
+deploy:timeshift-service:
+  extends: .deploy_template
+  needs: ["build:timeshift-service"]
+  rules:
+    - changes: [apps/services/timeshift-service/**/*]
+  variables:
+    SERVICE_NAME: timeshift-service
+    TARGET_HOST: hr360-prd-app-02
+    HEALTH_PORT: "5007"
+deploy:learning-service:
+  extends: .deploy_template
+  needs: ["build:learning-service"]
+  rules:
+    - changes: [apps/services/learning-service/**/*]
+  variables:
+    SERVICE_NAME: learning-service
+    TARGET_HOST: hr360-prd-ml-01
+    HEALTH_PORT: "5009"
+deploy:onboarding-service:
+  extends: .deploy_template
+  needs: ["build:onboarding-service"]
+  rules:
+    - changes: [apps/services/onboarding-service/**/*]
+  variables:
+    SERVICE_NAME: onboarding-service
+    TARGET_HOST: hr360-prd-ml-01
+    HEALTH_PORT: "5006"
+deploy:recruitment-service:
+  extends: .deploy_template
+  needs: ["build:recruitment-service"]
+  rules:
+    - changes: [apps/services/recruitment-service/**/*]
+  variables:
+    SERVICE_NAME: recruitment-service
+    TARGET_HOST: hr360-prd-ml-01
+    HEALTH_PORT: "5005"
+
+deploy:ml-inference:
+  extends: .deploy_template
+  needs: ["build:ml-inference"]
+  rules:
+    - changes: [apps/ml-inference/**/*]
+  variables:
+    SERVICE_NAME: ml-inference
+    TARGET_HOST: hr360-prd-ml-01
+    HEALTH_PORT: "8000"
+  script:
+    - cd platform/ansible
+    - >
+      ansible-playbook -i inventory.yml deploy-service.yml
+      -e "service_name=${SERVICE_NAME}"
+      -e "target_host=${TARGET_HOST}"
+      -e "image_tag=${CI_COMMIT_SHORT_SHA}"
+      -e "health_port=${HEALTH_PORT}"
+      -e "service_path_override=/opt/hr360/ml-inference"
+      -e "repo_service_dir_override=ml-inference"
+
+deploy:web:
+  extends: .deploy_template
+  needs: ["build:web"]
+  rules:
+    - changes: [apps/web/**/*]
+  script:
+    - cd platform/ansible
+    - >
+      ansible-playbook -i inventory.yml deploy-web.yml
+      -e "image_tag=${CI_COMMIT_SHORT_SHA}"

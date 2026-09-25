@@ -1,0 +1,479 @@
+/* ==========================================================================
+   Staffware — Keycloak giriş teması
+
+   Uygulamanın /giris ekranıyla aynı görsel dil:
+     zemin  zinc-950   (240 10% 4%)
+     kart   zinc-900   (240 6% 10%)
+     vurgu  mor        (160 90% 74%)
+     yazı   Geist
+
+   Yaklaşım: PatternFly'ın kendi düzenini bozmuyoruz, yalnızca üzerine
+   renk/tipografi bindiriyoruz. Böylece Keycloak sürüm yükseltmelerinde
+   şablon değişse bile tema kırılmaz — yalnızca FreeMarker sınıflarına
+   dokunuyoruz, HTML yapısına değil.
+   ========================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@100..900&display=swap');
+
+:root {
+  --sw-bg: hsl(240 10% 4%);
+  --sw-card: hsl(240 6% 10%);
+  --sw-border: hsl(240 4% 16%);
+  --sw-fg: hsl(0 0% 98%);
+  --sw-muted: hsl(240 5% 65%);
+  --sw-primary: hsl(160 90% 74%);
+  --sw-primary-fg: hsl(240 10% 4%);
+  --sw-danger: hsl(0 63% 55%);
+  --sw-radius: 0.625rem;
+}
+
+/* --------------------------------------------------------------- zemin --- */
+
+/* Ebeveyn tema (keycloak.v2) body'ye keycloak-bg.png basiyor - kapatiyoruz. */
+.login-pf body,
+body.login-pf {
+  background-image: none !important;
+}
+
+
+html,
+body,
+body#keycloak-bg,
+.login-pf,
+.login-pf body {
+  background: var(--sw-bg) !important;
+  color: var(--sw-fg) !important;
+  font-family: 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif !important;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Uygulamadaki aurora efektinin sade karşılığı: sol üstte mor bir ışıma.
+   Animasyon yok — giriş ekranı hızlı açılmalı, CPU harcamamalı. */
+body::before {
+  content: '';
+  position: fixed;
+  top: -18rem;
+  left: -12rem;
+  width: 46rem;
+  height: 46rem;
+  border-radius: 9999px;
+  background: hsl(160 90% 74% / 0.13);
+  filter: blur(120px);
+  pointer-events: none;
+  z-index: 0;
+}
+
+body::after {
+  content: '';
+  position: fixed;
+  right: -16rem;
+  bottom: -20rem;
+  width: 38rem;
+  height: 38rem;
+  border-radius: 9999px;
+  background: hsl(199 89% 60% / 0.07);
+  filter: blur(130px);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ---------------------------------------------------------------- düzen --- */
+
+/* DUZENE DOKUNULMUYOR.
+   PatternFly .pf-v5-c-login'i CSS grid ile kuruyor (grid-template-areas:
+   "header" "main"). display/grid ozelliklerini ezmek alan atamalarini
+   bozuyor ve sayfa dagiliyor. Burada yalnizca z-index veriyoruz ki
+   arka plandaki isimalar icerigin ustune binmesin. */
+.pf-v5-c-login {
+  position: relative;
+  z-index: 1;
+}
+
+/* -------------------------------------------------------------- başlık --- */
+
+/* Realm displayName burada basılıyor. Metnin kendisini gizleyip yerine
+   logo + marka adı koyuyoruz; böylece Keycloak ayarına dokunmadan
+   görsel kimlik uygulanıyor. */
+#kc-header-wrapper,
+.pf-v5-c-brand {
+  font-size: 0 !important;          /* özgün metni gizle */
+  text-transform: none !important;
+  letter-spacing: normal !important;
+  line-height: 1 !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;   /* ebeveyn text-align:center flex'te islemiyor */
+  gap: 0.625rem;
+}
+
+.pf-v5-c-brand::before {
+  /* Staffware markasi ("Strata"): uc kaydirilmis yuvarlak cubuk.
+     SVG data URI olarak gomulu - ek bir HTTP istegi olmuyor, 299 byte.
+     Kaynak dosya: img/icon-purple.svg */
+  content: '';
+  display: block;
+  width: 1.625rem;
+  height: 1.625rem;
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2248%22%20height%3D%2248%22%20viewBox%3D%220%200%2048%2048%22%3E%3Crect%20x%3D%228%22%20y%3D%229%22%20width%3D%2224%22%20height%3D%228%22%20rx%3D%224%22%20fill%3D%22%238BFAD4%22%3E%3C%2Frect%3E%3Crect%20x%3D%2216%22%20y%3D%2220%22%20width%3D%2224%22%20height%3D%228%22%20rx%3D%224%22%20fill%3D%22%238BFAD4%22%3E%3C%2Frect%3E%3Crect%20x%3D%228%22%20y%3D%2231%22%20width%3D%2224%22%20height%3D%228%22%20rx%3D%224%22%20fill%3D%22%238BFAD4%22%3E%3C%2Frect%3E%3C%2Fsvg%3E");
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+.pf-v5-c-brand::after {
+  content: 'Staffware';
+  font-size: 1.0625rem;
+  font-weight: 600;
+  color: var(--sw-fg);
+  letter-spacing: -0.01em;
+}
+
+/* ----------------------------------------------------------------- kart --- */
+
+.pf-v5-c-login__main {
+  background: var(--sw-card) !important;
+  border: 1px solid var(--sw-border);
+  border-radius: var(--sw-radius);
+  box-shadow:
+    0 1px 2px hsl(0 0% 0% / 0.3),
+    0 8px 32px hsl(0 0% 0% / 0.35);
+  overflow: hidden;
+}
+
+.pf-v5-c-login__main-header {
+  padding: 1.75rem 1.75rem 0;
+  background: transparent !important;
+  border: 0 !important;
+}
+
+.pf-v5-c-login__main-body {
+  padding: 1.25rem 1.75rem 1.75rem;
+  background: transparent !important;
+}
+
+.pf-v5-c-login__main-footer {
+  padding: 0 1.75rem 1.5rem;
+  background: transparent !important;
+}
+
+.pf-v5-c-login__main-footer:empty {
+  padding: 0;
+}
+
+/* Sayfa başlığı — "Sign in to your account" */
+.pf-v5-c-title.pf-m-3xl,
+#kc-page-title {
+  font-size: 1.25rem !important;
+  font-weight: 600 !important;
+  color: var(--sw-fg) !important;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+/* ----------------------------------------------------------------- form --- */
+
+.pf-v5-c-form__group + .pf-v5-c-form__group {
+  margin-top: 1rem;
+}
+
+.pf-v5-c-form__label,
+.pf-v5-c-form__label-text {
+  color: var(--sw-muted) !important;
+  font-size: 0.8125rem !important;
+  font-weight: 500 !important;
+}
+
+.pf-v5-c-form-control {
+  background: hsl(240 10% 4% / 0.6) !important;
+  border: 1px solid var(--sw-border) !important;
+  border-radius: 0.5rem !important;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+/* PatternFly alt çizgiyi ::after ile çiziyor — kendi kenarlığımızla
+   çakışmasın diye kapatıyoruz. */
+.pf-v5-c-form-control::after {
+  display: none !important;
+}
+
+.pf-v5-c-form-control > input,
+.pf-v5-c-form-control input {
+  background: transparent !important;
+  color: var(--sw-fg) !important;
+  font-family: inherit !important;
+  font-size: 0.875rem !important;
+  padding: 0.625rem 0.75rem !important;
+}
+
+.pf-v5-c-form-control input::placeholder {
+  color: hsl(240 5% 45%) !important;
+}
+
+.pf-v5-c-form-control:focus-within {
+  border-color: var(--sw-primary) !important;
+  box-shadow: 0 0 0 3px hsl(160 90% 74% / 0.15) !important;
+}
+
+.pf-v5-c-form-control input:focus {
+  outline: none !important;
+}
+
+/* Otomatik doldurma — tarayıcı varsayılanı beyaz zemin basıyor, eziyoruz. */
+.pf-v5-c-form-control input:-webkit-autofill,
+.pf-v5-c-form-control input:-webkit-autofill:hover,
+.pf-v5-c-form-control input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--sw-fg) !important;
+  -webkit-box-shadow: 0 0 0 1000px hsl(240 6% 12%) inset !important;
+  caret-color: var(--sw-fg);
+  transition: background-color 9999s ease-in-out 0s;
+}
+
+/* ------------------------------------------------- parola göster butonu --- */
+
+.pf-v5-c-input-group,
+.pf-v5-c-input-group__item {
+  background: transparent !important;
+  border: 0 !important;
+}
+
+.pf-v5-c-input-group .pf-v5-c-form-control {
+  flex: 1;
+}
+
+.pf-v5-c-button.pf-m-control {
+  background: transparent !important;
+  border: 1px solid var(--sw-border) !important;
+  border-left: 0 !important;
+  border-radius: 0 0.5rem 0.5rem 0 !important;
+  color: var(--sw-muted) !important;
+}
+
+.pf-v5-c-button.pf-m-control:hover {
+  color: var(--sw-fg) !important;
+  background: hsl(240 4% 16% / 0.5) !important;
+}
+
+/* ---------------------------------------------------------------- buton --- */
+
+.pf-v5-c-button.pf-m-primary {
+  background: var(--sw-primary) !important;
+  color: var(--sw-primary-fg) !important;
+  border: 0 !important;
+  border-radius: 0.5rem !important;
+  font-family: inherit !important;
+  font-size: 0.875rem !important;
+  font-weight: 600 !important;
+  padding: 0.625rem 1rem !important;
+  transition: filter 0.15s ease, transform 0.1s ease;
+}
+
+.pf-v5-c-button.pf-m-primary:hover {
+  filter: brightness(1.08);
+}
+
+.pf-v5-c-button.pf-m-primary:active {
+  transform: translateY(1px);
+}
+
+.pf-v5-c-button.pf-m-primary:focus-visible {
+  outline: 2px solid var(--sw-primary);
+  outline-offset: 2px;
+}
+
+.pf-v5-c-button.pf-m-block {
+  width: 100%;
+  margin-top: 0.5rem;
+}
+
+.pf-v5-c-button.pf-m-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Ikincil butonlar (ornegin "Girise geri don"). PatternFly bunlari mavi
+   birakiyordu; notr bir cerceveye cekiyoruz. */
+.pf-v5-c-button.pf-m-secondary,
+.pf-v5-c-button.pf-m-link,
+#kc-form-buttons .pf-v5-c-button:not(.pf-m-primary),
+#backToLoginLink,
+a#backToApplication {
+  background: transparent !important;
+  border: 1px solid var(--sw-border) !important;
+  border-radius: 0.5rem !important;
+  color: var(--sw-muted) !important;
+  font-family: inherit !important;
+  font-size: 0.8125rem !important;
+  font-weight: 500 !important;
+  text-decoration: none !important;
+}
+
+.pf-v5-c-button.pf-m-secondary:hover,
+.pf-v5-c-button.pf-m-link:hover,
+#backToLoginLink:hover {
+  color: var(--sw-fg) !important;
+  border-color: hsl(160 90% 74% / 0.4) !important;
+  background: hsl(240 4% 16% / 0.4) !important;
+}
+
+/* ------------------------------------------------------- beni hatırla --- */
+
+.pf-v5-c-check,
+.pf-v5-c-check__label,
+label[for='rememberMe'] {
+  color: var(--sw-muted) !important;
+  font-size: 0.8125rem !important;
+}
+
+input[type='checkbox'] {
+  accent-color: var(--sw-primary);
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+/* ------------------------------------------------------------ bağlantı --- */
+
+a,
+.pf-v5-c-login__main-footer a,
+#kc-registration a,
+#kc-info a {
+  color: var(--sw-primary) !important;
+  text-decoration: none;
+  font-size: 0.8125rem;
+  transition: opacity 0.15s ease;
+}
+
+a:hover {
+  opacity: 0.8;
+  text-decoration: underline;
+}
+
+/* ------------------------------------------------------------ bildirim --- */
+
+/* Basari / bilgi / uyari / hata kutulari.
+   Keycloak ayni .pf-v5-c-alert sinifini durum modifier'lariyla kullaniyor
+   (pf-m-success, pf-m-info, pf-m-warning, pf-m-danger). Once notr bir taban
+   veriyoruz, sonra her durumu kendi rengiyle eziyoruz - aksi halde "e-posta
+   gonderildi" gibi BASARI mesajlari da kirmizi gorunuyor. */
+.pf-v5-c-alert {
+  background: hsl(240 4% 16% / 0.6) !important;
+  border: 1px solid var(--sw-border) !important;
+  border-radius: 0.5rem !important;
+  color: var(--sw-fg) !important;
+  font-size: 0.8125rem !important;
+  padding: 0.625rem 0.875rem !important;
+}
+
+.pf-v5-c-alert.pf-m-success {
+  background: hsl(142 69% 58% / 0.1) !important;
+  border-color: hsl(142 69% 58% / 0.3) !important;
+  color: hsl(142 70% 72%) !important;
+}
+.pf-v5-c-alert.pf-m-success .pf-v5-c-alert__icon {
+  color: hsl(142 69% 58%) !important;
+}
+
+.pf-v5-c-alert.pf-m-info {
+  background: hsl(199 89% 60% / 0.1) !important;
+  border-color: hsl(199 89% 60% / 0.3) !important;
+  color: hsl(199 85% 75%) !important;
+}
+.pf-v5-c-alert.pf-m-info .pf-v5-c-alert__icon {
+  color: hsl(199 89% 60%) !important;
+}
+
+.pf-v5-c-alert.pf-m-warning {
+  background: hsl(38 92% 60% / 0.1) !important;
+  border-color: hsl(38 92% 60% / 0.3) !important;
+  color: hsl(38 90% 72%) !important;
+}
+.pf-v5-c-alert.pf-m-warning .pf-v5-c-alert__icon {
+  color: hsl(38 92% 60%) !important;
+}
+
+/* --------------------------------------------------------------- hata --- */
+
+.pf-v5-c-alert.pf-m-danger,
+#input-error,
+.pf-m-error {
+  background: hsl(0 63% 55% / 0.1) !important;
+  border: 1px solid hsl(0 63% 55% / 0.3) !important;
+  border-radius: 0.5rem !important;
+  color: hsl(0 80% 75%) !important;
+  font-size: 0.8125rem !important;
+  padding: 0.625rem 0.875rem !important;
+}
+
+.pf-v5-c-alert__title {
+  color: inherit !important;
+  font-size: inherit !important;
+  font-weight: 500 !important;
+}
+
+.pf-v5-c-alert__icon {
+  color: hsl(0 70% 65%) !important;
+}
+
+.pf-v5-c-form-control.pf-m-error,
+.pf-v5-c-form-control[aria-invalid='true'] {
+  border-color: hsl(0 63% 55% / 0.6) !important;
+}
+
+/* Alan altı hata metni */
+#input-error-client-username,
+#input-error-client-password,
+.pf-v5-c-helper-text__item.pf-m-error {
+  color: hsl(0 80% 75%) !important;
+  font-size: 0.75rem !important;
+  margin-top: 0.375rem;
+}
+
+/* ------------------------------------------------------------- dil seçici --- */
+
+#kc-locale {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 2;
+}
+
+#kc-locale a,
+#kc-locale-dropdown a {
+  color: var(--sw-muted) !important;
+  font-size: 0.8125rem;
+}
+
+#kc-locale ul {
+  background: var(--sw-card) !important;
+  border: 1px solid var(--sw-border) !important;
+  border-radius: 0.5rem;
+  padding: 0.25rem;
+}
+
+#kc-locale li a:hover {
+  background: hsl(240 4% 16%) !important;
+  border-radius: 0.375rem;
+}
+
+/* ------------------------------------------------------------ mobil --- */
+
+@media (max-width: 480px) {
+  .pf-v5-c-login {
+    padding: 1rem;
+  }
+
+  .pf-v5-c-login__main-header,
+  .pf-v5-c-login__main-body {
+    padding-left: 1.25rem;
+    padding-right: 1.25rem;
+  }
+}
+
+/* Hareket azaltma tercihi — arka plan ışımaları zaten statik, ek bir şey yok,
+   ama olası PatternFly geçişlerini de kısıyoruz. */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

@@ -1,0 +1,307 @@
+import { useMemo, useState } from 'react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { motion, useReducedMotion } from 'motion/react'
+import { LoaderCircle } from 'lucide-react'
+import { PageHeader } from '@/components/layout/PageHeader'
+import { Panel, PanelBody, PanelHead } from '@/components/ui/Panel'
+import { Button } from '@/components/ui/button'
+import { DataTable, type Column } from '@/components/ui/DataTable'
+import { StatCard } from '@/components/ui/StatCard'
+import { StatusBadge } from '@/components/ui/StatusBadge'
+import { EmptyState } from '@/components/ui/States'
+import { TextField } from '@/components/ui/Field'
+import { EmployeePicker } from '@/components/ui/EmployeePicker'
+import { useToast } from '@/components/ui/Toast'
+import { useAuth } from '@/auth/useAuth'
+import { timeshiftApi } from '@/api/timeshift'
+import { useTimeEntries, useTimeSummary } from '@/api/queries'
+import type { TimeEntry } from '@/api/types'
+import { formatDate, formatNumber } from '@/lib/format'
+import { cn } from '@/lib/utils'
+
+/** Dakikayı "7s 30dk" biçimine çevirir. */
+function hm(minutes: number): string {
+  if (!minutes) return '—'
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  return h > 0 ? `${h}s${m ? ` ${m}dk` : ''}` : `${m}dk`
+}
+
+function monthRange(year: number, month: number) {
+  const from = new Date(Date.UTC(year, month - 1, 1)).toISOString().slice(0, 10)
+  const to = new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10)
+  return { from, to }
+}
+
+const clockTime = (iso?: string | null) =>
+  iso ? new Date(iso).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : '—'
+
+/**
+ * Bugünün durum kartı ve tek eylem düğmesi.
+ *
+ * Düğme duruma göre değişir: giriş yapılmamışsa "Giriş yap", yapılmışsa
+ * "Çıkış yap", gün kapanmışsa eylemsiz. Böylece kullanıcı ne yapacağını
+ * düşünmek zorunda kalmaz.
+ */
+function TodayCard({ employeeId, today }: { employeeId: string; today?: TimeEntry }) {
+  const toast = useToast()
+  const queryClient = useQueryClient()
+  const reduced = useReducedMotion()
+
+  const clockedIn = Boolean(today?.clockInAt) && !today?.clockOutAt
+  const closed = Boolean(today?.clockOutAt)
+
+  const mutation = useMutation({
+    mutationFn: (kind: 'in' | 'out') => {
+      const payload = { employeeId, at: new Date().toISOString(), source: 'Manual' as const }
+      return kind === 'in' ? timeshiftApi.clockIn(payload) : timeshiftApi.clockOut(payload)
+    },
+    onSuccess: (_, kind) => {
+      void queryClient.invalidateQueries({ queryKey: ['timeshift'] })
+      toast.ok(kind === 'in' ? 'Giriş kaydedildi' : 'Çıkış kaydedildi')
+    },
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : 'Kayıt yapılamadı.'),
+  })
+
+  return (
+    <Panel>
+      <PanelHead
+        title="Bugün"
+        note={new Date().toLocaleDateString('tr-TR', { dateStyle: 'long' })}
+      />
+      <PanelBody className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center gap-6">
+          {/* Durum işareti: açık gün canlı, kapanmış gün sakin */}
+          <span className="relative flex size-3 shrink-0 items-center justify-center">
+            <span
+              className={cn(
+                'size-3 rounded-full',
+                clockedIn
+                  ? 'bg-primary'
+                  : closed
+                    ? 'bg-[hsl(var(--success))]'
+                    : 'bg-muted-foreground/40',
+              )}
+            />
+            {clockedIn && !reduced && (
+              <motion.span
+                aria-hidden="true"
+                className="absolute inset-0 rounded-full border border-primary"
+                animate={{ scale: [1, 2.2], opacity: [0.6, 0] }}
+                transition={{ duration: 2.2, repeat: Infinity, ease: 'easeOut' }}
+              />
+            )}
+          </span>
+
+          <div>
+            <p className="text-[12px] text-muted-foreground">Giriş</p>
+            <p className="tabular text-[20px] leading-none font-bold">
+              {clockTime(today?.clockInAt)}
+            </p>
+          </div>
+          <div>
+            <p className="text-[12px] text-muted-foreground">Çıkış</p>
+            <p className="tabular text-[20px] leading-none font-bold">
+              {clockTime(today?.clockOutAt)}
+            </p>
+          </div>
+          <div>
+            <p className="text-[12px] text-muted-foreground">Çalışılan</p>
+            <motion.p
+              key={today?.workedMinutes ?? 0}
+              className="tabular text-[20px] leading-none font-bold"
+              initial={reduced ? false : { opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.25, ease: 'easeOut' }}
+            >
+              {hm(today?.workedMinutes ?? 0)}
+            </motion.p>
+          </div>
+          {(today?.overtimeMinutes ?? 0) > 0 && (
+            <StatusBadge tone="warning">Fazla mesai {hm(today!.overtimeMinutes)}</StatusBadge>
+          )}
+        </div>
+
+        {closed ? (
+          <StatusBadge tone="success">Gün kapandı</StatusBadge>
+        ) : (
+          <Button
+            className="cursor-pointer"
+            disabled={mutation.isPending}
+            onClick={() => mutation.mutate(clockedIn ? 'out' : 'in')}
+          >
+            {mutation.isPending && <LoaderCircle className="size-4 animate-spin" />}
+            {clockedIn ? 'Çıkış yap' : 'Giriş yap'}
+          </Button>
+        )}
+      </PanelBody>
+    </Panel>
+  )
+}
+
+export function TimesheetPage() {
+  const { can } = useAuth()
+  const now = new Date()
+  const [employeeId, setEmployeeId] = useState('')
+  const [year, setYear] = useState(now.getFullYear())
+  const [month, setMonth] = useState(now.getMonth() + 1)
+
+  const { from, to } = monthRange(year, month)
+  const entries = useTimeEntries(
+    { employeeId: employeeId || undefined, from, to },
+    Boolean(employeeId),
+  )
+  const summary = useTimeSummary(
+    employeeId || undefined,
+    year,
+    month,
+    Boolean(employeeId) && can('timeshift:manage'),
+  )
+
+  const todayKey = now.toISOString().slice(0, 10)
+  const today = useMemo(
+    () => entries.data?.find((e) => e.date?.slice(0, 10) === todayKey),
+    [entries.data, todayKey],
+  )
+
+  const rows = useMemo(
+    () => [...(entries.data ?? [])].sort((a, b) => (a.date < b.date ? 1 : -1)),
+    [entries.data],
+  )
+
+  const columns: Array<Column<TimeEntry>> = [
+    {
+      id: 'date',
+      header: 'Tarih',
+      searchText: (e) => formatDate(e.date),
+      sortValue: (e) => new Date(e.date).getTime(),
+      exportText: (e) => formatDate(e.date),
+      cell: (e) => <span className="tabular font-medium">{formatDate(e.date)}</span>,
+    },
+    {
+      id: 'in',
+      header: 'Giriş',
+      hideBelow: 'sm',
+      exportText: (e) => clockTime(e.clockInAt),
+      cell: (e) => <span className="tabular text-muted-foreground">{clockTime(e.clockInAt)}</span>,
+    },
+    {
+      id: 'out',
+      header: 'Çıkış',
+      hideBelow: 'sm',
+      exportText: (e) => clockTime(e.clockOutAt),
+      cell: (e) => <span className="tabular text-muted-foreground">{clockTime(e.clockOutAt)}</span>,
+    },
+    {
+      id: 'worked',
+      header: 'Çalışılan',
+      align: 'right',
+      sortValue: (e) => e.workedMinutes,
+      exportText: (e) => hm(e.workedMinutes),
+      cell: (e) => hm(e.workedMinutes),
+    },
+    {
+      id: 'overtime',
+      header: 'Fazla mesai',
+      align: 'right',
+      hideBelow: 'md',
+      sortValue: (e) => e.overtimeMinutes,
+      exportText: (e) => hm(e.overtimeMinutes),
+      cell: (e) =>
+        e.overtimeMinutes > 0 ? (
+          <span className="font-semibold text-[hsl(var(--warning))]">{hm(e.overtimeMinutes)}</span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        ),
+    },
+  ]
+
+  return (
+    <div className="space-y-5">
+      <PageHeader
+        title="Puantaj"
+        description="Günlük giriş/çıkış kayıtları ve aylık çalışma özeti. 8 saati aşan süre fazla mesai sayılır."
+      />
+
+      <div className="grid max-w-2xl gap-4 sm:grid-cols-[1fr_auto_auto]">
+        <EmployeePicker
+          value={employeeId}
+          onChange={setEmployeeId}
+          hint="Kayıtları görmek için çalışan seçin."
+        />
+        <TextField
+          id="timesheet-year"
+          label="Yıl"
+          type="number"
+          min={2020}
+          max={2100}
+          value={year}
+          className="tabular w-24"
+          onChange={(e) => setYear(Number(e.target.value))}
+        />
+        <TextField
+          id="timesheet-month"
+          label="Ay"
+          type="number"
+          min={1}
+          max={12}
+          value={month}
+          className="tabular w-20"
+          onChange={(e) => setMonth(Number(e.target.value))}
+        />
+      </div>
+
+      {employeeId && can('timeshift:clock') && <TodayCard employeeId={employeeId} today={today} />}
+
+      {employeeId && summary.data && (
+        <div className="grid gap-3 sm:grid-cols-3">
+          <StatCard
+            label="Çalışılan gün"
+            value={formatNumber(summary.data.daysWorked)}
+            trend={`${month}/${year}`}
+            trendDirection="flat"
+            trendSense="neutral"
+          />
+          <StatCard
+            label="Toplam süre"
+            value={hm(summary.data.totalWorkedMinutes)}
+            trend="Ay toplamı"
+            trendDirection="flat"
+            trendSense="neutral"
+          />
+          <StatCard
+            label="Fazla mesai"
+            value={hm(summary.data.totalOvertimeMinutes)}
+            trend={summary.data.totalOvertimeMinutes > 0 ? 'Ek ödeme konusu' : 'Yok'}
+            trendDirection={summary.data.totalOvertimeMinutes > 0 ? 'up' : 'flat'}
+            trendSense="negative"
+          />
+        </div>
+      )}
+
+      {!employeeId ? (
+        <Panel>
+          <PanelHead title="Kayıtlar" />
+          <EmptyState
+            title="Çalışan seçilmedi"
+            detail="Puantaj kayıtlarını görmek için yukarıdan bir çalışan seçin."
+          />
+        </Panel>
+      ) : (
+        <DataTable
+          rows={rows}
+          rowKey={(e) => e.id}
+          columns={columns}
+          isLoading={entries.isPending}
+          error={entries.error}
+          onRetry={() => void entries.refetch()}
+          searchPlaceholder="Tarih ara"
+          exportFileName={`puantaj-${year}-${String(month).padStart(2, '0')}`}
+          pageSize={15}
+          emptyTitle="Bu ayda kayıt yok"
+          emptyDetail="Seçili ay için giriş/çıkış kaydı bulunmuyor."
+        />
+      )}
+    </div>
+  )
+}

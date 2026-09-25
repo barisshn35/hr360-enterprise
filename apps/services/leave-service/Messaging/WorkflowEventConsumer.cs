@@ -1,0 +1,97 @@
+using System.Text.Json;
+using LeaveService.Data;
+using LeaveService.Models;
+
+namespace LeaveService.Messaging;
+
+/// <summary>
+/// Workflow Service'in karar event'lerini dinler ve ilgili izin talebini
+/// OTOMATIK sonuclandirir. Bu olmadan birinin /resolve ucunu elle cagirmasi
+/// gerekiyordu; event ile is akisi kendi kendine kapaniyor.
+///
+/// Ayrica kendi "leave.approved"/"leave.rejected" event'ini OUTBOX'a ekler -
+/// timeshift-service gibi digger servisler (izin gunlerini otomatik
+/// "izinli" isaretlemek icin) bunu dinleyebilir.
+/// </summary>
+public class WorkflowEventConsumer : KafkaConsumerBase
+{
+    private const string LeaveEventsTopic = "hr360.leave.events";
+
+    public WorkflowEventConsumer(IServiceProvider services, ILogger<WorkflowEventConsumer> logger)
+        : base(services, logger, "leave-service", "hr360.workflow.events") { }
+
+    protected override string ConsumerName => "leave-service";
+
+    protected override async Task HandleAsync(
+        string eventType, string payload, LeaveDbContext db, CancellationToken ct)
+    {
+        if (eventType is not ("workflow.approved" or "workflow.rejected")) return;
+
+        var evt = JsonSerializer.Deserialize<WorkflowDecidedPayload>(payload,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        if (evt is null) return;
+
+        // Yalnizca izin talepleriyle ilgileniyoruz.
+        if (!string.Equals(evt.WorkflowType, "LeaveRequest", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        var leave = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions
+            .FirstOrDefaultAsync(db.LeaveRequests
+                .Where(r => r.WorkflowRequestId == evt.WorkflowRequestId), ct);
+
+        if (leave is null)
+        {
+            Logger.LogWarning(
+                "Workflow {Id} için eşleşen izin talebi bulunamadı", evt.WorkflowRequestId);
+            return;
+        }
+
+        if (leave.Status != LeaveRequestStatus.Submitted)
+        {
+            Logger.LogInformation(
+                "İzin talebi {Id} zaten {Status} durumunda, atlanıyor", leave.Id, leave.Status);
+            return;
+        }
+
+        // Bakiyeyi kesinlestir: pending'den dus, onaylandiysa used'a ekle.
+        var balance = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions
+            .FirstOrDefaultAsync(db.LeaveBalances
+                .Where(b => b.EmployeeId == leave.EmployeeId
+                         && b.Year == leave.StartDate.Year
+                         && b.Type == leave.Type), ct);
+
+        if (balance is not null)
+        {
+            balance.PendingDays -= leave.Days;
+            if (evt.Approved) balance.UsedDays += leave.Days;
+            balance.UpdatedAt = DateTimeOffset.UtcNow;
+        }
+
+        leave.Status = evt.Approved ? LeaveRequestStatus.Approved : LeaveRequestStatus.Rejected;
+        leave.DecidedAt = DateTimeOffset.UtcNow;
+
+        db.OutboxMessages.Add(new OutboxMessage
+        {
+            Topic = LeaveEventsTopic,
+            EventType = evt.Approved ? "leave.approved" : "leave.rejected",
+            PartitionKey = leave.EmployeeId.ToString(),
+            Payload = JsonSerializer.Serialize(new LeaveDecidedEvent(
+                db.CurrentTenantSlug ?? "",
+                leave.Id, leave.EmployeeId, leave.StartDate, leave.EndDate,
+                evt.Approved, DateTimeOffset.UtcNow)),
+        });
+
+        Logger.LogInformation(
+            "İzin talebi {Id} workflow kararıyla {Status} yapıldı", leave.Id, leave.Status);
+    }
+
+    private record WorkflowDecidedPayload(
+        Guid WorkflowRequestId, string WorkflowType, Guid RequesterEmployeeId,
+        string? Subject, bool Approved, Guid DecidedByEmployeeId,
+        string? Comment, DateTimeOffset OccurredAt);
+
+    /// <summary>timeshift-service (ve ileride baskalari) bu sekli bekler.</summary>
+    private record LeaveDecidedEvent(
+        string TenantSlug, Guid LeaveRequestId, Guid EmployeeId,
+        DateOnly StartDate, DateOnly EndDate, bool Approved, DateTimeOffset OccurredAt);
+}
