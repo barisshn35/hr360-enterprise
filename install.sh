@@ -2,8 +2,8 @@
 # HR360 Enterprise — tek sunucu kurulum scripti
 #
 # Ne yapar:
-#   1. Docker / Docker Compose var mi kontrol eder; yoksa (apt tabanli
-#      sistemlerde) sizden onay alarak otomatik kurar
+#   1. Docker / Docker Compose var mi kontrol eder; yoksa (apt/dnf/yum
+#      tabanli sistemlerde) sizden onay alarak otomatik kurar
 #   2. Sirlari (parola, anahtar) sizden sorar — bos birakirsaniz guvenli,
 #      rastgele bir deger uretir
 #   3. .env dosyasini yazar
@@ -49,10 +49,15 @@ echo "----------------------------------------------"
 USE_SUDO_DOCKER=0
 
 install_docker() {
-  # Otomatik kurulum sadece apt tabanli sistemlerde (Ubuntu/Debian) destekleniyor.
-  if ! command -v apt-get >/dev/null 2>&1; then
-    echo "Docker otomatik kurulumu sadece apt tabanli sistemlerde (Ubuntu/Debian) destekleniyor."
-    echo "Kendi dagitiminiz icin once Docker Engine'i kurun: https://docs.docker.com/engine/install/"
+  # Otomatik kurulum, get.docker.com scriptinin desteklendigi paket
+  # yoneticilerinde calisir: apt (Ubuntu/Debian) veya dnf/yum
+  # (Rocky/RHEL/CentOS/AlmaLinux/Fedora). Diger dagitimlarda elle kurulum
+  # gerekir.
+  if ! command -v apt-get >/dev/null 2>&1 \
+    && ! command -v dnf >/dev/null 2>&1 \
+    && ! command -v yum >/dev/null 2>&1; then
+    echo "Docker otomatik kurulumu bu dagitimda desteklenmiyor (apt/dnf/yum bulunamadi)."
+    echo "Once Docker Engine'i kurun: https://docs.docker.com/engine/install/"
     exit 1
   fi
 
