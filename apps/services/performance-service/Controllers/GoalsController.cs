@@ -43,9 +43,7 @@ public class GoalsController : ControllerBase
 
         if (!isManager)
         {
-            var email = User.FindFirst("email")?.Value;
-            var me = string.IsNullOrWhiteSpace(email)
-                ? null : await _directory.FindEmployeeByEmailAsync(email, ct);
+            var me = await _directory.FindMeAsync(ct);
 
             if (me is null)
                 return Forbid();

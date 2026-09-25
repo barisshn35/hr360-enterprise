@@ -44,7 +44,11 @@ public class OnboardingDbContext : DbContext, ITenantAwareContext
         modelBuilder.Entity<Asset>().ToTable("onboarding_assets");
         modelBuilder.Entity<Asset>().Property(a => a.Type).HasConversion<string>();
         modelBuilder.Entity<Asset>().Property(a => a.Status).HasConversion<string>();
-        modelBuilder.Entity<Asset>().HasIndex(a => a.AssetTag).IsUnique();
+        modelBuilder.Entity<Asset>().HasIndex(a => new { a.TenantSlug, a.AssetTag }).IsUnique();
+        // Bir zimmetin ayni anda tek acik atamasi olabilir (esz. zamanli iki atama
+        // GetAll'daki ToDictionary'yi patlatip tum zimmet listesini 500'e dusuruyordu).
+        modelBuilder.Entity<AssetAssignment>().HasIndex(a => a.AssetId).IsUnique()
+            .HasFilter("\"ReturnedOn\" IS NULL").HasDatabaseName("UX_onboarding_asset_assignments_open");
 
         modelBuilder.Entity<AssetAssignment>().ConfigureTenantColumn();
         modelBuilder.Entity<AssetAssignment>().ToTable("onboarding_asset_assignments");

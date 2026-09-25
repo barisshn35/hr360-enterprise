@@ -51,6 +51,10 @@ public class ShiftOverridesController : ControllerBase
             return BadRequest(new { message = "Leave override'ları izin onayıyla otomatik oluşur, elle eklenemez" });
         if (request.To < request.From)
             return BadRequest(new { message = "Bitiş tarihi başlangıçtan önce olamaz" });
+        // NOT: Aralik sinirsizdi - 0001-01-01..9999-12-31 (calisan bos = tum calisanlar)
+        // tek istekte milyarlarca satir uretmeye calisip servisi kilitliyordu.
+        if (request.To.DayNumber - request.From.DayNumber > 366)
+            return BadRequest("Tek seferde en fazla 1 yıllık aralık girilebilir");
         if (request.Type == ShiftOverrideType.Manual && (request.StartTime is null || request.EndTime is null))
             return BadRequest(new { message = "Manuel değişimde başlangıç-bitiş saati zorunlu" });
 

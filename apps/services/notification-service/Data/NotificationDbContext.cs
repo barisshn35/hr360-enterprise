@@ -31,7 +31,7 @@ public class NotificationDbContext : DbContext, ITenantAwareContext
         modelBuilder.Entity<NotificationTemplate>().ToTable("notification_templates");
         modelBuilder.Entity<NotificationTemplate>().Property(t => t.Channel).HasConversion<string>();
         modelBuilder.Entity<NotificationTemplate>()
-            .HasIndex(t => new { t.Code, t.Channel, t.Locale }).IsUnique();
+            .HasIndex(t => new { t.TenantSlug, t.Code, t.Channel, t.Locale }).IsUnique();
 
         modelBuilder.Entity<Notification>().ConfigureTenantColumn();
         modelBuilder.Entity<Notification>().ToTable("notification_messages");

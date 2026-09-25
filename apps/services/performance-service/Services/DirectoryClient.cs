@@ -176,6 +176,26 @@ public class DirectoryClient
     /// E-postadan calisan bulur. Token'daki kullaniciyi calisan kaydiyla
     /// eslestirmek icin - "kendi verimi gorme" yetkisi buna dayaniyor.
     /// </summary>
+    /// <summary>
+    /// Token sahibinin calisan kaydi - employee-service /api/employees/me (KeycloakUserId
+    /// eslesmesi). Istek basina onbelleklenir.
+    ///
+    /// NOT: Onceden kimlik e-postayla, GET /api/employees (tum liste) uzerinden
+    /// cozuluyordu - bu uc duz calisanlara 403 dondugu icin "benim performansim",
+    /// "hedeflerim", donem gecmisi gibi TUM calisan ekranlari duz calisanlar icin
+    /// 403/404 veriyordu; ustelik e-posta eslesmesi guvenilir degil.
+    /// </summary>
+    public async Task<EmployeeInfo?> FindMeAsync(CancellationToken ct)
+    {
+        var ctx = _ctx.HttpContext;
+        const string itemKey = "__hr360_perf_me";
+        if (ctx is not null && ctx.Items.TryGetValue(itemKey, out var cached)) return cached as EmployeeInfo;
+        var me = await GetAsync<EmployeeDto>($"{_employeeBase}/api/employees/me", ct);
+        var result = me is null ? null : new EmployeeInfo(me.Id, me.FirstName ?? "", me.LastName ?? "", me.Email ?? "");
+        if (ctx is not null) ctx.Items[itemKey] = result;
+        return result;
+    }
+
     public async Task<EmployeeInfo?> FindEmployeeByEmailAsync(string email, CancellationToken ct)
     {
         var key = CacheKey($"emp-email:{email.ToLowerInvariant()}");
@@ -202,10 +222,15 @@ public class DirectoryClient
         var key = CacheKey("emp-names");
         if (!_cache.TryGetValue(key, out Dictionary<Guid, string>? all) || all is null)
         {
-            var list = await GetAsync<List<EmployeeDto>>($"{_employeeBase}/api/employees", ct);
+            // NOT: Onceden GET /api/employees (tam liste) kullaniliyordu; bu uc duz
+            // calisanlara 403 doner ve BOS sonuc kiraci anahtariyla 60 sn
+            // onbellege aliniyordu - bir calisanin istegi, yoneticilerin
+            // ekranlarindaki tum isimleri "—" yapiyordu. Herkese acik rehber ucu
+            // kullanilir ve basarisiz yanit onbellege alinmaz.
+            var list = await GetAsync<List<EmployeeDto>>($"{_employeeBase}/api/employees/directory", ct);
             all = (list ?? new List<EmployeeDto>())
                 .ToDictionary(e => e.Id, e => $"{e.FirstName} {e.LastName}".Trim());
-            _cache.Set(key, all, CacheTtl);
+            if (list is not null) _cache.Set(key, all, CacheTtl);
         }
 
         return ids.Where(all.ContainsKey).ToDictionary(id => id, id => all[id]);

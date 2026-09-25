@@ -34,7 +34,7 @@ public class RecruitmentDbContext : DbContext, ITenantAwareContext
 
         modelBuilder.Entity<Candidate>().ConfigureTenantColumn();
         modelBuilder.Entity<Candidate>().ToTable("recruitment_candidates");
-        modelBuilder.Entity<Candidate>().HasIndex(c => c.Email).IsUnique();
+        modelBuilder.Entity<Candidate>().HasIndex(c => new { c.TenantSlug, c.Email }).IsUnique();
 
         modelBuilder.Entity<Application>().ConfigureTenantColumn();
         modelBuilder.Entity<Application>().ToTable("recruitment_applications");

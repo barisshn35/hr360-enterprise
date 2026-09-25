@@ -27,7 +27,7 @@ public class CompensationDbContext : DbContext, ITenantAwareContext
     {
         modelBuilder.Entity<SalaryBand>().ConfigureTenantColumn();
         modelBuilder.Entity<SalaryBand>().ToTable("compensation_salary_bands");
-        modelBuilder.Entity<SalaryBand>().HasIndex(b => new { b.Grade, b.Year }).IsUnique();
+        modelBuilder.Entity<SalaryBand>().HasIndex(b => new { b.TenantSlug, b.Grade, b.Year }).IsUnique();
 
         modelBuilder.Entity<CompensationRecord>().ConfigureTenantColumn();
         modelBuilder.Entity<CompensationRecord>().ToTable("compensation_records");

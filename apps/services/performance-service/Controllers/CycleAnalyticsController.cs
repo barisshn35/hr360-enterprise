@@ -49,11 +49,7 @@ public class CycleAnalyticsController : ControllerBase
     [HttpGet("me")]
     public async Task<IActionResult> MyCycles([FromQuery] int? year, CancellationToken ct = default)
     {
-        var email = User.FindFirst("email")?.Value;
-        if (string.IsNullOrWhiteSpace(email))
-            return BadRequest(new { message = "Token'da e-posta bilgisi yok" });
-
-        var me = await _directory.FindEmployeeByEmailAsync(email, ct);
+        var me = await _directory.FindMeAsync(ct);
         if (me is null)
             return NotFound(new { message = "Bu hesaba bağlı çalışan kaydı bulunamadı" });
 

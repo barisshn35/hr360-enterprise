@@ -34,7 +34,12 @@ public class EmployeeDbContext : DbContext, ITenantAwareContext
         modelBuilder.Entity<Assignment>().ConfigureTenantColumn();
 
         modelBuilder.Entity<Employee>().ToTable("employee_employees");
-        modelBuilder.Entity<Employee>().HasIndex(e => e.Email).IsUnique();
+        // Kiraci bazinda benzersiz: global benzersizlik, bir kiracinin baska bir kiracidaki
+        // e-postayi "var mi?" diye yoklamasina (500 = var) ve sirket degistiren birinin
+        // eklenememesine yol aciyordu. Buyuk/kucuk harf duyarsizligi SQL tarafinda (lower).
+        modelBuilder.Entity<Employee>().HasIndex(e => new { e.TenantSlug, e.Email }).IsUnique();
+        modelBuilder.Entity<Employee>().HasIndex(e => e.KeycloakUserId).IsUnique()
+            .HasFilter("\"KeycloakUserId\" IS NOT NULL");
         modelBuilder.Entity<Employee>().Property(e => e.Status).HasConversion<string>();
 
         modelBuilder.Entity<Assignment>().ToTable("employee_assignments");

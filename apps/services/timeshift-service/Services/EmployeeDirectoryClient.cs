@@ -36,6 +36,30 @@ public class EmployeeDirectoryClient
         return req;
     }
 
+    private record MeDto(Guid Id);
+
+    /// <summary>
+    /// Cagiranin kendi Employee.Id'si (employee-service /api/employees/me, KeycloakUserId
+    /// eslesmesi). Istek basina onbelleklenir. Cozulemezse null - cagiranlar bunu
+    /// FAIL-CLOSED yorumlar (baskasi adina islem yetkisi yoksa 403).
+    /// </summary>
+    public async Task<Guid?> FindMyEmployeeIdAsync(CancellationToken ct)
+    {
+        var ctx = _httpContextAccessor.HttpContext;
+        const string key = "__hr360_my_employee_id";
+        if (ctx is not null && ctx.Items.TryGetValue(key, out var cached)) return (Guid?)cached;
+        Guid? result = null;
+        try
+        {
+            using var resp = await _http.SendAsync(Build(HttpMethod.Get, "/api/employees/me"), ct);
+            if (resp.IsSuccessStatusCode)
+                result = JsonSerializer.Deserialize<MeDto>(await resp.Content.ReadAsStringAsync(ct), JsonOpts)?.Id;
+        }
+        catch (Exception) { result = null; }
+        if (ctx is not null) ctx.Items[key] = result;
+        return result;
+    }
+
     private record AssignmentDto(Guid DepartmentId, DateOnly EffectiveFrom, DateOnly? EffectiveTo);
     private record EmployeeDto(Guid Id, List<AssignmentDto>? Assignments);
 

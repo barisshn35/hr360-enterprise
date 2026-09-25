@@ -115,11 +115,35 @@ public class EmployeesController : ControllerBase
         return Ok(list);
     }
 
+    private bool IsManagerOrAbove => User.IsInRole("manager") || User.IsInRole("hr-admin")
+        || User.IsInRole("tenant-admin") || User.IsInRole("platform-admin")
+        || User.IsInRole("ext-employee-viewAll") || User.IsInRole("ext-employee-manage");
+
+    private bool IsHr => User.IsInRole("hr-admin") || User.IsInRole("tenant-admin")
+        || User.IsInRole("platform-admin") || User.IsInRole("ext-employee-manage");
+
+    private string? CallerSub => User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+        ?? User.FindFirst("sub")?.Value;
+
+    /// <summary>
+    /// GUVENLIK: Onceden herhangi bir calisan, dizinden ogrendigi kimlikle her
+    /// meslektasinin TAM kaydini (telefon, ise giris tarihi, KeycloakUserId, atama
+    /// gecmisi) okuyabiliyordu (canli dogrulandi). Kaydin sahibi ve yonetici+ tam
+    /// kaydi gorur; digerleri yalnizca kurumsal rehber bilgisini (ad, e-posta, durum)
+    /// - diger servisler (orn. workflow-service onayciya bildirim icin) kullanicinin
+    /// jetonuyla yalnizca bu alanlara ihtiyac duyuyor.
+    /// </summary>
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(Guid id)
     {
         var employee = await _db.Employees.Include(e => e.Assignments).FirstOrDefaultAsync(e => e.Id == id);
-        return employee is null ? NotFound() : Ok(employee);
+        if (employee is null) return NotFound();
+        if (IsManagerOrAbove || (CallerSub is { } sub && employee.KeycloakUserId == sub))
+            return Ok(employee);
+        return Ok(new
+        {
+            employee.Id, employee.FirstName, employee.LastName, employee.Email, employee.Status,
+        });
     }
 
     /// <summary>
@@ -138,6 +162,19 @@ public class EmployeesController : ControllerBase
         var employee = await _db.Employees.FirstOrDefaultAsync(e => e.Id == id);
         if (employee is null) return NotFound();
 
+        // GUVENLIK: Ayni giris hesabi birden fazla calisan kaydina baglanabiliyordu -
+        // /me (FirstOrDefault) o zaman talep sahibi olarak kullanilandan FARKLI bir
+        // kayit dondurup kendi talebini onaylama korumalarini bosa cikarabiliyordu.
+        if (string.IsNullOrWhiteSpace(request.KeycloakUserId))
+            return BadRequest(new { message = "KeycloakUserId zorunlu" });
+        var takenBy = await _db.Employees.IgnoreQueryFilters()
+            .Where(e => e.KeycloakUserId == request.KeycloakUserId && e.Id != id)
+            .Select(e => (Guid?)e.Id).FirstOrDefaultAsync();
+        if (takenBy is not null)
+            return Conflict(new { message = "Bu giriş hesabı başka bir çalışan kaydına bağlı" });
+        if (!string.IsNullOrEmpty(employee.KeycloakUserId) && employee.KeycloakUserId != request.KeycloakUserId)
+            return Conflict(new { message = "Bu çalışan zaten başka bir giriş hesabına bağlı" });
+
         employee.KeycloakUserId = request.KeycloakUserId;
         await _db.SaveChangesAsync();
         return Ok(new { employeeId = id, keycloakUserId = employee.KeycloakUserId });
@@ -147,11 +184,23 @@ public class EmployeesController : ControllerBase
     [Authorize(Policy = "RequireManagerOrAbove")]
     public async Task<IActionResult> Create([FromBody] CreateEmployeeRequest request)
     {
+        if (string.IsNullOrWhiteSpace(request.FirstName) || string.IsNullOrWhiteSpace(request.LastName))
+            return BadRequest(new { message = "Ad ve soyad zorunlu" });
+        if (string.IsNullOrWhiteSpace(request.Email)
+            || !System.Text.RegularExpressions.Regex.IsMatch(request.Email.Trim(), @"^[^@\s]+@[^@\s]+\.[^@\s]+$"))
+            return BadRequest(new { message = "Geçerli bir e-posta adresi girin" });
+        var normalizedEmail = request.Email.Trim().ToLowerInvariant();
+        // NOT: Ayni kiracida ayni e-posta tekrar eklenemez (onceden veritabani
+        // kisitina carpip 500 donuyordu). Kontrol kiraci filtresiyle yapilir; baska
+        // bir kiracidaki ayni adres engel degildir (bkz. kiraci bazli benzersiz indeks).
+        if (await _db.Employees.AnyAsync(e => e.Email.ToLower() == normalizedEmail))
+            return Conflict(new { message = "Bu e-posta ile kayıtlı bir çalışan zaten var" });
+
         var employee = new Employee
         {
             FirstName = request.FirstName,
             LastName = request.LastName,
-            Email = request.Email,
+            Email = normalizedEmail,
             Phone = request.Phone,
             HireDate = request.HireDate
         };
@@ -192,6 +241,17 @@ public class EmployeesController : ControllerBase
         var currentActive = await _db.Assignments
             .Where(a => a.EmployeeId == id && a.EffectiveTo == null)
             .FirstOrDefaultAsync();
+
+        // GUVENLIK: Herhangi bir yonetici, herhangi bir calisani herhangi bir
+        // departmana tasiyabiliyordu - izin onayi calisanin aktif departmaninin
+        // basina gittigi icin bu, onay zincirini istedigi kisiye yonlendirmek
+        // demekti. Yonetici yalnizca HENUZ atamasi olmayan (yeni ise alinan)
+        // calisani yerlestirebilir; mevcut atamayi degistirmek IK'ya ozel.
+        if (currentActive is not null && !IsHr)
+            return StatusCode(StatusCodes.Status403Forbidden,
+                new { message = "Mevcut bir atamayı yalnızca İK değiştirebilir" });
+        if (request.DepartmentId == Guid.Empty)
+            return BadRequest(new { message = "Departman zorunlu" });
 
         if (currentActive is not null && request.EffectiveFrom < currentActive.EffectiveFrom)
             return BadRequest(new

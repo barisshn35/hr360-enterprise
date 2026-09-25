@@ -14,7 +14,7 @@ import { EmployeePicker } from '@/components/ui/EmployeePicker'
 import { useToast } from '@/components/ui/Toast'
 import { useAuth } from '@/auth/useAuth'
 import { timeshiftApi } from '@/api/timeshift'
-import { useTimeEntries, useTimeSummary } from '@/api/queries'
+import { useMyEmployeeId, useTimeEntries, useTimeSummary } from '@/api/queries'
 import type { TimeEntry } from '@/api/types'
 import { formatDate, formatNumber } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -142,7 +142,12 @@ function TodayCard({ employeeId, today }: { employeeId: string; today?: TimeEntr
 export function TimesheetPage() {
   const { can } = useAuth()
   const now = new Date()
-  const [employeeId, setEmployeeId] = useState('')
+  // Başkasının puantajını yalnızca yönetici/İK görür (backend 403 döner);
+  // diğerleri için sayfa doğrudan kendi kaydıyla açılır.
+  const canManage = can('timeshift:manage')
+  const me = useMyEmployeeId(true)
+  const [pickedEmployeeId, setEmployeeId] = useState('')
+  const employeeId = canManage ? pickedEmployeeId || (me.employeeId ?? '') : (me.employeeId ?? '')
   const [year, setYear] = useState(now.getFullYear())
   const [month, setMonth] = useState(now.getMonth() + 1)
 
@@ -155,12 +160,17 @@ export function TimesheetPage() {
     employeeId || undefined,
     year,
     month,
-    Boolean(employeeId) && can('timeshift:manage'),
+    Boolean(employeeId) && (canManage || employeeId === me.employeeId),
   )
 
-  const todayKey = now.toISOString().slice(0, 10)
+  // NOT: toISOString() UTC tarihi verir; 00:00-03:00 arası (UTC+3) "bugün" dünü
+  // gösteriyordu. Yerel tarih kullanılır. Gece vardiyasında açık (çıkışı
+  // yapılmamış) kayıt dünün tarihini taşır; kart önce onu gösterir.
+  const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
   const today = useMemo(
-    () => entries.data?.find((e) => e.date?.slice(0, 10) === todayKey),
+    () =>
+      entries.data?.find((e) => Boolean(e.clockIn) && !e.clockOut) ??
+      entries.data?.find((e) => e.date?.slice(0, 10) === todayKey),
     [entries.data, todayKey],
   )
 
@@ -224,11 +234,17 @@ export function TimesheetPage() {
       />
 
       <div className="grid max-w-2xl gap-4 sm:grid-cols-[1fr_auto_auto]">
-        <EmployeePicker
-          value={employeeId}
-          onChange={setEmployeeId}
-          hint="Kayıtları görmek için çalışan seçin."
-        />
+        {canManage ? (
+          <EmployeePicker
+            value={employeeId}
+            onChange={setEmployeeId}
+            hint="Kayıtları görmek için çalışan seçin."
+          />
+        ) : (
+          <p className="self-end pb-2 text-[13px] text-muted-foreground">
+            {me.notLinked ? 'Hesabınıza bağlı çalışan kaydı bulunamadı.' : 'Kendi puantajınız'}
+          </p>
+        )}
         <TextField
           id="timesheet-year"
           label="Yıl"
@@ -251,7 +267,11 @@ export function TimesheetPage() {
         />
       </div>
 
-      {employeeId && can('timeshift:clock') && <TodayCard employeeId={employeeId} today={today} />}
+      {/* Giriş/çıkış düğmesi yalnızca kişinin kendi kaydında: başkasının sayfasına
+          bakan yönetici yanlışlıkla onun adına giriş yapmasın. */}
+      {employeeId && employeeId === me.employeeId && can('timeshift:clock') && (
+        <TodayCard employeeId={employeeId} today={today} />
+      )}
 
       {employeeId && summary.data && (
         <div className="grid gap-3 sm:grid-cols-3">

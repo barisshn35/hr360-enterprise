@@ -81,7 +81,7 @@ CREATE UNIQUE INDEX "IX_recruitment_applications_JobPostingId_CandidateId" ON re
 
 CREATE INDEX "IX_recruitment_applications_TenantSlug" ON recruitment_applications ("TenantSlug");
 
-CREATE UNIQUE INDEX "IX_recruitment_candidates_Email" ON recruitment_candidates ("Email");
+CREATE UNIQUE INDEX "IX_recruitment_candidates_TenantSlug_Email" ON recruitment_candidates ("TenantSlug", "Email");
 
 CREATE INDEX "IX_recruitment_candidates_TenantSlug" ON recruitment_candidates ("TenantSlug");
 
@@ -153,7 +153,7 @@ CREATE INDEX "IX_onboarding_asset_assignments_EmployeeId" ON onboarding_asset_as
 
 CREATE INDEX "IX_onboarding_asset_assignments_TenantSlug" ON onboarding_asset_assignments ("TenantSlug");
 
-CREATE UNIQUE INDEX "IX_onboarding_assets_AssetTag" ON onboarding_assets ("AssetTag");
+CREATE UNIQUE INDEX "IX_onboarding_assets_TenantSlug_AssetTag" ON onboarding_assets ("TenantSlug", "AssetTag");
 
 CREATE INDEX "IX_onboarding_assets_TenantSlug" ON onboarding_assets ("TenantSlug");
 
@@ -615,7 +615,7 @@ CREATE INDEX "IX_compensation_records_EmployeeId" ON compensation_records ("Empl
 
 CREATE INDEX "IX_compensation_records_TenantSlug" ON compensation_records ("TenantSlug");
 
-CREATE UNIQUE INDEX "IX_compensation_salary_bands_Grade_Year" ON compensation_salary_bands ("Grade", "Year");
+CREATE UNIQUE INDEX "IX_compensation_salary_bands_TenantSlug_Grade_Year" ON compensation_salary_bands ("TenantSlug", "Grade", "Year");
 
 CREATE INDEX "IX_compensation_salary_bands_TenantSlug" ON compensation_salary_bands ("TenantSlug");
 
@@ -735,7 +735,7 @@ CREATE INDEX "IX_notification_messages_RecipientEmployeeId_Status" ON notificati
 
 CREATE INDEX "IX_notification_messages_TenantSlug" ON notification_messages ("TenantSlug");
 
-CREATE UNIQUE INDEX "IX_notification_templates_Code_Channel_Locale" ON notification_templates ("Code", "Channel", "Locale");
+CREATE UNIQUE INDEX "IX_notification_templates_TenantSlug_Code_Channel_Locale" ON notification_templates ("TenantSlug", "Code", "Channel", "Locale");
 
 CREATE INDEX "IX_notification_templates_TenantSlug" ON notification_templates ("TenantSlug");
 
@@ -834,7 +834,7 @@ CREATE TABLE employee_employees (
     "Status" text NOT NULL,
     "CreatedAt" timestamptz NOT NULL
 );
-CREATE UNIQUE INDEX "IX_employee_employees_Email" ON employee_employees ("Email");
+CREATE UNIQUE INDEX "IX_employee_employees_TenantSlug_Email" ON employee_employees ("TenantSlug", lower("Email"));
 CREATE INDEX "IX_employee_employees_TenantSlug" ON employee_employees ("TenantSlug");
 
 CREATE TABLE employee_assignments (
@@ -938,3 +938,7 @@ CREATE TABLE messaging_outbox (
     "LastError" text
 );
 CREATE INDEX "IX_messaging_outbox_PublishedAt_CreatedAt" ON messaging_outbox ("PublishedAt", "CreatedAt");
+
+-- CTO denetimi (2026-09-25): ek butunluk kisitlari
+CREATE UNIQUE INDEX "IX_employee_employees_KeycloakUserId" ON employee_employees ("KeycloakUserId") WHERE "KeycloakUserId" IS NOT NULL;
+CREATE UNIQUE INDEX "UX_onboarding_asset_assignments_open" ON onboarding_asset_assignments ("AssetId") WHERE "ReturnedOn" IS NULL;

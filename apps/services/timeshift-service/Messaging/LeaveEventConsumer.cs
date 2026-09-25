@@ -26,6 +26,15 @@ public class LeaveEventConsumer : KafkaConsumerBase
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
         if (evt is null || !evt.Approved) return;
 
+        // Savunma: leave-service artik 1 yili asan talebi kabul etmiyor; yine de bozuk
+        // bir olay gun gun milyonlarca sorgu calistirip tuketiciyi kilitlemesin.
+        if (evt.EndDate < evt.StartDate || evt.EndDate.DayNumber - evt.StartDate.DayNumber > 366)
+        {
+            Logger.LogError("Geçersiz izin aralığı, atlanıyor: {Start} - {End} ({Leave})",
+                evt.StartDate, evt.EndDate, evt.LeaveRequestId);
+            return;
+        }
+
         for (var date = evt.StartDate; date <= evt.EndDate; date = date.AddDays(1))
         {
             var existing = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions

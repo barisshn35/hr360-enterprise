@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PerformanceService.Data;
 using PerformanceService.Models;
+using PerformanceService.Security;
+using PerformanceService.Services;
 
 namespace PerformanceService.Controllers;
 
@@ -20,7 +22,12 @@ namespace PerformanceService.Controllers;
 public class FeedbackController : ControllerBase
 {
     private readonly PerformanceDbContext _db;
-    public FeedbackController(PerformanceDbContext db) => _db = db;
+    private readonly DirectoryClient _directory;
+    public FeedbackController(PerformanceDbContext db, DirectoryClient directory)
+    {
+        _db = db;
+        _directory = directory;
+    }
 
     /// <summary>
     /// Bir calisana gelen geri bildirimler.
@@ -31,13 +38,23 @@ public class FeedbackController : ControllerBase
         Guid employeeId,
         [FromQuery] bool asManager = false,
         [FromQuery] FeedbackReason? reason = null,
-        [FromQuery] DateTimeOffset? since = null)
+        [FromQuery] DateTimeOffset? since = null,
+        CancellationToken ct = default)
     {
+        // GUVENLIK: Onceden herhangi bir calisan, herhangi bir meslektasinin aldigi
+        // geri bildirimleri okuyabiliyordu. Kisi yalnizca kendisine gelenleri (gizli
+        // notlar haric); yonetici+ herkesinkini gorur.
+        var isManager = User.IsManagerOrAbove();
+        if (!isManager)
+        {
+            var me = await _directory.FindMeAsync(ct);
+            if (me is null || me.Id != employeeId) return Forbid();
+        }
+
         var q = _db.Feedback.Where(f => f.ToEmployeeId == employeeId);
 
         // Yonetici gorunumu degilse gizli notlar filtrelenir.
-        if (!asManager || !User.IsInRole("manager") && !User.IsInRole("hr-admin")
-                       && !User.IsInRole("tenant-admin") && !User.IsInRole("platform-admin"))
+        if (!asManager || !isManager)
         {
             q = q.Where(f => f.VisibleToEmployee);
         }
@@ -65,21 +82,47 @@ public class FeedbackController : ControllerBase
     }
 
     /// <summary>Bir kisinin yazdigi geri bildirimler.</summary>
+    /// <summary>
+    /// GUVENLIK: Onceden yalnizca [Authorize] - her calisan, bir yoneticinin
+    /// YAZDIGI tum notlari, calisana GOSTERILMEYEN (VisibleToEmployee=false) gizli
+    /// yonetici notlari dahil okuyabiliyordu (canli dogrulandi: Ayse, Mehmet'in
+    /// kendisi hakkindaki "PIP dusunuluyor" notunu okudu). Yalnizca yazan kisi ve IK.
+    /// </summary>
     [HttpGet("sent/{employeeId}")]
-    public async Task<IActionResult> Sent(Guid employeeId)
-        => Ok(await _db.Feedback
+    public async Task<IActionResult> Sent(Guid employeeId, CancellationToken ct)
+    {
+        if (!User.IsHr())
+        {
+            var me = await _directory.FindMeAsync(ct);
+            if (me is null || me.Id != employeeId) return Forbid();
+        }
+        return Ok(await _db.Feedback
             .Where(f => f.FromEmployeeId == employeeId)
             .OrderByDescending(f => f.CreatedAt)
-            .ToListAsync());
+            .ToListAsync(ct));
+    }
 
     [HttpPost]
     [Authorize(Policy = "RequireManagerOrAbove")]
-    public async Task<IActionResult> Create([FromBody] CreateFeedbackRequest request)
+    public async Task<IActionResult> Create([FromBody] CreateFeedbackRequest request, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(request.Body))
             return BadRequest(new { message = "Geri bildirim metni bos olamaz" });
+        if (request.Body.Length > 5000)
+            return BadRequest(new { message = "Geri bildirim en fazla 5000 karakter olabilir" });
 
-        if (request.FromEmployeeId == request.ToEmployeeId)
+        // GUVENLIK: Yazar (FromEmployeeId) istemciden geliyordu - bir yonetici notu
+        // baska birinin (orn. ust yoneticinin) adina yazabiliyordu. Yazar her zaman
+        // token sahibidir.
+        var me = await _directory.FindMeAsync(ct);
+        if (me is null)
+            return StatusCode(StatusCodes.Status403Forbidden,
+                new { message = "Geri bildirim yazmak için çalışan kaydına bağlı bir hesap gerekli" });
+        if (request.FromEmployeeId != Guid.Empty && request.FromEmployeeId != me.Id)
+            return StatusCode(StatusCodes.Status403Forbidden,
+                new { message = "Geri bildirim yalnızca kendi adınıza yazılabilir" });
+
+        if (me.Id == request.ToEmployeeId)
             return BadRequest(new { message = "Kisi kendine geri bildirim yazamaz" });
 
         // Sebep aciklamasi, yapici/olumsuz geri bildirimde zorunlu:
@@ -95,7 +138,7 @@ public class FeedbackController : ControllerBase
 
         var feedback = new Feedback
         {
-            FromEmployeeId = request.FromEmployeeId,
+            FromEmployeeId = me.Id,
             ToEmployeeId = request.ToEmployeeId,
             CycleId = request.CycleId,
             MetricId = request.MetricId,
@@ -112,11 +155,14 @@ public class FeedbackController : ControllerBase
     }
 
     [HttpPost("{id}/mark-read")]
-    public async Task<IActionResult> MarkRead(Guid id)
+    public async Task<IActionResult> MarkRead(Guid id, CancellationToken ct)
     {
-        var f = await _db.Feedback.FirstOrDefaultAsync(x => x.Id == id);
+        var f = await _db.Feedback.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (f is null) return NotFound();
         if (!f.VisibleToEmployee) return Forbid();
+        // Yalnizca alici okundu isaretleyebilir.
+        var me = await _directory.FindMeAsync(ct);
+        if (me is null || me.Id != f.ToEmployeeId) return NotFound();
 
         f.ReadAt ??= DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync();
