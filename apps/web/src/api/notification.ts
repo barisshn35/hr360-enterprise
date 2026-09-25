@@ -33,12 +33,16 @@ export interface AppNotification {
   readAt: string | null
 }
 
+/** NOT: Önceden `subject`/`body` bekleniyordu; backend (NotificationTemplate)
+ * `subjectTemplate`/`bodyTemplate` döner - şablon listesinde konu/gövde boştu. */
 export interface NotificationTemplate {
   id: string
   code: string
   channel: NotificationChannel
-  subject: string
-  body: string
+  locale: string
+  subjectTemplate: string | null
+  bodyTemplate: string
+  isActive: boolean
 }
 
 export interface CreateNotificationInput {
@@ -48,11 +52,14 @@ export interface CreateNotificationInput {
   channel: NotificationChannel
 }
 
+/** Backend `CreateTemplateRequest`: önceden `subject`/`body` gönderiliyordu,
+ * zorunlu `bodyTemplate` eksik kaldığı için her şablon oluşturma 400 alıyordu. */
 export interface CreateTemplateInput {
   code: string
   channel: NotificationChannel
-  subject: string
-  body: string
+  locale?: string
+  subjectTemplate: string
+  bodyTemplate: string
 }
 
 /* ------------------------------------------------------------------ servis */

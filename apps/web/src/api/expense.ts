@@ -95,13 +95,32 @@ export interface HrCase {
   resolvedAt: string | null
 }
 
+/** Backend `DocumentType` (expense-service, string enum). */
+export type DocumentType = 'Contract' | 'Payslip' | 'IdCard' | 'Diploma' | 'Certificate' | 'Health' | 'Other'
+
+export const documentTypeLabels: Record<DocumentType, string> = {
+  Contract: 'Sözleşme',
+  Payslip: 'Bordro',
+  IdCard: 'Kimlik',
+  Diploma: 'Diploma',
+  Certificate: 'Sertifika',
+  Health: 'Sağlık raporu',
+  Other: 'Diğer',
+}
+
+/** NOT: Önceden `name`/`createdAt` bekleniyordu; backend `fileName`/`uploadedAt`
+ * döner - listede ad sütunu boş, tarih "—" görünüyordu. */
 export interface HrDocument {
   id: string
   employeeId: string
-  type: string
-  name: string
-  storageKey: string | null
-  createdAt: string
+  type: DocumentType
+  fileName: string
+  /** Dosya bağlı değilse boş string. */
+  storageKey: string
+  sizeBytes: number
+  contentType: string | null
+  uploadedAt: string
+  uploadedByEmployeeId: string | null
 }
 
 export interface CreateClaimInput {
@@ -121,8 +140,8 @@ export interface CreateCaseInput {
 
 export interface CreateDocumentInput {
   employeeId: string
-  type: string
-  name: string
+  type: DocumentType
+  fileName: string
   storageKey?: string
 }
 

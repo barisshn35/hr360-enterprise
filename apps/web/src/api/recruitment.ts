@@ -105,7 +105,8 @@ export interface Application {
   candidateId: string
   status: ApplicationStatus
   notes: string | null
-  createdAt: string
+  /** Backend `Application.AppliedAt` (önceden `createdAt` okunuyordu → "— tarihinde başvurdu"). */
+  appliedAt: string
   interviews?: Interview[]
 }
 

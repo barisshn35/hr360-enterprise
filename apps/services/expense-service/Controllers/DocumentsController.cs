@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ExpenseService.Data;
 using ExpenseService.Models;
+using ExpenseService.Services;
 
 namespace ExpenseService.Controllers;
 
@@ -16,7 +17,12 @@ namespace ExpenseService.Controllers;
 public class DocumentsController : ControllerBase
 {
     private readonly ExpenseDbContext _db;
-    public DocumentsController(ExpenseDbContext db) => _db = db;
+    private readonly ApprovalWorkflowClient _employees;
+    public DocumentsController(ExpenseDbContext db, ApprovalWorkflowClient employees)
+    {
+        _db = db;
+        _employees = employees;
+    }
 
     [HttpGet]
     [Authorize(Policy = "RequireDocumentManage")]
@@ -30,17 +36,27 @@ public class DocumentsController : ControllerBase
 
     [HttpPost]
     [Authorize(Policy = "RequireDocumentManage")]
-    public async Task<IActionResult> Create([FromBody] CreateDocumentRequest request)
+    public async Task<IActionResult> Create([FromBody] CreateDocumentRequest request, CancellationToken ct)
     {
+        // NOT: Arayuz {type: serbest metin, name, storageKey?} gonderiyordu; bu uc ise
+        // enum Type + zorunlu FileName/StorageKey bekliyordu - her kayit 400 aliyordu
+        // (Dokumanlar ekrani hic calismiyordu). Sozlesme arayuzde duzeltildi; burada
+        // StorageKey istege bagli (dosya yukleme henuz yok) ve yukleyen sunucuda
+        // belirlenir (onceden istemciden geliyordu).
+        if (request.EmployeeId == Guid.Empty)
+            return BadRequest(new { message = "Çalışan zorunlu" });
+        if (string.IsNullOrWhiteSpace(request.FileName) || request.FileName.Length > 255)
+            return BadRequest(new { message = "Doküman adı zorunlu ve en fazla 255 karakter olabilir" });
+        var me = await _employees.FindMyEmployeeIdAsync(ct);
         var doc = new Document
         {
             EmployeeId = request.EmployeeId,
             Type = request.Type,
-            FileName = request.FileName,
-            StorageKey = request.StorageKey,
-            SizeBytes = request.SizeBytes,
+            FileName = request.FileName.Trim(),
+            StorageKey = request.StorageKey?.Trim() ?? "",
+            SizeBytes = Math.Max(0, request.SizeBytes ?? 0),
             ContentType = request.ContentType,
-            UploadedByEmployeeId = request.UploadedByEmployeeId
+            UploadedByEmployeeId = me
         };
         _db.Documents.Add(doc);
         await _db.SaveChangesAsync();
@@ -61,5 +77,5 @@ public class DocumentsController : ControllerBase
 }
 
 public record CreateDocumentRequest(
-    Guid EmployeeId, DocumentType Type, string FileName, string StorageKey,
-    long SizeBytes, string? ContentType, Guid? UploadedByEmployeeId);
+    Guid EmployeeId, DocumentType Type, string FileName, string? StorageKey,
+    long? SizeBytes, string? ContentType);

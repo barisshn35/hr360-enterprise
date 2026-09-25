@@ -362,7 +362,7 @@ export function JobPostingDetailPage() {
                           {candidateName.get(a.candidateId) ?? `${a.candidateId.slice(0, 8)}…`}
                         </span>
                         <span className="tabular mt-0.5 block text-[12px] text-muted-foreground">
-                          {formatDate(a.createdAt)} tarihinde başvurdu
+                          {formatDate(a.appliedAt)} tarihinde başvurdu
                         </span>
                       </span>
                       <ApplicationStatusBadge status={a.status} />

@@ -6,11 +6,11 @@ import { Button } from '@/components/ui/button'
 import { DataTable, type Column } from '@/components/ui/DataTable'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { Modal } from '@/components/ui/Modal'
-import { TextField } from '@/components/ui/Field'
+import { SelectField, TextField } from '@/components/ui/Field'
 import { EmployeePicker } from '@/components/ui/EmployeePicker'
 import { InfoNote } from '@/components/ui/States'
 import { useToast } from '@/components/ui/Toast'
-import { expenseApi } from '@/api/expense'
+import { documentTypeLabels, expenseApi, type DocumentType } from '@/api/expense'
 import { useDocuments } from '@/api/queries'
 import type { HrDocument } from '@/api/types'
 import { formatDateTime } from '@/lib/format'
@@ -20,7 +20,7 @@ function NewDocumentModal({ open, onClose }: { open: boolean; onClose: () => voi
   const toast = useToast()
   const queryClient = useQueryClient()
   const [employeeId, setEmployeeId] = useState('')
-  const [type, setType] = useState('')
+  const [type, setType] = useState<DocumentType | ''>('')
   const [name, setName] = useState('')
   const [storageKey, setStorageKey] = useState('')
   const [error, setError] = useState<string | undefined>()
@@ -29,8 +29,8 @@ function NewDocumentModal({ open, onClose }: { open: boolean; onClose: () => voi
     mutationFn: () =>
       expenseApi.createDocument({
         employeeId,
-        type: type.trim(),
-        name: name.trim(),
+        type: type as DocumentType,
+        fileName: name.trim(),
         storageKey: storageKey.trim() || undefined,
       }),
     onSuccess: () => {
@@ -47,7 +47,7 @@ function NewDocumentModal({ open, onClose }: { open: boolean; onClose: () => voi
   function submit(e: React.FormEvent) {
     e.preventDefault()
     if (!employeeId) return setError('Çalışan seçilmeli.')
-    if (!type.trim()) return setError('Doküman türü zorunlu.')
+    if (!type) return setError('Doküman türü zorunlu.')
     if (name.trim().length < 3) return setError('Doküman adı en az 3 karakter olmalı.')
     setError(undefined)
     mutation.mutate()
@@ -90,13 +90,17 @@ function NewDocumentModal({ open, onClose }: { open: boolean; onClose: () => voi
           hint={error?.includes('Çalışan') ? error : undefined}
         />
         <div className="grid gap-4 sm:grid-cols-2">
-          <TextField
+          <SelectField
             id="doc-type"
             label="Tür"
             required
-            hint="Örn. Sözleşme, Bordro, Kimlik"
             value={type}
-            onChange={(e) => setType(e.target.value)}
+            onChange={(v) => setType(v as DocumentType)}
+            options={(Object.keys(documentTypeLabels) as DocumentType[]).map((t) => ({
+              value: t,
+              label: documentTypeLabels[t],
+            }))}
+            placeholder="Tür seçin"
             error={error?.includes('türü') ? error : undefined}
           />
           <TextField
@@ -141,7 +145,7 @@ function DeleteConfirm({ doc, onClose }: { doc: HrDocument | null; onClose: () =
       open
       onClose={onClose}
       title="Doküman kaydını sil"
-      note={doc.name}
+      note={doc.fileName}
       footer={
         <>
           <Button
@@ -184,13 +188,13 @@ export function DocumentsPage() {
     {
       id: 'name',
       header: 'Doküman',
-      searchText: (d) => `${d.name} ${d.type} ${d.storageKey ?? ''}`,
-      sortValue: (d) => d.name,
+      searchText: (d) => `${d.fileName} ${documentTypeLabels[d.type] ?? d.type} ${d.storageKey}`,
+      sortValue: (d) => d.fileName,
       cell: (d) => (
         <div className="min-w-0">
-          <p className="truncate font-medium text-foreground">{d.name}</p>
+          <p className="truncate font-medium text-foreground">{d.fileName}</p>
           <p className="mt-0.5 truncate text-[12px] text-muted-foreground">
-            {d.storageKey ?? 'dosya bağlı değil'}
+            {d.storageKey || 'dosya bağlı değil'}
           </p>
         </div>
       ),
@@ -199,9 +203,9 @@ export function DocumentsPage() {
       id: 'type',
       header: 'Tür',
       hideBelow: 'sm',
-      sortValue: (d) => d.type,
-      exportText: (d) => d.type,
-      cell: (d) => <StatusBadge tone="neutral">{d.type}</StatusBadge>,
+      sortValue: (d) => documentTypeLabels[d.type] ?? d.type,
+      exportText: (d) => documentTypeLabels[d.type] ?? d.type,
+      cell: (d) => <StatusBadge tone="neutral">{documentTypeLabels[d.type] ?? d.type}</StatusBadge>,
     },
     {
       id: 'employee',
@@ -217,10 +221,10 @@ export function DocumentsPage() {
       header: 'Kayıt',
       align: 'right',
       hideBelow: 'lg',
-      sortValue: (d) => new Date(d.createdAt).getTime(),
-      exportText: (d) => formatDateTime(d.createdAt),
+      sortValue: (d) => new Date(d.uploadedAt).getTime(),
+      exportText: (d) => formatDateTime(d.uploadedAt),
       cell: (d) => (
-        <span className="tabular text-muted-foreground">{formatDateTime(d.createdAt)}</span>
+        <span className="tabular text-muted-foreground">{formatDateTime(d.uploadedAt)}</span>
       ),
     },
   ]

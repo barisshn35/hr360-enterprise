@@ -22,6 +22,7 @@ import {
   type AssetType,
 } from '@/api/types'
 import { formatDate, fullName } from '@/lib/format'
+import { localISODate } from '@/lib/dates'
 
 type TabKey = AssetStatus | 'all'
 
@@ -142,7 +143,7 @@ function AssignModal({ asset, onClose }: { asset: Asset | null; onClose: () => v
   const toast = useToast()
   const queryClient = useQueryClient()
   const [employeeId, setEmployeeId] = useState('')
-  const [assignedOn, setAssignedOn] = useState(new Date().toISOString().slice(0, 10))
+  const [assignedOn, setAssignedOn] = useState(localISODate())
   const [notes, setNotes] = useState('')
   const [error, setError] = useState<string | undefined>()
 
@@ -231,7 +232,7 @@ function AssignModal({ asset, onClose }: { asset: Asset | null; onClose: () => v
 function ReturnModal({ asset, onClose }: { asset: Asset | null; onClose: () => void }) {
   const toast = useToast()
   const queryClient = useQueryClient()
-  const [returnedOn, setReturnedOn] = useState(new Date().toISOString().slice(0, 10))
+  const [returnedOn, setReturnedOn] = useState(localISODate())
   const [condition, setCondition] = useState('')
   const [markAsRetired, setRetired] = useState(false)
 

@@ -48,8 +48,8 @@ function NewTemplateModal({ open, onClose }: { open: boolean; onClose: () => voi
       notificationApi.createTemplate({
         code: code.trim(),
         channel,
-        subject: subject.trim(),
-        body: body.trim(),
+        subjectTemplate: subject.trim(),
+        bodyTemplate: body.trim(),
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['notification'] })
@@ -204,7 +204,7 @@ function DeleteTemplateConfirm({
 }
 
 export function NotificationsPage() {
-  const { user, can } = useAuth()
+  const { user, roles } = useAuth()
   const [tab, setTab] = useTabParam<TabKey>('gorunum', 'gelen')
   const [status, setStatus] = useState<string>(ALL)
   const [templateModal, setTemplateModal] = useState(false)
@@ -212,7 +212,11 @@ export function NotificationsPage() {
   const reduced = useReducedMotion()
   const queryClient = useQueryClient()
 
-  const canManage = can('notification:manage')
+  // Şablon yönetimi backend'de yalnızca İK'ya açık (RequireHrAdmin). Yöneticiler
+  // 'notification:manage' (bildirim gönderme) iznine sahip olduğu için sekmeyi
+  // görüyor ama 403 alıyordu; sekme artık İK rollerine göre gösterilir.
+  const canManage = roles.some((r) =>
+    r === 'hr-admin' || r === 'tenant-admin' || r === 'platform-admin' || (r as string) === 'ext-notification-manage')
   // NOT: `user.id` Keycloak `sub` claim'i, Employee.Id DEĞİL - bildirimler
   // backend'de RecipientEmployeeId ile yazılır. `useMyEmployeeId` ile gerçek
   // çalışan kimliği çözülür (hardcore test, 3. tur - bkz. NotificationBell.tsx).
@@ -408,7 +412,7 @@ export function NotificationsPage() {
                       <span className="block truncate font-mono text-[13px] font-semibold">
                         {t.code}
                       </span>
-                      <span className="mt-0.5 block text-[14px]">{t.subject}</span>
+                      <span className="mt-0.5 block text-[14px]">{t.subjectTemplate}</span>
                     </span>
                     <span className="flex shrink-0 items-center gap-2">
                       <StatusBadge tone="neutral">
@@ -426,7 +430,7 @@ export function NotificationsPage() {
                   </div>
                   <div className="mt-2 rounded-md bg-muted/50 p-3">
                     <p className="text-[13px] leading-relaxed whitespace-pre-line text-muted-foreground">
-                      {t.body}
+                      {t.bodyTemplate}
                     </p>
                   </div>
                 </li>

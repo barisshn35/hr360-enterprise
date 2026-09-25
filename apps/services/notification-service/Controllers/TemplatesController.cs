@@ -16,15 +16,30 @@ public class TemplatesController : ControllerBase
 
     [HttpGet]
     public async Task<IActionResult> GetAll()
-        => Ok(await _db.Templates.OrderBy(t => t.Code).ToListAsync());
+        // NOT: "Sil" yalnizca IsActive=false yapiyor; liste bunu filtrelemedigi icin
+        // silinen sablonlar arayuzde hic kaybolmuyordu.
+        => Ok(await _db.Templates.Where(t => t.IsActive).OrderBy(t => t.Code).ToListAsync());
 
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateTemplateRequest request)
     {
         var locale = request.Locale ?? "tr";
-        if (await _db.Templates.AnyAsync(t =>
-                t.Code == request.Code && t.Channel == request.Channel && t.Locale == locale))
+        if (string.IsNullOrWhiteSpace(request.Code) || string.IsNullOrWhiteSpace(request.BodyTemplate))
+            return BadRequest("Şablon kodu ve gövdesi zorunlu");
+        var existing = await _db.Templates.FirstOrDefaultAsync(t =>
+            t.Code == request.Code && t.Channel == request.Channel && t.Locale == locale);
+        if (existing is { IsActive: true })
             return Conflict("Bu kod/kanal/dil kombinasyonu icin sablon zaten var");
+        if (existing is not null)
+        {
+            // Silinmis (pasif) sablonla ayni kod yeniden eklenince benzersiz indekse
+            // carpip 500 vermek yerine eski kayit yeniden etkinlestirilir.
+            existing.SubjectTemplate = request.SubjectTemplate;
+            existing.BodyTemplate = request.BodyTemplate;
+            existing.IsActive = true;
+            await _db.SaveChangesAsync();
+            return Ok(existing);
+        }
 
         var tpl = new NotificationTemplate
         {

@@ -23,8 +23,9 @@ import { formatDate } from '@/lib/format'
 import { Switch, errorText } from '../components/controls'
 import { PersonAvatar, PersonPicker } from '../components/people'
 import type { DeptNode, PickerPerson } from '../hooks'
+import { localISODate } from '@/lib/dates'
 
-const today = () => new Date().toISOString().slice(0, 10)
+const today = () => localISODate()
 
 function ErrorLine({ message }: { message: string | null }) {
   return (

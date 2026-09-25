@@ -20,6 +20,7 @@ import {
 } from '@/api/queries'
 import { EmployeeStatus, workflowTypeLabels } from '@/api/types'
 import { formatDate, formatNumber, formatRelativeToNow } from '@/lib/format'
+import { localISODate } from '@/lib/dates'
 
 /**
  * Recharts tek başına ~390 kB. Genel bakış ilk açılan ekran olduğu için
@@ -36,11 +37,12 @@ function dailySeries(dates: string[], days: number): SeriesPoint[] {
   for (let i = days - 1; i >= 0; i--) {
     const d = new Date(today)
     d.setDate(d.getDate() - i)
-    buckets.set(d.toISOString().slice(0, 10), 0)
+    buckets.set(localISODate(d), 0)
   }
 
   for (const value of dates) {
-    const key = value.slice(0, 10)
+    // Zaman damgası UTC gelir; kullanıcının yerel gününe çevrilir.
+    const key = value.length <= 10 ? value : localISODate(new Date(value))
     if (buckets.has(key)) buckets.set(key, buckets.get(key)! + 1)
   }
 

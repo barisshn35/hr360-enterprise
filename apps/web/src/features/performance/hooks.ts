@@ -9,6 +9,7 @@ import { useCycles } from '@/api/performance'
 import type { Assignment, Department, Employee } from '@/api/types'
 import { useAuth } from '@/auth/useAuth'
 import { fullName } from '@/lib/format'
+import { localISODate } from '@/lib/dates'
 
 /* --------------------------------- Departmanlar --------------------------------- */
 
@@ -87,7 +88,7 @@ export function useDepartments() {
 export function currentAssignment(e: Employee | undefined): Assignment | null {
   const list = e?.assignments ?? []
   if (!list.length) return null
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localISODate()
   const open = list.filter((a) => !a.effectiveTo || a.effectiveTo >= today)
   return [...(open.length ? open : list)].sort((a, b) => b.effectiveFrom.localeCompare(a.effectiveFrom))[0]
 }

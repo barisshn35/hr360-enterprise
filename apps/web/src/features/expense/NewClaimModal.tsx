@@ -13,6 +13,7 @@ import { useMyEmployeeId } from '@/api/queries'
 import { useAuth } from '@/auth/useAuth'
 import { expenseCategoryLabels, type ExpenseCategory, type ExpenseItem } from '@/api/types'
 import { formatMoney } from '@/lib/format'
+import { localISODate } from '@/lib/dates'
 
 /** Formda tutulan taslak kalem — tutar kullanıcı yazarken metin kalır. */
 interface DraftItem {
@@ -29,7 +30,7 @@ function emptyItem(): DraftItem {
     key: nextKey++,
     category: 'Travel',
     amount: '',
-    expenseDate: new Date().toISOString().slice(0, 10),
+    expenseDate: localISODate(),
     description: '',
   }
 }
@@ -53,7 +54,7 @@ function excelDateToIso(value: unknown): string {
   const m1 = s.match(/^(\d{1,2})[./](\d{1,2})[./](\d{4})$/)
   if (m1) return `${m1[3]}-${m1[2].padStart(2, '0')}-${m1[1].padStart(2, '0')}`
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
-  return new Date().toISOString().slice(0, 10)
+  return localISODate()
 }
 
 function normalizeHeader(h: string): string {
