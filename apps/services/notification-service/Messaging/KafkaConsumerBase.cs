@@ -1,6 +1,7 @@
 using Confluent.Kafka;
 using Microsoft.EntityFrameworkCore;
 using NotificationService.Data;
+using NotificationService.Tenancy;
 
 namespace NotificationService.Messaging;
 
@@ -57,11 +58,17 @@ public abstract class KafkaConsumerBase : BackgroundService
             "{Consumer} basladi. Konular: {Topics}, grup: {Group}",
             ConsumerName, string.Join(", ", _topics), _groupId);
 
+        // Ayni mesaj icin art arda basarisiz deneme takibi (bkz. catch blogu).
+        TopicPartitionOffset? failingOffset = null;
+        var failingAttempts = 0;
+        const int MaxAttemptsPerEvent = 5;
+
         while (!stoppingToken.IsCancellationRequested)
         {
+            ConsumeResult<string, string>? result = null;
             try
             {
-                var result = consumer.Consume(TimeSpan.FromSeconds(1));
+                result = consumer.Consume(TimeSpan.FromSeconds(1));
                 if (result?.Message is null) continue;
 
                 var eventType = GetHeader(result.Message.Headers, "event-type");
@@ -76,6 +83,18 @@ public abstract class KafkaConsumerBase : BackgroundService
 
                 using var scope = Services.CreateScope();
                 var db = scope.ServiceProvider.GetRequiredService<NotificationDbContext>();
+
+                // Bu bir arka plan iscisi - HTTP istegi olmadigi icin TenantContext
+                // hicbir zaman doldurulmuyor ve ApplyTenantFilters ITenantOwned
+                // sorgularini SESSIZCE bos donduruyordu. expense/leave-service'in
+                // kopyalarinda bu satir vardi, bu serviste EKSIKTI (hardcore test,
+                // son tur): timeshift'te "bu gun icin override var mi?" kontrolu
+                // HIC eslesmiyor, izin mevcut bir override'la (tatil/manuel/onceki
+                // izin) cakisinca unique index ihlaliyle TUM event dusuyordu.
+                // NOT: bu yalnizca SORGULARI acar; yeni kayitlara TenantSlug'i
+                // tuketiciler event'ten kendileri yazar (StampTenant bos context'te atlar).
+                var tenantContext = scope.ServiceProvider.GetRequiredService<TenantContext>();
+                tenantContext.IsPlatformAdmin = true;
 
                 // Idempotency: bu event daha once islendi mi?
                 var already = await db.ProcessedEvents
@@ -98,6 +117,8 @@ public abstract class KafkaConsumerBase : BackgroundService
                 await db.SaveChangesAsync(stoppingToken);
 
                 consumer.Commit(result);
+                failingOffset = null;
+                failingAttempts = 0;
                 Logger.LogInformation("Event islendi: {EventType} ({EventId})", eventType, eventId);
             }
             catch (OperationCanceledException)
@@ -106,9 +127,45 @@ public abstract class KafkaConsumerBase : BackgroundService
             }
             catch (Exception ex)
             {
-                // Offset commit edilmedi: mesaj tekrar denenecek.
-                Logger.LogError(ex, "Event islenirken hata, offset ilerletilmedi");
-                await Task.Delay(TimeSpan.FromSeconds(2), CancellationToken.None);
+                // NOT: Onceki halinde burada yalnizca log + 2 sn bekleme vardi ve
+                // yorum "offset commit edilmedi: mesaj tekrar denenecek" diyordu -
+                // bu YANLISTI. Confluent.Kafka'da tuketicinin bellek ici konumu
+                // Consume() ile zaten ilerler; bir sonraki Consume() SONRAKI mesaji
+                // dondurur. Basarisiz mesaj ancak yeniden baslatmada tekrar gelirdi,
+                // sonraki herhangi bir mesaj commit edildiginde ise KALICI olarak
+                // kayboluyordu (hardcore test, son tur: timeshift'te cakisan bir
+                // izin onayi boyle sessizce dustu). Artik ayni offset'e Seek edip
+                // artan beklemeyle yeniden deniyoruz; MaxAttemptsPerEvent'ten sonra
+                // (zehirli mesaj bolumu sonsuza dek kilitlemesin diye) Critical
+                // log ile atlanir.
+                if (result?.Message is null)
+                {
+                    Logger.LogError(ex, "Kafka tuketim hatasi");
+                    await Task.Delay(TimeSpan.FromSeconds(2), CancellationToken.None);
+                    continue;
+                }
+
+                if (result.TopicPartitionOffset.Equals(failingOffset)) failingAttempts++;
+                else { failingOffset = result.TopicPartitionOffset; failingAttempts = 1; }
+
+                if (failingAttempts >= MaxAttemptsPerEvent)
+                {
+                    Logger.LogCritical(ex,
+                        "Event {Attempts} denemede de islenemedi, ATLANIYOR: {Offset} ({EventType})",
+                        failingAttempts, result.TopicPartitionOffset,
+                        GetHeader(result.Message.Headers, "event-type"));
+                    try { consumer.Commit(result); } catch (Exception commitEx) { Logger.LogError(commitEx, "Atlanan event commit edilemedi"); }
+                    failingOffset = null;
+                    failingAttempts = 0;
+                    continue;
+                }
+
+                Logger.LogError(ex,
+                    "Event islenirken hata (deneme {Attempt}/{Max}), ayni mesaj yeniden denenecek: {Offset}",
+                    failingAttempts, MaxAttemptsPerEvent, result.TopicPartitionOffset);
+                try { consumer.Seek(result.TopicPartitionOffset); }
+                catch (Exception seekEx) { Logger.LogError(seekEx, "Seek basarisiz - mesaj yeniden baslatmada tekrar gelecek"); }
+                await Task.Delay(TimeSpan.FromSeconds(2 * failingAttempts), CancellationToken.None);
             }
         }
 
