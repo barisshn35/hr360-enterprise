@@ -107,13 +107,53 @@ Tek-sunucu sürümü, aynı servislerin tamamını Docker Compose ile tek
 makinede, servis adı üzerinden birbirini bulacak şekilde çalıştırır —
 mimari olarak birebir aynı, sadece dağıtım topolojisi farklıdır.
 
-## Markalama doğrulaması
+## Kendi logonuzu ekleme (beyaz etiketleme)
 
-Repo, orijinal "Staffware" marka adından "HR360"a taşındı: ayrı bir
-tanıtım/ana sayfası kaldırıldı, logo/başlık/giriş ekranı ve e-posta
-bildirim şablonları (`notification-service/Email/*`) dahil tüm
-kullanıcıya görünen metinler HR360 kimliğiyle güncellendi. Repo genelinde
-periyodik olarak `grep -rniI "staffware" .` ile tekrar tarama yapılıyor.
+Sistem çok kiracılı (multi-tenant): platformu kullanan her şirket kendi
+logosunu ve ana rengini yükleyip HR360'ın varsayılan markasının **yerine**
+gösterebilir — kod değiştirmeye gerek yok.
+
+**Nereden yüklenir:** Uygulama içinde `Ayarlar → Marka` (yalnızca
+Enterprise plandaki kiracılar ve `tenant-admin`/`platform-admin` rolü —
+`apps/web/src/features/settings/BrandingPanel.tsx`). Yükleme,
+`tenant-service`'in `POST /api/my-tenant/logo` ucuna gider, MinIO'da
+(`tenant-logos` bucket'ı) saklanır ve gateway üzerinden `/logos/` yolundan
+herkese açık servis edilir.
+
+**Kabul edilen format:** PNG, JPEG, SVG veya WebP — en fazla **2 MB**
+(`LogoStorageService.cs` içinde sabit).
+
+**Önerilen ebat:** Logo, aşağıdaki farklı yerlerde farklı boyutlarda
+gösterildiği için **kare veya yatay, şeffaf arka planlı** bir dosya en iyi
+sonucu verir; sistem tek bir dosyayı otomatik olarak küçültüp gösterir,
+ayrı boyutlar yüklemenize gerek yoktur:
+
+| Kullanıldığı yer | Görüntülenen boyut | Not |
+|---|---|---|
+| Sol menü (sidebar) | ~36×36 px, azami 64 px genişlik | `SidebarNav.tsx` |
+| E-posta bildirim başlığı | azami 36 px yükseklik, 220 px genişlik | `EmailTemplateRenderer.cs` |
+
+Kaynak dosyanın en az **256×256 px** (kare logo) veya **512×160 px**
+(yatay/wordmark logo) olması, yüksek çözünürlüklü ekranlarda ve
+büyütülmüş görünümlerde netliği korur. SVG kullanmak, tüm boyutlarda
+piksel bozulması olmadan en güvenli seçenektir.
+
+**Logo nerelerde gösterilir:**
+- Panel içi sol menü (giriş yaptıktan sonra)
+- Kiracıya gönderilen e-posta bildirimlerinin başlığı (`notification-service`,
+  `tenant-service`'ten `GET /api/registration/branding/{slug}` anonim
+  ucuyla anlık olarak çekilir, 5 dakika önbelleğe alınır)
+
+**Logo gösterilmeyen yer:** Ortak giriş ekranı (`/giris`) — kullanıcı
+henüz kimliğini doğrulamadığı için tarayıcı tarafında hangi kiracıya ait
+olduğu bilinmez; bu ekran kasıtlı olarak platform (HR360) markasıyla
+kalır. Kiracıya özel oturum açma markalaması, Keycloak Organizations'ın
+identity-first akışıyla ileride eklenebilir (`platform/keycloak-themes/`
+bu genişletme için referans nokta).
+
+Repo genelinde artık "Staffware" ibaresi kalmadı — logo/başlık/giriş
+ekranı ve e-posta şablonları dahil tüm kullanıcıya görünen metinler HR360
+kimliğiyle güncellendi (`grep -rniI "staffware" .` sıfır sonuç döner).
 
 ## Güvenlik notu
 

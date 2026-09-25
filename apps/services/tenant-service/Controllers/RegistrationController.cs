@@ -44,6 +44,31 @@ public partial class RegistrationController : ControllerBase
     }
 
     /// <summary>
+    /// Kiracinin marka bilgisi (logo, ana renk) - ANONIM. LogoStorageService
+    /// zaten logoyu "/logos/" altinda herkese acik yayinliyor; bu uc da ayni
+    /// mantikla, oturum acilmadan ONCE veya baska bir servisten erisilmesi
+    /// gereken yerler icin marka bilgisini dondurur. Su an tek tuketicisi
+    /// notification-service (e-posta bildirim basligi) - cross-service
+    /// cagirir, uc anonim oldugu icin JWT pass-through'a ihtiyac yoktur.
+    /// Ileride tenant-farkinda bir giris ekrani icin de kullanilabilir.
+    /// </summary>
+    [HttpGet("branding/{slug}")]
+    public async Task<IActionResult> Branding(string slug)
+    {
+        if (string.IsNullOrWhiteSpace(slug))
+            return BadRequest(new { message = "Slug bos olamaz" });
+
+        var tenant = await _db.Tenants
+            .Where(t => t.Slug == slug.ToLowerInvariant())
+            .Select(t => new { t.Name, t.LogoUrl, t.PrimaryColorHex })
+            .FirstOrDefaultAsync();
+
+        return tenant is null
+            ? NotFound(new { message = $"'{slug}' icin tenant kaydi bulunamadi" })
+            : Ok(tenant);
+    }
+
+    /// <summary>
     /// Yeni sirket kaydi. Basarili olursa yonetici e-postasina parola
     /// belirleme baglantisi gonderilir.
     /// </summary>

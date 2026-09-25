@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using MimeKit;
 using NotificationService.Data;
 using NotificationService.Models;
+using NotificationService.Services;
 using NotificationService.Tenancy;
 
 namespace NotificationService.Email;
@@ -66,6 +67,7 @@ public class EmailSenderWorker : BackgroundService
         tenantContext.IsPlatformAdmin = true;
 
         var db = scope.ServiceProvider.GetRequiredService<NotificationDbContext>();
+        var branding = scope.ServiceProvider.GetRequiredService<TenantBrandingClient>();
 
         var pending = await db.Notifications
             .Where(n => n.Channel == NotificationChannel.Email && n.Status == NotificationStatus.Pending)
@@ -109,7 +111,7 @@ public class EmailSenderWorker : BackgroundService
                     continue;
                 }
 
-                var message = BuildMessage(notification);
+                var message = await BuildMessageAsync(notification, branding, ct);
                 await smtp.SendAsync(message, ct);
 
                 notification.Status = NotificationStatus.Sent;
@@ -153,16 +155,24 @@ public class EmailSenderWorker : BackgroundService
         await db.SaveChangesAsync(ct);
     }
 
-    private MimeMessage BuildMessage(Notification notification)
+    private async Task<MimeMessage> BuildMessageAsync(
+        Notification notification, TenantBrandingClient branding, CancellationToken ct)
     {
         var message = new MimeMessage();
         message.From.Add(new MailboxAddress(_options.FromName, _options.FromAddress));
         message.To.Add(MailboxAddress.Parse(notification.RecipientEmail!));
         message.Subject = notification.Subject ?? "HR360 Enterprise Bildirimi";
 
+        // Kiracinin kendi logosu varsa (Ayarlar > Marka'dan yuklenmis) e-posta
+        // basliginda o gosterilir - bulunamazsa/cagri basarisiz olursa
+        // (best-effort) varsayilan HR360 markasina sessizce dusulur.
+        var tenantBranding = await branding.GetBrandingAsync(notification.TenantSlug, ct);
+
         var html = EmailTemplateRenderer.Render(
             subject: message.Subject,
-            bodyPlainText: notification.Body);
+            bodyPlainText: notification.Body,
+            logoUrl: tenantBranding?.LogoUrl,
+            companyName: tenantBranding?.Name);
 
         message.Body = new BodyBuilder
         {

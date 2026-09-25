@@ -17,10 +17,55 @@ public static class EmailTemplateRenderer
     private const string Border = "#e5e7eb";
     private const string BgOuter = "#f4f6f5";
 
-    public static string Render(string subject, string bodyPlainText, string? actionUrl = null, string? actionLabel = null)
+    public static string Render(
+        string subject, string bodyPlainText, string? actionUrl = null, string? actionLabel = null,
+        string? logoUrl = null, string? companyName = null)
     {
         var bodyHtml = System.Net.WebUtility.HtmlEncode(bodyPlainText)
             .Replace("\n", "<br/>");
+
+        // Kiracinin kendi logosu varsa (tenant-service uzerinden yuklenmis)
+        // basliktaki varsayilan HR360 isaretinin/metninin YERINE gosterilir -
+        // e-posta da uygulamanin geri kalani gibi beyaz etiketlenmis olur.
+        var brandName = string.IsNullOrWhiteSpace(companyName) ? "HR360" : companyName;
+        var headerMark = string.IsNullOrWhiteSpace(logoUrl)
+            ? $$"""
+                <table role="presentation" cellpadding="0" cellspacing="0" align="center">
+                  <tr>
+                    <td style="vertical-align:middle;padding-right:12px;">
+                      <table role="presentation" cellpadding="0" cellspacing="0" align="center">
+                        <tr>
+                          <td align="center" style="padding-bottom:4px;">
+                            <div style="width:24px;height:8px;background-color:{{EmeraldDark}};border-radius:4px;"></div>
+                          </td>
+                        </tr>
+                        <tr>
+                          <td>
+                            <table role="presentation" cellpadding="0" cellspacing="0">
+                              <tr>
+                                <td style="padding-right:4px;">
+                                  <div style="width:16px;height:8px;background-color:{{EmeraldDark}};border-radius:4px;"></div>
+                                </td>
+                                <td>
+                                  <div style="width:16px;height:8px;background-color:{{EmeraldDark}};border-radius:4px;"></div>
+                                </td>
+                              </tr>
+                            </table>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                    <td style="vertical-align:middle;">
+                      <span style="color:{{TextDark}};font-size:20px;font-weight:600;letter-spacing:-0.02em;">HR360</span>
+                    </td>
+                  </tr>
+                </table>
+                """
+            : $"""
+                <img src="{System.Net.WebUtility.HtmlEncode(logoUrl)}"
+                     alt="{System.Net.WebUtility.HtmlEncode(brandName)}"
+                     style="max-height:36px;max-width:220px;display:inline-block;vertical-align:middle;"/>
+                """;
 
         var actionButton = actionUrl is null ? "" : $"""
             <tr>
@@ -50,36 +95,7 @@ public static class EmailTemplateRenderer
 
                   <tr>
                     <td align="center" style="background-color:{HeaderBg};padding:28px 32px;border-bottom:1px solid {Border};">
-                      <table role="presentation" cellpadding="0" cellspacing="0" align="center">
-                        <tr>
-                          <td style="vertical-align:middle;padding-right:12px;">
-                            <table role="presentation" cellpadding="0" cellspacing="0" align="center">
-                              <tr>
-                                <td align="center" style="padding-bottom:4px;">
-                                  <div style="width:24px;height:8px;background-color:{EmeraldDark};border-radius:4px;"></div>
-                                </td>
-                              </tr>
-                              <tr>
-                                <td>
-                                  <table role="presentation" cellpadding="0" cellspacing="0">
-                                    <tr>
-                                      <td style="padding-right:4px;">
-                                        <div style="width:16px;height:8px;background-color:{EmeraldDark};border-radius:4px;"></div>
-                                      </td>
-                                      <td>
-                                        <div style="width:16px;height:8px;background-color:{EmeraldDark};border-radius:4px;"></div>
-                                      </td>
-                                    </tr>
-                                  </table>
-                                </td>
-                              </tr>
-                            </table>
-                          </td>
-                          <td style="vertical-align:middle;">
-                            <span style="color:{TextDark};font-size:20px;font-weight:600;letter-spacing:-0.02em;">HR360</span>
-                          </td>
-                        </tr>
-                      </table>
+                      {headerMark}
                     </td>
                   </tr>
 
@@ -105,8 +121,8 @@ public static class EmailTemplateRenderer
                   <tr>
                     <td style="padding:20px 32px 28px 32px;">
                       <p style="margin:0;font-size:12px;line-height:1.6;color:{TextMuted};">
-                        Bu e-posta HR360 Enterprise tarafından otomatik olarak gönderilmiştir.
-                        Bir işlem yapmanız gerekmiyorsa herhangi bir şey yapmanıza gerek yoktur.
+                        Bu e-posta {System.Net.WebUtility.HtmlEncode(brandName)} tarafından otomatik olarak
+                        gönderilmiştir. Bir işlem yapmanız gerekmiyorsa herhangi bir şey yapmanıza gerek yoktur.
                       </p>
                     </td>
                   </tr>
