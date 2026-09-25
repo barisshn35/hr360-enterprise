@@ -32,10 +32,40 @@ public partial class NotificationsController : ControllerBase
             data.TryGetValue(m.Groups[1].Value, out var value) ? value : m.Value);
     }
 
+    /// <summary>"RequireHrAdmin" politikasiyla ayni rol kumesi - baskalarinin
+    /// bildirimlerini gorebilen/yonetebilen roller.</summary>
+    private bool CanSeeAllNotifications =>
+        User.IsInRole("hr-admin") || User.IsInRole("tenant-admin") ||
+        User.IsInRole("platform-admin") || User.IsInRole("ext-notification-manage");
+
+    /// <summary>
+    /// GUVENLIK: Onceki halinde GetAll / unread-count / mark-read yalnizca
+    /// [Authorize] ile korunuyordu - kiracidaki HERHANGI bir kullanici
+    /// recipientId vermeden TUM kiracinin bildirimlerini, ya da baskasinin
+    /// recipientId'siyle onun gelen kutusunu (red gerekceleri dahil) okuyup
+    /// okundu isaretleyebiliyordu (hardcore test, son tur - canli olarak
+    /// Mehmet'in Ayse'nin kutusunu okuyabildigi dogrulandi). Artik yonetici
+    /// olmayanlar yalnizca kendi Employee.Id'lerine kilitli. /me cozulemezse
+    /// FAIL-CLOSED (null doner, cagiran Forbid eder).
+    /// </summary>
+    private async Task<(bool Allowed, Guid? EffectiveRecipient)> ResolveRecipientScopeAsync(Guid? requested)
+    {
+        if (CanSeeAllNotifications) return (true, requested);
+
+        var me = await _employees.FindMyEmployeeIdAsync(HttpContext.RequestAborted);
+        if (me is null) return (false, null);
+        if (requested.HasValue && requested.Value != me.Value) return (false, null);
+        return (true, me.Value);
+    }
+
     [HttpGet]
     public async Task<IActionResult> GetAll(
         [FromQuery] Guid? recipientId, [FromQuery] NotificationStatus? status, [FromQuery] int limit = 50)
     {
+        var (allowed, effective) = await ResolveRecipientScopeAsync(recipientId);
+        if (!allowed) return Forbid();
+        recipientId = effective;
+
         var q = _db.Notifications.AsQueryable();
         if (recipientId.HasValue) q = q.Where(n => n.RecipientEmployeeId == recipientId.Value);
         if (status.HasValue) q = q.Where(n => n.Status == status.Value);
@@ -127,6 +157,11 @@ public partial class NotificationsController : ControllerBase
         var n = await _db.Notifications.FirstOrDefaultAsync(x => x.Id == id);
         if (n is null) return NotFound();
 
+        // Baskasinin bildirimi: varligini sizdirmamak icin 404.
+        var (allowed, _) = await ResolveRecipientScopeAsync(
+            CanSeeAllNotifications ? null : n.RecipientEmployeeId);
+        if (!allowed) return NotFound();
+
         n.Status = NotificationStatus.Read;
         n.ReadAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync();
@@ -136,6 +171,9 @@ public partial class NotificationsController : ControllerBase
     [HttpGet("unread-count")]
     public async Task<IActionResult> GetUnreadCount([FromQuery] Guid recipientId)
     {
+        var (allowed, _) = await ResolveRecipientScopeAsync(recipientId);
+        if (!allowed) return Forbid();
+
         var count = await _db.Notifications.CountAsync(n =>
             n.RecipientEmployeeId == recipientId && n.Status != NotificationStatus.Read);
         return Ok(new { recipientId, unreadCount = count });

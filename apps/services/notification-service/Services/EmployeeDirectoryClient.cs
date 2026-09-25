@@ -66,5 +66,32 @@ public class EmployeeDirectoryClient
         }
     }
 
+    /// <summary>
+    /// Cagiran kullanicinin kendi Employee.Id'si (employee-service /me,
+    /// KeycloakUserId eslesmesi). Bulunamazsa/erisilemezse null - cagiranlar
+    /// bunu FAIL-CLOSED yorumlamali (bkz. NotificationsController).
+    /// </summary>
+    public async Task<Guid?> FindMyEmployeeIdAsync(CancellationToken ct)
+    {
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get, $"{_employeeBase}/api/employees/me");
+            var auth = _ctx.HttpContext?.Request.Headers.Authorization.ToString();
+            if (!string.IsNullOrWhiteSpace(auth) && auth.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+                req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", auth[7..]);
+
+            using var resp = await _http.SendAsync(req, ct);
+            if (!resp.IsSuccessStatusCode) return null;
+            var dto = JsonSerializer.Deserialize<EmployeeIdDto>(await resp.Content.ReadAsStringAsync(ct), Json);
+            return dto?.Id;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Cagiranin calisan kaydi cozulemedi (/me)");
+            return null;
+        }
+    }
+
     private record EmployeeEmailDto(string? Email);
+    private record EmployeeIdDto(Guid Id);
 }
