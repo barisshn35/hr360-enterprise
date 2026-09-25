@@ -13,4 +13,8 @@ set -e
 # yaratmak dogru/standart yontem.
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres <<-EOSQL
     CREATE DATABASE hr360_mlflow OWNER $POSTGRES_USER;
+    -- Keycloak kalici veritabani (onceden Keycloak konteyner icindeki dosya
+    -- veritabaninda calisiyordu; konteyner yeniden olusunca tum kullanicilar
+    -- ve sirket organizasyonlari siliniyordu).
+    CREATE DATABASE keycloak OWNER $POSTGRES_USER;
 EOSQL

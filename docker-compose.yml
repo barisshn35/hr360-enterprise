@@ -136,12 +136,26 @@ services:
   keycloak:
     image: quay.io/keycloak/keycloak:25.0
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
     command: ["start-dev", "--import-realm", "--http-relative-path=/auth", "--features=organization"]
     environment:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN_USER}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
       KC_PROXY_HEADERS: xforwarded
       KC_HOSTNAME_STRICT: "false"
+      # GUVENLIK/VERI KALICILIGI: Onceden KC_DB tanimli degildi - start-dev,
+      # konteyner icindeki dosya veritabanini (dev-file) kullaniyordu ve volume
+      # yoktu. Konteyner her yeniden olusturuldugunda (imaj guncellemesi, compose
+      # degisikligi) TUM kullanicilar, parolalar ve sirket organizasyonlari
+      # siliniyor, platform_tenants ise eski KeycloakOrgId'leri tutmaya devam
+      # ediyordu. Artik paylasilan Postgres'teki "keycloak" veritabani kullanilir.
+      # Mevcut kurulumlar icin gecis: docs/runbooks/keycloak-postgres-gecisi.md
+      KC_DB: postgres
+      KC_DB_URL: "jdbc:postgresql://postgres:5432/keycloak"
+      KC_DB_USERNAME: "hr360admin"
+      KC_DB_PASSWORD: "${HR360_DB_PASSWORD}"
     volumes:
       - ./deploy/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
     mem_limit: "768m"
