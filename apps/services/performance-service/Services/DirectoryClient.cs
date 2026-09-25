@@ -145,16 +145,25 @@ public class DirectoryClient
         return result;
     }
 
-    /// <summary>Ekibin mevcut uyeleri.</summary>
+    /// <summary>Ekibin mevcut uyeleri (ekip bulunamazsa bos liste).</summary>
     public async Task<IReadOnlyList<TeamMemberInfo>> GetTeamMembersAsync(Guid teamId, CancellationToken ct)
+        => await GetTeamMembersOrNullAsync(teamId, ct) ?? Array.Empty<TeamMemberInfo>();
+
+    /// <summary>
+    /// Ekibin mevcut uyeleri; ekip BULUNAMAZSA (ya da organization-service
+    /// erisilemezse) null. "Ekip yok" ile "ekip var ama bos" ayrimi gereken
+    /// yerler icin - bkz. AnalyticsController.Team.
+    /// </summary>
+    public async Task<IReadOnlyList<TeamMemberInfo>?> GetTeamMembersOrNullAsync(Guid teamId, CancellationToken ct)
     {
         var key = CacheKey($"team-members:{teamId}");
         if (_cache.TryGetValue(key, out IReadOnlyList<TeamMemberInfo>? cached) && cached is not null)
             return cached;
 
         var raw = await GetAsync<TeamDetailDto>($"{_orgBase}/api/teams/{teamId}", ct);
+        if (raw is null) return null;
 
-        var result = (raw?.Members ?? new List<TeamMemberDto>())
+        var result = (raw.Members ?? new List<TeamMemberDto>())
             .Where(m => m.IsCurrent)
             .Select(m => new TeamMemberInfo(m.EmployeeId, m.RoleInTeam, m.IsLead))
             .ToList();

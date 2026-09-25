@@ -75,15 +75,23 @@ public class AnalyticsController : ControllerBase
         var now = DateTimeOffset.UtcNow;
         var start = period.StartOf(now);
 
-        var members = await _directory.GetTeamMembersAsync(teamId, ct);
-        if (members.Count == 0)
-            return NotFound(new { message = "Ekip bulunamadı ya da üyesi yok" });
+        // NOT: Onceki halinde "ekip yok" ile "ekip var ama henuz uyesi yok"
+        // ayni 404'e dusuyordu - yeni olusturulmus (bos) bir ekip secildiginde
+        // Performans > Analiz ekrani kirmizi "Ekip analizi alinamadi" hatasi
+        // ve ise yaramayan bir "Tekrar dene" dugmesi gosteriyordu (hardcore
+        // test, son tur). Bos ekip normal bir durum: 200 + bos sonuc doner,
+        // arayuz kendi bos durumunu gosterir. 404 yalnizca ekip gercekten yoksa.
+        var members = await _directory.GetTeamMembersOrNullAsync(teamId, ct);
+        if (members is null)
+            return NotFound(new { message = "Ekip bulunamadı" });
 
         var memberIds = members.Select(m => m.EmployeeId).ToList();
 
         var q = _db.Snapshots.Where(s => memberIds.Contains(s.EmployeeId));
         if (start is not null) q = q.Where(s => s.CapturedAt >= start.Value);
-        var snapshots = await q.OrderBy(s => s.CapturedAt).ToListAsync(ct);
+        var snapshots = memberIds.Count == 0
+            ? new List<PerformanceSnapshot>()
+            : await q.OrderBy(s => s.CapturedAt).ToListAsync(ct);
 
         // Her uyenin en guncel puani
         var latest = snapshots

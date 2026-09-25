@@ -51,6 +51,8 @@ export function ContinuousTab({
   const team = useTeamAnalytics(teamId || undefined, period)
   const t = team.data
   const memberIds = t ? [...t.members.map((m) => m.employeeId), ...t.unscored.map((u) => u.employeeId)] : undefined
+  // Yeni oluşturulmuş, henüz üyesi olmayan ekip: boş grafikler yerine yönlendirici bir boş durum.
+  const emptyTeam = Boolean(t && t.members.length === 0 && t.unscored.length === 0)
 
   const zoneColor = (b: { from?: number; to?: number }) => {
     if (!thresholds || b.from === undefined || b.to === undefined) return CHART.c2
@@ -84,7 +86,13 @@ export function ContinuousTab({
         </Panel>
       )}
 
-      {t && (
+      {emptyTeam && (
+        <Panel>
+          <EmptyState icon={Users} title="Bu ekipte henüz üye yok" detail="Ekip analizi üyelerin puanlarından hesaplanır. Önce Ekipler ekranından bu ekibe üye ekleyin." />
+        </Panel>
+      )}
+
+      {t && !emptyTeam && (
         <>
           <AnimatePresence mode="wait">
             {employeeId && <EmployeeBlock key={`${employeeId}-${period}`} employeeId={employeeId} teamId={teamId} period={period} />}
