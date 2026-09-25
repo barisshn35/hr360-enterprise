@@ -905,7 +905,8 @@ CREATE TABLE platform_tenants (
     "CreatedAt" timestamptz NOT NULL,
     "ActivatedAt" timestamptz,
     "SuspendedAt" timestamptz,
-    "SuspendReason" text
+    "SuspendReason" text,
+    "SuspendedUserIdsJson" text
 );
 CREATE UNIQUE INDEX "IX_platform_tenants_Slug" ON platform_tenants ("Slug");
 CREATE INDEX "IX_platform_tenants_AdminEmail" ON platform_tenants ("AdminEmail");

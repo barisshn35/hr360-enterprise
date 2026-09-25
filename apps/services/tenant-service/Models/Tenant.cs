@@ -86,4 +86,12 @@ public class Tenant
     /// </summary>
     [System.Text.Json.Serialization.JsonPropertyName("suspensionReason")]
     public string? SuspendReason { get; set; }
+
+    /// <summary>
+    /// Askiya alma sirasinda BU islemle kapatilan Keycloak hesaplari (JSON dizi).
+    /// Yeniden etkinlestirmede yalnizca bunlar acilir; baska bir nedenle kapatilmis
+    /// hesaplar kapali kalir. (Keycloak 25'in kullanici profili tanimsiz nitelikleri
+    /// sakladigi icin isaret Keycloak'ta degil burada tutulur.)
+    /// </summary>
+    public string? SuspendedUserIdsJson { get; set; }
 }

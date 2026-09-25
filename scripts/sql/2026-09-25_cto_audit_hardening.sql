@@ -14,6 +14,9 @@
 -- 1) Masraf beyani: gorev ayriligi icin onaylayan kisi (onaylayan "odendi" isaretleyemez).
 ALTER TABLE expense_claims ADD COLUMN IF NOT EXISTS "ApprovedByEmployeeId" uuid;
 
+-- 1b) Kiraci askiya alma: bu islemle kapatilan hesaplar (yeniden etkinlestirmede yalnizca bunlar acilir).
+ALTER TABLE platform_tenants ADD COLUMN IF NOT EXISTS "SuspendedUserIdsJson" text;
+
 -- 2) Deger bazli benzersiz indeksler kiraci bazli olur. Global olanlar bir kiracinin
 --    baska bir kiracidaki e-postayi/etiketi "var mi" diye yoklamasina (500 = var) ve
 --    ayni degeri kullanan mesru musterilerin engellenmesine yol aciyordu. Kiraci bazli

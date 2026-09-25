@@ -18,11 +18,13 @@ public class TenantsController : ControllerBase
 {
     private readonly TenantDbContext _db;
     private readonly KeycloakAdminClient _keycloak;
+    private readonly ILogger<TenantsController> _logger;
 
-    public TenantsController(TenantDbContext db, KeycloakAdminClient keycloak)
+    public TenantsController(TenantDbContext db, KeycloakAdminClient keycloak, ILogger<TenantsController> logger)
     {
         _db = db;
         _keycloak = keycloak;
+        _logger = logger;
     }
 
     [HttpGet]
@@ -107,6 +109,27 @@ public class TenantsController : ControllerBase
     private record TenantEmployeeCount(string Slug, int Count);
 
     /// <summary>Tenant'i askiya alir; yonetici hesabi da devre disi birakilir.</summary>
+    /// <summary>Kiracinin Keycloak organizasyonundaki tum uyeler (+ kayitli yonetici).</summary>
+    private async Task<(int Affected, int Failed)> ForEachTenantUserAsync(
+        Tenant tenant, Func<string, Task<bool>> action, CancellationToken ct)
+    {
+        var ids = new HashSet<string>();
+        if (!string.IsNullOrEmpty(tenant.KeycloakOrgId))
+            ids.UnionWith(await _keycloak.ListOrganizationMemberIdsAsync(tenant.KeycloakOrgId, ct));
+        if (!string.IsNullOrEmpty(tenant.AdminUserId)) ids.Add(tenant.AdminUserId);
+        int affected = 0, failed = 0;
+        foreach (var id in ids)
+        {
+            try { if (await action(id)) affected++; }
+            catch (Exception ex)
+            {
+                failed++;
+                _logger.LogError(ex, "Kiraci {Slug} kullanicisi {User} guncellenemedi", tenant.Slug, id);
+            }
+        }
+        return (affected, failed);
+    }
+
     [HttpPost("{id}/suspend")]
     public async Task<IActionResult> Suspend(
         Guid id, [FromBody] SuspendRequest request, CancellationToken ct)
@@ -120,11 +143,22 @@ public class TenantsController : ControllerBase
         tenant.SuspendedAt = DateTimeOffset.UtcNow;
         tenant.SuspendReason = request.Reason;
 
-        if (tenant.AdminUserId is not null)
-            await _keycloak.SetUserEnabledAsync(tenant.AdminUserId, false, ct);
+        // GUVENLIK: Onceden yalnizca kiraci yoneticisinin hesabi kapatiliyordu; hicbir
+        // servis kiraci durumunu kontrol etmedigi icin askidaki sirketin diger tum
+        // kullanicilari calismaya devam ediyordu. Artik organizasyonun tum uyeleri
+        // kapatilir ve oturumlari sonlandirilir. Mevcut erisim jetonlari en fazla
+        // omurleri kadar (realm ayari, varsayilan 5 dk) gecerli kalir.
+        var disabled = new List<string>();
+        var (affected, failed) = await ForEachTenantUserAsync(tenant, async uid =>
+        {
+            var changed = await _keycloak.SuspendUserForTenantAsync(uid, ct);
+            if (changed) disabled.Add(uid);
+            return changed;
+        }, ct);
+        tenant.SuspendedUserIdsJson = System.Text.Json.JsonSerializer.Serialize(disabled);
 
         await _db.SaveChangesAsync(ct);
-        return Ok(tenant);
+        return Ok(new { tenant, usersDisabled = affected, usersFailed = failed });
     }
 
     [HttpPost("{id}/reactivate")]
@@ -133,15 +167,34 @@ public class TenantsController : ControllerBase
         var tenant = await _db.Tenants.FirstOrDefaultAsync(t => t.Id == id, ct);
         if (tenant is null) return NotFound();
 
+        if (tenant.Status != TenantStatus.Suspended)
+            return BadRequest(new { message = "Tenant askıda değil" });
+
         tenant.Status = TenantStatus.Active;
         tenant.SuspendedAt = null;
         tenant.SuspendReason = null;
 
-        if (tenant.AdminUserId is not null)
-            await _keycloak.SetUserEnabledAsync(tenant.AdminUserId, true, ct);
+        // Yalnizca askiya alma nedeniyle kapatilan hesaplar geri acilir; baska bir
+        // nedenle kapatilmis hesaplar kapali kalir.
+        var toEnable = string.IsNullOrEmpty(tenant.SuspendedUserIdsJson)
+            ? new List<string>()
+            : System.Text.Json.JsonSerializer.Deserialize<List<string>>(tenant.SuspendedUserIdsJson) ?? new();
+        int affected = 0, failed = 0;
+        var remaining = new List<string>();
+        foreach (var uid in toEnable)
+        {
+            try { if (await _keycloak.EnableUserAsync(uid, ct)) affected++; }
+            catch (Exception ex)
+            {
+                failed++; remaining.Add(uid);
+                _logger.LogError(ex, "Kiraci {Slug} kullanicisi {User} acilamadi", tenant.Slug, uid);
+            }
+        }
+        // Acilamayanlar kayitta kalir; islem tekrar denenebilir.
+        tenant.SuspendedUserIdsJson = remaining.Count == 0 ? null : System.Text.Json.JsonSerializer.Serialize(remaining);
 
         await _db.SaveChangesAsync(ct);
-        return Ok(tenant);
+        return Ok(new { tenant, usersEnabled = affected, usersFailed = failed });
     }
 
     [HttpPost("{id}/plan")]

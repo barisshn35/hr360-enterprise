@@ -128,6 +128,8 @@ public class TeamMembersController : ControllerBase
         var tenant = await _db.Tenants.FirstOrDefaultAsync(t => t.Slug == slug);
         if (tenant is null || tenant.KeycloakOrgId is null)
             return NotFound(new { message = "Tenant kaydı veya Keycloak organizasyonu bulunamadı" });
+        if (tenant.Status == TenantService.Models.TenantStatus.Suspended)
+            return Conflict(new { message = "Şirket askıya alınmış; yeni kullanıcı davet edilemez" });
 
         var employee = await _employees.GetByIdAsync(employeeId, ct);
         if (employee is null)

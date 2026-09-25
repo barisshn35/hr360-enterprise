@@ -354,6 +354,88 @@ public class KeycloakAdminClient
             _logger.LogWarning("Kullanıcı silinemedi {Id}: {Status}", userId, resp.StatusCode);
     }
 
+    /// <summary>Organizasyonun tum uye kimlikleri (sayfali).</summary>
+    public async Task<List<string>> ListOrganizationMemberIdsAsync(string orgId, CancellationToken ct)
+    {
+        var ids = new List<string>();
+        const int page = 100;
+        for (var first = 0; ; first += page)
+        {
+            var req = await BuildAsync(HttpMethod.Get,
+                $"/organizations/{Uri.EscapeDataString(orgId)}/members?first={first}&max={page}", null, ct);
+            using var resp = await _http.SendAsync(req, ct);
+            if (!resp.IsSuccessStatusCode)
+                throw new InvalidOperationException($"Organizasyon uyeleri alinamadi ({(int)resp.StatusCode})");
+            using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
+            var count = 0;
+            foreach (var m in doc.RootElement.EnumerateArray())
+            {
+                count++;
+                if (m.TryGetProperty("id", out var id) && id.GetString() is { } v) ids.Add(v);
+            }
+            if (count < page) break;
+        }
+        return ids;
+    }
+
+    /// <summary>
+    /// Kiraci askiya alinirken: hesap aciksa kapatir ve tum oturumlarini sonlandirir
+    /// (yenileme jetonlari da gecersiz olur). Donus: hesap BU cagriyla mi kapatildi
+    /// (zaten kapali hesaba dokunulmaz - yeniden etkinlestirmede acilmasin diye).
+    ///
+    /// NOT: Guncelleme kullanicinin TAM temsiliyle yapilir. Keycloak 25'te e-posta/ad
+    /// kullanici profili nitelikleridir; yalnizca {enabled, attributes} gondermek
+    /// e-posta ve adi SILIYORDU (canli testte yakalandi).
+    /// </summary>
+    public async Task<bool> SuspendUserForTenantAsync(string userId, CancellationToken ct)
+    {
+        var user = await GetUserRepresentationAsync(userId, ct);
+        if (user is null) return false;
+        var wasEnabled = user["enabled"]?.GetValue<bool>() == true;
+        if (wasEnabled)
+        {
+            user["enabled"] = false;
+            await PutUserAsync(userId, user, ct);
+        }
+        var logout = await BuildAsync(HttpMethod.Post, $"/users/{Uri.EscapeDataString(userId)}/logout", null, ct);
+        using (var resp = await _http.SendAsync(logout, ct))
+        {
+            if (!resp.IsSuccessStatusCode)
+                _logger.LogWarning("Oturumlar sonlandirilamadi {Id}: {Status}", userId, (int)resp.StatusCode);
+        }
+        return wasEnabled;
+    }
+
+    /// <summary>Askiya alma sirasinda kapatilmis hesabi geri acar (tam temsille).</summary>
+    public async Task<bool> EnableUserAsync(string userId, CancellationToken ct)
+    {
+        var user = await GetUserRepresentationAsync(userId, ct);
+        if (user is null) return false;
+        if (user["enabled"]?.GetValue<bool>() == true) return false;
+        user["enabled"] = true;
+        await PutUserAsync(userId, user, ct);
+        return true;
+    }
+
+    private async Task<System.Text.Json.Nodes.JsonObject?> GetUserRepresentationAsync(string userId, CancellationToken ct)
+    {
+        var req = await BuildAsync(HttpMethod.Get, $"/users/{Uri.EscapeDataString(userId)}", null, ct);
+        using var resp = await _http.SendAsync(req, ct);
+        if (resp.StatusCode == System.Net.HttpStatusCode.NotFound) return null;
+        if (!resp.IsSuccessStatusCode)
+            throw new InvalidOperationException($"Kullanici okunamadi ({(int)resp.StatusCode})");
+        return System.Text.Json.Nodes.JsonNode.Parse(await resp.Content.ReadAsStringAsync(ct)) as System.Text.Json.Nodes.JsonObject;
+    }
+
+    private async Task PutUserAsync(string userId, System.Text.Json.Nodes.JsonObject body, CancellationToken ct)
+    {
+        var req = await BuildAsync(HttpMethod.Put, $"/users/{Uri.EscapeDataString(userId)}", null, ct);
+        req.Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json");
+        using var resp = await _http.SendAsync(req, ct);
+        if (!resp.IsSuccessStatusCode)
+            throw new InvalidOperationException($"Kullanici guncellenemedi ({(int)resp.StatusCode}): {await resp.Content.ReadAsStringAsync(ct)}");
+    }
+
     public async Task SetUserEnabledAsync(string userId, bool enabled, CancellationToken ct)
     {
         var req = await BuildAsync(HttpMethod.Put, $"/users/{userId}", new { enabled }, ct);
