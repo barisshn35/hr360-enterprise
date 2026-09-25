@@ -20,7 +20,7 @@ export function AppShell() {
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const location = useLocation()
-  const { can, status, tenantSlug } = useAuth()
+  const { can, status, tenantSlug, roles } = useAuth()
 
   // NOT: `user.id` Keycloak `sub` claim'i, bildirimlerin yazıldığı Employee.Id
   // DEĞİL - kenar çubuğundaki bildirim rozeti bu yüzden gerçek çalışanlar için
@@ -39,7 +39,10 @@ export function AppShell() {
    * `organization` claim'i gelmediyse backend hiçbir kaydı döndürmez ama HATA
    * DA VERMEZ; kullanıcı her ekranı boş görür. Sessiz kalmak yerine söylüyoruz.
    */
-  const tenantClaimMissing = status === 'authenticated' && !tenantSlug
+  // Platform yöneticisi hiçbir kiracıya bağlı değildir (ayrı platform.admin hesabı);
+  // onun için bu uyarı yanlış alarm olurdu.
+  const tenantClaimMissing =
+    status === 'authenticated' && !tenantSlug && !roles.includes('platform-admin')
 
   return (
     <div className="flex min-h-dvh bg-background">

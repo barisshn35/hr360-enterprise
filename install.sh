@@ -172,6 +172,7 @@ ask_secret_aes_key TENANT_SECRET_KEY  "tenant-service imza anahtari"
 ask_secret MINIO_ROOT_PASSWORD        "MinIO root parolasi"
 ask_secret ML_KEYCLOAK_CLIENT_SECRET  "ml-inference Keycloak client secret'i"
 ask_secret DEMO_ADMIN_PASSWORD        "Demo giris kullanicisi (demo.admin) parolasi"
+ask_secret PLATFORM_ADMIN_PASSWORD    "Platform yoneticisi (platform.admin) parolasi"
 
 KEYCLOAK_ADMIN_USER=admin
 MINIO_ROOT_USER=hr360minio
@@ -197,6 +198,10 @@ ML_KEYCLOAK_CLIENT_SECRET=${ML_KEYCLOAK_CLIENT_SECRET}
 # "Tum sirlar .env dosyasinda" diyordu ama bu degisken sadece Keycloak
 # realm sablonuna gomuluyordu) - hardcore test sirasinda bulundu.
 DEMO_ADMIN_PASSWORD=${DEMO_ADMIN_PASSWORD}
+# GUVENLIK: demo.admin onceden platform-admin'di - demo parolasini bilen herkes TUM
+# kiracilarin verisini (kiraci filtresi platform-admin icin kapali) okuyabiliyordu.
+# Platform yonetimi artik ayri, kiraciya bagli olmayan bir hesapta.
+PLATFORM_ADMIN_PASSWORD=${PLATFORM_ADMIN_PASSWORD}
 
 SMTP_HOST=mailpit
 SMTP_PORT=1025
@@ -223,6 +228,7 @@ fi
 sed \
   -e "s/__ML_KEYCLOAK_CLIENT_SECRET__/${ML_KEYCLOAK_CLIENT_SECRET}/" \
   -e "s/__DEMO_ADMIN_PASSWORD__/${DEMO_ADMIN_PASSWORD}/" \
+  -e "s/__PLATFORM_ADMIN_PASSWORD__/${PLATFORM_ADMIN_PASSWORD}/" \
   -e "s#__PUBLIC_ORIGIN__#${PUBLIC_ORIGIN}#g" \
   -e "s/__SMTP_HOST__/mailpit/" \
   -e "s/__SMTP_PORT__/1025/" \
@@ -259,7 +265,8 @@ echo "MinIO konsolu:    http://localhost:9001"
 echo "Mailpit (e-posta):http://localhost:8025"
 echo "MLflow:           http://localhost:5000"
 echo ""
-echo "Demo giris:       demo.admin / (yukarida belirlediginiz/uretilen DEMO_ADMIN_PASSWORD)"
+echo "Demo giris:       demo.admin / (yukarida belirlediginiz/uretilen DEMO_ADMIN_PASSWORD)  - yalnizca demo sirketinin yoneticisi"
+echo "Platform yonetimi: platform.admin / (.env icindeki PLATFORM_ADMIN_PASSWORD)  - tum kiracilar; paylasmayin"
 echo ""
 echo "Tum sirlar .env dosyasinda — bu dosyayi asla commit etmeyin (.gitignore'da zaten haric)."
 echo "Loglari izlemek icin: docker compose logs -f"

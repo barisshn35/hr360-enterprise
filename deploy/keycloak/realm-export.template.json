@@ -65,7 +65,19 @@
       "credentials": [
         { "type": "password", "value": "__DEMO_ADMIN_PASSWORD__", "temporary": false }
       ],
-      "realmRoles": ["tenant-admin", "platform-admin"]
+      "realmRoles": ["tenant-admin"]
+    },
+    {
+      "username": "platform.admin",
+      "email": "platform.admin@hr360.local",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Platform",
+      "lastName": "Yonetici",
+      "credentials": [
+        { "type": "password", "value": "__PLATFORM_ADMIN_PASSWORD__", "temporary": false }
+      ],
+      "realmRoles": ["platform-admin"]
     }
   ]
 }
