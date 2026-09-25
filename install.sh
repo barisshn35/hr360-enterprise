@@ -2,7 +2,8 @@
 # HR360 Enterprise — tek sunucu kurulum scripti
 #
 # Ne yapar:
-#   1. Docker / Docker Compose var mi kontrol eder
+#   1. Docker / Docker Compose var mi kontrol eder; yoksa (apt tabanli
+#      sistemlerde) sizden onay alarak otomatik kurar
 #   2. Sirlari (parola, anahtar) sizden sorar — bos birakirsaniz guvenli,
 #      rastgele bir deger uretir
 #   3. .env dosyasini yazar
@@ -45,10 +46,66 @@ echo "${BOLD}HR360 Enterprise — tek sunucu kurulumu${RESET}"
 echo "----------------------------------------------"
 
 # --- 1) On kosullar -----------------------------------------------------
+USE_SUDO_DOCKER=0
+
+install_docker() {
+  # Otomatik kurulum sadece apt tabanli sistemlerde (Ubuntu/Debian) destekleniyor.
+  if ! command -v apt-get >/dev/null 2>&1; then
+    echo "Docker otomatik kurulumu sadece apt tabanli sistemlerde (Ubuntu/Debian) destekleniyor."
+    echo "Kendi dagitiminiz icin once Docker Engine'i kurun: https://docs.docker.com/engine/install/"
+    exit 1
+  fi
+
+  warn "Docker Engine bulunamadi."
+  echo "Docker'i resmi kurulum scripti (get.docker.com) ile 'sudo' yetkisiyle sisteminize kurmami ister misiniz?"
+  echo "Bu islem: paket listelerini gunceller, Docker Engine + Compose plugin'ini kurar ve"
+  echo "mevcut kullaniciyi (${USER:-$(whoami)}) 'docker' grubuna ekler."
+  read -r -p "Devam edilsin mi? [e/H]: " reply || true
+  if [[ ! "$reply" =~ ^[eEyY]$ ]]; then
+    echo "Kurulum iptal edildi. Docker'i elle kurup scripti tekrar calistirabilirsiniz: https://docs.docker.com/engine/install/"
+    exit 1
+  fi
+
+  info "Docker Engine kuruluyor (sudo sifresi istenebilir)..."
+  curl -fsSL https://get.docker.com | sudo sh
+
+  sudo systemctl enable --now docker >/dev/null 2>&1 \
+    || warn "docker servisi systemctl ile baslatilamadi, devam ediliyor (farkli bir init sistemi olabilir)."
+
+  if ! id -nG "${USER:-$(whoami)}" 2>/dev/null | grep -qw docker; then
+    sudo usermod -aG docker "${USER:-$(whoami)}"
+    warn "Kullaniciniz 'docker' grubuna eklendi; bu ancak yeni bir oturumda (yeniden giris/SSH) etkin olur."
+    warn "Bu kurulumun geri kalaninda gecici olarak 'sudo docker' kullanilacak."
+    USE_SUDO_DOCKER=1
+  fi
+
+  info "Docker Engine kuruldu: $(sudo docker --version 2>/dev/null || docker --version)"
+}
+
 if ! command -v docker >/dev/null 2>&1; then
-  echo "Docker bulunamadi. Once Docker Engine kurun: https://docs.docker.com/engine/install/"
-  exit 1
+  install_docker
+elif ! docker info >/dev/null 2>&1; then
+  # Docker kurulu ama mevcut kullanicinin 'docker' grup yetkisi henuz aktif
+  # olmayabilir (yeni eklenmis olabilir) - sudo ile devam edelim.
+  if sudo docker info >/dev/null 2>&1; then
+    warn "Docker kurulu ama mevcut oturumda 'docker' grubu yetkiniz henuz aktif degil, 'sudo docker' kullanilacak."
+    USE_SUDO_DOCKER=1
+  else
+    echo "Docker kurulu gorunuyor ama calismiyor. 'sudo systemctl status docker' ile kontrol edin."
+    exit 1
+  fi
 fi
+
+# Bu noktadan itibaren tum docker cagrilari (docker compose dahil) bu
+# sarmalayicidan gecer - USE_SUDO_DOCKER=1 ise otomatik 'sudo docker' olur.
+docker() {
+  if [ "$USE_SUDO_DOCKER" = "1" ]; then
+    command sudo docker "$@"
+  else
+    command docker "$@"
+  fi
+}
+
 if ! docker compose version >/dev/null 2>&1; then
   echo "Docker Compose (v2 plugin) bulunamadi. 'docker compose' calisir hale getirin."
   exit 1
