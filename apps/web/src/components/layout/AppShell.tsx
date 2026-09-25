@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import { TriangleAlert } from 'lucide-react'
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
-import { useUnreadCount } from '@/api/queries'
+import { useMyEmployeeId, useUnreadCount } from '@/api/queries'
 import { useDirectory } from '@/api/directory'
 import { useAuth } from '@/auth/useAuth'
 import { PageTransition } from '@/motion/primitives'
@@ -20,9 +20,15 @@ export function AppShell() {
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const location = useLocation()
-  const { user, can, status, tenantSlug } = useAuth()
+  const { can, status, tenantSlug } = useAuth()
 
-  const unread = useUnreadCount(can('notification:view') ? user?.id : undefined)
+  // NOT: `user.id` Keycloak `sub` claim'i, bildirimlerin yazıldığı Employee.Id
+  // DEĞİL - kenar çubuğundaki bildirim rozeti bu yüzden gerçek çalışanlar için
+  // her zaman "0" gösteriyordu (hardcore test, 3. tur - bkz. NotificationBell.tsx
+  // ve NotificationsPage.tsx'teki aynı kök nedenli düzeltme).
+  const canSeeNotifications = can('notification:view')
+  const { employeeId: myEmployeeId } = useMyEmployeeId(canSeeNotifications)
+  const unread = useUnreadCount(canSeeNotifications ? myEmployeeId : undefined)
   // Çalışan dizini açılışta bir kez çekilir; tüm ekranlar kimlikten adı buradan çözer.
   useDirectory()
 
@@ -40,7 +46,7 @@ export function AppShell() {
       <aside className="fixed inset-y-0 left-0 hidden w-[260px] lg:block">
         <SidebarNav
           onOpenCommandPalette={() => setPaletteOpen(true)}
-          unreadCount={unread.data?.count ?? 0}
+          unreadCount={unread.data?.unreadCount ?? 0}
         />
       </aside>
 
@@ -53,7 +59,7 @@ export function AppShell() {
               setMobileNavOpen(false)
               setPaletteOpen(true)
             }}
-            unreadCount={unread.data?.count ?? 0}
+            unreadCount={unread.data?.unreadCount ?? 0}
           />
         </SheetContent>
       </Sheet>

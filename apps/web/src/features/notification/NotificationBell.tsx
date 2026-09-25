@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Bell } from 'lucide-react'
 import { notificationApi } from '@/api/notification'
-import { useNotifications, useUnreadCount } from '@/api/queries'
+import { useNotifications, useUnreadCount, useMyEmployeeId } from '@/api/queries'
 import { useAuth } from '@/auth/useAuth'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
@@ -12,10 +12,12 @@ import { formatRelativeToNow } from '@/lib/format'
 /**
  * Bildirim çanı.
  *
- * NOT: `recipientId` olarak Keycloak `sub` değeri kullanılır — backend'de
- * oturumu çalışan kaydına bağlayan bir uç yok. Bildirimler bu kimlikle
- * yazıldığı sürece doğru çalışır; employeeId ile yazılıyorsa backend'in
- * eşleme ucu eklenmesi gerekir.
+ * NOT: bildirimler backend'de Employee.Id ile yazılır (RecipientEmployeeId) -
+ * Keycloak `sub` (user.id) DEĞİL, ayrı bir kimlik uzayı. Önceden burada
+ * doğrudan `user.id` kullanılıyordu, yani gerçek bir çalışan için bildirimler
+ * asla eşleşmiyordu (hardcore test, 3. tur). `useMyEmployeeId` ile gerçek
+ * Employee.Id çözülür; çalışan kaydı olmayan hesaplarda (platform/tenant-admin)
+ * çan sessizce gizli kalır.
  */
 export function NotificationBell() {
   const { user, can } = useAuth()
@@ -23,8 +25,9 @@ export function NotificationBell() {
   const queryClient = useQueryClient()
 
   const allowed = can('notification:view')
-  const recipientId = user?.id
-  const unread = useUnreadCount(allowed ? recipientId : undefined)
+  const { employeeId, notLinked } = useMyEmployeeId(allowed)
+  const recipientId = allowed ? employeeId : undefined
+  const unread = useUnreadCount(recipientId)
   const list = useNotifications({ recipientId, limit: 8 }, open && Boolean(recipientId))
 
   const markRead = useMutation({
@@ -32,9 +35,9 @@ export function NotificationBell() {
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['notification'] }),
   })
 
-  if (!user || !allowed) return null
+  if (!user || !allowed || notLinked) return null
 
-  const count = unread.data?.count ?? 0
+  const count = unread.data?.unreadCount ?? 0
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -101,7 +104,7 @@ export function NotificationBell() {
                             isUnread ? 'font-semibold' : 'text-muted-foreground',
                           )}
                         >
-                          {n.title}
+                          {n.subject}
                         </span>
                         {n.body && (
                           <span className="mt-0.5 line-clamp-2 block text-[12px] text-muted-foreground">

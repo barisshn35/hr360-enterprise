@@ -153,8 +153,8 @@ export function CaseDetailPage() {
             <DataField label="Açan çalışan">{nameOf(c.employeeId)}</DataField>
             <DataField label="Açılış">{formatDateTime(c.createdAt)}</DataField>
             <DataField label="Atanan">
-              {c.assigneeEmployeeId ? (
-                nameOf(c.assigneeEmployeeId)
+              {c.assignedToEmployeeId ? (
+                nameOf(c.assignedToEmployeeId)
               ) : (
                 <span className="text-muted-foreground">Atanmadı</span>
               )}

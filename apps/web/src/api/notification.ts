@@ -23,8 +23,9 @@ export const notificationStatusLabels: Record<NotificationStatus, string> = {
 
 export interface AppNotification {
   id: string
-  recipientId: string
-  title: string
+  recipientEmployeeId: string
+  /** Backend alan adı `subject` - `title` DEĞİL (bkz. NotificationsController.Create). */
+  subject: string | null
   body: string | null
   channel: NotificationChannel
   status: NotificationStatus
@@ -41,8 +42,8 @@ export interface NotificationTemplate {
 }
 
 export interface CreateNotificationInput {
-  recipientId: string
-  title: string
+  recipientEmployeeId: string
+  subject: string
   body?: string
   channel: NotificationChannel
 }
@@ -57,21 +58,39 @@ export interface CreateTemplateInput {
 /* ------------------------------------------------------------------ servis */
 
 export const notificationApi = {
+  // NOT: backend GetAll/GetUnreadCount sorgu parametresini "recipientId" olarak
+  // okur (NotificationsController - [FromQuery] Guid? recipientId) - bu,
+  // gövdedeki "recipientEmployeeId" alanından FARKLI bir isim, ama İKİSİ DE
+  // aynı Employee.Id değerini taşır. Sorgu parametresi adı bilerek backend'le
+  // birebir aynı bırakıldı.
   list: (
     filters: { recipientId?: string; status?: NotificationStatus; limit?: number } = {},
     signal?: AbortSignal,
   ) => apiFetch<AppNotification[]>(`${BASE}/notifications${qs(filters)}`, { signal }),
 
   create: (input: CreateNotificationInput) =>
-    apiFetch<AppNotification>(`${BASE}/notifications`, { method: 'POST', body: input }),
+    apiFetch<AppNotification>(`${BASE}/notifications`, {
+      method: 'POST',
+      body: {
+        recipientEmployeeId: input.recipientEmployeeId,
+        channel: input.channel,
+        subject: input.subject,
+        body: input.body,
+      },
+    }),
 
   markRead: (id: string) =>
     apiFetch<AppNotification>(`${BASE}/notifications/${id}/mark-read`, { method: 'POST' }),
 
+  // NOT: backend {recipientId, unreadCount} döner - {count} DEĞİL. Önceki
+  // hali `unread.data?.count` her zaman undefined okuyordu, yani bildirim
+  // çanındaki rozet gerçek sayıdan bağımsız olarak HER ZAMAN gizliydi
+  // (hardcore test, 3. tur).
   unreadCount: (recipientId: string, signal?: AbortSignal) =>
-    apiFetch<{ count: number }>(`${BASE}/notifications/unread-count${qs({ recipientId })}`, {
-      signal,
-    }),
+    apiFetch<{ recipientId: string; unreadCount: number }>(
+      `${BASE}/notifications/unread-count${qs({ recipientId })}`,
+      { signal },
+    ),
 
   listTemplates: (signal?: AbortSignal) =>
     apiFetch<NotificationTemplate[]>(`${BASE}/notification-templates`, { signal }),

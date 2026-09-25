@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion, useReducedMotion } from 'motion/react'
-import { LoaderCircle, Plus } from 'lucide-react'
+import { LoaderCircle, Lock, Plus } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Panel } from '@/components/ui/Panel'
 import { Button } from '@/components/ui/button'
@@ -14,7 +14,12 @@ import { EmptyState, ErrorState, RowsSkeleton } from '@/components/ui/States'
 import { useToast } from '@/components/ui/Toast'
 import { useAuth } from '@/auth/useAuth'
 import { notificationApi } from '@/api/notification'
-import { useNotificationTemplates, useNotifications, useUnreadCount } from '@/api/queries'
+import {
+  useMyEmployeeId,
+  useNotificationTemplates,
+  useNotifications,
+  useUnreadCount,
+} from '@/api/queries'
 import {
   notificationChannelLabels,
   notificationStatusLabels,
@@ -208,7 +213,11 @@ export function NotificationsPage() {
   const queryClient = useQueryClient()
 
   const canManage = can('notification:manage')
-  const recipientId = user?.id
+  // NOT: `user.id` Keycloak `sub` claim'i, Employee.Id DEĞİL - bildirimler
+  // backend'de RecipientEmployeeId ile yazılır. `useMyEmployeeId` ile gerçek
+  // çalışan kimliği çözülür (hardcore test, 3. tur - bkz. NotificationBell.tsx).
+  const { employeeId, notLinked } = useMyEmployeeId(Boolean(user))
+  const recipientId = employeeId
 
   const notifications = useNotifications(
     {
@@ -236,7 +245,7 @@ export function NotificationsPage() {
   })
 
   const tabs: Array<TabDef<TabKey>> = [
-    { key: 'gelen', label: 'Bildirimlerim', count: unread.data?.count },
+    { key: 'gelen', label: 'Bildirimlerim', count: unread.data?.unreadCount },
     ...(canManage ? [{ key: 'sablonlar' as TabKey, label: 'Şablonlar' }] : []),
   ]
 
@@ -269,7 +278,17 @@ export function NotificationsPage() {
 
       <Tabs tabs={tabs} value={tab} onChange={setTab} label="Bildirim görünümü" />
 
-      {tab === 'gelen' && (
+      {tab === 'gelen' && notLinked && (
+        <Panel>
+          <EmptyState
+            icon={Lock}
+            title="Hesabınıza bağlı çalışan kaydı bulunamadı"
+            detail="Bildirim alabilmeniz için hesabınızın bir çalışan kaydıyla eşleşmesi gerekiyor. İK yöneticinize başvurun."
+          />
+        </Panel>
+      )}
+
+      {tab === 'gelen' && !notLinked && (
         <>
           <div className="w-56">
             <SelectField
@@ -325,7 +344,7 @@ export function NotificationsPage() {
                             isUnread ? 'font-semibold' : 'text-muted-foreground',
                           )}
                         >
-                          {n.title}
+                          {n.subject}
                         </span>
                         {n.body && (
                           <span className="mt-1 block text-[13px] leading-relaxed text-muted-foreground">

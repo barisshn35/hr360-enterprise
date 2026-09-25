@@ -12,6 +12,10 @@ export const employeeApi = {
   get: (id: string, signal?: AbortSignal) =>
     apiFetch<Employee>(`${BASE}/employees/${id}`, { signal }),
 
+  /** Oturumdaki kullanıcının kendi çalışan kaydı (KeycloakUserId eşlemesiyle).
+   * Kayıt yoksa (ör. platform/tenant-admin hesapları) 404 döner. */
+  me: (signal?: AbortSignal) => apiFetch<Employee>(`${BASE}/employees/me`, { signal }),
+
   create: (input: CreateEmployeeInput) =>
     apiFetch<Employee>(`${BASE}/employees`, { method: 'POST', body: input }),
 

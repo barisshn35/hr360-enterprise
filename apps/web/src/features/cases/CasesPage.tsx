@@ -223,11 +223,11 @@ export function CasesPage() {
       id: 'assignee',
       header: 'Atanan',
       hideBelow: 'lg',
-      sortValue: (c) => (c.assigneeEmployeeId ? nameOf(c.assigneeEmployeeId) : ''),
-      exportText: (c) => (c.assigneeEmployeeId ? nameOf(c.assigneeEmployeeId) : '—'),
+      sortValue: (c) => (c.assignedToEmployeeId ? nameOf(c.assignedToEmployeeId) : ''),
+      exportText: (c) => (c.assignedToEmployeeId ? nameOf(c.assignedToEmployeeId) : '—'),
       cell: (c) => (
         <span className="text-muted-foreground">
-          {c.assigneeEmployeeId ? nameOf(c.assigneeEmployeeId) : '—'}
+          {c.assignedToEmployeeId ? nameOf(c.assignedToEmployeeId) : '—'}
         </span>
       ),
     },

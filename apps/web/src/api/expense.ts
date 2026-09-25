@@ -89,7 +89,7 @@ export interface HrCase {
   category: CaseCategory
   priority: CasePriority
   status: CaseStatus
-  assigneeEmployeeId: string | null
+  assignedToEmployeeId: string | null
   resolution: string | null
   createdAt: string
   resolvedAt: string | null
@@ -177,10 +177,10 @@ export const expenseApi = {
   createCase: (input: CreateCaseInput) =>
     apiFetch<HrCase>(`${BASE}/hr-cases`, { method: 'POST', body: input }),
 
-  assignCase: (id: string, assigneeEmployeeId: string) =>
+  assignCase: (id: string, assignedToEmployeeId: string) =>
     apiFetch<HrCase>(`${BASE}/hr-cases/${id}/assign`, {
       method: 'POST',
-      body: { assigneeEmployeeId },
+      body: { assignedToEmployeeId },
     }),
 
   resolveCase: (id: string, resolution: string) =>

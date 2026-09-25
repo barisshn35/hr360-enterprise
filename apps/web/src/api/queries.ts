@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient, type UseQueryOptions } from '@tanstack/react-query'
+import { ApiError } from './client'
 import { employeeApi } from './employees'
 import { organizationApi } from './organization'
 import { workflowApi, type WorkflowFilters } from './workflows'
@@ -89,6 +90,34 @@ export function useOverdueWorkflows(options?: Partial<UseQueryOptions<Workflow[]
     queryFn: ({ signal }) => workflowApi.listOverdue(signal),
     ...options,
   })
+}
+
+/**
+ * Oturumdaki kullanıcının çalışan kimliği (`employee-service`'in `GET
+ * /employees/me` ucundan - KeycloakUserId eşlemesi, e-posta değil).
+ *
+ * `user.id` (AuthProvider) Keycloak `sub` claim'idir, Employee.Id DEĞİL -
+ * ikisi ayrı kimlik uzayları. Çalışan kaydı gerektiren bir uca (ör.
+ * bildirim alıcı filtresi) doğrudan `user.id` geçmek asla eşleşmez. Kayıt
+ * yoksa (platform/tenant-admin gibi Employee'ye bağlanmamış hesaplar)
+ * `notLinked` true döner - çağıran bunu "bildirim/analiz yok" olarak ele
+ * almalı, hata olarak değil.
+ */
+export function useMyEmployeeId(enabled = true) {
+  const q = useQuery({
+    queryKey: ['my-employee-id'],
+    queryFn: ({ signal }) => employeeApi.me(signal),
+    enabled,
+    retry: (count, error) => !(error instanceof ApiError && error.status === 404) && count < 2,
+    staleTime: 5 * 60_000,
+    select: (e) => e.id,
+  })
+  return {
+    employeeId: q.data,
+    isPending: enabled && q.isPending,
+    notLinked: q.error instanceof ApiError && q.error.status === 404,
+    error: q.error,
+  }
 }
 
 export function useGatewayHealth() {
