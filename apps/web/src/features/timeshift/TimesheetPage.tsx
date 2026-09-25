@@ -48,8 +48,8 @@ function TodayCard({ employeeId, today }: { employeeId: string; today?: TimeEntr
   const queryClient = useQueryClient()
   const reduced = useReducedMotion()
 
-  const clockedIn = Boolean(today?.clockInAt) && !today?.clockOutAt
-  const closed = Boolean(today?.clockOutAt)
+  const clockedIn = Boolean(today?.clockIn) && !today?.clockOut
+  const closed = Boolean(today?.clockOut)
 
   const mutation = useMutation({
     mutationFn: (kind: 'in' | 'out') => {
@@ -96,13 +96,13 @@ function TodayCard({ employeeId, today }: { employeeId: string; today?: TimeEntr
           <div>
             <p className="text-[12px] text-muted-foreground">Giriş</p>
             <p className="tabular text-[20px] leading-none font-bold">
-              {clockTime(today?.clockInAt)}
+              {clockTime(today?.clockIn)}
             </p>
           </div>
           <div>
             <p className="text-[12px] text-muted-foreground">Çıkış</p>
             <p className="tabular text-[20px] leading-none font-bold">
-              {clockTime(today?.clockOutAt)}
+              {clockTime(today?.clockOut)}
             </p>
           </div>
           <div>
@@ -182,15 +182,15 @@ export function TimesheetPage() {
       id: 'in',
       header: 'Giriş',
       hideBelow: 'sm',
-      exportText: (e) => clockTime(e.clockInAt),
-      cell: (e) => <span className="tabular text-muted-foreground">{clockTime(e.clockInAt)}</span>,
+      exportText: (e) => clockTime(e.clockIn),
+      cell: (e) => <span className="tabular text-muted-foreground">{clockTime(e.clockIn)}</span>,
     },
     {
       id: 'out',
       header: 'Çıkış',
       hideBelow: 'sm',
-      exportText: (e) => clockTime(e.clockOutAt),
-      cell: (e) => <span className="tabular text-muted-foreground">{clockTime(e.clockOutAt)}</span>,
+      exportText: (e) => clockTime(e.clockOut),
+      cell: (e) => <span className="tabular text-muted-foreground">{clockTime(e.clockOut)}</span>,
     },
     {
       id: 'worked',

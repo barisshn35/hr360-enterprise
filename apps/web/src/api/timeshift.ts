@@ -35,8 +35,8 @@ export interface TimeEntry {
   id: string
   employeeId: string
   date: string
-  clockInAt: string | null
-  clockOutAt: string | null
+  clockIn: string | null
+  clockOut: string | null
   workedMinutes: number
   /** 480 dakikayı (8 saat) aşan kısım. */
   overtimeMinutes: number

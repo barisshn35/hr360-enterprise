@@ -14,13 +14,38 @@ public class AssetsController : ControllerBase
     private readonly OnboardingDbContext _db;
     public AssetsController(OnboardingDbContext db) => _db = db;
 
+    /// <summary>
+    /// NOT: Onceki halinde bu uc ham Asset entity'sini donuyordu -
+    /// Asset'in AssignedEmployeeId/AssignedOn gibi duz (flat) alanlari HIC
+    /// YOK (sadece List&lt;AssetAssignment&gt; Assignments var) ve bu uc
+    /// Assignments'i Include ETMIYORDU. Frontend (AssetsPage.tsx "Zimmetli"
+    /// sutunu) a.assignedEmployeeId/a.assignedOn okuyordu - HER ZAMAN
+    /// undefined, yani zimmetli bir demirbas bile "—" (bos) gorunuyordu
+    /// (hardcore test sirasinda bulundu, 3. tur). Acik (ReturnedOn == null)
+    /// atama varsa duz alanlar olarak eklenir.
+    /// </summary>
     [HttpGet]
     public async Task<IActionResult> GetAll([FromQuery] AssetStatus? status, [FromQuery] AssetType? type)
     {
         var q = _db.Assets.AsQueryable();
         if (status.HasValue) q = q.Where(a => a.Status == status.Value);
         if (type.HasValue) q = q.Where(a => a.Type == type.Value);
-        return Ok(await q.OrderBy(a => a.AssetTag).ToListAsync());
+        var assets = await q.OrderBy(a => a.AssetTag).ToListAsync();
+
+        var openAssignments = await _db.AssetAssignments
+            .Where(a => a.ReturnedOn == null)
+            .ToDictionaryAsync(a => a.AssetId, a => a);
+
+        return Ok(assets.Select(a =>
+        {
+            openAssignments.TryGetValue(a.Id, out var open);
+            return new
+            {
+                a.Id, a.AssetTag, a.Type, a.Model, a.SerialNumber, a.Status, a.CreatedAt,
+                AssignedEmployeeId = open?.EmployeeId,
+                AssignedOn = open?.AssignedOn,
+            };
+        }));
     }
 
     [HttpGet("{id}")]
@@ -29,7 +54,16 @@ public class AssetsController : ControllerBase
         var a = await _db.Assets
             .Include(x => x.Assignments.OrderByDescending(s => s.AssignedOn))
             .FirstOrDefaultAsync(x => x.Id == id);
-        return a is null ? NotFound() : Ok(a);
+        if (a is null) return NotFound();
+
+        var open = a.Assignments.FirstOrDefault(s => s.ReturnedOn == null);
+        return Ok(new
+        {
+            a.Id, a.AssetTag, a.Type, a.Model, a.SerialNumber, a.Status, a.CreatedAt,
+            AssignedEmployeeId = open?.EmployeeId,
+            AssignedOn = open?.AssignedOn,
+            Assignments = a.Assignments,
+        });
     }
 
     [HttpPost]

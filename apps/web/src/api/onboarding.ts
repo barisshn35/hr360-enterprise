@@ -77,8 +77,22 @@ export interface Asset {
   model: string | null
   serialNumber: string | null
   status: AssetStatus
+  /** Sadece acik (henuz iade edilmemis) atama varsa dolu - bkz. AssetsController.GetAll/GetById. */
   assignedEmployeeId: string | null
   assignedOn: string | null
+}
+
+/** `GET /assets/by-employee/{id}` ve zimmet atama/iade uclarinin donus tipi -
+ * Asset DEGIL, AssetAssignment (ic ice `asset` alaniyla). */
+export interface AssetAssignment {
+  id: string
+  assetId: string
+  asset: Asset | null
+  employeeId: string
+  assignedOn: string
+  returnedOn: string | null
+  conditionOnReturn: string | null
+  notes: string | null
 }
 
 export interface CreatePlanInput {
@@ -150,11 +164,11 @@ export const onboardingApi = {
     apiFetch<Asset>(`${BASE}/assets`, { method: 'POST', body: input }),
 
   assignAsset: (id: string, input: AssignAssetInput) =>
-    apiFetch<Asset>(`${BASE}/assets/${id}/assign`, { method: 'POST', body: input }),
+    apiFetch<AssetAssignment>(`${BASE}/assets/${id}/assign`, { method: 'POST', body: input }),
 
   returnAsset: (id: string, input: ReturnAssetInput) =>
-    apiFetch<Asset>(`${BASE}/assets/${id}/return`, { method: 'POST', body: input }),
+    apiFetch<AssetAssignment>(`${BASE}/assets/${id}/return`, { method: 'POST', body: input }),
 
   assetsByEmployee: (employeeId: string, signal?: AbortSignal) =>
-    apiFetch<Asset[]>(`${BASE}/assets/by-employee/${employeeId}`, { signal }),
+    apiFetch<AssetAssignment[]>(`${BASE}/assets/by-employee/${employeeId}`, { signal }),
 }
