@@ -107,6 +107,14 @@ Tek-sunucu sürümü, aynı servislerin tamamını Docker Compose ile tek
 makinede, servis adı üzerinden birbirini bulacak şekilde çalıştırır —
 mimari olarak birebir aynı, sadece dağıtım topolojisi farklıdır.
 
+## Markalama doğrulaması
+
+Repo, orijinal "Staffware" marka adından "HR360"a taşındı: ayrı bir
+tanıtım/ana sayfası kaldırıldı, logo/başlık/giriş ekranı ve e-posta
+bildirim şablonları (`notification-service/Email/*`) dahil tüm
+kullanıcıya görünen metinler HR360 kimliğiyle güncellendi. Repo genelinde
+periyodik olarak `grep -rniI "staffware" .` ile tekrar tarama yapılıyor.
+
 ## Güvenlik notu
 
 - Repo'da hiçbir gerçek sır (parola, API anahtarı, sertifika) bulunmaz.
