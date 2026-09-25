@@ -29,6 +29,33 @@ random_secret() {
     || head -c 32 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 24
 }
 
+random_aes_key() {
+  # TAM 32 ham byte'lik, gecerli base64 kodlu bir anahtar uretir (AES-256 icin).
+  # NOT: random_secret() ozel karakterleri (+ / =) siler ve 24 karaktere keser
+  # - bu, gecerli bir base64(32 byte) DEGILDIR ve Convert.FromBase64String()
+  # ile acilinca ~18 byte'a dusup SmtpCredentialProtector'in "32 byte
+  # (base64) olmali" hatasini atmasina sebep olur (hardcore test sirasinda
+  # bulundu: TENANT_SECRET_KEY icin bu fonksiyon kullanilmali, random_secret()
+  # DEGIL). Ozel karakterler KORUNUR, kesinlikle strip/kirpma yapilmaz.
+  openssl rand -base64 32 2>/dev/null \
+    || head -c 32 /dev/urandom | base64
+}
+
+ask_secret_aes_key() {
+  # ask_secret ile ayni akis, ama otomatik uretimde random_aes_key() kullanir
+  # (tam 32 ham byte garantisi icin). Kullanici kendi degerini girerse,
+  # gecerliligini kontrol etmek kullanicinin sorumlulugundadir (ayni ask_secret
+  # gibi serbest metin kabul eder).
+  local var_name="$1"; local prompt="$2"
+  local input=""
+  read -r -p "$prompt [bos birakin, otomatik guclu bir deger uretilsin]: " input || true
+  if [ -z "$input" ]; then
+    input="$(random_aes_key)"
+    echo "   -> otomatik uretildi: $input"
+  fi
+  printf -v "$var_name" '%s' "$input"
+}
+
 ask_secret() {
   # ask_secret <degisken_adi> <soru_metni> <varsayilan_kullanici_adi_mi(bos ise rastgele uretilir)>
   local var_name="$1"; local prompt="$2"
@@ -141,7 +168,7 @@ GATEWAY_PORT=${GATEWAY_PORT:-80}
 
 ask_secret HR360_DB_PASSWORD          "PostgreSQL (hr360admin) parolasi"
 ask_secret KEYCLOAK_ADMIN_PASSWORD    "Keycloak master admin parolasi"
-ask_secret TENANT_SECRET_KEY          "tenant-service imza anahtari"
+ask_secret_aes_key TENANT_SECRET_KEY  "tenant-service imza anahtari"
 ask_secret MINIO_ROOT_PASSWORD        "MinIO root parolasi"
 ask_secret ML_KEYCLOAK_CLIENT_SECRET  "ml-inference Keycloak client secret'i"
 ask_secret DEMO_ADMIN_PASSWORD        "Demo giris kullanicisi (demo.admin) parolasi"
@@ -165,6 +192,11 @@ MINIO_ROOT_USER=${MINIO_ROOT_USER}
 MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
 
 ML_KEYCLOAK_CLIENT_SECRET=${ML_KEYCLOAK_CLIENT_SECRET}
+
+# NOT: DEMO_ADMIN_PASSWORD daha once bu dosyaya hic yazilmiyordu (script
+# "Tum sirlar .env dosyasinda" diyordu ama bu degisken sadece Keycloak
+# realm sablonuna gomuluyordu) - hardcore test sirasinda bulundu.
+DEMO_ADMIN_PASSWORD=${DEMO_ADMIN_PASSWORD}
 
 SMTP_HOST=mailpit
 SMTP_PORT=1025

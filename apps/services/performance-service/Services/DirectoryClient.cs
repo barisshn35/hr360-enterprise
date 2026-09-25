@@ -61,8 +61,46 @@ public class DirectoryClient
     {
         // Kiraci bazinda ayrilmali - aksi halde bir sirketin ekip listesi
         // digerine sizabilir.
-        var tenant = _ctx.HttpContext?.User?.FindFirst("organization")?.Value ?? "?";
-        return $"dir:{tenant.Trim('[', ']', '"', ' ')}:{suffix}";
+        var raw = _ctx.HttpContext?.User?.FindFirst("organization")?.Value;
+        return $"dir:{ParseOrganizationSlug(raw) ?? "?"}:{suffix}";
+    }
+
+    /// <summary>
+    /// NOT: Bu claim onceden basit bir dizi ("[\"acme\"]") sanilip Trim() ile
+    /// parse ediliyordu - ama Keycloak (bu projede: 25.0.6) "organization"
+    /// scope'unu JSON NESNESI olarak dolduruyor, organizasyonun ADIYLA
+    /// anahtarlanmis: {"acme":{}} (hardcore test sirasinda, TenantMiddleware
+    /// ve MyTenantController'daki ayni koku bulunan bir hatanin parcasi
+    /// olarak bulundu). Burada islevsel bir hata yaratmiyordu (cache anahtari
+    /// gene de kiraci basina stabildi) ama tutarlilik icin ayni dogru parse
+    /// mantigi uygulandi.
+    /// </summary>
+    private static string? ParseOrganizationSlug(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(raw);
+            switch (doc.RootElement.ValueKind)
+            {
+                case JsonValueKind.Object:
+                    foreach (var prop in doc.RootElement.EnumerateObject())
+                        return prop.Name;
+                    return null;
+                case JsonValueKind.Array:
+                    foreach (var el in doc.RootElement.EnumerateArray())
+                        return el.GetString();
+                    return null;
+                case JsonValueKind.String:
+                    return doc.RootElement.GetString();
+                default:
+                    return null;
+            }
+        }
+        catch (JsonException)
+        {
+            return raw.Trim('[', ']', '"', ' ');
+        }
     }
 
     private async Task<T?> GetAsync<T>(string url, CancellationToken ct)

@@ -95,8 +95,24 @@ public class KeycloakAdminClient
             ? new[] { new { name = $"{alias}.hr360.local" } }
             : new[] { new { name = emailDomain } };
 
+        // NOT: Keycloak'in (bu projede kullanilan surum: 25.0) Organizations Admin
+        // REST API'sinde "alias" DIYE BIR ALAN YOK - OrganizationRepresentation'in
+        // bildigi tek alanlar: enabled, identityProviders, attributes, members, id,
+        // description, domains, name. Eskiden burada gonderilen "alias" alani sunucu
+        // tarafindan sessizce degil, ACIKCA 400 Bad Request ile reddediliyordu -
+        // yani sirket kayit sihirbazinin TUMU (ProvisionAsync -> bu metod) HER
+        // ZAMAN patliyordu ve telafi/rollback mantigi devreye girip olusturulan
+        // tenant kaydini geri aliyordu (hardcore test sirasinda bulundu - demo
+        // tenant seed'i denerken ayni hatayla karsilasildi).
+        //
+        // Keycloak, oturum acan kullanicinin JWT'sindeki "organization" claim'ini
+        // organizasyonun "name" alaniyla anahtarliyor (alias/slug DEGIL - Keycloak'ta
+        // boyle bir kavram yok). MyTenantController ise bu claim'i tenant'in Slug'iyla
+        // eslestiriyor. Bu yuzden Keycloak organizasyonunun "name" alanina insan-okur
+        // gorunen adi degil, SLUG'i ("alias" parametresi) yaziyoruz; insan-okur adi
+        // "description" alaninda saklaniyor.
         var req = await BuildAsync(HttpMethod.Post, "/organizations",
-            new { name, alias, enabled = true, domains }, ct);
+            new { name = alias, description = name, enabled = true, domains }, ct);
 
         var resp = await _http.SendAsync(req, ct);
         if (!resp.IsSuccessStatusCode)
@@ -125,8 +141,17 @@ public class KeycloakAdminClient
         var req = new HttpRequestMessage(
             HttpMethod.Post, $"{_baseUrl}/admin/realms/{_realm}/organizations/{orgId}/members");
         req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", await GetTokenAsync(ct));
-        // Bu uc, JSON nesnesi degil duz kullanici kimligi bekler.
-        req.Content = new StringContent($"\"{userId}\"", Encoding.UTF8, "application/json");
+        // NOT: Bu uc gecerli bir JSON string (tirnak icinde, orn. "\"<id>\"") GONDERILDIGINDE
+        // Keycloak 25.0.6'da HER ZAMAN "User does not exist" (400) doner - kullanici
+        // gercekten var ve id dogru olsa bile (canli sunucuya karsi curl/http.client ile
+        // dogrulandi: tirnaksiz DUZ METIN govde 201 donuyor, ayni govde JSON-tirnakli
+        // haliyle 400 donuyor). Bu, Keycloak'in bu uctaki govdeyi JSON olarak degil DUZ
+        // METIN olarak parse etmesinden kaynaklaniyor; @Content-Type application/json
+        // yine de gerekli (text/plain 415 donuyor). Sirket kayit sihirbazinin (ve demo
+        // tenant seed'inin) HER ZAMAN "Kullanıcı organizasyona eklenemedi (400): User
+        // does not exist" ile patlamasina sebep olan asil kok neden buydu - hardcore
+        // test sirasinda bulundu ve canli Keycloak'a karsi curl ile dogrulandi.
+        req.Content = new StringContent(userId, Encoding.UTF8, "application/json");
 
         var resp = await _http.SendAsync(req, ct);
         if (!resp.IsSuccessStatusCode)

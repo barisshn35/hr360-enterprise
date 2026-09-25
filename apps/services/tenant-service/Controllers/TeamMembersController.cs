@@ -118,7 +118,7 @@ public class TeamMembersController : ControllerBase
     [Authorize(Policy = "RequireManagerOrAbove")]
     public async Task<IActionResult> Invite(Guid employeeId, CancellationToken ct)
     {
-        var slug = User.FindFirst("organization")?.Value?.Trim('[', ']', '"', ' ');
+        var slug = TenantService.Security.OrganizationClaimParser.ParseSlug(User.FindFirst("organization")?.Value);
         if (string.IsNullOrWhiteSpace(slug))
             return NotFound(new { message = "Kullanıcı bir şirkete bağlı değil" });
 

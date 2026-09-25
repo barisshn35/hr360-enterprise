@@ -32,8 +32,16 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateAudience = false,
-            ValidateIssuer = true,
-            ValidIssuer = keycloakAuthority,
+            // NOT: ValidIssuer = keycloakAuthority (ic Docker hostname) burada YANLISTI -
+            // Keycloak token'in "iss" claim'ini istegin Host header'indan uretir, yani
+            // gercek tarayici girisinde alinan tokenlerin iss'i HER ZAMAN disariya acik
+            // adres ("http://localhost/auth/realms/hr360") olur, ic servis adi DEGIL.
+            // Sonuc: bu servis (employee-service'de ayni hata vardi) gercek girisle
+            // alinan HICBIR token'i kabul etmiyordu - /api/organization/companies HER
+            // ZAMAN 401 donuyordu (hardcore test sirasinda, canli JWT'nin iss alaniyla
+            // dogrulandi). Authority+JWKS imza dogrulamasi zaten yeterli - diger 11
+            // mikroservisin tamami ZATEN ValidateIssuer=false kullaniyor.
+            ValidateIssuer = false,
         };
         // Keycloak realm_access.roles claim'ini ASP.NET Core'un ClaimTypes.Role'une esler.
         // Bu olmadan [Authorize(Roles=...)] ve role-based policy'ler HICBIR ZAMAN calismaz,
@@ -102,6 +110,12 @@ var app = builder.Build();
 
 using (var scope = app.Services.CreateScope())
 {
+    // NOT: EnsureCreated() PAYLASILAN veritabaninda "herhangi bir tablo var
+    // mi" diye bakar, "benim tablolarim var mi" diye DEGIL - bu servisin
+    // tablolari artik data/migrations/sql-all-schemas.sql icinde (postgres
+    // ilk ayaga kalkarken) olusturuldugundan burada HER ZAMAN no-op olarak
+    // calisir. Bilerek kaldirilmadi (bos bir DB'ye karsi son bir guvenlik
+    // agi), ama gercek kurulumun kaynagi artik SQL dosyasidir.
     var db = scope.ServiceProvider.GetRequiredService<OrganizationDbContext>();
     db.Database.EnsureCreated();
 }

@@ -34,7 +34,7 @@ from typing import Literal
 
 import numpy as np
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import StandardScaler
 
@@ -95,6 +95,12 @@ class EmployeeAnalysis(BaseModel):
 
 
 class AnalyzeResponse(BaseModel):
+    # model_config: "model_used"/"model_skip_reason" alan adlari pydantic'in
+    # kendi korumali "model_" on ekiyle cakisiyor (model_dump vb. ile
+    # karisabilir uyarisi verir) - anlamli isimler oldugu icin degistirmek
+    # yerine bu sinifta korumali ad namespace kontrolunu devre disi birakiyoruz.
+    model_config = ConfigDict(protected_namespaces=())
+
     analyzed_at: datetime
     employee_count: int
     anomaly_count: int

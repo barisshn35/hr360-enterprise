@@ -1,11 +1,25 @@
 from fastapi import FastAPI, Depends, HTTPException, Header
 from pydantic import BaseModel
 from prometheus_fastapi_instrumentator import Instrumentator
+import asyncio
 import httpx
 import os
 import mlflow
 import mlflow.sklearn
 import numpy as np
+import shap
+
+# MLflow'un varsayilan HTTP zaman asimi (120sn) ve tekrar deneme sayisi (5,
+# ustel geri cekilmeyle) cok yuksek - MLflow ayaga kalkmadan once
+# ml-inference baslarsa (docker compose'da mlflow icin bir healthcheck
+# olmadigindan bu her zaman mumkun), model yukleme denemesi DAKIKALARCA
+# askida kalabilir ve FastAPI'nin startup event'i bunu bekledigi icin
+# /health de dahil HICBIR istek bu sure boyunca yanit vermez. Servisin kendi
+# tasarimi zaten "model yuklenemezse calismaya devam et" (asagidaki
+# try/except) oldugundan, burada sadece bu basarisizligin HIZLI gerceklesmesini
+# sagliyoruz - operator farkli bir deger set etmisse onu eziyoruz (setdefault).
+os.environ.setdefault("MLFLOW_HTTP_REQUEST_TIMEOUT", "10")
+os.environ.setdefault("MLFLOW_HTTP_REQUEST_MAX_RETRIES", "2")
 
 app = FastAPI(title="HR360 ML Inference Service")
 
@@ -26,6 +40,7 @@ MODEL_STAGE = os.getenv("MODEL_STAGE", "1")  # version 1
 
 mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 model = None
+explainer = None
 
 class PredictRequest(BaseModel):
     features: list[float]
@@ -44,15 +59,39 @@ async def verify_token(authorization: str = Header(None)):
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     return resp.json()
 
+def _load_model_blocking():
+    """MLflow'dan modeli senkron olarak yukler - asagida bir thread'de
+    calistirilir, boylece (MLflow henuz ayakta degilse) askida kalsa bile
+    FastAPI'nin startup'ini ve /health'i BLOKE ETMEZ."""
+    model_uri = f"models:/{MODEL_NAME}/{MODEL_STAGE}"
+    return mlflow.sklearn.load_model(model_uri)
+
+
 @app.on_event("startup")
 async def load_model():
-    global model
+    # Bilerek AWAIT edilmiyor: MLflow henuz hazir degilse (docker compose'da
+    # mlflow icin healthcheck yok, ml-inference sadece container'in
+    # BASLAMIS olmasini bekliyor) bu cagri dakikalarca surebilir. Arka
+    # planda calistirarak /health ve diger uclar bu sure boyunca da yanit
+    # vermeye devam eder; model hazir olunca 'model_loaded' otomatik true olur.
+    asyncio.create_task(_load_model_and_explainer())
+
+
+async def _load_model_and_explainer():
+    global model, explainer
     try:
         model_uri = f"models:/{MODEL_NAME}/{MODEL_STAGE}"
-        model = mlflow.sklearn.load_model(model_uri)
+        model = await asyncio.to_thread(_load_model_blocking)
         print(f"Model yüklendi: {model_uri}")
     except Exception as e:
         print(f"Model yüklenemedi: {e}")
+        return
+
+    try:
+        explainer = await asyncio.to_thread(shap.TreeExplainer, model)
+        print("SHAP explainer hazır")
+    except Exception as e:
+        print(f"SHAP explainer yüklenemedi: {e}")
 
 @app.get("/health")
 async def health():
@@ -71,20 +110,6 @@ async def predict(req: PredictRequest, token_info: dict = Depends(verify_token))
         "model": f"{MODEL_NAME}/v{MODEL_STAGE}",
         "authenticated_client": token_info.get("client_id", token_info.get("azp")),
     }
-
-import shap
-
-explainer = None
-
-@app.on_event("startup")
-async def load_explainer():
-    global explainer
-    if model is not None:
-        try:
-            explainer = shap.TreeExplainer(model)
-            print("SHAP explainer hazır")
-        except Exception as e:
-            print(f"SHAP explainer yüklenemedi: {e}")
 
 @app.post("/explain")
 async def explain(req: PredictRequest, token_info: dict = Depends(verify_token)):

@@ -35,8 +35,19 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateAudience = false,
-            ValidateIssuer = true,
-            ValidIssuer = keycloakAuthority,
+            // NOT: ValidIssuer = keycloakAuthority (ic Docker hostname, "http://keycloak:8080/...")
+            // burada YANLISTI - Keycloak, token'in "iss" claim'ini token TALEP EDILDIGI
+            // ANDAKI istegin Host header'indan uretir, yani gercek kullanicilarin
+            // TARAYICIDAN aldigi tokenlerin iss'i HER ZAMAN disariya acik adres
+            // ("http://localhost/auth/realms/hr360" ya da PUBLIC_URL) olur, ic Docker
+            // servis adi DEGIL. Sonuc: bu servis (ve organization-service, ayni hataya
+            // sahipti) gercek tarayici girisiyle alinan HICBIR token'i kabul etmiyordu -
+            // her istek 401 donuyordu (hardcore test sirasinda, demo.admin girisi
+          // sonrasi /api/employee/... 401 vererek bulundu, canli JWT'nin iss alaniyla
+            // dogrulandi). Authority+JWKS imza dogrulamasi zaten yeterli guvenlik
+            // sagliyor - diger 11 mikroservisin tamami ZATEN ValidateIssuer=false
+            // kullaniyor, burada da ayni tutarli yaklasima donuldu.
+            ValidateIssuer = false,
         };
         options.Events = new JwtBearerEvents
         {
@@ -100,6 +111,12 @@ var app = builder.Build();
 
 using (var scope = app.Services.CreateScope())
 {
+    // NOT: EnsureCreated() PAYLASILAN veritabaninda "herhangi bir tablo var
+    // mi" diye bakar, "benim tablolarim var mi" diye DEGIL - bu servisin
+    // tablolari artik data/migrations/sql-all-schemas.sql icinde (postgres
+    // ilk ayaga kalkarken) olusturuldugundan burada HER ZAMAN no-op olarak
+    // calisir. Bilerek kaldirilmadi (bos bir DB'ye karsi son bir guvenlik
+    // agi), ama gercek kurulumun kaynagi artik SQL dosyasidir.
     var db = scope.ServiceProvider.GetRequiredService<EmployeeDbContext>();
     db.Database.EnsureCreated();
 }

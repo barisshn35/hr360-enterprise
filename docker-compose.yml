@@ -39,7 +39,12 @@ services:
       POSTGRES_PASSWORD: ${HR360_DB_PASSWORD}
       POSTGRES_DB: hr360_operational
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      # NOT: postgres 18+ imaji artik /var/lib/postgresql/data'ya dogrudan
+      # mount edilmesini reddediyor ("legacy" kabul edip baslamayi
+      # reddediyor - bkz. https://github.com/docker-library/postgres/pull/1259).
+      # Resmi onerilen kullanim: ust dizine (/var/lib/postgresql) mount
+      # etmek, imaj kendi ici surum-ozel alt dizini (orn. 18/docker) kullansin.
+      - postgres-data:/var/lib/postgresql
       - ./deploy/postgres/init-databases.sh:/docker-entrypoint-initdb.d/01-init-databases.sh:ro
       - ./data/migrations/sql-all-schemas.sql:/docker-entrypoint-initdb.d/02-sql-all-schemas.sql:ro
     healthcheck:
@@ -55,25 +60,41 @@ services:
     restart: unless-stopped
     command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
 
+  # NOT: resmi minio/minio ve minio/mc imajlari 2026 itibariyle hem Docker
+  # Hub'da hem quay.io'da anonim (girissiz) pull'a kapatildi ("pull access
+  # denied" / kimlik dogrulama zorunlu). Bunun yerine, hala serbestce pull
+  # edilebilen ve MinIO ile ayni env degiskenlerini/'mc' aracini kullanan
+  # bitnamilegacy/minio ve bitnamilegacy/minio-client imajlarina gecildi.
   minio:
-    image: minio/minio:latest
+    image: bitnamilegacy/minio:latest
     restart: unless-stopped
-    command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      # bitnami imajinda web konsolu varsayilan olarak KAPALI gelir - biz
+      # asagida http://localhost:9001'de yayinladigimiz icin acik olmali.
+      MINIO_BROWSER: "on"
     volumes:
-      - minio-data:/data
+      # bitnami imaji veriyi /data degil /bitnami/minio/data altinda tutar.
+      - minio-data:/bitnami/minio/data
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      # NOT: bitnami imaji acilista once KISA SURELI bir "bootstrap"
+      # instance'i baslatip durduruyor, ardindan gercek sunucuyu baslatiyor
+      # (loglarda "Starting MinIO" -> "Stopping MinIO" -> "Starting MinIO").
+      # Tek seferlik "mc ready local" bu geciste sansli/sanssiz yakalanip
+      # bootstrap instance'ini "healthy" olarak isaretleyebiliyor - depends_on
+      # bekleyen minio-init o an baglanmaya calisip "connection refused"
+      # aliyor. Kisa bir aralikla IKI kez kontrol ederek bu yariş durumunu
+      # buyuk olcude ortadan kaldiriyoruz (bootstrap penceresi ~5sn).
+      test: ["CMD-SHELL", "mc ready local && sleep 3 && mc ready local"]
       interval: 5s
-      timeout: 5s
+      timeout: 10s
       retries: 20
     ports:
       - "127.0.0.1:9001:9001"
 
   minio-init:
-    image: minio/mc:latest
+    image: bitnamilegacy/minio-client:latest
     depends_on:
       minio:
         condition: service_healthy

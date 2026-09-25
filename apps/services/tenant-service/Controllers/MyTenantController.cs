@@ -32,7 +32,7 @@ public class MyTenantController : ControllerBase
     {
         // organization claim'i Keycloak tarafindan JWT'ye eklenir; degeri
         // tenant slug'idir. Claim yoksa kullanici hicbir tenant'a bagli degildir.
-        var slug = User.FindFirst("organization")?.Value;
+        var slug = TenantService.Security.OrganizationClaimParser.ParseSlug(User.FindFirst("organization")?.Value);
 
         if (string.IsNullOrWhiteSpace(slug))
             return NotFound(new { message = "Kullanıcı bir şirkete bağlı değil" });
@@ -73,7 +73,7 @@ public class MyTenantController : ControllerBase
     [Authorize(Policy = "RequireTenantAdmin")]
     public async Task<IActionResult> UpdateBranding([FromBody] UpdateBrandingRequest request)
     {
-        var slug = User.FindFirst("organization")?.Value?.Trim('[', ']', '"', ' ');
+        var slug = TenantService.Security.OrganizationClaimParser.ParseSlug(User.FindFirst("organization")?.Value);
         if (string.IsNullOrWhiteSpace(slug))
             return NotFound(new { message = "Kullanıcı bir şirkete bağlı değil" });
 
@@ -147,7 +147,7 @@ public class MyTenantController : ControllerBase
         if (string.IsNullOrWhiteSpace(request.Name) || request.Name.Length > 200)
             return BadRequest(new { message = "Şirket adı 1-200 karakter olmalı" });
 
-        var slug = User.FindFirst("organization")?.Value?.Trim('[', ']', '"', ' ');
+        var slug = TenantService.Security.OrganizationClaimParser.ParseSlug(User.FindFirst("organization")?.Value);
         if (string.IsNullOrWhiteSpace(slug))
             return NotFound(new { message = "Kullanıcı bir şirkete bağlı değil" });
 
@@ -172,7 +172,7 @@ public class MyTenantController : ControllerBase
     [RequestSizeLimit(2 * 1024 * 1024 + 1024)] // 2MB dosya + kucuk form-data payi
     public async Task<IActionResult> UploadLogo(IFormFile? file, CancellationToken ct)
     {
-        var slug = User.FindFirst("organization")?.Value?.Trim('[', ']', '"', ' ');
+        var slug = TenantService.Security.OrganizationClaimParser.ParseSlug(User.FindFirst("organization")?.Value);
         if (string.IsNullOrWhiteSpace(slug))
             return NotFound(new { message = "Kullanıcı bir şirkete bağlı değil" });
 
@@ -200,7 +200,7 @@ public class MyTenantController : ControllerBase
     [Authorize(Policy = "RequireTenantAdmin")]
     public async Task<IActionResult> DeleteLogo(CancellationToken ct)
     {
-        var slug = User.FindFirst("organization")?.Value?.Trim('[', ']', '"', ' ');
+        var slug = TenantService.Security.OrganizationClaimParser.ParseSlug(User.FindFirst("organization")?.Value);
         if (string.IsNullOrWhiteSpace(slug))
             return NotFound(new { message = "Kullanıcı bir şirkete bağlı değil" });
 

@@ -22,6 +22,9 @@ builder.Services.AddHttpClient<EmployeeDirectoryClient>();
 builder.Services.AddScoped<TenantProvisioningService>();
 builder.Services.AddSingleton<TenantService.Security.SmtpCredentialProtector>();
 builder.Services.AddSingleton<TenantService.Services.LogoStorageService>();
+// NOT: install.sh'nin urettigi "demo.admin" Keycloak kullanicisinin gercekten
+// calisir bir demo tenant'i olmasini saglar - bkz. dosyanin basindaki aciklama.
+builder.Services.AddHostedService<DemoTenantSeederHostedService>();
 
 var keycloakAuthority = Environment.GetEnvironmentVariable("KEYCLOAK_AUTHORITY")
     ?? "http://172.33.55.2:8080/realms/hr360";

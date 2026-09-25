@@ -146,9 +146,12 @@ public class EmailSenderWorker : BackgroundService
 
             // Sunucu kimlik dogrulama desteklemiyorsa (yine Mailpit'in
             // varsayilan hali) AuthenticateAsync cagirmak istisna firlatir -
-            // bu yuzden sadece sunucu gercekten destekliyorsa deneriz.
+            // bu yuzden sadece sunucu gercekten destekliyorsa deneriz. Parola
+            // da null olabilir (User doluyken Password bos gelirse) - ikisi
+            // de doluysa deneriz, aksi halde kimlik dogrulamasiz devam ederiz.
             if (smtp.Capabilities.HasFlag(SmtpCapabilities.Authentication)
-                && !string.IsNullOrEmpty(target.User))
+                && !string.IsNullOrEmpty(target.User)
+                && !string.IsNullOrEmpty(target.Password))
             {
                 await smtp.AuthenticateAsync(target.User, target.Password, ct);
             }

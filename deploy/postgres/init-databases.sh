@@ -4,6 +4,13 @@
 # mlflow icin ikinci veritabanini ekliyoruz.
 set -e
 
-psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" <<-EOSQL
+# NOT: --dbname VERILMEZSE psql varsayilan olarak kullanici adiyla AYNI
+# isimde bir veritabanina baglanmaya calisir (burada "hr360admin") - o
+# veritabani hic var olmadigindan baglanti FATAL hatasiyla basarisiz olur
+# ve CREATE DATABASE komutu hic calismadan script sessizce atlanir (mlflow
+# container'i sonradan "hr360_mlflow veritabani yok" hatasiyla patlar).
+# Her zaman var olan "postgres" admin veritabanina baglanip oradan yeni DB
+# yaratmak dogru/standart yontem.
+psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres <<-EOSQL
     CREATE DATABASE hr360_mlflow OWNER $POSTGRES_USER;
 EOSQL
