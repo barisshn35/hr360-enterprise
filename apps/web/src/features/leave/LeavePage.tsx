@@ -24,6 +24,7 @@ import {
 } from '@/api/types'
 import { formatDate, formatNumber } from '@/lib/format'
 import { NewBalanceModal } from './NewBalanceModal'
+import { HolidaysModal } from './HolidaysModal'
 import { NewLeaveRequestModal } from './NewLeaveRequestModal'
 
 type TabKey = LeaveStatus | 'all'
@@ -92,6 +93,7 @@ export function LeavePage() {
   const [employeeId, setEmployeeId] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [balanceOpen, setBalanceOpen] = useState(false)
+  const [holidaysOpen, setHolidaysOpen] = useState(false)
 
   const year = new Date().getFullYear()
   const balances = useLeaveBalances(employeeId || undefined, year, Boolean(employeeId))
@@ -167,6 +169,11 @@ export function LeavePage() {
         description="İzin talepleri ve yıllık bakiyeler. Onay, Onay kutusu üzerinden ilerler."
         actions={
           <>
+            {can('leave:manageBalance') && (
+              <Button variant="outline" className="cursor-pointer" onClick={() => setHolidaysOpen(true)}>
+                Resmi tatiller
+              </Button>
+            )}
             {can('leave:manageBalance') && (
               <Button
                 variant="outline"
@@ -271,6 +278,8 @@ export function LeavePage() {
         onClose={() => setModalOpen(false)}
         defaultEmployeeId={employeeId}
       />
+
+      <HolidaysModal open={holidaysOpen} onClose={() => setHolidaysOpen(false)} year={year} />
 
       <NewBalanceModal
         open={balanceOpen}

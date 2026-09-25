@@ -17,6 +17,18 @@ ALTER TABLE expense_claims ADD COLUMN IF NOT EXISTS "ApprovedByEmployeeId" uuid;
 -- 1b) Kiraci askiya alma: bu islemle kapatilan hesaplar (yeniden etkinlestirmede yalnizca bunlar acilir).
 ALTER TABLE platform_tenants ADD COLUMN IF NOT EXISTS "SuspendedUserIdsJson" text;
 
+-- Resmi tatil takvimi (leave-service): izin gunu hesabinda dusulur.
+CREATE TABLE IF NOT EXISTS leave_public_holidays (
+    "Id" uuid NOT NULL,
+    "TenantSlug" character varying(64) NOT NULL,
+    "Date" date NOT NULL,
+    "Name" text NOT NULL,
+    "CreatedAt" timestamptz NOT NULL,
+    CONSTRAINT "PK_leave_public_holidays" PRIMARY KEY ("Id")
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "IX_leave_public_holidays_TenantSlug_Date"
+    ON leave_public_holidays ("TenantSlug", "Date");
+
 -- 2) Deger bazli benzersiz indeksler kiraci bazli olur. Global olanlar bir kiracinin
 --    baska bir kiracidaki e-postayi/etiketi "var mi" diye yoklamasina (500 = var) ve
 --    ayni degeri kullanan mesru musterilerin engellenmesine yol aciyordu. Kiraci bazli

@@ -274,6 +274,29 @@ public class WorkflowsController : ControllerBase
         return Ok(wf);
     }
 
+    /// <summary>
+    /// Bekleyen akisi iptal eder - talep sahibi (kaydini iptal ettiginde leave/expense
+    /// servisi onun jetonuyla cagirir) ya da IK. Onceden iptal ucu yoktu: iptal edilen
+    /// iznin akisi onaycinin kutusunda acik kaliyordu.
+    /// </summary>
+    [HttpPost("{id}/cancel")]
+    public async Task<IActionResult> Cancel(Guid id, CancellationToken ct)
+    {
+        var wf = await _db.WorkflowRequests.FirstOrDefaultAsync(w => w.Id == id, ct);
+        if (wf is null) return NotFound();
+        if (!IsHr)
+        {
+            var me = await _employees.FindMyEmployeeIdAsync(ct);
+            if (me is null || me.Value != wf.RequesterEmployeeId) return NotFound();
+        }
+        if (wf.Status != WorkflowStatus.Pending)
+            return BadRequest(new { message = "Yalnızca bekleyen talep iptal edilebilir" });
+        wf.Status = WorkflowStatus.Cancelled;
+        wf.CompletedAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        return Ok(wf);
+    }
+
     [HttpPost("{id}/steps/{stepId}/delegate")]
     [Authorize(Policy = "RequireManagerOrAbove")]
     public async Task<IActionResult> Delegate(Guid id, Guid stepId, [FromBody] DelegateRequest request, CancellationToken ct)

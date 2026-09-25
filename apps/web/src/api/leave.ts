@@ -75,6 +75,13 @@ export interface CreateLeaveBalanceInput {
   entitledDays: number
 }
 
+/** Şirketin resmi tatil takvimindeki bir gün (izin günü hesabında düşülür). */
+export interface PublicHoliday {
+  id: string
+  date: string
+  name: string
+}
+
 export interface LeaveRequestFilters {
   employeeId?: string
   status?: LeaveStatus
@@ -83,6 +90,15 @@ export interface LeaveRequestFilters {
 /* ------------------------------------------------------------------ servis */
 
 export const leaveApi = {
+  listHolidays: (year?: number, signal?: AbortSignal) =>
+    apiFetch<PublicHoliday[]>(`${BASE}/public-holidays${qs({ year })}`, { signal }),
+
+  createHoliday: (input: { date: string; name: string }) =>
+    apiFetch<PublicHoliday>(`${BASE}/public-holidays`, { method: 'POST', body: input }),
+
+  deleteHoliday: (id: string) =>
+    apiFetch<void>(`${BASE}/public-holidays/${id}`, { method: 'DELETE' }),
+
   listBalances: (employeeId?: string, year?: number, signal?: AbortSignal) =>
     apiFetch<LeaveBalance[]>(`${BASE}/leave-balances${qs({ employeeId, year })}`, { signal }),
 

@@ -130,6 +130,22 @@ public class ApprovalWorkflowClient
     /// dogrulandi). /me, KeycloakUserId uzerinden eslestigi icin bu sorunu
     /// tasimiyor.
     /// </summary>
+    /// <summary>
+    /// Talep sahibinin iptal ettigi kaydin onay akisini kapatir (cagiranin jetonuyla).
+    /// Basarisiz olursa false - kayit yine iptal edilir; akisin karari zaten
+    /// yok sayilir (tuketici yalnizca Submitted kayitlara uygular).
+    /// </summary>
+    public async Task<bool> CancelWorkflowAsync(Guid workflowId, CancellationToken ct)
+    {
+        try
+        {
+            using var resp = await _http.SendAsync(
+                Build(HttpMethod.Post, _workflowServiceUrl, $"/api/workflows/{workflowId}/cancel"), ct);
+            return resp.IsSuccessStatusCode;
+        }
+        catch (Exception) { return false; }
+    }
+
     public async Task<Guid?> FindMyEmployeeIdAsync(CancellationToken ct)
     {
         try

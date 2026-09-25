@@ -20,6 +20,7 @@ export const qkx = {
     ['leave', 'balances', employeeId ?? 'all', year ?? 'all'] as const,
   leaveRequests: (f: LeaveRequestFilters) => ['leave', 'requests', f] as const,
   leaveRequest: (id: string) => ['leave', 'requests', 'detail', id] as const,
+  leaveHolidays: (year?: number) => ['leave', 'holidays', year ?? 'all'] as const,
 
   postings: (status?: JobPostingStatus) => ['recruitment', 'postings', status ?? 'all'] as const,
   posting: (id: string) => ['recruitment', 'postings', id] as const,
@@ -75,6 +76,16 @@ export function useLeaveBalances(employeeId?: string, year?: number, enabled = t
     queryKey: qkx.leaveBalances(employeeId, year),
     queryFn: ({ signal }) => leaveApi.listBalances(employeeId, year, signal),
     enabled,
+  })
+}
+
+/** Resmi tatiller — izin formundaki gün önizlemesi ve İK tatil yönetimi. */
+export function useLeaveHolidays(year?: number, enabled = true) {
+  return useQuery({
+    queryKey: qkx.leaveHolidays(year),
+    queryFn: ({ signal }) => leaveApi.listHolidays(year, signal),
+    enabled,
+    staleTime: 10 * 60_000,
   })
 }
 

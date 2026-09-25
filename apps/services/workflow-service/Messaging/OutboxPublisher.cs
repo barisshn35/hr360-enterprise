@@ -65,13 +65,26 @@ public class OutboxPublisher : BackgroundService
         using var scope = _services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<WorkflowDbContext>();
 
+        // NOT: messaging_outbox dort servisin (employee, leave, expense, workflow)
+        // ORTAK tablosu ve her birinin yayincisi ayni satirlari kilitsiz okuyordu -
+        // her olay Kafka'ya birden fazla kez gidiyordu (tuketiciler tekrari ayikliyordu
+        // ama bu sans eseriydi). Satirlar artik bir islem icinde FOR UPDATE SKIP LOCKED
+        // ile alinir: bir satiri ayni anda yalnizca bir yayinci (ve ayni servisin tek
+        // bir kopyasi) isler; yayin durumu ayni islemde yazilir.
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
         var pending = await db.OutboxMessages
-            .Where(m => m.PublishedAt == null && m.AttemptCount < MaxAttempts)
-            .OrderBy(m => m.CreatedAt)
-            .Take(BatchSize)
+            .FromSqlRaw(
+                "SELECT * FROM messaging_outbox " +
+                "WHERE \"PublishedAt\" IS NULL AND \"AttemptCount\" < {0} " +
+                "ORDER BY \"CreatedAt\" LIMIT {1} FOR UPDATE SKIP LOCKED",
+                MaxAttempts, BatchSize)
             .ToListAsync(ct);
 
-        if (pending.Count == 0) return;
+        if (pending.Count == 0)
+        {
+            await tx.CommitAsync(ct);
+            return;
+        }
 
         foreach (var message in pending)
         {
@@ -107,5 +120,6 @@ public class OutboxPublisher : BackgroundService
         }
 
         await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
     }
 }

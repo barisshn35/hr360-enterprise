@@ -41,16 +41,19 @@ public class LeaveRequestsController : ControllerBase
     private bool IsManagerOrAbove => IsHr || User.IsInRole("manager");
 
     /// <summary>
-    /// Iki tarih arasindaki is gunu (Pzt-Cum) sayisi. Onceden gun sayisi
-    /// istemciden geliyordu: 10 gunluk izin "days: 0.5" ile gonderilip bakiyeden
-    /// yarim gun dusuluyordu (canli dogrulandi). Resmi tatil takvimi bu serviste
-    /// yok; yalnizca hafta sonlari dislanir.
+    /// Iki tarih arasindaki is gunu sayisi: hafta sonlari ve sirketin resmi tatil
+    /// takvimindeki gunler (PublicHolidays) dislanir. Onceden gun sayisi istemciden
+    /// geliyordu: 10 gunluk izin "days: 0.5" ile gonderilip bakiyeden yarim gun
+    /// dusuluyordu (canli dogrulandi).
     /// </summary>
-    private static int WorkingDays(DateOnly start, DateOnly end)
+    private async Task<int> WorkingDaysAsync(DateOnly start, DateOnly end, CancellationToken ct)
     {
+        var holidays = (await _db.PublicHolidays
+            .Where(h => h.Date >= start && h.Date <= end)
+            .Select(h => h.Date).ToListAsync(ct)).ToHashSet();
         var count = 0;
         for (var d = start; d <= end; d = d.AddDays(1))
-            if (d.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday)) count++;
+            if (d.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday) && !holidays.Contains(d)) count++;
         return count;
     }
 
@@ -119,7 +122,7 @@ public class LeaveRequestsController : ControllerBase
         if (request.Reason is { Length: > 1000 })
             return BadRequest("Gerekçe en fazla 1000 karakter olabilir");
 
-        var workingDays = WorkingDays(request.StartDate, request.EndDate);
+        var workingDays = await WorkingDaysAsync(request.StartDate, request.EndDate, ct);
         if (workingDays == 0)
             return BadRequest("Seçilen aralıkta iş günü yok");
         // Yarim gun: yalnizca tek gunluk taleplerde istemcinin 0.5 bildirmesine izin var.
@@ -170,7 +173,14 @@ public class LeaveRequestsController : ControllerBase
         }
 
         _db.LeaveRequests.Add(leave);
-        await _db.SaveChangesAsync();
+        try
+        {
+            await _db.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Conflict(new { message = "Bakiyeniz aynı anda başka bir işlemle güncellendi; lütfen tekrar deneyin." });
+        }
 
         // Departman basina onay workflow'u ac - bulunamazsa (bas atanmamis,
         // cross-service cagri hatasi) talep yine de Submitted olarak kalir
@@ -244,7 +254,14 @@ public class LeaveRequestsController : ControllerBase
                 request.Approved, DateTimeOffset.UtcNow)),
         });
 
-        await _db.SaveChangesAsync();
+        try
+        {
+            await _db.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Conflict(new { message = "Bakiye aynı anda güncellendi; lütfen tekrar deneyin." });
+        }
         return Ok(leave);
     }
 
@@ -277,7 +294,19 @@ public class LeaveRequestsController : ControllerBase
         }
 
         leave.Status = LeaveRequestStatus.Cancelled;
-        await _db.SaveChangesAsync();
+        try
+        {
+            await _db.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Conflict(new { message = "Bakiye aynı anda güncellendi; lütfen tekrar deneyin." });
+        }
+
+        // NOT: Onceden iptal edilen iznin onay akisi acik kaliyordu - onayci talebi
+        // "Onay kutusu"nda gormeye devam ediyor, onaylasa bile hicbir sey olmuyordu.
+        if (leave.WorkflowRequestId is { } wf)
+            await _approvals.CancelWorkflowAsync(wf, ct);
         return Ok(leave);
     }
 }

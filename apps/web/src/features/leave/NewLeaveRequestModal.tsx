@@ -7,7 +7,7 @@ import { SelectField, TextAreaField, TextField } from '@/components/ui/Field'
 import { EmployeePicker } from '@/components/ui/EmployeePicker'
 import { useToast } from '@/components/ui/Toast'
 import { leaveApi } from '@/api/leave'
-import { useLeaveBalances, useMyEmployeeId } from '@/api/queries'
+import { useLeaveBalances, useLeaveHolidays, useMyEmployeeId } from '@/api/queries'
 import { useAuth } from '@/auth/useAuth'
 import { leaveTypeLabels, type LeaveType } from '@/api/types'
 import { formatNumber } from '@/lib/format'
@@ -23,15 +23,16 @@ interface Errors {
  * kuralla hesaplıyor (istemcinin gönderdiği değere güvenmiyor); önizleme ondan
  * sapmasın. Tarihler UTC olarak ayrıştırılır ki yerel saat dilimi günü kaydırmasın.
  */
-function daysBetween(start: string, end: string): number {
+function daysBetween(start: string, end: string, holidays: ReadonlySet<string> = new Set()): number {
   if (!start || !end) return 0
   const a = Date.parse(`${start}T00:00:00Z`)
   const b = Date.parse(`${end}T00:00:00Z`)
   if (Number.isNaN(a) || Number.isNaN(b) || b < a) return 0
   let count = 0
   for (let t = a; t <= b; t += 86_400_000) {
-    const dow = new Date(t).getUTCDay()
-    if (dow !== 0 && dow !== 6) count++
+    const d = new Date(t)
+    const dow = d.getUTCDay()
+    if (dow !== 0 && dow !== 6 && !holidays.has(d.toISOString().slice(0, 10))) count++
   }
   return count
 }
@@ -78,7 +79,10 @@ export function NewLeaveRequestModal({
   const year = startDate ? new Date(startDate).getFullYear() : new Date().getFullYear()
   const balances = useLeaveBalances(employeeId || undefined, year, Boolean(employeeId))
 
-  const days = useMemo(() => daysBetween(startDate, endDate), [startDate, endDate])
+  // Resmi tatiller de düşülür (backend aynı takvimi kullanıyor).
+  const holidays = useLeaveHolidays(year, open)
+  const holidaySet = useMemo(() => new Set((holidays.data ?? []).map((h) => h.date.slice(0, 10))), [holidays.data])
+  const days = useMemo(() => daysBetween(startDate, endDate, holidaySet), [startDate, endDate, holidaySet])
   const balance = balances.data?.find((b) => b.type === type)
   /** Yetersiz bakiye engel değil uyarıdır — son kararı backend verir. */
   const shortfall = balance ? days - balance.remainingDays : 0

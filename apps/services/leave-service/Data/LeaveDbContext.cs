@@ -23,6 +23,7 @@ public class LeaveDbContext : DbContext, ITenantAwareContext
 
     public DbSet<LeaveBalance> LeaveBalances => Set<LeaveBalance>();
     public DbSet<LeaveRequest> LeaveRequests => Set<LeaveRequest>();
+    public DbSet<PublicHoliday> PublicHolidays => Set<PublicHoliday>();
     public DbSet<ProcessedEvent> ProcessedEvents => Set<ProcessedEvent>();
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
 
@@ -32,8 +33,17 @@ public class LeaveDbContext : DbContext, ITenantAwareContext
         modelBuilder.Entity<LeaveBalance>().ToTable("leave_balances");
         modelBuilder.Entity<LeaveBalance>().Property(b => b.Type).HasConversion<string>();
         modelBuilder.Entity<LeaveBalance>().Ignore(b => b.RemainingDays);
+        // Eszamanlilik: Postgres'in satir surumu (xmin) belirtec olarak kullanilir. Onceden
+        // ayni anda gelen iki talep ayni bakiyeyi okuyup ikisi de "yeterli" goruyor ve
+        // PendingDays guncellemelerinden biri kayboluyordu (bakiye asilabiliyordu).
+        modelBuilder.Entity<LeaveBalance>().Property<uint>("xmin")
+            .HasColumnType("xid").ValueGeneratedOnAddOrUpdate().IsConcurrencyToken();
         modelBuilder.Entity<LeaveBalance>()
             .HasIndex(b => new { b.EmployeeId, b.Year, b.Type }).IsUnique();
+
+        modelBuilder.Entity<PublicHoliday>().ConfigureTenantColumn();
+        modelBuilder.Entity<PublicHoliday>().ToTable("leave_public_holidays");
+        modelBuilder.Entity<PublicHoliday>().HasIndex(h => new { h.TenantSlug, h.Date }).IsUnique();
 
         modelBuilder.Entity<LeaveRequest>().ConfigureTenantColumn();
         modelBuilder.Entity<LeaveRequest>().ToTable("leave_requests");

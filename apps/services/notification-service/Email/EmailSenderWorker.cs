@@ -78,27 +78,27 @@ public class EmailSenderWorker : BackgroundService
     /// atlatabilirdi; bu duzeltmeden once kaydedilmis ayarlar da hic kontrol edilmemisti.
     /// Baglanmadan hemen once cozulen adreslerin hicbiri ic ag olmamali.
     /// </summary>
-    private static async Task<bool> IsPublicHostAsync(string host, CancellationToken ct)
+    private static async Task<System.Net.IPAddress?> ResolvePublicAddressAsync(string host, CancellationToken ct)
     {
         System.Net.IPAddress[] addresses;
         try { addresses = await System.Net.Dns.GetHostAddressesAsync(host, ct); }
-        catch (Exception) { return false; }
-        if (addresses.Length == 0) return false;
+        catch (Exception) { return null; }
+        if (addresses.Length == 0) return null;
         foreach (var ip in addresses)
         {
             var a = ip.IsIPv4MappedToIPv6 ? ip.MapToIPv4() : ip;
             if (System.Net.IPAddress.IsLoopback(a) || a.IsIPv6LinkLocal || a.IsIPv6SiteLocal || a.IsIPv6UniqueLocal)
-                return false;
+                return null;
             if (a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
             {
                 var b = a.GetAddressBytes();
                 if (b[0] == 10 || b[0] == 127 || b[0] == 0 || (b[0] == 172 && b[1] >= 16 && b[1] <= 31)
                     || (b[0] == 192 && b[1] == 168) || (b[0] == 169 && b[1] == 254)
                     || (b[0] == 100 && b[1] >= 64 && b[1] <= 127))
-                    return false;
+                    return null;
             }
         }
-        return true;
+        return addresses[0];
     }
 
     private async Task ProcessBatchAsync(CancellationToken ct)
@@ -173,8 +173,12 @@ public class EmailSenderWorker : BackgroundService
 
         try
         {
-            if (target.IsTenantSmtp && !await IsPublicHostAsync(target.Host, ct))
-                throw new InvalidOperationException("Kiracı SMTP sunucusu iç ağ adresine çözümleniyor; bağlantı reddedildi");
+            System.Net.IPAddress? vetted = null;
+            if (target.IsTenantSmtp)
+            {
+                vetted = await ResolvePublicAddressAsync(target.Host, ct)
+                    ?? throw new InvalidOperationException("Kiracı SMTP sunucusu iç ağ adresine çözümleniyor; bağlantı reddedildi");
+            }
 
             // Auto: sunucu STARTTLS destekliyorsa kullanir, desteklemiyorsa
             // (orn. varsayilan kurulumdaki Mailpit - sertifika tanimlanmadan
@@ -182,7 +186,28 @@ public class EmailSenderWorker : BackgroundService
             // KULLANILMAZ - gercek bir SMTP saglayicisi (Brevo vb.) ile
             // calisirken sorun cikarmaz, ama Mailpit'e karsi baglantiyi
             // TAMAMEN reddederdi.
-            await smtp.ConnectAsync(target.Host, target.Port, SecureSocketOptions.Auto, ct);
+            if (vetted is not null)
+            {
+                // Kontrol edilen IP'ye baglanilir; ad TLS dogrulamasi icin ayrica verilir.
+                // Aksi halde ad baglanti aninda yeniden cozulur ve kontrol ile baglanti
+                // arasinda ic aga donen bir DNS yaniti (rebinding) kontrolu atlatabilirdi.
+                var socket = new System.Net.Sockets.Socket(vetted.AddressFamily,
+                    System.Net.Sockets.SocketType.Stream, System.Net.Sockets.ProtocolType.Tcp);
+                try
+                {
+                    await socket.ConnectAsync(new System.Net.IPEndPoint(vetted, target.Port), ct);
+                }
+                catch
+                {
+                    socket.Dispose();
+                    throw;
+                }
+                await smtp.ConnectAsync(socket, target.Host, target.Port, SecureSocketOptions.Auto, ct);
+            }
+            else
+            {
+                await smtp.ConnectAsync(target.Host, target.Port, SecureSocketOptions.Auto, ct);
+            }
 
             // Sunucu kimlik dogrulama desteklemiyorsa (yine Mailpit'in
             // varsayilan hali) AuthenticateAsync cagirmak istisna firlatir -

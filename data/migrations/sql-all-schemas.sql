@@ -943,3 +943,15 @@ CREATE INDEX "IX_messaging_outbox_PublishedAt_CreatedAt" ON messaging_outbox ("P
 -- CTO denetimi (2026-09-25): ek butunluk kisitlari
 CREATE UNIQUE INDEX "IX_employee_employees_KeycloakUserId" ON employee_employees ("KeycloakUserId") WHERE "KeycloakUserId" IS NOT NULL;
 CREATE UNIQUE INDEX "UX_onboarding_asset_assignments_open" ON onboarding_asset_assignments ("AssetId") WHERE "ReturnedOn" IS NULL;
+
+-- Resmi tatil takvimi (leave-service): izin gunu hesabinda dusulur.
+CREATE TABLE IF NOT EXISTS leave_public_holidays (
+    "Id" uuid NOT NULL,
+    "TenantSlug" character varying(64) NOT NULL,
+    "Date" date NOT NULL,
+    "Name" text NOT NULL,
+    "CreatedAt" timestamptz NOT NULL,
+    CONSTRAINT "PK_leave_public_holidays" PRIMARY KEY ("Id")
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "IX_leave_public_holidays_TenantSlug_Date"
+    ON leave_public_holidays ("TenantSlug", "Date");
