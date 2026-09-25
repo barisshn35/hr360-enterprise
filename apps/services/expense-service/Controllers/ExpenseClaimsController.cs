@@ -82,8 +82,10 @@ public class ExpenseClaimsController : ControllerBase
     public async Task<IActionResult> Create([FromBody] CreateClaimRequest request, CancellationToken ct)
     {
         // GUVENLIK: EmployeeId istek govdesinden geliyordu - herkes baskasi adina
-        // beyan acabiliyordu. IK/muhasebe disindakiler yalnizca kendi adina.
-        if (!IsHr && !User.IsInRole("accounting"))
+        // beyan acabiliyordu. IK disindakiler yalnizca kendi adina. (Muhasebe de
+        // baskasi adina acamaz: gonderme adimi IK'ya ozel oldugundan olusturdugu beyan
+        // hic onaya gonderilemiyordu.)
+        if (!IsHr)
         {
             var me = await _approvals.FindMyEmployeeIdAsync(ct);
             if (me is null) return Forbid();

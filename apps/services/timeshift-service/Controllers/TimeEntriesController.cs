@@ -31,6 +31,14 @@ public class TimeEntriesController : ControllerBase
     /// (HR360_TIMEZONE, varsayilan Europe/Istanbul). Onceden 00:00-03:00 arasi
     /// yapilan giris bir onceki gune yaziliyordu.
     /// </summary>
+    /// <summary>
+    /// Bir vardiyanin azami suresi. Daha eski acik kayit "unutulmus cikis" sayilir:
+    /// calisan onu kapatamaz (23 saatlik sahte mesai olusmasin), yeniden giris
+    /// yapabilir; eski kaydi yonetici/IK duzeltir. Arayuz (TimesheetPage) ayni siniri
+    /// kullanir - aksi halde "Cikis yap" dugmesi kalici olarak takili kaliyordu.
+    /// </summary>
+    private const int MaxShiftHours = 16;
+
     private static readonly TimeZoneInfo BusinessZone = ResolveZone();
     private static TimeZoneInfo ResolveZone()
     {
@@ -97,7 +105,7 @@ public class TimeEntriesController : ControllerBase
         // Kapatilmamis (cikisi yapilmamis) bir onceki kayit varsa once o kapatilmali.
         var open = await _db.TimeEntries.AnyAsync(t =>
             t.EmployeeId == employeeId && t.ClockIn != null && t.ClockOut == null
-            && t.ClockIn > at.AddHours(-24) && t.ClockIn <= at, ct);
+            && t.ClockIn > at.AddHours(-MaxShiftHours) && t.ClockIn <= at, ct);
         if (open) return Conflict("Açık bir giriş kaydınız var; önce çıkış yapın");
 
         var date = WorkDate(at);
@@ -124,10 +132,10 @@ public class TimeEntriesController : ControllerBase
 
         // NOT: Onceden cikis, cikis saatinin (UTC) TARIHINE ait kayitta araniyordu -
         // gece vardiyasi (22:00 giris, ertesi gun 06:00 cikis) hic kapatilamiyordu
-        // ("Once giris kaydi olusturulmali"). Artik son 24 saatteki acik kayit kapatilir.
+        // ("Once giris kaydi olusturulmali"). Artik son MaxShiftHours icindeki acik kayit kapatilir.
         var entry = await _db.TimeEntries
             .Where(t => t.EmployeeId == employeeId && t.ClockIn != null && t.ClockOut == null
-                && t.ClockIn > at.AddHours(-24) && t.ClockIn <= at)
+                && t.ClockIn > at.AddHours(-MaxShiftHours) && t.ClockIn <= at)
             .OrderByDescending(t => t.ClockIn)
             .FirstOrDefaultAsync(ct);
 

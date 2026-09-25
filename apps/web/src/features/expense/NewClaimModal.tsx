@@ -118,11 +118,10 @@ export function NewClaimModal({ open, onClose }: { open: boolean; onClose: () =>
   const queryClient = useQueryClient()
   const reduced = useReducedMotion()
 
-  // Başkası adına beyan yalnızca İK/muhasebe açabilir (backend 403 döner);
+  // Başkası adına beyan yalnızca İK açabilir (backend 403 döner);
   // diğerleri için talep sahibi her zaman kendileridir.
   const { roles } = useAuth()
-  const canPickOthers = roles.some((r) =>
-    r === 'hr-admin' || r === 'tenant-admin' || r === 'platform-admin' || r === 'accounting')
+  const canPickOthers = roles.some((r) => r === 'hr-admin' || r === 'tenant-admin' || r === 'platform-admin')
   const me = useMyEmployeeId(!canPickOthers)
 
   const [pickedEmployeeId, setEmployeeId] = useState('')

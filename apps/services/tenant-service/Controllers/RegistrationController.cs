@@ -119,7 +119,7 @@ public partial class RegistrationController : ControllerBase
         // Otomatik uretilen ad ayrilmis bir ada denk gelirse ("Admin A.S." -> "admin-a-s"
         // degil ama "API" -> "api") kullaniciyi hataya dusurmek yerine tamamla.
         if (string.IsNullOrWhiteSpace(request.Slug) && ReservedSlugs.Contains(slug))
-            slug = $"{slug}-sirket";
+            slug = await _provisioning.BuildUniqueSlugAsync($"{slug} sirket", ct);
 
         // GUVENLIK: Kullanicinin verdigi kisa ad (slug) hic dogrulanmiyordu -
         // bosluk/ozel karakter/64+ karakter ancak veritabani insert'unde 500 ile

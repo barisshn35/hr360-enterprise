@@ -12,7 +12,7 @@ import { EmployeePicker } from '@/components/ui/EmployeePicker'
 import { useToast } from '@/components/ui/Toast'
 import { useAuth } from '@/auth/useAuth'
 import { expenseApi } from '@/api/expense'
-import { useHrCases } from '@/api/queries'
+import { useHrCases, useMyEmployeeId } from '@/api/queries'
 import {
   caseCategoryLabels,
   casePriorityLabels,
@@ -39,7 +39,12 @@ const PRIORITY_EDGE: Record<CasePriority, string> = {
 function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const toast = useToast()
   const queryClient = useQueryClient()
-  const [employeeId, setEmployeeId] = useState('')
+  // Başkası adına vaka yalnızca İK açabilir (backend 403 döner).
+  const { roles } = useAuth()
+  const isCaseAdmin = roles.some((r) => r === 'hr-admin' || r === 'tenant-admin' || r === 'platform-admin' || (r as string) === 'ext-case-manage')
+  const me = useMyEmployeeId(!isCaseAdmin)
+  const [pickedEmployeeId, setEmployeeId] = useState('')
+  const employeeId = isCaseAdmin ? pickedEmployeeId : (me.employeeId ?? '')
   const [subject, setSubject] = useState('')
   const [description, setDescription] = useState('')
   const [category, setCategory] = useState<CaseCategory>('Payroll')
@@ -103,12 +108,20 @@ function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => void })
       }
     >
       <form id="new-case" onSubmit={submit} noValidate className="space-y-4">
-        <EmployeePicker
-          id="case-employee"
-          value={employeeId}
-          onChange={setEmployeeId}
-          hint={error?.includes('Çalışan') ? error : undefined}
-        />
+        {isCaseAdmin ? (
+          <EmployeePicker
+            id="case-employee"
+            value={employeeId}
+            onChange={setEmployeeId}
+            hint={error?.includes('Çalışan') ? error : undefined}
+          />
+        ) : (
+          <p className="text-[13px] text-muted-foreground">
+            {me.notLinked
+              ? 'Hesabınıza bağlı çalışan kaydı bulunamadı; vaka açamazsınız.'
+              : 'Vaka sizin adınıza açılacak.'}
+          </p>
+        )}
         <TextField
           id="case-subject"
           label="Konu"

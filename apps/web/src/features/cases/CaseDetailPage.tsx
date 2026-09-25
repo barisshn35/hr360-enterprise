@@ -14,14 +14,15 @@ import { EmployeePicker } from '@/components/ui/EmployeePicker'
 import { useToast } from '@/components/ui/Toast'
 import { useAuth } from '@/auth/useAuth'
 import { expenseApi } from '@/api/expense'
-import { useHrCase } from '@/api/queries'
+import { useHrCase, useMyEmployeeId } from '@/api/queries'
 import { caseCategoryLabels } from '@/api/types'
 import { formatDateTime } from '@/lib/format'
 import { useEmployeeName } from '@/lib/useEmployeeName'
 
 export function CaseDetailPage() {
   const { caseId } = useParams<{ caseId: string }>()
-  const { can } = useAuth()
+  const { roles } = useAuth()
+  const me = useMyEmployeeId()
   const toast = useToast()
   const queryClient = useQueryClient()
   const reduced = useReducedMotion()
@@ -79,7 +80,14 @@ export function CaseDetailPage() {
 
   const c = hrCase.data
   const closed = c.status === 'Resolved' || c.status === 'Closed'
-  const canManage = can('case:manage')
+  // Backend kurali (HrCasesController): atama yalnızca İK'ya; kapatma İK'ya ya da
+  // vakanın atandığı kişiye; kimse kendi açtığı vakayı kapatamaz. Yöneticiler
+  // 'case:manage' izni nedeniyle bu düğmeleri görüp 403 alıyordu.
+  const isCaseAdmin = roles.some((r) => r === 'hr-admin' || r === 'tenant-admin' || r === 'platform-admin' || (r as string) === 'ext-case-manage')
+  const canAssign = isCaseAdmin
+  const canResolve =
+    (isCaseAdmin || (Boolean(me.employeeId) && c.assignedToEmployeeId === me.employeeId)) &&
+    c.employeeId !== me.employeeId
 
   return (
     <div className="space-y-5">
@@ -97,19 +105,19 @@ export function CaseDetailPage() {
           <>
             <CaseStatusBadge status={c.status} />
             <CasePriorityBadge priority={c.priority} />
-            {!closed && canManage && (
-              <>
-                <Button
-                  variant="outline"
-                  className="cursor-pointer"
-                  onClick={() => setAssignOpen(true)}
-                >
-                  Ata
-                </Button>
-                <Button className="cursor-pointer" onClick={() => setResolveOpen(true)}>
-                  Çözüldü olarak kapat
-                </Button>
-              </>
+            {!closed && canAssign && (
+              <Button
+                variant="outline"
+                className="cursor-pointer"
+                onClick={() => setAssignOpen(true)}
+              >
+                Ata
+              </Button>
+            )}
+            {!closed && canResolve && (
+              <Button className="cursor-pointer" onClick={() => setResolveOpen(true)}>
+                Çözüldü olarak kapat
+              </Button>
             )}
           </>
         }

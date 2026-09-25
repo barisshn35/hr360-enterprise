@@ -169,7 +169,12 @@ export function TimesheetPage() {
   const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
   const today = useMemo(
     () =>
-      entries.data?.find((e) => Boolean(e.clockIn) && !e.clockOut) ??
+      // Açık kayıt yalnızca son 16 saat içinde başladıysa "şu an içeride" sayılır
+      // (backend'deki MaxShiftHours ile aynı); daha eskisi unutulmuş çıkıştır,
+      // yönetici düzeltir - aksi halde "Çıkış yap" düğmesi kalıcı takılıyordu.
+      entries.data?.find(
+        (e) => Boolean(e.clockIn) && !e.clockOut && Date.now() - new Date(e.clockIn!).getTime() < 16 * 3_600_000,
+      ) ??
       entries.data?.find((e) => e.date?.slice(0, 10) === todayKey),
     [entries.data, todayKey],
   )

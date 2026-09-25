@@ -69,7 +69,37 @@ public class EmailSenderWorker : BackgroundService
     private record SendPlan(
         string Host, int Port, string? User, string? Password,
         string FromAddress, string FromName,
-        string? LogoUrl, string? CompanyName);
+        string? LogoUrl, string? CompanyName, bool IsTenantSmtp = false);
+
+    /// <summary>
+    /// GUVENLIK (SSRF / DNS rebinding): Kiracinin ozel SMTP adresi kayit aninda
+    /// dogrulaniyor, ama ad cozumlemesi baglanti aninda tekrar yapiliyor - kayitta genel
+    /// IP'ye, gonderimde ic aga (postgres, keycloak...) cozulen bir alan adi kontrolu
+    /// atlatabilirdi; bu duzeltmeden once kaydedilmis ayarlar da hic kontrol edilmemisti.
+    /// Baglanmadan hemen once cozulen adreslerin hicbiri ic ag olmamali.
+    /// </summary>
+    private static async Task<bool> IsPublicHostAsync(string host, CancellationToken ct)
+    {
+        System.Net.IPAddress[] addresses;
+        try { addresses = await System.Net.Dns.GetHostAddressesAsync(host, ct); }
+        catch (Exception) { return false; }
+        if (addresses.Length == 0) return false;
+        foreach (var ip in addresses)
+        {
+            var a = ip.IsIPv4MappedToIPv6 ? ip.MapToIPv4() : ip;
+            if (System.Net.IPAddress.IsLoopback(a) || a.IsIPv6LinkLocal || a.IsIPv6SiteLocal || a.IsIPv6UniqueLocal)
+                return false;
+            if (a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+            {
+                var b = a.GetAddressBytes();
+                if (b[0] == 10 || b[0] == 127 || b[0] == 0 || (b[0] == 172 && b[1] >= 16 && b[1] <= 31)
+                    || (b[0] == 192 && b[1] == 168) || (b[0] == 169 && b[1] == 254)
+                    || (b[0] == 100 && b[1] >= 64 && b[1] <= 127))
+                    return false;
+            }
+        }
+        return true;
+    }
 
     private async Task ProcessBatchAsync(CancellationToken ct)
     {
@@ -108,7 +138,8 @@ public class EmailSenderWorker : BackgroundService
                     tenantSmtp.Host, tenantSmtp.Port, tenantSmtp.User, tenantSmtp.Password,
                     FromAddress: string.IsNullOrWhiteSpace(tenantSmtp.FromAddress) ? _options.FromAddress : tenantSmtp.FromAddress,
                     FromName: string.IsNullOrWhiteSpace(tenantSmtp.FromName) ? _options.FromName : tenantSmtp.FromName,
-                    LogoUrl: tenantBranding?.LogoUrl, CompanyName: tenantBranding?.Name)
+                    LogoUrl: tenantBranding?.LogoUrl, CompanyName: tenantBranding?.Name,
+                    IsTenantSmtp: true)
                 : new SendPlan(
                     _options.SmtpHost, _options.SmtpPort, _options.SmtpUser, _options.SmtpPassword,
                     FromAddress: _options.FromAddress, FromName: _options.FromName,
@@ -142,6 +173,9 @@ public class EmailSenderWorker : BackgroundService
 
         try
         {
+            if (target.IsTenantSmtp && !await IsPublicHostAsync(target.Host, ct))
+                throw new InvalidOperationException("Kiracı SMTP sunucusu iç ağ adresine çözümleniyor; bağlantı reddedildi");
+
             // Auto: sunucu STARTTLS destekliyorsa kullanir, desteklemiyorsa
             // (orn. varsayilan kurulumdaki Mailpit - sertifika tanimlanmadan
             // STARTTLS sunmaz) duz baglantiya duser. Sabit StartTls burada
@@ -175,11 +209,18 @@ public class EmailSenderWorker : BackgroundService
             _logger.LogError(ex,
                 "SMTP baglantisi/kimlik dogrulamasi basarisiz ({Host}:{Port}), {Count} e-posta icin deneme sayildi",
                 target.Host, target.Port, group.Count);
-            foreach (var n in group)
+            // Yalnizca KIRACININ ozel SMTP'sinde deneme sayilir. Platformun varsayilan
+            // sunucusundaki kisa bir kesinti (orn. dagitim sirasinda Mailpit yeniden
+            // baslarken) tum bekleyen davet/parola e-postalarini 90 sn icinde kalici
+            // olarak Failed yapmasin - onlar bir sonraki turda yeniden denenir.
+            if (target.IsTenantSmtp)
             {
-                n.AttemptCount++;
-                n.FailureReason = "SMTP sunucusuna bağlanılamadı";
-                if (n.AttemptCount >= MaxAttempts) n.Status = NotificationStatus.Failed;
+                foreach (var n in group)
+                {
+                    n.AttemptCount++;
+                    n.FailureReason = "SMTP sunucusuna bağlanılamadı";
+                    if (n.AttemptCount >= MaxAttempts) n.Status = NotificationStatus.Failed;
+                }
             }
             if (smtp.IsConnected)
                 await smtp.DisconnectAsync(true, ct);

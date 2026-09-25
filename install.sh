@@ -147,7 +147,38 @@ if [ -f .env ]; then
   warn ".env dosyasi zaten var."
   read -r -p "Uzerine yazip sirlari yeniden mi uretelim? [e/H]: " overwrite || true
   if [[ ! "$overwrite" =~ ^[eEyY]$ ]]; then
-    info "Mevcut .env korunuyor, dogrudan servisleri ayaga kaldiriyorum."
+    info "Mevcut .env korunuyor (guncelleme): once veritabani goclerini uyguluyorum."
+    set -a; . ./.env; set +a
+
+    # NOT: Onceden bu yol yalnizca "docker compose up --build" calistiriyordu -
+    # scripts/sql altindaki goc betikleri hic uygulanmiyordu (yeni kolon eksik
+    # kalinca ilgili servis tum sorgularda 500 veriyordu).
+    docker compose up -d postgres
+    for _ in $(seq 1 60); do
+      docker compose exec -T postgres pg_isready -U hr360admin >/dev/null 2>&1 && break
+      sleep 2
+    done
+    for f in scripts/sql/*.sql; do
+      [ -f "$f" ] || continue
+      info "Goc uygulaniyor: $f"
+      docker compose exec -T postgres psql -U hr360admin -d hr360_operational -v ON_ERROR_STOP=1 -q -f - < "$f"
+    done
+
+    # Keycloak artik Postgres'teki "keycloak" veritabanini kullaniyor. Veritabani yoksa
+    # iki durum var: (a) Keycloak hic kurulmamis -> olustur; (b) eski kurulum, veriler
+    # hala Keycloak konteynerinin ICINDE -> dogrudan baslatmak tum kullanicilari
+    # "kaybettirir" (bos veritabaniyla acilir). (b)'de durup runbook'u gosteriyoruz.
+    if ! docker compose exec -T postgres psql -U hr360admin -d postgres -tAc \
+         "SELECT 1 FROM pg_database WHERE datname='keycloak'" | grep -q 1; then
+      if [ -n "$(docker compose ps -a -q keycloak 2>/dev/null)" ]; then
+        warn "Keycloak kullanicilari hala eski konteynerin icinde (dosya veritabani)."
+        warn "Postgres'e gecis icin once su adimlari uygulayin: docs/runbooks/keycloak-postgres-gecisi.md"
+        warn "Diger servisleri baslatmadan cikiliyor; Keycloak'a dokunulmadi."
+        exit 1
+      fi
+      docker compose exec -T postgres psql -U hr360admin -d postgres -c "CREATE DATABASE keycloak OWNER hr360admin;"
+    fi
+
     docker compose up -d --build
     info "Tamamlandi. Asagidaki 'Erisim' bolumune bakin (adresler .env icindeki PUBLIC_URL/GATEWAY_PORT'a gore degisir)."
     exit 0
@@ -216,11 +247,15 @@ info ".env yazildi."
 # GUVENLIK: hr360-web istemcisinin yonlendirme adresleri onceden "*" idi - Keycloak
 # giris kodunu HERHANGI bir siteye (orn. https://evil.example/cb) gonderiyordu
 # (canli dogrulandi). Artik yalnizca uygulamanin kendi kokeni kabul edilir.
-if [ -z "${GATEWAY_PORT}" ] || [ "${GATEWAY_PORT}" = "80" ] || [ "${GATEWAY_PORT}" = "443" ]; then
+if [[ "${PUBLIC_URL%/}" =~ ://[^/]+:[0-9]+$ ]] || [ -z "${GATEWAY_PORT}" ] \
+   || [ "${GATEWAY_PORT}" = "80" ] || [ "${GATEWAY_PORT}" = "443" ]; then
+  # PUBLIC_URL zaten port iceriyorsa (orn. http://sunucu:8080) tekrar eklenmez.
   PUBLIC_ORIGIN="${PUBLIC_URL%/}"
 else
   PUBLIC_ORIGIN="${PUBLIC_URL%/}:${GATEWAY_PORT}"
 fi
+warn "Giris yalnizca su adresten calisir: ${PUBLIC_ORIGIN}  (tarayicida TAM olarak bu adresi kullanin;"
+warn "baska bir ad/IP ile erisilecekse PUBLIC_URL'i ona gore verin - Keycloak diger adreslere yonlendirmez)."
 # NOT: Realm'de e-posta sunucusu tanimli degildi - yeni sirket kaydinda ve davette
 # "parola belirleme baglantisi gonderildi" deniyor ama e-posta HIC gitmiyordu
 # (Keycloak: "Failed to send execute actions email"). Uygulamanin kendi SMTP

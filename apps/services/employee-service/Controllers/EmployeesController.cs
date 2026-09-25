@@ -115,9 +115,18 @@ public class EmployeesController : ControllerBase
         return Ok(list);
     }
 
+    /// <summary>
+    /// Tam kaydi (atamalar dahil) gorebilenler. Modul yonetim izinleri (ext-*-manage,
+    /// orn. ext-timeshift-manage) de dahil: bu kullanicilarin servisleri (vardiya
+    /// ekibine uye ekleme gibi) calisanin departman atamasini kendi jetonlariyla okur;
+    /// kisitli gorunumde atamalar olmadigi icin gecerli uyeler bile reddediliyordu.
+    /// </summary>
     private bool IsManagerOrAbove => User.IsInRole("manager") || User.IsInRole("hr-admin")
         || User.IsInRole("tenant-admin") || User.IsInRole("platform-admin")
-        || User.IsInRole("ext-employee-viewAll") || User.IsInRole("ext-employee-manage");
+        || User.IsInRole("ext-employee-viewAll")
+        || User.Claims.Any(c => c.Type == System.Security.Claims.ClaimTypes.Role
+            && c.Value.StartsWith("ext-", StringComparison.Ordinal)
+            && c.Value.EndsWith("-manage", StringComparison.Ordinal));
 
     private bool IsHr => User.IsInRole("hr-admin") || User.IsInRole("tenant-admin")
         || User.IsInRole("platform-admin") || User.IsInRole("ext-employee-manage");

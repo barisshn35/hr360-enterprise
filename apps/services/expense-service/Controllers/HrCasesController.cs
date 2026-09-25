@@ -109,7 +109,8 @@ public class HrCasesController : ControllerBase
     }
 
     [HttpPost("{id}/resolve")]
-    [Authorize(Policy = "RequireCaseManage")]
+    // NOT: Politika kaldirildi - yetki asagida: IK ya da vakanin atandigi kisi (atanan
+    // duz bir calisan olsa bile). Politika, atanan kisiyi yeni kurala ulasmadan eliyordu.
     public async Task<IActionResult> Resolve(Guid id, [FromBody] ResolveCaseRequest request)
     {
         var c = await _db.Cases.FirstOrDefaultAsync(x => x.Id == id);

@@ -85,7 +85,11 @@ export function NewWorkflowModal({
     return map
   }, [people])
 
-  const availableApprovers = people.filter((e) => e.id !== requester && !approvers.includes(e.id))
+  // Talep eden kendi talebinin onaycısı olamaz (backend 400). İK dışı kullanıcıda
+  // talep eden "ben"dir; kimlik henüz yüklenmemişken de kendini seçemesin.
+  const availableApprovers = people.filter(
+    (e) => e.id !== requester && e.id !== me.employeeId && !approvers.includes(e.id),
+  )
 
   const mutation = useMutation({
     mutationFn: () =>
