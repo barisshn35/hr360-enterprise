@@ -208,9 +208,25 @@ EOF
 info ".env yazildi."
 
 # --- 4) Keycloak realm sablonunu doldur ------------------------------------
+# GUVENLIK: hr360-web istemcisinin yonlendirme adresleri onceden "*" idi - Keycloak
+# giris kodunu HERHANGI bir siteye (orn. https://evil.example/cb) gonderiyordu
+# (canli dogrulandi). Artik yalnizca uygulamanin kendi kokeni kabul edilir.
+if [ -z "${GATEWAY_PORT}" ] || [ "${GATEWAY_PORT}" = "80" ] || [ "${GATEWAY_PORT}" = "443" ]; then
+  PUBLIC_ORIGIN="${PUBLIC_URL%/}"
+else
+  PUBLIC_ORIGIN="${PUBLIC_URL%/}:${GATEWAY_PORT}"
+fi
+# NOT: Realm'de e-posta sunucusu tanimli degildi - yeni sirket kaydinda ve davette
+# "parola belirleme baglantisi gonderildi" deniyor ama e-posta HIC gitmiyordu
+# (Keycloak: "Failed to send execute actions email"). Uygulamanin kendi SMTP
+# ayarlariyla (varsayilan: paketteki Mailpit) ayni sunucu kullanilir.
 sed \
   -e "s/__ML_KEYCLOAK_CLIENT_SECRET__/${ML_KEYCLOAK_CLIENT_SECRET}/" \
   -e "s/__DEMO_ADMIN_PASSWORD__/${DEMO_ADMIN_PASSWORD}/" \
+  -e "s#__PUBLIC_ORIGIN__#${PUBLIC_ORIGIN}#g" \
+  -e "s/__SMTP_HOST__/mailpit/" \
+  -e "s/__SMTP_PORT__/1025/" \
+  -e "s/__SMTP_FROM_ADDRESS__/noreply@hr360.local/" \
   deploy/keycloak/realm-export.template.json > deploy/keycloak/realm-export.json
 info "Keycloak realm sablonu dolduruldu."
 

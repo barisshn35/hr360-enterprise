@@ -168,15 +168,21 @@ public class TenantProvisioningService
             ['ç'] = 'c', ['ğ'] = 'g', ['ı'] = 'i', ['ö'] = 'o', ['ş'] = 's', ['ü'] = 'u',
         };
 
-        var chars = name.ToLowerInvariant()
+        // NOT: Yalnizca a-z/0-9 tutulur (RegistrationController'daki slug kuraliyla
+        // ayni). Onceden char.IsLetterOrDigit ASCII disi harfleri (e, kiril, "İ"nin
+        // ToLowerInvariant ile olusan birlesik noktasi) birakiyordu. Taban 34
+        // karakterle sinirli ki "-NN" eki eklense de 40'i asmasin; 3 karakterden
+        // kisa adlar "-sirket" ile tamamlanir.
+        var chars = name.Replace('İ', 'i').Replace('I', 'ı').ToLowerInvariant()
             .Select(c => map.TryGetValue(c, out var r) ? r : c)
-            .Select(c => char.IsLetterOrDigit(c) ? c : '-');
+            .Select(c => (c is >= 'a' and <= 'z') || (c is >= '0' and <= '9') ? c : '-');
 
         var baseSlug = new string(chars.ToArray());
         while (baseSlug.Contains("--")) baseSlug = baseSlug.Replace("--", "-");
         baseSlug = baseSlug.Trim('-');
-        if (baseSlug.Length > 40) baseSlug = baseSlug[..40].Trim('-');
+        if (baseSlug.Length > 34) baseSlug = baseSlug[..34].Trim('-');
         if (string.IsNullOrWhiteSpace(baseSlug)) baseSlug = "sirket";
+        else if (baseSlug.Length < 3) baseSlug = $"{baseSlug}-sirket";
 
         var slug = baseSlug;
         var suffix = 2;

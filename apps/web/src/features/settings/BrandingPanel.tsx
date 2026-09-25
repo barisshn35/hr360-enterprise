@@ -130,7 +130,7 @@ export function BrandingPanel({ tenant }: { tenant: Tenant }) {
       <Panel>
         <PanelHead
           title="Logo"
-          note="PNG, JPEG, SVG veya WebP - en fazla 2 MB"
+          note="PNG, JPEG veya WebP - en fazla 2 MB"
         />
         <PanelBody className="space-y-3">
           <div className="flex items-center gap-4">
@@ -170,7 +170,7 @@ export function BrandingPanel({ tenant }: { tenant: Tenant }) {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                accept="image/png,image/jpeg,image/webp"
                 className="hidden"
                 onChange={(e) => {
                   const file = e.target.files?.[0]

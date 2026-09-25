@@ -6,6 +6,15 @@
   "loginWithEmailAllowed": true,
   "duplicateEmailsAllowed": false,
   "resetPasswordAllowed": true,
+  "smtpServer": {
+    "host": "__SMTP_HOST__",
+    "port": "__SMTP_PORT__",
+    "from": "__SMTP_FROM_ADDRESS__",
+    "fromDisplayName": "HR360",
+    "auth": "false",
+    "ssl": "false",
+    "starttls": "false"
+  },
   "editUsernameAllowed": false,
   "bruteForceProtected": true,
   "organizationsEnabled": true,
@@ -27,10 +36,11 @@
       "enabled": true,
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": false,
-      "redirectUris": ["*"],
-      "webOrigins": ["*"],
+      "redirectUris": ["__PUBLIC_ORIGIN__/*"],
+      "webOrigins": ["__PUBLIC_ORIGIN__"],
       "attributes": {
-        "pkce.code.challenge.method": "S256"
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "__PUBLIC_ORIGIN__/*"
       }
     },
     {

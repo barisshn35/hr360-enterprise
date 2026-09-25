@@ -104,11 +104,37 @@ builder.Services.AddControllers()
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+// GUVENLIK: Anonim sirket kaydi sinirsizdi - her cagri bir Keycloak
+// organizasyonu + kullanicisi olusturup e-posta gonderiyor (e-posta bombardimani,
+// Keycloak'i doldurma). IP basina 15 dakikada 5 kayit. Istemci IP'si nginx'in
+// her istekte uzerine yazdigi X-Real-IP basligindan alinir.
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("registration", httpContext =>
+        System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+            httpContext.Request.Headers["X-Real-IP"].FirstOrDefault()
+                ?? httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 5,
+                Window = TimeSpan.FromMinutes(15),
+                QueueLimit = 0,
+            }));
+    options.OnRejected = async (ctx, ct) =>
+    {
+        ctx.HttpContext.Response.ContentType = "application/json";
+        await ctx.HttpContext.Response.WriteAsync(
+            "{\"message\":\"Çok fazla kayıt denemesi. Lütfen biraz sonra tekrar deneyin.\"}", ct);
+    };
+});
+
 var app = builder.Build();
 
 app.UseSwagger();
 app.UseSwaggerUI();
 
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseHttpMetrics();

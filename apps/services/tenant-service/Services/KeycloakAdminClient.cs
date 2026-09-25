@@ -164,6 +164,26 @@ public class KeycloakAdminClient
 
     // ----------------------------------------------------------- users
 
+    /// <summary>
+    /// Kullanici bu Keycloak organizasyonunun uyesi mi? (200 = uye, 404 = degil).
+    /// Rol/izin degisikliklerinden once hedefin CAGIRANIN kiracisina ait
+    /// oldugunu dogrulamak icin kullanilir - realm rolleri tum kiracilarda
+    /// ortak oldugundan bu kontrol olmadan bir kiracinin yoneticisi baska
+    /// bir kiracinin kullanicisina rol verebiliyordu.
+    /// </summary>
+    public async Task<bool> IsOrganizationMemberAsync(string orgId, string userId, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(orgId) || string.IsNullOrWhiteSpace(userId)) return false;
+        var req = new HttpRequestMessage(HttpMethod.Get,
+            $"{_baseUrl}/admin/realms/{_realm}/organizations/{Uri.EscapeDataString(orgId)}/members/{Uri.EscapeDataString(userId)}");
+        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", await GetTokenAsync(ct));
+        using var resp = await _http.SendAsync(req, ct);
+        if (resp.StatusCode == System.Net.HttpStatusCode.NotFound) return false;
+        if (!resp.IsSuccessStatusCode)
+            throw new InvalidOperationException($"Organizasyon uyeligi dogrulanamadi ({(int)resp.StatusCode})");
+        return true;
+    }
+
     public async Task<string?> FindUserByEmailAsync(string email, CancellationToken ct)
     {
         var req = await BuildAsync(HttpMethod.Get,

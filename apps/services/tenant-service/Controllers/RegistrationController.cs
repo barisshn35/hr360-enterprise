@@ -29,6 +29,22 @@ public partial class RegistrationController : ControllerBase
         _logger = logger;
     }
 
+    [GeneratedRegex(@"^[a-z0-9](?:[a-z0-9-]{1,38})[a-z0-9]$")]
+
+    private static partial Regex SlugRegex();
+
+
+    private static readonly HashSet<string> ReservedSlugs = new(StringComparer.Ordinal)
+
+    {
+
+        "admin", "api", "auth", "www", "app", "platform", "panel", "static", "logos",
+
+        "keycloak", "support", "destek", "mail", "root", "system", "hr360",
+
+    };
+
+
     [GeneratedRegex(@"^[^@\s]+@[^@\s]+\.[^@\s]+$")]
     private static partial Regex EmailRegex();
 
@@ -73,6 +89,7 @@ public partial class RegistrationController : ControllerBase
     /// belirleme baglantisi gonderilir.
     /// </summary>
     [HttpPost]
+    [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting("registration")]
     public async Task<IActionResult> Register(
         [FromBody] RegisterCompanyRequest request, CancellationToken ct)
     {
@@ -93,9 +110,26 @@ public partial class RegistrationController : ControllerBase
             });
         }
 
+        if (request.CompanyName.Trim().Length > 150)
+            return BadRequest(new { message = "Şirket adı en fazla 150 karakter olabilir" });
+
         var slug = string.IsNullOrWhiteSpace(request.Slug)
             ? await _provisioning.BuildUniqueSlugAsync(request.CompanyName, ct)
             : request.Slug.Trim().ToLowerInvariant();
+        // Otomatik uretilen ad ayrilmis bir ada denk gelirse ("Admin A.S." -> "admin-a-s"
+        // degil ama "API" -> "api") kullaniciyi hataya dusurmek yerine tamamla.
+        if (string.IsNullOrWhiteSpace(request.Slug) && ReservedSlugs.Contains(slug))
+            slug = $"{slug}-sirket";
+
+        // GUVENLIK: Kullanicinin verdigi kisa ad (slug) hic dogrulanmiyordu -
+        // bosluk/ozel karakter/64+ karakter ancak veritabani insert'unde 500 ile
+        // patliyordu; "admin", "api" gibi ayrilmis adlar da alinabiliyordu.
+        if (!SlugRegex().IsMatch(slug) || ReservedSlugs.Contains(slug))
+            return BadRequest(new
+            {
+                message = "Kısa ad 3-40 karakter olmalı; yalnızca küçük harf, rakam ve tire " +
+                          "içerebilir, tireyle başlayıp bitemez.",
+            });
 
         if (await _db.Tenants.AnyAsync(t => t.Slug == slug, ct))
             return Conflict(new { message = $"'{slug}' kisa adi kullanimda, baska bir ad secin" });
@@ -105,7 +139,16 @@ public partial class RegistrationController : ControllerBase
             var tenant = await _provisioning.ProvisionAsync(
                 request.CompanyName.Trim(), slug, email,
                 request.AdminFullName?.Trim(), request.EmailDomain?.Trim(),
-                request.TaxNumber?.Trim(), request.Plan, ct);
+                request.TaxNumber?.Trim(),
+                // GUVENLIK: Plan onceden dogrudan istekten aliniyordu - anonim
+                // herhangi biri odeme olmadan Enterprise ozelliklerini (ozel SMTP,
+                // logo, marka) aciyordu (canli dogrulandi). Odeme akisi olmadigi
+                // icin her yeni kayit Deneme planiyla baslar; ucretli plana gecisi
+                // platform yoneticisi yapar. Istenen plan yalnizca mesajda belirtilir.
+                planInput: null, ct);
+
+            var requestedPaid = !string.IsNullOrWhiteSpace(request.Plan) &&
+                !request.Plan.Equals("Trial", StringComparison.OrdinalIgnoreCase);
 
             return Ok(new
             {
@@ -113,8 +156,13 @@ public partial class RegistrationController : ControllerBase
                 slug = tenant.Slug,
                 companyName = tenant.Name,
                 status = tenant.Status.ToString(),
+                plan = tenant.Plan.ToString(),
                 message = $"Kaydınız oluşturuldu. {email} adresine parola belirleme " +
-                          "bağlantısı gönderildi.",
+                          "bağlantısı gönderildi." +
+                          (requestedPaid
+                              ? $" Hesabınız deneme planıyla başladı; {request.Plan} planı talebiniz " +
+                                "onaylandığında planınız yükseltilecek."
+                              : ""),
             });
         }
         catch (Exception ex)

@@ -14,7 +14,10 @@ namespace TenantService.Controllers;
 ///   - Cross-tenant koruma: employee-service zaten JWT'deki organization
 ///     claim'ine gore kendi tenant filtresini uyguluyor - EmployeeDirectoryClient
 ///     bu JWT'yi ILETIYOR, yani buradan cekilen liste otomatik olarak
-///     SADECE cagiranin kendi tenant'ina ait. Ekstra kontrole gerek yok.
+///     SADECE cagiranin kendi tenant'ina ait. ANCAK rol/izin uclari hedefi
+///     govdeden KeycloakUserId olarak aliyor - bu uclar icin hedefin
+///     cagiranin Keycloak organizasyonunun uyesi oldugu ayrica dogrulanir
+///     (bkz. EnsureTargetInMyTenantAsync).
 ///   - Atanabilir roller: SADECE employee/manager/hr-admin/tenant-admin.
 ///     system-admin ve platform-admin PLATFORM seviyesinde, bu uctan
 ///     ASLA atanamaz/kaldirilamaz (Keycloak admin konsolundan elle yapilir).
@@ -137,6 +140,17 @@ public class TeamMembersController : ControllerBase
         string userId;
         if (existingUserId is not null)
         {
+            // GUVENLIK: Onceden bu e-postaya sahip HERHANGI bir Keycloak hesabi
+            // (baska bir kiracinin kullanicisi, platform hesabi) sorgusuz bu
+            // sirkete baglaniyor, kimligi yanitta donduruluyor ve o kisiye parola
+            // sifirlama e-postasi gidiyordu. Artik yalnizca ZATEN bu sirketin
+            // uyesi olan hesap baglanabilir; digerleri icin temiz bir 409.
+            if (!await _keycloak.IsOrganizationMemberAsync(tenant.KeycloakOrgId, existingUserId, ct))
+                return Conflict(new
+                {
+                    message = "Bu e-posta adresi başka bir hesapta kullanılıyor. " +
+                              "Çalışan için farklı bir e-posta adresi kullanın.",
+                });
             userId = existingUserId;
         }
         else
@@ -145,7 +159,8 @@ public class TeamMembersController : ControllerBase
                 employee.Email, employee.FirstName, employee.LastName, tenant.Id, ct);
         }
 
-        await _keycloak.AddOrganizationMemberAsync(tenant.KeycloakOrgId, userId, ct);
+        if (existingUserId is null)
+            await _keycloak.AddOrganizationMemberAsync(tenant.KeycloakOrgId, userId, ct);
         await _keycloak.AssignRealmRoleAsync(userId, "employee", ct);
         await _employees.LinkKeycloakUserAsync(employeeId, userId, ct);
 
@@ -168,6 +183,8 @@ public class TeamMembersController : ControllerBase
     [Authorize(Policy = "RequireHrAdmin")]
     public async Task<IActionResult> AssignRole([FromBody] RoleActionRequest request, CancellationToken ct)
     {
+        if (await EnsureTargetInMyTenantAsync(request.KeycloakUserId, ct) is { } denied) return denied;
+
         if (!AssignableRoles.Contains(request.Role))
             return BadRequest(new { message = $"'{request.Role}' bu uctan atanamaz" });
 
@@ -185,6 +202,8 @@ public class TeamMembersController : ControllerBase
     [Authorize(Policy = "RequireHrAdmin")]
     public async Task<IActionResult> RemoveRole([FromBody] RoleActionRequest request, CancellationToken ct)
     {
+        if (await EnsureTargetInMyTenantAsync(request.KeycloakUserId, ct) is { } denied) return denied;
+
         if (!AssignableRoles.Contains(request.Role))
             return BadRequest(new { message = $"'{request.Role}' bu uctan kaldırılamaz" });
 
@@ -233,6 +252,8 @@ public class TeamMembersController : ControllerBase
     public async Task<IActionResult> AssignExtraPermission(
         [FromBody] PermissionActionRequest request, CancellationToken ct)
     {
+        if (await EnsureTargetInMyTenantAsync(request.KeycloakUserId, ct) is { } denied) return denied;
+
         if (!ExtraAssignablePermissions.Contains(request.Permission))
             return BadRequest(new { message = $"'{request.Permission}' geçerli bir izin değil" });
 
@@ -257,12 +278,43 @@ public class TeamMembersController : ControllerBase
     public async Task<IActionResult> RemoveExtraPermission(
         [FromBody] PermissionActionRequest request, CancellationToken ct)
     {
+        if (await EnsureTargetInMyTenantAsync(request.KeycloakUserId, ct) is { } denied) return denied;
+
         if (!ExtraAssignablePermissions.Contains(request.Permission))
             return BadRequest(new { message = $"'{request.Permission}' geçerli bir izin değil" });
 
         var roleName = $"ext-{request.Permission.Replace(':', '-')}";
         await _keycloak.RemoveRealmRoleAsync(request.KeycloakUserId, roleName, ct);
         return Ok(new { message = "İzin kaldırıldı" });
+    }
+
+    /// <summary>
+    /// GUVENLIK: Rol/izin degisikliginin hedefi CAGIRANIN kiracisina ait olmali.
+    /// Onceki halinde KeycloakUserId dogrudan istek govdesinden aliniyor ve hic
+    /// dogrulanmiyordu; realm rolleri tum kiracilarda ortak oldugu icin, anonim
+    /// kayitla kendi sirketini acan biri baska bir sirketteki bir kullaniciya
+    /// (ornegin kendi calisan hesabina) tenant-admin verebiliyor ya da o sirketin
+    /// yoneticilerinin rollerini silebiliyordu (canli dogrulandi: "kotu" kiracisinin
+    /// yoneticisi "demo"daki Mehmet'e hr-admin verdi / manager rolunu sildi).
+    /// Hedef, cagiranin kiracisinin Keycloak organizasyonunun uyesi olmali.
+    /// Platform-admin (platform operatoru) bu kontrolden muaftir.
+    /// null donerse islem serbest; aksi halde donen sonuc aynen dondurulmeli.
+    /// </summary>
+    private async Task<IActionResult?> EnsureTargetInMyTenantAsync(string? keycloakUserId, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(keycloakUserId))
+            return BadRequest(new { message = "keycloakUserId zorunlu" });
+        if (User.IsInRole("platform-admin")) return null;
+
+        var slug = TenantService.Security.OrganizationClaimParser.ParseSlug(User.FindFirst("organization")?.Value);
+        if (string.IsNullOrWhiteSpace(slug)) return Forbid();
+        var tenant = await _db.Tenants.FirstOrDefaultAsync(t => t.Slug == slug, ct);
+        if (tenant?.KeycloakOrgId is null) return Forbid();
+
+        // Varligini sizdirmamak icin "baska kiracida" ile "hic yok" ayni cevap.
+        return await _keycloak.IsOrganizationMemberAsync(tenant.KeycloakOrgId, keycloakUserId, ct)
+            ? null
+            : NotFound(new { message = "Kullanıcı bu şirkette bulunamadı" });
     }
 
     /// <summary>
