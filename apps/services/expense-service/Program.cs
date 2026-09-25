@@ -28,6 +28,17 @@ builder.Services.AddDbContext<ExpenseDbContext>(options =>
 var keycloakAuthority = Environment.GetEnvironmentVariable("KEYCLOAK_AUTHORITY")
     ?? "http://172.33.55.2:8080/realms/hr360";
 
+// GUVENLIK (CTO denetimi): Onceden issuer ve istemci dogrulanmiyordu - realm'deki
+// HERHANGI bir istemcinin (orn. admin-cli, servis hesaplari) jetonu kabul ediliyordu.
+// Keycloak artik sabit genel adresle calistigi icin issuer tek ve bilinir
+// (KEYCLOAK_VALID_ISSUERS, virgulle birden fazla); jetonun hangi istemci icin
+// verildigi (azp) de izinli listede olmali (KEYCLOAK_ALLOWED_CLIENTS, varsayilan
+// hr360-web). KEYCLOAK_VALID_ISSUERS tanimsizsa eski davranis (issuer kontrolu yok).
+var jwtValidIssuers = (Environment.GetEnvironmentVariable("KEYCLOAK_VALID_ISSUERS") ?? "")
+    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+var jwtAllowedClients = (Environment.GetEnvironmentVariable("KEYCLOAK_ALLOWED_CLIENTS") ?? "hr360-web")
+    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
@@ -38,7 +49,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateAudience = false,
             // Token app-01 veya app-02'deki Keycloak'tan alinabilir; iki instance
             // farkli issuer URL'i dondugu icin issuer dogrulamasi kapali.
-            ValidateIssuer = false,
+            ValidateIssuer = jwtValidIssuers.Length > 0,
+            ValidIssuers = jwtValidIssuers,
         };
         // Keycloak realm_access.roles claim'ini ASP.NET Core'un ClaimTypes.Role'une
         // esler. Bu olmadan policy/role tabanli yetkilendirme calismaz.
@@ -46,6 +58,14 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         {
             OnTokenValidated = context =>
             {
+                // Izinli istemci (azp) kontrolu - bkz. jwtAllowedClients.
+                var azp = context.Principal?.FindFirst("azp")?.Value;
+                if (jwtAllowedClients.Length > 0 && (azp is null || !jwtAllowedClients.Contains(azp)))
+                {
+                    context.Fail("Bu istemci icin verilmis jetonlar kabul edilmiyor");
+                    return Task.CompletedTask;
+                }
+
                 var identity = context.Principal?.Identity as ClaimsIdentity;
                 if (identity is null) return Task.CompletedTask;
 

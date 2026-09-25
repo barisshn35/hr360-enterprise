@@ -188,6 +188,7 @@ services:
     environment:
       ORG_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD}"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
+      KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
       ASPNETCORE_ENVIRONMENT: "Production"
     mem_limit: "512m"
 
@@ -197,6 +198,7 @@ services:
     environment:
       EMPLOYEE_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD}"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
+      KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
       KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
       ORGANIZATION_SERVICE_URL: "http://organization-service:8080"
       ASPNETCORE_ENVIRONMENT: "Production"
@@ -208,6 +210,7 @@ services:
     environment:
       WORKFLOW_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD}"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
+      KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
       KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
       EMPLOYEE_SERVICE_URL: "http://employee-service:8080"
       ASPNETCORE_ENVIRONMENT: "Production"
@@ -219,6 +222,7 @@ services:
     environment:
       LEAVE_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD}"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
+      KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
       KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
       EMPLOYEE_SERVICE_URL: "http://employee-service:8080"
       ORGANIZATION_SERVICE_URL: "http://organization-service:8080"
@@ -232,6 +236,7 @@ services:
     environment:
       RECRUITMENT_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD}"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
+      KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
       ASPNETCORE_ENVIRONMENT: "Production"
     mem_limit: "512m"
 
@@ -242,6 +247,7 @@ services:
       EMPLOYEE_SERVICE_URL: "http://employee-service:8080"
       ONBOARDING_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD}"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
+      KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
       ASPNETCORE_ENVIRONMENT: "Production"
     mem_limit: "512m"
 
@@ -251,6 +257,7 @@ services:
     environment:
       TIMESHIFT_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD}"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
+      KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
       KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
       ORGANIZATION_SERVICE_URL: "http://organization-service:8080"
       EMPLOYEE_SERVICE_URL: "http://employee-service:8080"
@@ -263,6 +270,7 @@ services:
     environment:
       PERFORMANCE_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD}"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
+      KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
       ORGANIZATION_SERVICE_URL: "http://organization-service:8080"
       EMPLOYEE_SERVICE_URL: "http://employee-service:8080"
       ML_INFERENCE_URL: "http://ml-inference:8000"
@@ -276,6 +284,7 @@ services:
       EMPLOYEE_SERVICE_URL: "http://employee-service:8080"
       LEARNING_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD}"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
+      KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
       ASPNETCORE_ENVIRONMENT: "Production"
     mem_limit: "512m"
 
@@ -285,6 +294,7 @@ services:
     environment:
       COMPENSATION_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD}"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
+      KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
       ASPNETCORE_ENVIRONMENT: "Production"
     mem_limit: "512m"
 
@@ -294,6 +304,7 @@ services:
     environment:
       EXPENSE_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD}"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
+      KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
       KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
       EMPLOYEE_SERVICE_URL: "http://employee-service:8080"
       ORGANIZATION_SERVICE_URL: "http://organization-service:8080"
@@ -307,6 +318,7 @@ services:
     environment:
       NOTIFICATION_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD}"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
+      KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
       KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
       TENANT_SERVICE_URL: "http://tenant-service:8080"
       # NOT: POST /api/notifications (Email kanali), calisanin e-postasini
@@ -333,6 +345,7 @@ services:
     environment:
       TENANT_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD}"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
+      KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
       KEYCLOAK_BASE_URL: "http://keycloak:8080/auth"
       KEYCLOAK_REALM: "hr360"
       KEYCLOAK_ADMIN_USER: ${KEYCLOAK_ADMIN_USER}
