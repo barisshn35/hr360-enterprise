@@ -75,8 +75,18 @@ public class WorkflowEventConsumer : KafkaConsumerBase
             Topic = LeaveEventsTopic,
             EventType = evt.Approved ? "leave.approved" : "leave.rejected",
             PartitionKey = leave.EmployeeId.ToString(),
+            // NOT: db.CurrentTenantSlug burada HER ZAMAN bos/null doner - bu bir
+            // arka plan tuketicisi, HTTP baglami (dolayisiyla TenantContext) yok
+            // (bkz. KafkaConsumerBase, IsPlatformAdmin=true yalnizca SORGULARI
+            // gecerli kilar, TenantContext.TenantSlug'i DOLDURMAZ). Onceki halinde
+            // bu satir "db.CurrentTenantSlug ?? \"\"" kullaniyordu - yayinlanan
+            // leave.approved/rejected event'i HER ZAMAN TenantSlug="" ile cikiyordu,
+            // bu da timeshift-service'teki ShiftOverride olusturma bugunu besleyen
+            // kok nedendi (hardcore test, canli ikinci kullanici ile dogrulandi).
+            // Zaten normal HTTP akisiyla olusmus ve dogru TenantSlug'a sahip olan
+            // `leave` entity'sinin kendi TenantSlug'ini kullaniyoruz.
             Payload = JsonSerializer.Serialize(new LeaveDecidedEvent(
-                db.CurrentTenantSlug ?? "",
+                leave.TenantSlug,
                 leave.Id, leave.EmployeeId, leave.StartDate, leave.EndDate,
                 evt.Approved, DateTimeOffset.UtcNow)),
         });

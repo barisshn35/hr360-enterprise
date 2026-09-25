@@ -31,6 +31,12 @@ public class HrEventConsumer : KafkaConsumerBase
                 if (e is null) break;
                 db.Notifications.Add(new Notification
                 {
+                    // Arka plan tuketicisinde TenantContext doldurulmadigi icin
+                    // StampTenant() bu alani asla yazamiyor - olayin kendi tasidigi
+                    // TenantSlug'i elle atiyoruz (aksi halde bildirim gercek kiracı
+                    // kullanicilarina HICBIR ZAMAN gorunmuyordu; bkz. ayni bugun
+                    // timeshift-service/LeaveEventConsumer'da canli dogrulanmis hali).
+                    TenantSlug = e.TenantSlug,
                     RecipientEmployeeId = e.EmployeeId,
                     RecipientEmail = e.Email,
                     Channel = NotificationChannel.Email,
@@ -49,6 +55,7 @@ public class HrEventConsumer : KafkaConsumerBase
                 if (e is null) break;
                 db.Notifications.Add(new Notification
                 {
+                    TenantSlug = e.TenantSlug,
                     RecipientEmployeeId = e.EmployeeId,
                     RecipientEmail = e.Email,
                     Channel = NotificationChannel.Email,
@@ -68,6 +75,7 @@ public class HrEventConsumer : KafkaConsumerBase
                 var slaText = e.SlaDueAt is null ? "" : $" Son karar tarihi: {e.SlaDueAt:dd.MM.yyyy HH:mm}.";
                 db.Notifications.Add(new Notification
                 {
+                    TenantSlug = e.TenantSlug,
                     RecipientEmployeeId = e.ApproverEmployeeId,
                     RecipientEmail = e.ApproverEmail,
                     Channel = NotificationChannel.Email,
@@ -87,6 +95,7 @@ public class HrEventConsumer : KafkaConsumerBase
                 var verdict = e.Approved ? "onaylandı" : "reddedildi";
                 db.Notifications.Add(new Notification
                 {
+                    TenantSlug = e.TenantSlug,
                     RecipientEmployeeId = e.RequesterEmployeeId,
                     Channel = NotificationChannel.InApp,
                     TemplateCode = eventType,
@@ -103,23 +112,31 @@ public class HrEventConsumer : KafkaConsumerBase
         return Task.CompletedTask;
     }
 
+    // NOT: bu 4 kayit onceden TenantSlug alanini HIC bildirmiyordu - ilgili
+    // upstream event'ler (EmployeeHiredEvent/EmployeeAssignedEvent/
+    // WorkflowSubmittedEvent/WorkflowDecidedEvent) bunu tasisa da,
+    // System.Text.Json (PropertyNameCaseInsensitive) eslesmeyen alani
+    // sessizce yok sayiyordu, deserialize sonrasi kayboluyordu. Simdi
+    // bildiriyoruz ki yukarida Notification.TenantSlug'e atayabilelim
+    // (hardcore test, 3. tur - bildirimler gercek kiracı kullanicilarina
+    // hic gorunmuyordu).
     private record HiredPayload(
-        Guid EmployeeId, string FirstName, string LastName, string Email,
+        string TenantSlug, Guid EmployeeId, string FirstName, string LastName, string Email,
         DateOnly HireDate, DateTimeOffset OccurredAt);
 
     private record SubmittedPayload(
-        Guid WorkflowRequestId, string WorkflowType, Guid RequesterEmployeeId,
+        string TenantSlug, Guid WorkflowRequestId, string WorkflowType, Guid RequesterEmployeeId,
         string? RequesterName, string? Subject, Guid ApproverEmployeeId,
         string ApproverEmail, string ApproverFirstName, DateTimeOffset? SlaDueAt,
         DateTimeOffset OccurredAt);
 
     private record AssignedPayload(
-        Guid EmployeeId, Guid AssignmentId, Guid DepartmentId,
+        string TenantSlug, Guid EmployeeId, Guid AssignmentId, Guid DepartmentId,
         string? PositionTitle, DateOnly EffectiveFrom, DateTimeOffset OccurredAt,
         string Email, string FirstName, string LastName);
 
     private record WorkflowPayload(
-        Guid WorkflowRequestId, string WorkflowType, Guid RequesterEmployeeId,
+        string TenantSlug, Guid WorkflowRequestId, string WorkflowType, Guid RequesterEmployeeId,
         string? Subject, bool Approved, Guid DecidedByEmployeeId,
         string? Comment, DateTimeOffset OccurredAt);
 }

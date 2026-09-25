@@ -39,11 +39,25 @@ public class LeaveEventConsumer : KafkaConsumerBase
                 existing.IsSystemManaged = true;
                 existing.StartTime = null;
                 existing.EndTime = null;
+                // Bu satir mevcut olmayan (StampTenant sadece INSERT'te
+                // calisir) bir kayittan geliyorsa TenantSlug zaten dogrudur;
+                // yine de bos kalmis eski/bozuk bir kayitsa burada duzeltelim.
+                if (string.IsNullOrEmpty(existing.TenantSlug)) existing.TenantSlug = evt.TenantSlug;
             }
             else
             {
                 db.ShiftOverrides.Add(new ShiftOverride
                 {
+                    // Arka plan tuketicisinde (bu sinif) HTTP baglami/TenantContext
+                    // yok, bu yuzden StampTenant() TenantSlug'i asla dolduramiyor
+                    // (bkz. KafkaConsumerBase - tenantContext.IsPlatformAdmin=true
+                    // yalnizca SORGULARI gecerli kilar, YENI kayitlara TenantSlug
+                    // YAZMAZ). Elle olayin tasidigi TenantSlug'i kullaniyoruz - aksi
+                    // halde bu satir TenantSlug="" ile olusur ve gercek (platform-admin
+                    // olmayan) kiracı kullanicilarina HICBIR ZAMAN gorunmez (hardcore
+                    // test, canli ikinci kullanici ile dogrulandi: Mehmet Demir'in
+                    // rostersinde onaylanmis izin gorunmuyordu).
+                    TenantSlug = evt.TenantSlug,
                     EmployeeId = evt.EmployeeId,
                     Date = date,
                     Type = ShiftOverrideType.Leave,
