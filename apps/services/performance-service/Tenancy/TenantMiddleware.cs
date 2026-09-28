@@ -94,5 +94,5 @@ public class TenantMiddleware
 public static class TenantMiddlewareExtensions
 {
     public static IApplicationBuilder UseTenantContext(this IApplicationBuilder app)
-        => app.UseMiddleware<TenantMiddleware>();
+        => app.UseMiddleware<TenantMiddleware>().UseMiddleware<TenantStatusGate>();
 }

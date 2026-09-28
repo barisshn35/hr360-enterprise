@@ -36,6 +36,15 @@ export function HolidaysModal({ open, onClose, year }: { open: boolean; onClose:
     onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : 'Tatil eklenemedi.'),
   })
 
+  const seed = useMutation({
+    mutationFn: () => leaveApi.seedTurkishHolidays(year),
+    onSuccess: (r) => {
+      invalidate()
+      toast.ok(r.message)
+    },
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : 'Tatiller eklenemedi.'),
+  })
+
   const remove = useMutation({
     mutationFn: (id: string) => leaveApi.deleteHoliday(id),
     onSuccess: () => {
@@ -63,9 +72,20 @@ export function HolidaysModal({ open, onClose, year }: { open: boolean; onClose:
       note="Bu günler izin talebinde gün sayısından düşülür (hafta sonları zaten düşülür)."
       size="lg"
       footer={
-        <Button variant="outline" className="cursor-pointer" onClick={onClose}>
-          Kapat
-        </Button>
+        <>
+          <Button
+            variant="outline"
+            className="cursor-pointer"
+            disabled={seed.isPending}
+            onClick={() => seed.mutate()}
+          >
+            {seed.isPending && <LoaderCircle className="size-4 animate-spin" />}
+            Türkiye resmi tatillerini ekle
+          </Button>
+          <Button variant="outline" className="cursor-pointer" onClick={onClose}>
+            Kapat
+          </Button>
+        </>
       }
     >
       <form onSubmit={submit} noValidate className="grid gap-3 sm:grid-cols-[180px_1fr_auto] sm:items-end">

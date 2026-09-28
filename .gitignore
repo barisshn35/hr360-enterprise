@@ -30,3 +30,7 @@ __pycache__/
 
 # scripts/keycloak-admin-access.sh ciktisi (ortama ozel)
 deploy/nginx/keycloak-admin/*.conf
+
+# scripts/tls.sh ciktisi: sertifika, anahtar ve uretilen nginx parcalari
+deploy/nginx/tls/*
+!deploy/nginx/tls/README.md

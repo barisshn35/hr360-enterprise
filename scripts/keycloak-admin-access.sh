@@ -29,6 +29,9 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+# Docker Compose kabuktaki degiskenleri .env'e tercih eder; kabukta eski degerler
+# (orn. "set -a; . ./.env") kalmissa yeni ayar uygulanmaz. Yonetilen degiskenler temizlenir.
+unset PUBLIC_URL PUBLIC_ORIGIN KEYCLOAK_ADMIN_MODE KEYCLOAK_ADMIN_ALLOWED_IPS KEYCLOAK_ADMIN_BIND KEYCLOAK_ADMIN_PORT KEYCLOAK_ADMIN_URL
 ENV_FILE=.env
 DIR=deploy/nginx/keycloak-admin
 MAIN="$DIR/main-access.conf"

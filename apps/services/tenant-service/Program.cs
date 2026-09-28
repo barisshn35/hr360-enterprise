@@ -156,6 +156,33 @@ app.UseSwaggerUI();
 
 app.UseRateLimiter();
 app.UseAuthentication();
+// GUVENLIK: Askiya alinan kiracinin kullanicilarinin elindeki (henuz suresi dolmamis)
+// jetonlar bu serviste de reddedilir - diger servislerdeki TenantStatusGate ile ayni kural.
+app.Use(async (ctx, next) =>
+{
+    if (ctx.User.Identity?.IsAuthenticated == true && !ctx.User.IsInRole("platform-admin"))
+    {
+        var slug = TenantService.Security.OrganizationClaimParser.ParseSlug(ctx.User.FindFirst("organization")?.Value);
+        if (!string.IsNullOrWhiteSpace(slug))
+        {
+            var db = ctx.RequestServices.GetRequiredService<TenantService.Data.TenantDbContext>();
+            var status = await db.Tenants.Where(t => t.Slug == slug)
+                .Select(t => (TenantService.Models.TenantStatus?)t.Status)
+                .FirstOrDefaultAsync(ctx.RequestAborted);
+            if (status == TenantService.Models.TenantStatus.Suspended)
+            {
+                ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await ctx.Response.WriteAsJsonAsync(new
+                {
+                    message = "Şirket hesabı askıya alınmış. Lütfen yöneticinizle iletişime geçin.",
+                    code = "tenant_suspended",
+                });
+                return;
+            }
+        }
+    }
+    await next();
+});
 app.UseAuthorization();
 app.UseHttpMetrics();
 

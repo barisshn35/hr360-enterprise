@@ -96,6 +96,13 @@ export const leaveApi = {
   createHoliday: (input: { date: string; name: string }) =>
     apiFetch<PublicHoliday>(`${BASE}/public-holidays`, { method: 'POST', body: input }),
 
+  /** Türkiye resmi tatillerini ekler (2026-2027 için dini bayramlar dahil). */
+  seedTurkishHolidays: (year: number) =>
+    apiFetch<{ added: number; skipped: number; religiousIncluded: boolean; message: string }>(
+      `${BASE}/public-holidays/seed-tr${qs({ year })}`,
+      { method: 'POST' },
+    ),
+
   deleteHoliday: (id: string) =>
     apiFetch<void>(`${BASE}/public-holidays/${id}`, { method: 'DELETE' }),
 
