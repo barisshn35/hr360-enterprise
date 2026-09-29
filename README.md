@@ -24,6 +24,15 @@ bilgilerini ekrana basar. Repo içinde **hiçbir gerçek şifre veya anahtar
 bulunmaz**; hepsi kurulum sırasında sizin makinenizde üretilir ve yalnızca
 yerel `.env` dosyanızda (git'e dahil değil) saklanır.
 
+**HTTPS:** Adres olarak gerçek bir alan adı verirseniz (ör. `https://hr.sirket.com`)
+script HTTPS'i kurulumun sonunda kendisi açar. Varsayılan seçenek, Let's Encrypt'ten
+ücretsiz sertifika almak ve otomatik yenilemektir. Bunun için alan adının DNS kaydı
+sunucuyu göstermeli, 80 ve 443 portları internete açık olmalıdır. Kendi sertifikanızı
+ya da test için kendinden imzalı sertifikayı da seçebilirsiniz; ayrıntılar
+[docs/runbooks/https.md](docs/runbooks/https.md) dosyasında.
+
+Sunucuda en az 40 GB boş disk bırakın (imajlar ve derleme ~20 GB).
+
 İlk çalıştırma birkaç dakika sürebilir (13 .NET servisi + Keycloak + MLflow
 vb. build edilir). Durdurmak için `docker compose down`, logları izlemek
 için `docker compose logs -f`.

@@ -226,6 +226,51 @@ case "${KC_ADMIN_CHOICE:-1}" in
   *) KEYCLOAK_ADMIN_MODE=open ;;
 esac
 
+# HTTPS kurulumun sonunda scripts/tls.sh ile otomatik acilir.
+PUBLIC_HOST="$(printf '%s' "${PUBLIC_URL}" | sed -E 's#^[a-zA-Z]+://([^/:]+).*#\1#')"
+if [[ "$PUBLIC_HOST" =~ [A-Za-z] ]] && [[ "$PUBLIC_HOST" == *.* ]] && [ "$PUBLIC_HOST" != localhost ]; then
+  TLS_DEFAULT=1   # gercek alan adi -> Let's Encrypt
+else
+  TLS_DEFAULT=4   # localhost / IP -> HTTPS yok
+fi
+echo ""
+echo "HTTPS (adres: ${PUBLIC_HOST}):"
+echo "  1) Let's Encrypt ile otomatik, ucretsiz sertifika + otomatik yenileme"
+echo "     (alan adinin DNS kaydi bu sunucuyu gostermeli, 80 ve 443 internete acik olmali)"
+echo "  2) Kendi sertifikam var (fullchain + private key dosya yollari)"
+echo "  3) Kendinden imzali sertifika (yalnizca test - tarayici uyari verir)"
+echo "  4) HTTPS yok (yalnizca HTTP; yerel/deneme kurulumu)"
+read -r -p "Seciminiz [${TLS_DEFAULT}]: " TLS_CHOICE || true
+TLS_CHOICE=${TLS_CHOICE:-$TLS_DEFAULT}
+TLS_MODE=none; TLS_EMAIL=""; TLS_CERT=""; TLS_KEY=""
+case "$TLS_CHOICE" in
+  1)
+    if [ "$TLS_DEFAULT" != 1 ]; then
+      warn "Let's Encrypt gercek bir alan adi ister (${PUBLIC_HOST} olmaz); HTTPS kapali birakiliyor."
+    elif [ "${GATEWAY_PORT}" != 80 ]; then
+      warn "Let's Encrypt dogrulamasi 80. porttan yapilir (gateway portu: ${GATEWAY_PORT}); HTTPS kapali birakiliyor."
+    else
+      TLS_MODE=letsencrypt
+      read -r -p "Sertifika bildirimleri icin e-posta (bos birakilabilir): " TLS_EMAIL || true
+    fi ;;
+  2)
+    read -r -p "Sertifika zinciri dosyasi (fullchain.pem) yolu: " TLS_CERT || true
+    read -r -p "Ozel anahtar dosyasi (privkey.pem) yolu: " TLS_KEY || true
+    if [ -f "$TLS_CERT" ] && [ -f "$TLS_KEY" ]; then
+      TLS_MODE=certificate; TLS_CERT="$(cd "$(dirname "$TLS_CERT")" && pwd)/$(basename "$TLS_CERT")"
+      TLS_KEY="$(cd "$(dirname "$TLS_KEY")" && pwd)/$(basename "$TLS_KEY")"
+    else
+      warn "Sertifika/anahtar dosyasi bulunamadi; HTTPS kapali birakiliyor (sonra: scripts/tls.sh enable --cert ... --key ...)."
+    fi ;;
+  3) TLS_MODE=self-signed ;;
+  *) TLS_MODE=none ;;
+esac
+if [ "$TLS_MODE" = none ] && [[ "${PUBLIC_URL}" == https://* ]]; then
+  # HTTPS acilmayacaksa adres http olmali; aksi halde giris yonlendirmeleri kirilir.
+  PUBLIC_URL="http://${PUBLIC_URL#https://}"
+  warn "HTTPS acilmayacagi icin adres ${PUBLIC_URL} olarak kullanilacak."
+fi
+
 echo ""
 echo "E-posta (SMTP) sunucusu: davet, parola belirleme ve bildirim e-postalari bununla gider."
 echo "Bos birakirsaniz paketteki Mailpit kullanilir - e-postalar GERCEKTEN GONDERILMEZ, yalnizca"
@@ -383,15 +428,38 @@ else
     || warn "Panel erisimi ayarlanamadi; sonra scripts/keycloak-admin-access.sh ile deneyin."
 fi
 
+if [ "$TLS_MODE" != none ]; then
+  info "HTTPS aciliyor (${TLS_MODE})..."
+  case "$TLS_MODE" in
+    letsencrypt)
+      tls_args=(--letsencrypt --host "$PUBLIC_HOST")
+      [ -n "$TLS_EMAIL" ] && tls_args+=(--email "$TLS_EMAIL") ;;
+    certificate) tls_args=(--cert "$TLS_CERT" --key "$TLS_KEY" --host "$PUBLIC_HOST") ;;
+    self-signed) tls_args=(--self-signed --host "$PUBLIC_HOST") ;;
+  esac
+  if scripts/tls.sh enable "${tls_args[@]}"; then
+    PUBLIC_ORIGIN="$(grep '^PUBLIC_ORIGIN=' .env | tail -1 | cut -d= -f2-)"
+  else
+    warn "HTTPS acilamadi; uygulama simdilik HTTP ile calisiyor."
+    # Adres https olarak yazildiysa girisler bozulmasin diye http'ye cekilir.
+    if [[ "${PUBLIC_ORIGIN}" == https://* ]]; then
+      scripts/tls.sh disable >/dev/null 2>&1 || true
+      PUBLIC_ORIGIN="$(grep '^PUBLIC_ORIGIN=' .env | tail -1 | cut -d= -f2-)"
+    fi
+    warn "Sorunu giderdikten sonra tekrar deneyin: scripts/tls.sh enable ${tls_args[*]}"
+  fi
+fi
+
 echo ""
 echo "${GREEN}${BOLD}Kurulum tamamlandi.${RESET}"
 echo "----------------------------------------------"
 echo "Uygulama:         ${PUBLIC_ORIGIN}"
 echo "Keycloak admin:   $(scripts/keycloak-admin-access.sh status | grep 'Konsol adresi' | awk '{print $3}' | grep . || echo "${PUBLIC_ORIGIN}/auth")/admin/  (kullanici: ${KEYCLOAK_ADMIN_USER})"
 echo "                  Erisimi degistirmek icin: scripts/keycloak-admin-access.sh open|ip|port"
-echo "MinIO konsolu:    http://localhost:9001"
-echo "Mailpit (e-posta):http://localhost:8025"
-echo "MLflow:           http://localhost:5000"
+echo "HTTPS:            $(scripts/tls.sh status | head -1)"
+echo "MinIO konsolu:    http://localhost:9001   (yalnizca sunucunun kendisinden / SSH tuneliyle)"
+echo "Mailpit (e-posta):http://localhost:8025   (yalnizca sunucunun kendisinden / SSH tuneliyle)"
+echo "MLflow:           http://localhost:5000   (yalnizca sunucunun kendisinden / SSH tuneliyle)"
 echo ""
 echo "Demo giris:       demo.admin / (yukarida belirlediginiz/uretilen DEMO_ADMIN_PASSWORD)  - yalnizca demo sirketinin yoneticisi"
 echo "Platform yonetimi: platform.admin / (.env icindeki PLATFORM_ADMIN_PASSWORD)  - tum kiracilar; paylasmayin"

@@ -451,6 +451,21 @@ services:
     restart: unless-stopped
     mem_limit: "128m"
 
+  # Let's Encrypt sertifikasini 12 saatte bir yeniler (suresi 30 gunden az kalinca).
+  # Yalnizca "letsencrypt" profili acikken calisir: scripts/tls.sh enable --letsencrypt
+  # .env'e COMPOSE_PROFILES=letsencrypt yazar.
+  certbot:
+    image: certbot/certbot:v2.11.0
+    profiles: ["letsencrypt"]
+    restart: unless-stopped
+    volumes:
+      - ./deploy/letsencrypt:/etc/letsencrypt
+      - ./deploy/nginx/acme:/var/www/certbot
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $$!; done
+    mem_limit: "128m"
+
   gateway:
     image: nginx:1.27-alpine
     restart: unless-stopped
@@ -458,6 +473,13 @@ services:
       - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./deploy/nginx/keycloak-admin:/etc/nginx/keycloak-admin:ro
       - ./deploy/nginx/tls:/etc/nginx/tls:ro
+      # Let's Encrypt (scripts/tls.sh enable --letsencrypt): certbot'un sertifikalari
+      # ve HTTP-01 dogrulama dosyalari.
+      - ./deploy/letsencrypt:/etc/letsencrypt:ro
+      - ./deploy/nginx/acme:/var/www/certbot:ro
+    # nginx sertifika dosyasi degisince kendiliginden okumaz; certbot yenilediginde
+    # yeni sertifika en gec 6 saat icinde devreye girsin diye periyodik reload.
+    command: ["/bin/sh", "-c", "(while :; do sleep 21600; nginx -s reload; done) & exec nginx -g 'daemon off;'"]
     depends_on:
       - web
       - keycloak

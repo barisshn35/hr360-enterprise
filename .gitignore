@@ -34,3 +34,8 @@ deploy/nginx/keycloak-admin/*.conf
 # scripts/tls.sh ciktisi: sertifika, anahtar ve uretilen nginx parcalari
 deploy/nginx/tls/*
 !deploy/nginx/tls/README.md
+# Let's Encrypt (scripts/tls.sh enable --letsencrypt)
+deploy/letsencrypt/*
+!deploy/letsencrypt/README.md
+deploy/nginx/acme/*
+!deploy/nginx/acme/README.md

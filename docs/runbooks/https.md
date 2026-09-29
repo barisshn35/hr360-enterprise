@@ -3,11 +3,15 @@
 HTTPS gateway'de (nginx) sonlanır; arkadaki servisler ve Keycloak iç ağda HTTP konuşur.
 Tek komutla açılır, adres ve Keycloak ayarları betik tarafından güncellenir.
 
+`install.sh` kurulumda HTTPS'i sorar ve seçilen yöntemle bu betiği kendisi çalıştırır;
+aşağıdaki komutlar kurulumdan sonra değiştirmek için.
+
 ```bash
-# Gerçek sertifika (örn. Let's Encrypt)
-scripts/tls.sh enable --cert /etc/letsencrypt/live/hr.sirket.com/fullchain.pem \
-                      --key  /etc/letsencrypt/live/hr.sirket.com/privkey.pem \
-                      --host hr.sirket.com
+# Let's Encrypt: ücretsiz sertifika + otomatik yenileme (önerilen)
+scripts/tls.sh enable --letsencrypt --host hr.sirket.com --email it@sirket.com
+
+# Kendi sertifikanız (kurumsal CA, satın alınmış sertifika)
+scripts/tls.sh enable --cert /yol/fullchain.pem --key /yol/privkey.pem --host hr.sirket.com
 
 # Test için kendinden imzalı sertifika
 scripts/tls.sh enable --self-signed --host hr.sirket.local
@@ -25,7 +29,36 @@ Açınca:
 - Yönetim paneli ayrı porttaysa (`keycloak-admin-access.sh port`) adresi yeni kökene göre yenilenir.
   Not: ayrı yönetim portu (8090) HTTP kalır; onu yalnızca yönetim ağına açın.
 
-Sertifika yenilendiğinde aynı `enable` komutunu yeni dosyalarla tekrar çalıştırın.
+## Let's Encrypt
+
+Koşullar:
+- Alan adının DNS A/AAAA kaydı sunucunun genel IP'sini göstermeli.
+- 80/tcp ve 443/tcp internete açık olmalı (firewall / bulut güvenlik grubu).
+- `GATEWAY_PORT=80` olmalı; doğrulama 80. porttan yapılır.
+
+Nasıl çalışır:
+- `certbot` servisi, doğrulama dosyasını `deploy/nginx/acme/` klasörüne yazar; gateway bu
+  dosyayı `/.well-known/acme-challenge/` yolundan sunar. Bu yol HTTPS'e yönlendirilmez.
+- Sertifikalar `deploy/letsencrypt/` klasöründe durur (git'e girmez; yedeğe alın).
+- `certbot` servisi 12 saatte bir kontrol eder ve süresi 30 günden az kalan sertifikayı
+  yeniler. Servis `.env`'deki `COMPOSE_PROFILES=letsencrypt` ile açılır.
+- Gateway 6 saatte bir nginx'i yeniden yükler, böylece yeni sertifika kesinti olmadan devreye girer.
+
+Denetim:
+- `scripts/tls.sh status` sertifikanın bitiş tarihini ve yenileme servisinin çalışıp
+  çalışmadığını gösterir.
+- `docker compose logs certbot` yenileme kayıtlarını gösterir.
+- Önce denemek isterseniz `--staging` ekleyin. Bu, Let's Encrypt'in test ortamıdır;
+  tarayıcı sertifikaya güvenmez ama istek sınırlarına takılmazsınız. Sonra `--staging`
+  olmadan tekrar çalıştırın.
+
+Kurulumda Let's Encrypt başarısız olursa (DNS henüz yayılmadı, port kapalı) kurulum durmaz.
+Uygulama HTTP ile açılır ve ekrana tekrar deneme komutu basılır.
+
+## Kendi sertifikanız
+
+Sertifika yenilendiğinde aynı `enable --cert ... --key ...` komutunu yeni dosyalarla tekrar
+çalıştırın.
 
 **Gateway'in önünde TLS'i sonlandıran bir yük dengeleyici varsa** bu betiği kullanmayın
 (HTTP→HTTPS yönlendirmesi döngüye girer). Onun yerine `.env`'de `PUBLIC_ORIGIN=https://<host>`
