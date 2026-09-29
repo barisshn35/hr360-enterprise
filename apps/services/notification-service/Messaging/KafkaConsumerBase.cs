@@ -46,6 +46,9 @@ public abstract class KafkaConsumerBase : BackgroundService
             BootstrapServers = _bootstrapServers,
             GroupId = _groupId,
             AutoOffsetReset = AutoOffsetReset.Earliest,
+            // Sonradan olusan konular 10 sn icinde fark edilir (varsayilan 5 dk idi:
+            // yeni kurulumda ilk olaylar dakikalarca gecikiyordu).
+            TopicMetadataRefreshIntervalMs = 10_000,
             EnableAutoCommit = false,   // basarili islemden sonra elle commit
         };
 

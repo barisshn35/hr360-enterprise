@@ -124,6 +124,28 @@ services:
       - kafka-data:/var/lib/kafka/data
     mem_limit: "768m"
 
+  # NOT: Konular onceden ilk mesajla otomatik olusuyordu. Yeni bir sunucuda
+  # tuketiciler (orn. bildirim servisi) konudan ONCE basliyor ve yeni konuyu
+  # ancak 5 dk'lik meta veri yenilemesinde fark ediyordu - ilk kurulumdaki ilk
+  # onay e-postalari dakikalarca gecikiyordu. Konular kurulumda olusturulur.
+  kafka-init:
+    image: apache/kafka:3.8.0
+    restart: "no"
+    depends_on:
+      - kafka
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        for i in $$(seq 1 60); do
+          /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list >/dev/null 2>&1 && break
+          sleep 2
+        done
+        for t in hr360.employee.events hr360.workflow.events hr360.leave.events; do
+          /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists \
+            --topic "$$t" --partitions 1 --replication-factor 1
+        done
+    mem_limit: "512m"
+
   mailpit:
     image: axllent/mailpit:latest
     restart: unless-stopped
