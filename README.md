@@ -40,9 +40,12 @@ için `docker compose logs -f`.
   altyapısıyla izole şekilde paylaşır; MLflow için ayrı `hr360_mlflow`
   veritabanı
 - **Depolama:** MinIO (S3 uyumlu nesne depolama — logo ve ML artefact'ları)
-- **E-posta:** Mailpit (yerel SMTP yakalayıcı, demo/dev için — gerçek bir
-  SMTP sağlayıcısına geçmek için `.env` içindeki `SMTP_*` değişkenlerini
-  değiştirin)
+- **E-posta:** `install.sh` kurulumda SMTP sunucusunu sorar; boş
+  bırakılırsa Mailpit (yerel SMTP yakalayıcı, demo/dev için — e-postalar
+  gerçekten gönderilmez) kullanılır. Girilen ayar hem bildirim servisine
+  (`.env` → `SMTP_*`) hem Keycloak'a (davet/şifre sıfırlama e-postaları,
+  realm'in "Email" ayarı) yazılır. Kurulumdan sonra değiştirmek için ikisini
+  birlikte güncelleyin.
 - **ML:** MLflow tracking + Registry, FastAPI tabanlı inference servisi
   (işten ayrılma riski tahmini), Postgres backend store + MinIO artifact
   store

@@ -226,6 +226,35 @@ case "${KC_ADMIN_CHOICE:-1}" in
   *) KEYCLOAK_ADMIN_MODE=open ;;
 esac
 
+echo ""
+echo "E-posta (SMTP) sunucusu: davet, parola belirleme ve bildirim e-postalari bununla gider."
+echo "Bos birakirsaniz paketteki Mailpit kullanilir - e-postalar GERCEKTEN GONDERILMEZ, yalnizca"
+echo "sunucudaki test kutusunda (http://localhost:8025) gorunur. Gercek kullanim icin sunucu girin."
+read -r -p "SMTP sunucusu [mailpit]: " SMTP_HOST || true
+if [ -z "${SMTP_HOST}" ] || [ "${SMTP_HOST}" = "mailpit" ]; then
+  SMTP_HOST=mailpit; SMTP_PORT=1025; SMTP_USER=hr360; SMTP_PASSWORD=hr360
+  SMTP_FROM_ADDRESS=noreply@hr360.local; SMTP_FROM_NAME=HR360
+  SMTP_AUTH=false; SMTP_SSL=false; SMTP_STARTTLS=false
+  warn "Mailpit secildi: kullanicilara e-posta ulasmayacak (test modu)."
+else
+  read -r -p "SMTP portu (587 = STARTTLS, 465 = SSL) [587]: " SMTP_PORT || true
+  SMTP_PORT=${SMTP_PORT:-587}
+  read -r -p "SMTP kullanici adi (kimlik dogrulama yoksa bos): " SMTP_USER || true
+  SMTP_PASSWORD=""
+  if [ -n "${SMTP_USER}" ]; then
+    read -r -s -p "SMTP parolasi: " SMTP_PASSWORD || true; echo ""
+  fi
+  read -r -p "Gonderen adres (orn. noreply@sirket.com): " SMTP_FROM_ADDRESS || true
+  [ -n "${SMTP_FROM_ADDRESS}" ] || { echo "Gonderen adres zorunlu."; exit 1; }
+  read -r -p "Gonderen adi [HR360]: " SMTP_FROM_NAME || true
+  SMTP_FROM_NAME=${SMTP_FROM_NAME:-HR360}
+  SMTP_AUTH=$([ -n "${SMTP_USER}" ] && echo true || echo false)
+  if [ "${SMTP_PORT}" = "465" ]; then SMTP_SSL=true; SMTP_STARTTLS=false; else SMTP_SSL=false; SMTP_STARTTLS=true; fi
+  for v in "${SMTP_HOST}" "${SMTP_USER}" "${SMTP_PASSWORD}" "${SMTP_FROM_ADDRESS}" "${SMTP_FROM_NAME}"; do
+    case "$v" in *"'"*|*'$'*|*$'\n'*) echo "SMTP bilgilerinde tek tirnak ('), \$ ve satir sonu kullanilamaz."; exit 1 ;; esac
+  done
+fi
+
 ask_secret HR360_DB_PASSWORD          "PostgreSQL (hr360admin) parolasi"
 ask_secret KEYCLOAK_ADMIN_PASSWORD    "Keycloak master admin parolasi"
 ask_secret_aes_key TENANT_SECRET_KEY  "tenant-service imza anahtari"
@@ -263,12 +292,14 @@ DEMO_ADMIN_PASSWORD=${DEMO_ADMIN_PASSWORD}
 # Platform yonetimi artik ayri, kiraciya bagli olmayan bir hesapta.
 PLATFORM_ADMIN_PASSWORD=${PLATFORM_ADMIN_PASSWORD}
 
-SMTP_HOST=mailpit
-SMTP_PORT=1025
-SMTP_USER=hr360
-SMTP_PASSWORD=hr360
-SMTP_FROM_ADDRESS=noreply@hr360.local
-SMTP_FROM_NAME=HR360
+# E-posta sunucusu (uygulama bildirimleri + Keycloak davet/parola e-postalari).
+# SMTP_HOST=mailpit = paketteki test kutusu, gercek gonderim yapmaz.
+SMTP_HOST='${SMTP_HOST}'
+SMTP_PORT=${SMTP_PORT}
+SMTP_USER='${SMTP_USER}'
+SMTP_PASSWORD='${SMTP_PASSWORD}'
+SMTP_FROM_ADDRESS='${SMTP_FROM_ADDRESS}'
+SMTP_FROM_NAME='${SMTP_FROM_NAME}'
 EOF
 info ".env yazildi."
 
@@ -289,15 +320,32 @@ warn "baska bir ad/IP ile erisilecekse PUBLIC_URL'i ona gore verin - Keycloak di
 # "parola belirleme baglantisi gonderildi" deniyor ama e-posta HIC gitmiyordu
 # (Keycloak: "Failed to send execute actions email"). Uygulamanin kendi SMTP
 # ayarlariyla (varsayilan: paketteki Mailpit) ayni sunucu kullanilir.
-sed \
-  -e "s/__ML_KEYCLOAK_CLIENT_SECRET__/${ML_KEYCLOAK_CLIENT_SECRET}/" \
-  -e "s/__DEMO_ADMIN_PASSWORD__/${DEMO_ADMIN_PASSWORD}/" \
-  -e "s/__PLATFORM_ADMIN_PASSWORD__/${PLATFORM_ADMIN_PASSWORD}/" \
-  -e "s#__PUBLIC_ORIGIN__#${PUBLIC_ORIGIN}#g" \
-  -e "s/__SMTP_HOST__/mailpit/" \
-  -e "s/__SMTP_PORT__/1025/" \
-  -e "s/__SMTP_FROM_ADDRESS__/noreply@hr360.local/" \
-  deploy/keycloak/realm-export.template.json > deploy/keycloak/realm-export.json
+# Yer tutucular sed yerine bash ile, degerler JSON'a kacirilarak doldurulur: kullanicinin
+# girdigi SMTP parolasindaki / & " \ gibi karakterler sablonu bozmasin.
+json_escape() { local v="$1"; v="${v//\\/\\\\}"; v="${v//\"/\\\"}"; printf '%s' "$v"; }
+shopt -u patsub_replacement 2>/dev/null || true
+realm="$(<deploy/keycloak/realm-export.template.json)"
+for pair in \
+  "__ML_KEYCLOAK_CLIENT_SECRET__=${ML_KEYCLOAK_CLIENT_SECRET}" \
+  "__DEMO_ADMIN_PASSWORD__=${DEMO_ADMIN_PASSWORD}" \
+  "__PLATFORM_ADMIN_PASSWORD__=${PLATFORM_ADMIN_PASSWORD}" \
+  "__PUBLIC_ORIGIN__=${PUBLIC_ORIGIN}" \
+  "__SMTP_HOST__=${SMTP_HOST}" \
+  "__SMTP_PORT__=${SMTP_PORT}" \
+  "__SMTP_FROM_ADDRESS__=${SMTP_FROM_ADDRESS}" \
+  "__SMTP_FROM_NAME__=${SMTP_FROM_NAME}" \
+  "__SMTP_AUTH__=${SMTP_AUTH}" \
+  "__SMTP_USER__=${SMTP_USER}" \
+  "__SMTP_PASSWORD__=${SMTP_PASSWORD}" \
+  "__SMTP_SSL__=${SMTP_SSL}" \
+  "__SMTP_STARTTLS__=${SMTP_STARTTLS}"; do
+  key="${pair%%=*}"; val="$(json_escape "${pair#*=}")"
+  realm="${realm//"$key"/$val}"
+done
+printf '%s\n' "$realm" > deploy/keycloak/realm-export.json
+if grep -q "__[A-Z_]*__" deploy/keycloak/realm-export.json; then
+  echo "Realm sablonunda doldurulmamis alan kaldi."; exit 1
+fi
 info "Keycloak realm sablonu dolduruldu."
 
 # Keycloak'in genel adresi (KC_HOSTNAME) bu kokenden uretilir.
