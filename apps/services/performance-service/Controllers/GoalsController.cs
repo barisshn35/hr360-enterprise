@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PerformanceService.Data;
 using PerformanceService.Models;
+using PerformanceService.Security;
 using PerformanceService.Services;
 
 namespace PerformanceService.Controllers;
@@ -37,9 +38,7 @@ public class GoalsController : ControllerBase
     public async Task<IActionResult> GetAll(
         [FromQuery] Guid? employeeId, [FromQuery] Guid? cycleId, CancellationToken ct)
     {
-        var isManager = User.IsInRole("manager") || User.IsInRole("hr-admin")
-            || User.IsInRole("tenant-admin") || User.IsInRole("system-admin")
-            || User.IsInRole("platform-admin");
+        var isManager = User.IsManagerOrAbove();
 
         if (!isManager)
         {
@@ -60,7 +59,14 @@ public class GoalsController : ControllerBase
         return Ok(await q.OrderByDescending(g => g.CreatedAt).ToListAsync());
     }
 
+    /// <summary>
+    /// GUVENLIK: Onceden herkes herkese hedef ekleyebiliyor, herhangi bir hedefin
+    /// ilerlemesini/durumunu (orn. kendi hedefini "Achieved") degistirebiliyordu -
+    /// hedefler nihai puana girdigi icin calisan kendi puanini sisirebiliyordu.
+    /// Hedefleri ve ilerlemeyi yonetici+ yonetir (web istemcisi de boyle calisir).
+    /// </summary>
     [HttpPost]
+    [Authorize(Policy = "RequireManagerOrAbove")]
     public async Task<IActionResult> Create([FromBody] CreateGoalRequest request)
     {
         var cycle = await _db.Cycles.FirstOrDefaultAsync(c => c.Id == request.CycleId);
@@ -84,10 +90,18 @@ public class GoalsController : ControllerBase
     }
 
     [HttpPost("{id}/progress")]
+    [Authorize(Policy = "RequireManagerOrAbove")]
     public async Task<IActionResult> UpdateProgress(Guid id, [FromBody] UpdateProgressRequest request)
     {
         var goal = await _db.Goals.FirstOrDefaultAsync(g => g.Id == id);
         if (goal is null) return NotFound();
+        var cycle = await _db.Cycles.FirstOrDefaultAsync(c => c.Id == goal.CycleId);
+        if (cycle?.Status == CycleStatus.Closed)
+            return BadRequest(new { message = "Kapanmış dönemin hedefleri güncellenemez" });
+        if (request.CurrentValue < 0)
+            return BadRequest(new { message = "Gerçekleşen değer negatif olamaz" });
+        if (request.Status.HasValue && !Enum.IsDefined(request.Status.Value))
+            return BadRequest(new { message = "Geçerli bir durum seçin" });
 
         goal.CurrentValue = request.CurrentValue;
         if (request.Status.HasValue) goal.Status = request.Status.Value;

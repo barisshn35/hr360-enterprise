@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PerformanceService.Data;
 using PerformanceService.Models;
+using PerformanceService.Security;
 using PerformanceService.Services;
 
 namespace PerformanceService.Controllers;
@@ -27,26 +28,86 @@ public class ReviewsController : ControllerBase
         _directory = directory;
     }
 
+    /// <summary>
+    /// Yetki kurallari (web istemcisinin mock sozlesmesiyle ayni):
+    ///   - Yonetici ve ustu: tum degerlendirmeleri listeler.
+    ///   - Calisan: yalnizca kendi yazdiklarini ve kendisi hakkinda GONDERILMIS
+    ///     olanlari gorur (baskasinin taslagi gorunmez).
+    /// Onceden her calisan sirketteki tum degerlendirmeleri puanlariyla okuyabiliyordu.
+    /// </summary>
     [HttpGet]
-    public async Task<IActionResult> GetAll([FromQuery] Guid? employeeId, [FromQuery] Guid? cycleId)
+    public async Task<IActionResult> GetAll(
+        [FromQuery] Guid? employeeId, [FromQuery] Guid? cycleId, CancellationToken ct)
     {
         var q = _db.Reviews.Include(r => r.Scores).AsQueryable();
+        if (!User.IsManagerOrAbove())
+        {
+            var me = await _directory.FindMeAsync(ct);
+            if (me is null) return Ok(Array.Empty<Review>());
+            q = q.Where(r => r.ReviewerEmployeeId == me.Id
+                          || (r.EmployeeId == me.Id && r.SubmittedAt != null));
+        }
         if (employeeId.HasValue) q = q.Where(r => r.EmployeeId == employeeId.Value);
         if (cycleId.HasValue) q = q.Where(r => r.CycleId == cycleId.Value);
-        return Ok(await q.OrderByDescending(r => r.CreatedAt).ToListAsync());
+        return Ok(await q.OrderByDescending(r => r.CreatedAt).ToListAsync(ct));
     }
 
     [HttpGet("{id}")]
-    public async Task<IActionResult> GetById(Guid id)
+    public async Task<IActionResult> GetById(Guid id, CancellationToken ct)
     {
-        var r = await _db.Reviews.Include(x => x.Scores).FirstOrDefaultAsync(x => x.Id == id);
-        return r is null ? NotFound() : Ok(r);
+        var r = await _db.Reviews.Include(x => x.Scores).FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (r is null) return NotFound();
+        if (!User.IsManagerOrAbove())
+        {
+            var me = await _directory.FindMeAsync(ct);
+            var allowed = me is not null
+                && (r.ReviewerEmployeeId == me.Id || (r.EmployeeId == me.Id && r.SubmittedAt != null));
+            // Varligi sizdirmamak icin 404.
+            if (!allowed) return NotFound();
+        }
+        return Ok(r);
     }
 
+    /// <summary>
+    /// Degerlendirme baslatir. Degerlendiren her zaman token sahibidir (IK
+    /// baskasi adina baslatabilir); calisan Yonetici/Ekip lideri turunde
+    /// degerlendirme acamaz. Onceden istemci ReviewerEmployeeId'yi serbestce
+    /// verebiliyordu.
+    /// </summary>
     [HttpPost]
-    public async Task<IActionResult> Create([FromBody] CreateReviewRequest request)
+    public async Task<IActionResult> Create([FromBody] CreateReviewRequest request, CancellationToken ct)
     {
-        var cycle = await _db.Cycles.FirstOrDefaultAsync(c => c.Id == request.CycleId);
+        if (!Enum.IsDefined(request.Type))
+            return BadRequest(new { message = "Geçerli bir değerlendirme türü seçin" });
+        if (request.EmployeeId == Guid.Empty)
+            return BadRequest(new { message = "Değerlendirilecek çalışanı seçin" });
+
+        if (!User.IsHr())
+        {
+            var me = await _directory.FindMeAsync(ct);
+            if (me is null)
+                return StatusCode(StatusCodes.Status403Forbidden,
+                    new { message = "Değerlendirme için çalışan kaydına bağlı bir hesap gerekli" });
+            if (request.ReviewerEmployeeId != Guid.Empty && request.ReviewerEmployeeId != me.Id)
+                return StatusCode(StatusCodes.Status403Forbidden,
+                    new { message = "Değerlendirme yalnızca kendi adınıza başlatılabilir" });
+            request = request with { ReviewerEmployeeId = me.Id };
+
+            if (!User.IsManagerOrAbove() && request.Type is ReviewType.Manager or ReviewType.TeamLead)
+                return StatusCode(StatusCodes.Status403Forbidden,
+                    new { message = "Bu değerlendirme türü yalnızca yöneticilere açık" });
+        }
+        else if (request.ReviewerEmployeeId == Guid.Empty)
+        {
+            return BadRequest(new { message = "Değerlendiren kişi belirtilmeli" });
+        }
+
+        if (request.Type == ReviewType.Self && request.EmployeeId != request.ReviewerEmployeeId)
+            return BadRequest(new { message = "Öz değerlendirmede değerlendiren ve değerlendirilen aynı kişi olmalıdır" });
+        if (request.Type != ReviewType.Self && request.EmployeeId == request.ReviewerEmployeeId)
+            return BadRequest(new { message = "Kendinizi yalnızca öz değerlendirme türüyle değerlendirebilirsiniz" });
+
+        var cycle = await _db.Cycles.FirstOrDefaultAsync(c => c.Id == request.CycleId, ct);
         if (cycle is null) return BadRequest(new { message = "Değerlendirme dönemi bulunamadı" });
         if (cycle.Status == CycleStatus.Closed)
             return BadRequest(new { message = "Kapalı döneme değerlendirme eklenemez" });
@@ -90,12 +151,17 @@ public class ReviewsController : ControllerBase
     /// tekrar taslak kaydedebilir.
     /// </summary>
     [HttpPut("{id}/draft")]
-    public async Task<IActionResult> SaveDraft(Guid id, [FromBody] SubmitReviewRequest request)
+    public async Task<IActionResult> SaveDraft(Guid id, [FromBody] SubmitReviewRequest request, CancellationToken ct)
     {
-        var review = await _db.Reviews.Include(r => r.Scores).FirstOrDefaultAsync(r => r.Id == id);
+        var review = await _db.Reviews.Include(r => r.Scores).FirstOrDefaultAsync(r => r.Id == id, ct);
         if (review is null) return NotFound();
+        var denied = await DenyUnlessReviewerAsync(review, ct);
+        if (denied is not null) return denied;
         if (review.SubmittedAt is not null)
             return BadRequest(new { message = "Gönderilmiş değerlendirme taslak olarak düzenlenemez" });
+        var draftCycle = await _db.Cycles.FirstOrDefaultAsync(c => c.Id == review.CycleId, ct);
+        if (draftCycle?.Status == CycleStatus.Closed)
+            return BadRequest(new { message = "Bu dönem kapatılmış, değerlendirme düzenlenemez." });
 
         var metrics = await _db.Metrics.ToDictionaryAsync(m => m.Id);
 
@@ -135,10 +201,12 @@ public class ReviewsController : ControllerBase
     }
 
     [HttpPost("{id}/submit")]
-    public async Task<IActionResult> Submit(Guid id, [FromBody] SubmitReviewRequest request)
+    public async Task<IActionResult> Submit(Guid id, [FromBody] SubmitReviewRequest request, CancellationToken ct)
     {
-        var review = await _db.Reviews.Include(r => r.Scores).FirstOrDefaultAsync(r => r.Id == id);
+        var review = await _db.Reviews.Include(r => r.Scores).FirstOrDefaultAsync(r => r.Id == id, ct);
         if (review is null) return NotFound();
+        var denied = await DenyUnlessReviewerAsync(review, ct);
+        if (denied is not null) return denied;
         if (review.SubmittedAt is not null)
             return BadRequest(new { message = "Değerlendirme zaten gönderilmiş" });
 
@@ -239,8 +307,17 @@ public class ReviewsController : ControllerBase
     /// </summary>
     [HttpGet("score")]
     public async Task<IActionResult> GetScore(
-        [FromQuery] Guid employeeId, [FromQuery] Guid cycleId)
+        [FromQuery] Guid employeeId, [FromQuery] Guid cycleId, CancellationToken ct)
     {
+        // Calisan yalnizca kendi puanini gorur; baskasinin puani yonetici+'ya ozel.
+        if (!User.IsManagerOrAbove())
+        {
+            var me = await _directory.FindMeAsync(ct);
+            if (me is null || me.Id != employeeId)
+                return StatusCode(StatusCodes.Status403Forbidden,
+                    new { message = "Yalnızca kendi puanınızı görebilirsiniz" });
+        }
+
         var config = await ActiveConfigAsync();
         var metrics = await _db.Metrics.ToListAsync();
 
@@ -291,6 +368,19 @@ public class ReviewsController : ControllerBase
                 }),
             },
         });
+    }
+
+    /// <summary>
+    /// Taslak kaydetme ve gonderme yalnizca degerlendirmeyi yazan kisiye (ve IK'ya)
+    /// aciktir. Onceden herkes, baskasinin degerlendirmesini (orn. kendisi hakkindaki
+    /// yonetici degerlendirmesini) doldurup gonderebiliyordu. Varligi sizdirmamak
+    /// icin yetkisiz istek 404 alir.
+    /// </summary>
+    private async Task<IActionResult?> DenyUnlessReviewerAsync(Review review, CancellationToken ct)
+    {
+        if (User.IsHr()) return null;
+        var me = await _directory.FindMeAsync(ct);
+        return me is not null && me.Id == review.ReviewerEmployeeId ? null : NotFound();
     }
 
     private async Task<ScoringConfig> ActiveConfigAsync()

@@ -572,8 +572,8 @@ export const performanceHandlers = [
     return ok(
       getDb()
         .reviews.filter((r) => (!employeeId || r.employeeId === employeeId) && (!cycleId || r.cycleId === cycleId))
-        // Çalışan yalnızca kendi yazdıklarını ve kendisi hakkındakileri görür.
-        .filter((r) => isManager() || r.reviewerEmployeeId === mine || r.employeeId === mine)
+        // Çalışan yalnızca kendi yazdıklarını ve kendisi hakkında gönderilmiş olanları görür.
+        .filter((r) => isManager() || r.reviewerEmployeeId === mine || (r.employeeId === mine && r.submittedAt !== null))
         .sort((a, b) => (b.submittedAt ?? b.createdAt).localeCompare(a.submittedAt ?? a.createdAt))
         .map((r) => ({ ...reviewWire(r), scores: [] })),
     )
@@ -584,7 +584,8 @@ export const performanceHandlers = [
     const r = getDb().reviews.find((x) => x.id === params.id)
     if (!r) return notFound('Değerlendirme bulunamadı.')
     const mine = me()?.id
-    if (!isManager() && r.reviewerEmployeeId !== mine) return forbidden('Bu değerlendirmeyi görüntüleme yetkiniz yok.')
+    if (!isManager() && r.reviewerEmployeeId !== mine && !(r.employeeId === mine && r.submittedAt !== null))
+      return notFound('Değerlendirme bulunamadı.')
     return ok(reviewWire(r))
   }),
 
