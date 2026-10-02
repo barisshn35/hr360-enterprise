@@ -336,7 +336,8 @@ public class TeamHealthController : AppController
             if (daysSinceLeave > 120) flags.Add($"{daysSinceLeave} gündür izin kullanmadı");
             if (ot.Ot > 20 * 60) flags.Add($"Son 30 günde {ot.Ot / 60} saat fazla mesai");
             if (trend <= -10) flags.Add($"Performans puanı {Math.Abs(trend):0} puan düştü");
-            if (oo is null || (DateTime.UtcNow - oo.last).TotalDays > 45) flags.Add("45 gündür 1:1 yapılmadı");
+            if (oo is null) flags.Add("Henüz 1:1 yapılmadı");
+            else if ((DateTime.UtcNow - oo.last).TotalDays > 45) flags.Add($"{(int)(DateTime.UtcNow - oo.last).TotalDays} gündür 1:1 yapılmadı");
             if (oo?.mood is <= 2) flags.Add("Son 1:1'de ruh hâli düşük");
             var risk = flags.Count >= 3 ? "High" : flags.Count >= 1 ? "Medium" : "Low";
             return new

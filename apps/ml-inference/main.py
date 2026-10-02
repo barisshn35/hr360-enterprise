@@ -59,6 +59,13 @@ async def verify_token(authorization: str = Header(None)):
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     return resp.json()
 
+# Yapay zeka destekli IK araclari (CV ayristirma, ilan yazici + ayrimci ifade,
+# performans ozeti, aday-ilan eslesmesi, izin tahmini, egitim onerisi).
+# Hepsi yerel, aciklanabilir yontemler; tum uclar Keycloak jetonu ister.
+from ai_tools import router as ai_router
+app.include_router(ai_router, dependencies=[Depends(verify_token)])
+
+
 def _load_model_blocking():
     """MLflow'dan modeli senkron olarak yukler - asagida bir thread'de
     calistirilir, boylece (MLflow henuz ayakta degilse) askida kalsa bile
