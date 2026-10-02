@@ -1,0 +1,9 @@
+# YALNIZCA TEST: governance-service'i Slack/Teams/Microsoft giris uclarinin sahtesine
+# (tests/integration/chatmock.py) yonlendirir. Uretimde KULLANMAYIN.
+#   docker compose -f docker-compose.yml -f deploy/testing/chat-mock.yml up -d governance-service
+services:
+  governance-service:
+    environment:
+      SLACK_API_BASE: "http://chatmock:8000/api"
+      TEAMS_LOGIN_BASE: "http://chatmock:8000"
+      TEAMS_OPENID_METADATA: "http://chatmock:8000/botframework/openid"

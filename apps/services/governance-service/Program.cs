@@ -31,6 +31,10 @@ builder.Services.AddSingleton<GovernanceService.Infrastructure.Notifier>();
 builder.Services.AddHttpClient();
 builder.Services.AddSingleton<GovernanceService.Infrastructure.EventHub>();
 builder.Services.AddSingleton<GovernanceService.Infrastructure.Dispatcher>();
+builder.Services.AddSingleton<GovernanceService.Infrastructure.Chat.SlackApi>();
+builder.Services.AddSingleton<GovernanceService.Infrastructure.Chat.TeamsApi>();
+builder.Services.AddSingleton<GovernanceService.Infrastructure.Chat.BotFrameworkAuth>();
+builder.Services.AddSingleton<GovernanceService.Infrastructure.Chat.ChatService>();
 builder.Services.AddHostedService<GovernanceService.Infrastructure.EventConsumer>();
 builder.Services.AddHostedService<GovernanceService.Infrastructure.Housekeeping>();
 

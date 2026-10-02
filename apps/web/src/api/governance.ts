@@ -286,6 +286,54 @@ export async function streamEvents(onEvent: (e: RadarEvent) => void, signal: Abo
   }
 }
 
+/* ------------------------------------------------- sohbet uygulamaları (Slack / Teams botu) */
+export type ChatPlatform = 'Slack' | 'Teams'
+export interface ChatApp {
+  id: string
+  platform: ChatPlatform
+  name: string
+  isEnabled: boolean
+  notifyApprovals: boolean
+  notifyRequesters: boolean
+  slackTeamId: string | null
+  slackTeamName: string | null
+  teamsAppId: string | null
+  teamsAzureTenantId: string | null
+  hasSlackToken: boolean
+  hasSigningSecret: boolean
+  hasTeamsPassword: boolean
+  lastError: string | null
+  lastActivityAt: string | null
+  createdAt: string
+  linkedUsers: number
+  knownUsers: number
+  endpoints: { commands?: string; interactivity?: string; events?: string; messaging?: string }
+  publicOriginIsHttps: boolean
+}
+export interface ChatAppInput {
+  platform: ChatPlatform
+  name: string
+  isEnabled: boolean
+  notifyApprovals: boolean
+  notifyRequesters: boolean
+  slackBotToken?: string
+  slackSigningSecret?: string
+  teamsAppId?: string
+  teamsAppPassword?: string
+  teamsAzureTenantId?: string
+}
+export interface ChatIdentityRow {
+  id: string
+  externalUserId: string
+  email: string | null
+  displayName: string | null
+  employeeId: string | null
+  employeeName: string | null
+  canReceive: boolean
+  linkedAt: string
+  lastSeenAt: string | null
+}
+
 export const governanceApi = {
   plan: (signal?: AbortSignal) => apiFetch<PlanInfo>(`${BASE}/plan`, { signal }),
 
@@ -377,6 +425,15 @@ export const governanceApi = {
   updateIntegration: (id: string, body: { kind: string; name: string; webhookUrl: string; events: string[]; signingSecret?: string | null; isEnabled: boolean }) =>
     apiFetch<{ id: string }>(`${BASE}/integrations/${id}`, { method: 'PUT', body }),
   deleteIntegration: (id: string) => apiFetch<void>(`${BASE}/integrations/${id}`, { method: 'DELETE' }),
+  chatApps: (signal?: AbortSignal) => apiFetch<ChatApp[]>(`${BASE}/chat-apps`, { signal }),
+  createChatApp: (body: ChatAppInput) => apiFetch<ChatApp>(`${BASE}/chat-apps`, { method: 'POST', body }),
+  updateChatApp: (id: string, body: ChatAppInput) => apiFetch<ChatApp>(`${BASE}/chat-apps/${id}`, { method: 'PUT', body }),
+  deleteChatApp: (id: string) => apiFetch<void>(`${BASE}/chat-apps/${id}`, { method: 'DELETE' }),
+  testChatApp: (id: string) => apiFetch<{ sent: boolean }>(`${BASE}/chat-apps/${id}/test`, { method: 'POST' }),
+  chatIdentities: (id: string, signal?: AbortSignal) => apiFetch<ChatIdentityRow[]>(`${BASE}/chat-apps/${id}/identities`, { signal }),
+  slackManifest: (id?: string, name?: string) =>
+    apiFetch<unknown>(id ? `${BASE}/chat-apps/${id}/slack-manifest` : `${BASE}/chat-apps/slack-manifest${qs({ name })}`),
+  teamsPackage: (id: string) => downloadAuthed(`${BASE}/chat-apps/${id}/teams-package`, 'hr360-teams.zip'),
   testIntegration: (id: string) => apiFetch<{ lastStatus: number | null; ok: boolean }>(`${BASE}/integrations/${id}/test`, { method: 'POST' }),
 
   /* faturalama */

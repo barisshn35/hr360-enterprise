@@ -32,6 +32,9 @@ public class GovernanceDbContext : DbContext, ITenantAwareContext
     public DbSet<WebhookDelivery> WebhookDeliveries => Set<WebhookDelivery>();
     public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
     public DbSet<Integration> Integrations => Set<Integration>();
+    public DbSet<ChatApp> ChatApps => Set<ChatApp>();
+    public DbSet<ChatIdentity> ChatIdentities => Set<ChatIdentity>();
+    public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
     public DbSet<Invoice> Invoices => Set<Invoice>();
     public DbSet<CalendarFeed> CalendarFeeds => Set<CalendarFeed>();
     public DbSet<KbArticle> KbArticles => Set<KbArticle>();
@@ -52,6 +55,9 @@ public class GovernanceDbContext : DbContext, ITenantAwareContext
         b.Entity<WebhookDelivery>().ToTable("governance_webhook_deliveries").ConfigureTenantColumn();
         b.Entity<ApiKey>().ToTable("governance_api_keys").ConfigureTenantColumn();
         b.Entity<Integration>().ToTable("governance_integrations").ConfigureTenantColumn();
+        b.Entity<ChatApp>().ToTable("governance_chat_apps").ConfigureTenantColumn();
+        b.Entity<ChatIdentity>().ToTable("governance_chat_identities").ConfigureTenantColumn();
+        b.Entity<ChatMessage>().ToTable("governance_chat_messages").ConfigureTenantColumn();
         b.Entity<Invoice>().ToTable("governance_invoices").ConfigureTenantColumn();
         b.Entity<Invoice>().Property(x => x.UnitPrice).HasPrecision(12, 2);
         b.Entity<Invoice>().Property(x => x.Amount).HasPrecision(12, 2);

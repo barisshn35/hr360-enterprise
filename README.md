@@ -91,7 +91,8 @@ kayıt ekranından açılır. Demo şirketini `platform.admin` hesabıyla askıy
 | E-posta (SMTP) sunucusu | `scripts/smtp.sh set` (soru sorar), `scripts/smtp.sh test adres@sirket.com`, `scripts/smtp.sh status`, `scripts/smtp.sh mailpit` |
 | Keycloak giriş ekranı teması (HR360 görünümü + Türkçe) | Kurulum ve güncelleme (`./install.sh`) sırasında otomatik uygulanır. Elle: `scripts/keycloak-theme.sh`; Keycloak'ın kendi temasına dönmek için `scripts/keycloak-theme.sh default` |
 | Yeni sürüme güncelleme | `git pull && ./install.sh` ("sırları yeniden üretelim mi?" sorusuna **Hayır**; veritabanı göçleri otomatik uygulanır) |
-| İzleme (Prometheus + Grafana + Loki) | `scripts/monitoring.sh enable / status / password / disable / purge` |
+| İzleme (Prometheus + Grafana + Loki + Alertmanager) | `scripts/monitoring.sh enable / status / password / disable / purge` |
+| Alarm kanalları (e-posta, Slack, Teams) | `scripts/monitoring.sh alerts status / email … / slack … / teams … / test` |
 | Yedek al | `scripts/backup.sh [--keep 14] [--with-env] [--no-minio] [--out DİZİN]` |
 | Yedekten dön | `scripts/restore.sh backups/hr360-….tar.gz [--with-env] [--only-db] [--yes]` |
 
@@ -128,13 +129,46 @@ Loki + Promtail (tüm konteyner logları, 7 gün) ve Grafana. Grafana
 `<adres>/grafana/` altında açılır (kullanıcı `admin`, parola
 `scripts/monitoring.sh password`). "HR360 — Servis sağlığı" panosu hazır gelir:
 ayakta olan servisler, istek hızı, 5xx oranı, p95 süre, en yavaş uçlar,
-bellek/CPU, PostgreSQL bağlantı ve boyutu, hata logları ve log araması. Temel
-alarmlar (`deploy/monitoring/alerts.yml`) Prometheus'ta ve panoda görünür;
-e-posta/Slack'e iletmek için Alertmanager eklenmedi. Yığın yaklaşık 1,4 GB bellek
-sınırı ekler. Prometheus yalnızca sunucunun kendisinden (`127.0.0.1:9090`)
-erişilebilir.
+bellek/CPU, PostgreSQL bağlantı ve boyutu, hata logları ve log araması.
+
+Alarm kuralları (`deploy/monitoring/alerts.yml`: servis erişilemiyor, 5xx oranı,
+yavaş yanıt, bellek, disk, PostgreSQL bağlantı sayısı) Alertmanager üzerinden
+e-posta, Slack ve Microsoft Teams'e gider; düzelince "düzeldi" mesajı gelir:
+
+```bash
+scripts/monitoring.sh alerts email ops@sirket.com,it@sirket.com   # SMTP_* ile (Microsoft 365: smtp.office365.com:587)
+scripts/monitoring.sh alerts slack https://hooks.slack.com/services/…
+scripts/monitoring.sh alerts teams https://….logic.azure.com/workflows/…
+scripts/monitoring.sh alerts test     # tüm kanallara deneme alarmı
+```
+
+Teams adresi kanalda **Workflows › "Post to a channel when a webhook request is
+received"** şablonuyla alınır (eski "Incoming Webhook" bağlayıcıları Microsoft
+tarafından kapatıldı). Alarmlar Grafana'da da (Alerting, "Alertmanager" veri
+kaynağı) görülür ve susturulabilir. Yığın yaklaşık 1,5 GB bellek sınırı ekler.
+Prometheus (`127.0.0.1:9090`) ve Alertmanager (`127.0.0.1:9093`) yalnızca
+sunucunun kendisinden erişilebilir.
 
 ## Modüller
+
+### Slack ve Microsoft Teams'ten onay
+
+Onaycıya izin, masraf ve diğer talepler **Onayla / Reddet** düğmeli kişisel mesaj
+olarak gider; karar verilince mesaj güncellenir, talep sahibine sonuç bildirilir.
+Komutlar (Slack'te `/hr360 …` ya da bota DM, Teams'te bota mesaj): `onaylarım`,
+`bakiye`, `izindekiler`, `kimnerede`, `bekleyen`, `ben`.
+
+- Kişiler **e-posta adresiyle** eşleşir (sohbet hesabı ↔ çalışan kaydı).
+- Karar workflow-service'te web arayüzüyle **aynı kurallarla** yetkilendirilir:
+  yalnızca adımın onaycısı ya da vekili karar verebilir, kimse kendi talebini
+  onaylayamaz. Servisler arası çağrı `INTERNAL_SERVICE_TOKEN` ile korunur, gateway
+  `/api/*/internal/` yollarını dışarıya kapatır.
+- Slack istekleri imzayla (HMAC, 5 dk penceresi), Teams istekleri Bot Framework
+  JWT'siyle (imza, yayıncı, hedef kitle, `serviceUrl` ve Microsoft 365 kiracısı)
+  doğrulanır. Bot jetonları ve gizli anahtarlar veritabanında AES-256-GCM ile
+  şifreli tutulur.
+- Gerçek Slack/Teams hesabı olmadan uçtan uca test: `tests/integration/chatmock.py`
+  ve `tests/integration/test_chat.py`.
 
 Ana İK süreçleri (çalışan, organizasyon, izin, onay akışı, vardiya/puantaj,
 performans, eğitim, ücret, masraf, işe alım, işe giriş, bildirimler) dışında:
@@ -172,7 +206,9 @@ sağlayıcısı yoktur.
 
 | Özellik | Durum |
 |---|---|
-| Slack/Teams | Gelen webhook URL'si Entegrasyonlar ekranından girilir. Slack slash komutu için Slack'te bir uygulama açıp imzalama anahtarını girmeniz gerekir. Etkileşimli butonlar yok. |
+| Slack uygulaması | Entegrasyonlar › Sohbet uygulamaları. HR360'ın verdiği manifestle Slack'te uygulama açılır; bot jetonu ve imzalama anahtarı girilir. Sunucunun **internetten HTTPS ile** erişilebilmesi gerekir. |
+| Microsoft Teams botu | Azure'da tek kiracılı bir **Azure Bot** (App ID, gizli anahtar, kiracı kimliği) açılır; HR360'ın ürettiği Teams paketi yönetim merkezinden yüklenir. Teams, bota kişinin ilk mesajından sonra yazmaya izin verir; kullanıcı uygulamayı bir kez ekler. HTTPS gerekir. |
+| Teams/Slack kanal bildirimi | Gelen webhook adresi (Teams'te Workflows şablonu) Entegrasyonlar › Kanal bildirimleri'nden girilir. |
 | SSO | Google veya Microsoft (Azure AD) OAuth istemci kimliği ve sırrı Güvenlik ekranından girilir; e-posta alan adı organizasyona bağlanır. |
 | E-posta | Bildirimler için SMTP (`scripts/smtp.sh set`). |
 
@@ -259,7 +295,7 @@ deploy/
   postgres/              Ek veritabanlarının (keycloak, mlflow) init script'i
   keycloak/              Realm şablonu (sırlar kurulumda dolduruluyor) ve themes/hr360 giriş ekranı teması
   letsencrypt/           Let's Encrypt sertifikaları (git'e girmez)
-  monitoring/            Prometheus, alarm kuralları, Loki/Promtail ve Grafana (pano + veri kaynakları)
+  monitoring/            Prometheus, alarm kuralları, Alertmanager, Loki/Promtail ve Grafana (pano + veri kaynakları)
 scripts/
   tls.sh                 HTTPS aç/kapat (Let's Encrypt, kendi sertifika, kendinden imzalı)
   keycloak-admin-access.sh  Keycloak yönetim paneli erişimi (açık / IP kısıtı / ayrı port)

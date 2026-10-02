@@ -486,9 +486,11 @@ public class IntegrationsController : AppController
     /// <summary>Slack slash komutu. Slack uygulamasında Request URL olarak bu adres verilir.</summary>
     [HttpPost("{id:guid}/slack-command")]
     [AllowAnonymous]
+    [BufferBody]
     public async Task<IActionResult> SlackCommand(Guid id, CancellationToken ct)
     {
-        Request.EnableBuffering();
+        // Gövde model bağlamadan önce tamponlandı (BufferBody); imza ham gövdeyle doğrulanır.
+        Request.Body.Position = 0;
         string raw;
         using (var reader = new StreamReader(Request.Body, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, bufferSize: 4096, leaveOpen: true))
             raw = await reader.ReadToEndAsync(ct);

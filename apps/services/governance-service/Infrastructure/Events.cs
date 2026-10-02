@@ -229,6 +229,10 @@ public sealed class Dispatcher
         foreach (var integ in integrations.Where(i => i.Events.Contains(type) || i.Events.Contains("*")))
             integ.LastStatus = await PostChatAsync(integ.Kind, integ.WebhookUrl, summary, type, ct);
 
+        // ------------------------------------------------------------ Slack / Teams uygulamaları (kişiye özel, düğmeli)
+        try { await sp.GetRequiredService<Chat.ChatService>().OnEventAsync(db, tenant, type, payload, ct); }
+        catch (Exception ex) when (ex is not OperationCanceledException) { _log.LogWarning(ex, "Sohbet uygulaması bildirimi başarısız ({Type})", type); }
+
         await db.SaveChangesAsync(ct);
     }
 
@@ -339,12 +343,10 @@ public sealed class Dispatcher
 
     public async Task<int?> PostChatAsync(string kind, string url, string text, string type, CancellationToken ct)
     {
+        // Teams: eski Office 365 bağlayıcıları (MessageCard) kapatıldı; Workflows
+        // (Power Automate) webhook'u Adaptive Card ekli "message" bekler.
         object body = kind == "Teams"
-            ? new Dictionary<string, object>
-            {
-                ["@type"] = "MessageCard", ["@context"] = "http://schema.org/extensions",
-                ["summary"] = text, ["themeColor"] = "10B981", ["title"] = "HR360", ["text"] = $"{text}\n\n_{type}_",
-            }
+            ? Chat.ChatFormat.TeamsWebhookMessage(text, type)
             : new { text = $"*HR360* — {text}", blocks = new object[]
             {
                 new { type = "section", text = new { type = "mrkdwn", text = $"*HR360* · {text}" } },

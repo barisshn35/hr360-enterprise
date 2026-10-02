@@ -403,6 +403,14 @@ if [ -f .env ]; then
       info "PUBLIC_ORIGIN=${PUBLIC_ORIGIN} .env'e eklendi (Keycloak genel adresi)."
     fi
 
+    # Servisler arasi ic cagri anahtari (Slack/Teams'ten onay kararlari icin
+    # governance -> workflow). Eski .env'lerde yok; uretilip eklenir.
+    if [ -z "${INTERNAL_SERVICE_TOKEN:-}" ]; then
+      INTERNAL_SERVICE_TOKEN="$(random_secret)$(random_secret)"
+      echo "INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN}" >> .env
+      info "INTERNAL_SERVICE_TOKEN .env'e eklendi."
+    fi
+
     # NOT: Onceden bu yol yalnizca "docker compose up --build" calistiriyordu -
     # scripts/sql altindaki goc betikleri hic uygulanmiyordu (yeni kolon eksik
     # kalinca ilgili servis tum sorgularda 500 veriyordu).
@@ -583,6 +591,7 @@ ask_secret PLATFORM_ADMIN_PASSWORD    "Platform yoneticisi (platform.admin) paro
 
 KEYCLOAK_ADMIN_USER=admin
 MINIO_ROOT_USER=hr360minio
+INTERNAL_SERVICE_TOKEN="$(random_secret)$(random_secret)"
 
 # --- 3) .env yaz ----------------------------------------------------------
 cat > .env <<EOF
@@ -600,6 +609,9 @@ MINIO_ROOT_USER=${MINIO_ROOT_USER}
 MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
 
 ML_KEYCLOAK_CLIENT_SECRET=${ML_KEYCLOAK_CLIENT_SECRET}
+
+# Servisler arasi ic cagri anahtari (yalnizca konteynerler arasi; gateway disariya acmaz).
+INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN}
 
 # NOT: DEMO_ADMIN_PASSWORD daha once bu dosyaya hic yazilmiyordu (script
 # "Tum sirlar .env dosyasinda" diyordu ama bu degisken sadece Keycloak

@@ -1,0 +1,178 @@
+"""Slack Web API, Microsoft kimlik (token), Bot Framework OpenID/JWKS ve Teams Bot
+Connector'ın sahtesi. Entegrasyon testleri gerçek Slack/Teams hesabı olmadan
+uçtan uca çalışsın diye.
+
+Çalıştırma (hr360-net ağında, "chatmock" adıyla):
+    docker run -d --name chatmock --network hr360-net -v $PWD/tests/integration:/t \
+      python:3.11-slim sh -c "pip install -q cryptography pyjwt && python -u /t/chatmock.py"
+
+Test yardımcı uçları:
+    GET  /_log            alınan tüm çağrılar (JSON)
+    POST /_reset          kaydı temizler
+    GET  /_jwt?aud=..&serviceurl=..&expired=0&wrongkey=0   Bot Framework jetonu üretir
+Slack kullanıcıları e-postaya göre: ad.soyad@... -> U_AD (büyük harf).
+"""
+
+import base64
+import json
+import threading
+import time
+import uuid
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, unquote, urlparse
+
+import jwt
+from cryptography.hazmat.primitives.asymmetric import rsa
+
+KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+OTHER_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+KID = "mock-key-1"
+LOG = []
+LOCK = threading.Lock()
+EMAILS = {}  # slack user id -> email
+SEQ = [0]
+
+
+def b64u(n: int) -> str:
+    b = n.to_bytes((n.bit_length() + 7) // 8, "big")
+    return base64.urlsafe_b64encode(b).rstrip(b"=").decode()
+
+
+def jwks():
+    pub = KEY.public_key().public_numbers()
+    return {"keys": [{"kty": "RSA", "use": "sig", "kid": KID, "alg": "RS256", "n": b64u(pub.n), "e": b64u(pub.e),
+                      "endorsements": ["msteams"]}]}
+
+
+def slack_user_for(email: str) -> str:
+    uid = "U_" + email.split("@")[0].split(".")[0].upper()
+    EMAILS[uid] = email
+    return uid
+
+
+class H(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+
+    def log_message(self, *a):  # sessiz
+        pass
+
+    def _send(self, code, obj=None):
+        body = b"" if obj is None else json.dumps(obj).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _body(self):
+        # .NET JsonContent / PostAsJsonAsync gövdeyi "chunked" gönderir.
+        if "chunked" in (self.headers.get("Transfer-Encoding") or "").lower():
+            out = b""
+            while True:
+                size = int(self.rfile.readline().strip().split(b";")[0], 16)
+                if size == 0:
+                    self.rfile.readline()
+                    break
+                out += self.rfile.read(size)
+                self.rfile.readline()
+            return out.decode()
+        n = int(self.headers.get("Content-Length") or 0)
+        return self.rfile.read(n).decode() if n else ""
+
+    def _record(self, body):
+        with LOCK:
+            LOG.append({"method": self.command, "path": unquote(self.path), "auth": self.headers.get("Authorization"),
+                        "body": body, "at": time.time()})
+
+    # ------------------------------------------------------------------ GET
+    def do_GET(self):
+        u = urlparse(self.path)
+        q = {k: v[0] for k, v in parse_qs(u.query).items()}
+        if u.path == "/_log":
+            with LOCK:
+                return self._send(200, LOG)
+        if u.path == "/botframework/openid":
+            return self._send(200, {"issuer": "https://api.botframework.com",
+                                    "jwks_uri": "http://chatmock:8000/botframework/jwks",
+                                    "id_token_signing_alg_values_supported": ["RS256"]})
+        if u.path == "/botframework/jwks":
+            return self._send(200, jwks())
+        if u.path == "/_jwt":
+            now = int(time.time())
+            claims = {"iss": "https://api.botframework.com", "aud": q["aud"], "serviceurl": q.get("serviceurl"),
+                      "nbf": now - 10, "iat": now - 10, "exp": now - 60 if q.get("expired") == "1" else now + 600}
+            key = OTHER_KEY if q.get("wrongkey") == "1" else KEY
+            tok = jwt.encode(claims, key, algorithm="RS256", headers={"kid": KID})
+            return self._send(200, {"token": tok})
+        if "/v3/conversations/" in u.path and "/members/" in u.path:
+            self._record("")
+            uid = unquote(u.path.rsplit("/", 1)[1])
+            # Teams kullanıcı kimliği "29:<e-posta yerel kısmı>" biçiminde verilir (testte).
+            local = uid.split(":", 1)[-1]
+            return self._send(200, {"id": uid, "name": local, "email": f"{local}@demo.hr360",
+                                    "userPrincipalName": f"{local}@demo.hr360", "aadObjectId": str(uuid.uuid5(uuid.NAMESPACE_DNS, local))})
+        self._send(404, {"error": "not_found"})
+
+    # ------------------------------------------------------------------ POST
+    def do_POST(self):
+        body = self._body()
+        self._record(body)
+        u = urlparse(self.path)
+        if u.path == "/_reset":
+            with LOCK:
+                LOG.clear()
+            return self._send(200, {"ok": True})
+        if u.path.endswith("/oauth2/v2.0/token"):
+            f = {k: v[0] for k, v in parse_qs(body).items()}
+            if f.get("client_secret") == "wrong":
+                return self._send(401, {"error": "invalid_client", "error_description": "AADSTS7000215: Invalid client secret provided."})
+            return self._send(200, {"token_type": "Bearer", "expires_in": 3599, "access_token": "teams-bot-token"})
+        if u.path.startswith("/api/"):
+            return self._slack(u.path[5:], {k: v[0] for k, v in parse_qs(body).items()})
+        if u.path.startswith("/slack-response/"):
+            return self._send(200, {"ok": True})
+        if "/v3/conversations/" in u.path and u.path.endswith("/activities"):
+            SEQ[0] += 1
+            return self._send(201, {"id": f"act-{SEQ[0]}"})
+        if "/v3/conversations/" in u.path and "/activities/" in u.path:
+            return self._send(200, {"id": u.path.rsplit("/", 1)[1]})
+        self._send(404, {"error": "not_found"})
+
+    def do_PUT(self):
+        body = self._body()
+        self._record(body)
+        if "/v3/conversations/" in self.path:
+            return self._send(200, {"id": self.path.rsplit("/", 1)[1]})
+        self._send(404, {})
+
+    def _slack(self, method, f):
+        auth = self.headers.get("Authorization", "")
+        if auth != "Bearer xoxb-test-token":
+            return self._send(200, {"ok": False, "error": "invalid_auth"})
+        if method == "auth.test":
+            return self._send(200, {"ok": True, "team_id": "T_DEMO", "team": "Demo Workspace", "user_id": "U_BOT"})
+        if method == "users.lookupByEmail":
+            email = f.get("email", "")
+            if email.endswith("@demo.hr360"):
+                return self._send(200, {"ok": True, "user": {"id": slack_user_for(email)}})
+            return self._send(200, {"ok": False, "error": "users_not_found"})
+        if method == "users.info":
+            uid = f["user"]
+            email = EMAILS.get(uid) or f"{uid[2:].lower()}.x@demo.hr360"
+            return self._send(200, {"ok": True, "user": {"id": uid, "name": uid.lower(), "profile": {"email": email, "real_name": uid}}})
+        if method == "conversations.open":
+            return self._send(200, {"ok": True, "channel": {"id": "D_" + f["users"]}})
+        if method == "chat.postMessage":
+            SEQ[0] += 1
+            return self._send(200, {"ok": True, "channel": f["channel"], "ts": f"1700000000.{SEQ[0]:06d}"})
+        if method == "chat.update":
+            return self._send(200, {"ok": True, "channel": f["channel"], "ts": f["ts"]})
+        self._send(200, {"ok": False, "error": "unknown_method"})
+
+
+if __name__ == "__main__":
+    # Bilinen test kullanıcıları önceden kaydedilir (users.info e-postası için).
+    for e in ("mehmet.demir@demo.hr360", "ayse.yilmaz@demo.hr360", "zeynep.kaya@demo.hr360"):
+        slack_user_for(e)
+    print("chatmock :8000", flush=True)
+    ThreadingHTTPServer(("", 8000), H).serve_forever()

@@ -197,9 +197,94 @@ public class WorkflowsController : ControllerBase
             && myEmployeeId.Value != step.DelegatedToEmployeeId)
             return Forbid();
 
+        var error = await ApplyDecisionAsync(wf, step, request.Decision, request.Comment, myEmployeeId.Value, ct);
+        if (error is not null) return BadRequest(error);
+        await _db.SaveChangesAsync();
+        return Ok(wf);
+    }
+
+    /// <summary>
+    /// Servisler arasi karar ucu: Slack/Teams'teki "Onayla/Reddet" dugmeleri
+    /// governance-service uzerinden buraya gelir. Kullanici jetonu yoktur; cagri
+    /// INTERNAL_SERVICE_TOKEN ile dogrulanir ve karari veren kisi (sohbet
+    /// hesabi e-postayla eslesmis calisan) govdede gelir.
+    ///
+    /// GUVENLIK: Web ucundaki kurallarin aynisi uygulanir, istisnasiz:
+    /// karar veren adimin onaycisi ya da vekili olmali, kendi talebini karara
+    /// baglayamaz. IK/yonetici "idari mudahale" istisnasi burada YOKTUR (sohbet
+    /// hesabinin rolleri bilinmez). Gateway /api/*/internal/ yollarini disariya
+    /// kapatir; anahtar tanimli degilse uc tamamen kapalidir.
+    /// </summary>
+    [HttpPost("/api/internal/workflows/{id}/steps/{stepId}/decide")]
+    [AllowAnonymous]
+    public async Task<IActionResult> DecideInternal(Guid id, Guid stepId, [FromBody] InternalDecideRequest request,
+        [FromServices] Tenancy.TenantContext tenant, CancellationToken ct)
+    {
+        var expected = Environment.GetEnvironmentVariable("INTERNAL_SERVICE_TOKEN");
+        var given = Request.Headers["X-Internal-Token"].FirstOrDefault() ?? "";
+        if (string.IsNullOrEmpty(expected)
+            || !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+                System.Text.Encoding.UTF8.GetBytes(expected), System.Text.Encoding.UTF8.GetBytes(given)))
+            return NotFound();
+        if (string.IsNullOrWhiteSpace(request.TenantSlug)) return BadRequest(new { message = "Kiracı belirtilmedi" });
+        if (request.Decision is not (StepDecision.Approved or StepDecision.Rejected))
+            return BadRequest(new { message = "Karar yalnızca Approved ya da Rejected olabilir" });
+
+        tenant.TenantSlug = request.TenantSlug;
+        tenant.IsPlatformAdmin = false;
+
+        var wf = await _db.WorkflowRequests.Include(w => w.Steps).FirstOrDefaultAsync(w => w.Id == id, ct);
+        if (wf is null) return NotFound(new { message = "Talep bulunamadı", code = "not_found" });
+        var step = wf.Steps.FirstOrDefault(s => s.Id == stepId);
+        if (step is null) return NotFound(new { message = "Onay adımı bulunamadı", code = "not_found" });
+        if (wf.Status != WorkflowStatus.Pending || step.Decision != StepDecision.Pending)
+            return Conflict(new { message = "Bu talep zaten karara bağlanmış.", code = "already_decided", status = wf.Status.ToString() });
+        if (request.ActorEmployeeId == wf.RequesterEmployeeId)
+            return StatusCode(403, new { message = "Kendi talebinizi onaylayamazsınız.", code = "forbidden" });
+        if (request.ActorEmployeeId != step.ApproverEmployeeId && request.ActorEmployeeId != step.DelegatedToEmployeeId)
+            return StatusCode(403, new { message = "Bu adımın onaycısı siz değilsiniz.", code = "forbidden" });
+
+        var comment = string.IsNullOrWhiteSpace(request.Comment) ? null : request.Comment.Trim();
+        if (request.Channel is { Length: > 0 } ch) comment = comment is null ? $"({ch} üzerinden)" : $"{comment} ({ch} üzerinden)";
+        var error = await ApplyDecisionAsync(wf, step, request.Decision, comment, request.ActorEmployeeId, ct);
+        if (error is not null) return Conflict(new { message = "Önceki onay adımları henüz tamamlanmadı.", code = "previous_pending" });
+        await _db.SaveChangesAsync(ct);
+        return Ok(new { wf.Id, status = wf.Status.ToString(), wf.Subject, stepOrder = step.Order });
+    }
+
+    /// <summary>Yetki kontrolleri yapildiktan sonra karari uygular (kaydetmez). Hata metni ya da null.</summary>
+    /// <summary>
+    /// Calisan adi/e-postasi. Web isteginde kullanicinin jetonuyla employee-service'e
+    /// sorulur; servisler arasi (jetonsuz) cagride ayni veritabanindaki tablodan,
+    /// kiraci filtresiyle okunur.
+    /// </summary>
+    private async Task<EmployeeDirectoryClient.EmployeeDto?> LookupEmployeeAsync(Guid id, CancellationToken ct)
+    {
+        if (!string.IsNullOrEmpty(Request.Headers.Authorization.ToString()))
+            return await _employees.GetByIdAsync(id, ct);
+        var tenant = _db.CurrentTenantSlug ?? "";
+        var row = await _db.Database
+            .SqlQuery<EmployeeRow>($"SELECT \"Id\", \"FirstName\", \"LastName\", \"Email\" FROM employee_employees WHERE \"Id\" = {id} AND \"TenantSlug\" = {tenant}")
+            .FirstOrDefaultAsync(ct);
+        return row is null ? null : new EmployeeDirectoryClient.EmployeeDto(row.Id, row.FirstName, row.LastName, row.Email);
+    }
+
+    private sealed class EmployeeRow
+    {
+        public Guid Id { get; set; }
+        public string FirstName { get; set; } = "";
+        public string LastName { get; set; } = "";
+        public string Email { get; set; } = "";
+    }
+
+    private async Task<string?> ApplyDecisionAsync(WorkflowRequest wf, ApprovalStep step, StepDecision decision, string? comment,
+        Guid actorEmployeeId, CancellationToken ct)
+    {
+        var request = new DecideRequest(decision, comment);
+        var myEmployeeId = (Guid?)actorEmployeeId;
         // Sirali onay: onceki adimlar tamamlanmadan bu adim karar veremez
         var previousPending = wf.Steps.Any(s => s.Order < step.Order && s.Decision == StepDecision.Pending);
-        if (previousPending) return BadRequest("Previous steps are still pending");
+        if (previousPending) return "Previous steps are still pending";
 
         step.Decision = request.Decision;
         step.Comment = request.Comment;
@@ -228,8 +313,8 @@ public class WorkflowsController : ControllerBase
                     .FirstOrDefault();
                 if (nextStep is not null)
                 {
-                    var approver = await _employees.GetByIdAsync(nextStep.ApproverEmployeeId, ct);
-                    var requester = await _employees.GetByIdAsync(wf.RequesterEmployeeId, ct);
+                    var approver = await LookupEmployeeAsync(nextStep.ApproverEmployeeId, ct);
+                    var requester = await LookupEmployeeAsync(wf.RequesterEmployeeId, ct);
                     if (approver is not null)
                     {
                         _db.OutboxMessages.Add(new OutboxMessage
@@ -270,8 +355,7 @@ public class WorkflowsController : ControllerBase
             });
         }
 
-        await _db.SaveChangesAsync();
-        return Ok(wf);
+        return null;
     }
 
     /// <summary>
@@ -355,4 +439,5 @@ public record CreateWorkflowRequest(
     int? SlaHours);
 
 public record DecideRequest(StepDecision Decision, string? Comment);
+public record InternalDecideRequest(string TenantSlug, Guid ActorEmployeeId, StepDecision Decision, string? Comment, string? Channel);
 public record DelegateRequest(Guid DelegateToEmployeeId, string? Comment);

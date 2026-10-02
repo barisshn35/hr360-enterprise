@@ -15,6 +15,7 @@ import { useToast } from '@/components/ui/Toast'
 import { governanceApi, type Webhook } from '@/api/governance'
 import { formatDateTime, formatRelativeToNow } from '@/lib/format'
 import { PlanGate, useAction } from '@/features/shared/kit'
+import { ChatAppsPanel } from './ChatAppsPanel'
 
 const EVENTS = ['*', 'employee.hired', 'employee.assigned', 'employee.status-changed', 'workflow.submitted', 'workflow.approved', 'workflow.rejected', 'leave.approved']
 
@@ -164,7 +165,7 @@ function ChatIntegrations() {
   const del = useAction((id: string) => governanceApi.deleteIntegration(id), { success: 'Kaldırıldı', invalidate: [['integrations']] })
   return (
     <div className="space-y-5">
-      <InfoNote>Slack: “Incoming Webhooks” uygulamasından kanal adresi alın. Teams: kanalda “Gelen Web Kancası” bağlayıcısı ekleyin. Slack’te <code className="font-mono">/hr360</code> komutu için uygulamanın Slash Command “Request URL”ine aşağıdaki komut adresini, “Signing Secret”i de buraya girin.</InfoNote>
+      <InfoNote>Bir kanala olay duyurusu (ör. “yeni çalışan katıldı”) göndermek için. Slack: “Incoming Webhooks” ile kanal adresi alın. Teams: kanalda <b>Workflows › “Post to a channel when a webhook request is received”</b> şablonuyla akış oluşturup adresini girin (eski “Gelen Web Kancası” bağlayıcıları Microsoft tarafından kapatıldı). Kişiye özel bildirim ve onay düğmeleri için “Sohbet uygulamaları” sekmesini kullanın.</InfoNote>
       <Button onClick={() => setForm({ kind: 'Slack', name: '#ik-duyurular', webhookUrl: 'https://hooks.slack.com/services/…', events: ['employee.hired', 'leave.approved'], signingSecret: '' })}><Plus className="size-4" /> Kanal bağla</Button>
       {list.isPending ? <RowsSkeleton /> : (list.data ?? []).length === 0 ? <EmptyState icon={MessageSquare} title="Bağlı kanal yok" /> : (
         <div className="grid gap-4 lg:grid-cols-2">
@@ -194,13 +195,14 @@ function ChatIntegrations() {
 }
 
 export function IntegrationsPage() {
-  const [tab, setTab] = useTabParam<'webhook' | 'api' | 'sohbet'>('sekme', 'webhook')
+  const [tab, setTab] = useTabParam<'webhook' | 'api' | 'uygulama' | 'sohbet'>('sekme', 'uygulama')
   return (
     <PlanGate feature="webhooks">
-      <PageHeader title="Entegrasyonlar" description="İmzalı webhook'lar, açık API ve API anahtarları, Slack/Microsoft Teams bildirimleri ve /hr360 komutu." />
-      <div className="mb-5"><Tabs label="Entegrasyon" value={tab} onChange={setTab} tabs={[{ key: 'webhook', label: 'Webhook' }, { key: 'api', label: 'API anahtarları' }, { key: 'sohbet', label: 'Slack / Teams' }]} /></div>
+      <PageHeader title="Entegrasyonlar" description="Slack ve Microsoft Teams'ten onay, kanal bildirimleri, imzalı webhook'lar, açık API ve API anahtarları." />
+      <div className="mb-5"><Tabs label="Entegrasyon" value={tab} onChange={setTab} tabs={[{ key: 'uygulama', label: 'Sohbet uygulamaları' }, { key: 'sohbet', label: 'Kanal bildirimleri' }, { key: 'webhook', label: 'Webhook' }, { key: 'api', label: 'API anahtarları' }]} /></div>
       {tab === 'webhook' && <Webhooks />}
       {tab === 'api' && <ApiKeys />}
+      {tab === 'uygulama' && <ChatAppsPanel />}
       {tab === 'sohbet' && <ChatIntegrations />}
     </PlanGate>
   )

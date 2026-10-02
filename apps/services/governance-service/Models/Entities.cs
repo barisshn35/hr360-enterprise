@@ -230,3 +230,74 @@ public class KbArticle : ITenantOwned
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }
+
+/* ============================================================ Sohbet uygulamaları (Slack / Teams botu) */
+
+/// <summary>
+/// Kiracının Slack uygulaması ya da Microsoft Teams botu. Gelen webhook'tan
+/// (governance_integrations) farkı: kişiye özel mesaj, onay düğmeleri ve komutlar.
+/// Sırlar SecretBox ile şifreli tutulur.
+/// </summary>
+public class ChatApp : ITenantOwned
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string TenantSlug { get; set; } = "";
+    /// <summary>Slack | Teams</summary>
+    public string Platform { get; set; } = "Slack";
+    public string Name { get; set; } = "";
+    public bool IsEnabled { get; set; } = true;
+    public bool NotifyApprovals { get; set; } = true;
+    public bool NotifyRequesters { get; set; } = true;
+    // Slack
+    public string? SlackTeamId { get; set; }
+    public string? SlackTeamName { get; set; }
+    public string? SlackBotUserId { get; set; }
+    public string? SlackBotTokenEnc { get; set; }
+    public string? SlackSigningSecretEnc { get; set; }
+    // Teams (Azure Bot, tek kiracılı)
+    public string? TeamsAppId { get; set; }
+    public string? TeamsAppPasswordEnc { get; set; }
+    public string? TeamsAzureTenantId { get; set; }
+    public string? LastError { get; set; }
+    public DateTime? LastActivityAt { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>Sohbet hesabı ↔ çalışan eşleşmesi (e-posta ile kurulur).</summary>
+public class ChatIdentity : ITenantOwned
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string TenantSlug { get; set; } = "";
+    public Guid AppId { get; set; }
+    public string Platform { get; set; } = "Slack";
+    public string ExternalUserId { get; set; } = "";
+    public Guid? EmployeeId { get; set; }
+    public string? Email { get; set; }
+    public string? DisplayName { get; set; }
+    /// <summary>Slack: DM kanal kimliği. Teams: 1:1 konuşma kimliği.</summary>
+    public string? ConversationId { get; set; }
+    /// <summary>Teams: Bot Connector adresi (konuşmaya özel).</summary>
+    public string? ServiceUrl { get; set; }
+    public DateTime LinkedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? LastSeenAt { get; set; }
+}
+
+/// <summary>Gönderilen onay mesajı; karar verilince mesaj güncellenir.</summary>
+public class ChatMessage : ITenantOwned
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string TenantSlug { get; set; } = "";
+    public Guid AppId { get; set; }
+    public string Platform { get; set; } = "Slack";
+    public Guid WorkflowRequestId { get; set; }
+    public Guid StepId { get; set; }
+    public Guid RecipientEmployeeId { get; set; }
+    public string ConversationId { get; set; } = "";
+    public string MessageId { get; set; } = "";
+    public string? ServiceUrl { get; set; }
+    /// <summary>Open | Decided | Closed</summary>
+    public string State { get; set; } = "Open";
+    public string? Subject { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? UpdatedAt { get; set; }
+}

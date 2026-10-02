@@ -29,6 +29,7 @@ volumes:
   prometheus-data:
   grafana-data:
   loki-data:
+  alertmanager-data:
 
 services:
   # --------------------------------------------------------------------- #
@@ -237,6 +238,7 @@ services:
     <<: *dotnet-service
     build: ./apps/services/workflow-service
     environment:
+      INTERNAL_SERVICE_TOKEN: "${INTERNAL_SERVICE_TOKEN:-}"
       WORKFLOW_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD}"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
       KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
@@ -346,6 +348,7 @@ services:
     <<: *dotnet-service
     build: ./apps/services/governance-service
     environment:
+      INTERNAL_SERVICE_TOKEN: "${INTERNAL_SERVICE_TOKEN:-}"
       GOVERNANCE_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD}"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
       KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
@@ -353,8 +356,11 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
       EMPLOYEE_SERVICE_URL: "http://employee-service:8080"
       ONBOARDING_SERVICE_URL: "http://onboarding-service:8080"
-      # Odeme saglayicisi (iyzico/stripe) baglandiginda doldurulur; bos ise
-      # faturalar havale/EFT ile odenip platform yoneticisince isaretlenir.
+      WORKFLOW_SERVICE_URL: "http://workflow-service:8080"
+      # Slack/Teams'e verilecek geri cagri adresleri ve mesajlardaki baglantilar icin.
+      PUBLIC_ORIGIN: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}"
+      # Entegrasyon sirlari (bot jetonlari, OAuth) bu anahtarla sifrelenir.
+      TENANT_SECRET_KEY: "${TENANT_SECRET_KEY}"
       # Acik kaynak varsayilani: plan kisiti ve faturalandirma kapali.
       PLAN_ENFORCEMENT: "${PLAN_ENFORCEMENT:-false}"
       BILLING_ENABLED: "${BILLING_ENABLED:-false}"
@@ -529,6 +535,35 @@ services:
     ports:
       - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
     mem_limit: "512m"
+
+  # Alarm iletimi: e-posta (SMTP_* ayarlari; Microsoft 365 dahil), Slack ve
+  # Microsoft Teams. Kanallar: scripts/monitoring.sh alerts ...
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/etc/alertmanager/entrypoint.sh"]
+    # Arayuzu kimlik dogrulamasizdir; disariya acilmaz. Alarmlar Grafana'da
+    # (Alerting > Alert rules / Silences, "Alertmanager" veri kaynagi) gorulur.
+    environment:
+      TZ: ${ALERT_TIMEZONE:-Europe/Istanbul}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-http://localhost}
+      ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-}
+      ALERT_SLACK_WEBHOOK_URL: ${ALERT_SLACK_WEBHOOK_URL:-}
+      ALERT_TEAMS_WEBHOOK_URL: ${ALERT_TEAMS_WEBHOOK_URL:-}
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM_ADDRESS: ${SMTP_FROM_ADDRESS:-noreply@hr360.local}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-HR360}
+    volumes:
+      - ./deploy/monitoring/alertmanager-entrypoint.sh:/etc/alertmanager/entrypoint.sh:ro
+      - ./deploy/monitoring/alertmanager.tmpl:/etc/alertmanager/templates/hr360.tmpl:ro
+      - alertmanager-data:/alertmanager
+    ports:
+      - "127.0.0.1:${ALERTMANAGER_PORT:-9093}:9093"
+    mem_limit: "64m"
 
   postgres-exporter:
     image: quay.io/prometheuscommunity/postgres-exporter:v0.16.0
