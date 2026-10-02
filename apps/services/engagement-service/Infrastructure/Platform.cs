@@ -156,10 +156,25 @@ public sealed class Notifier
 }
 
 /// <summary>
+/// Kurulum duzeyindeki ozellik anahtarlari. HR360 acik kaynak olarak dagitilir:
+/// varsayilan olarak plan kisiti ve faturalandirma KAPALIDIR, her kiraci tum
+/// modulleri kullanir. Ticari (SaaS) isletim icin .env'de acilir.
+/// </summary>
+public static class FeatureFlags
+{
+    private static bool On(string name) =>
+        (Environment.GetEnvironmentVariable(name) ?? "").Trim().ToLowerInvariant() is "true" or "1" or "yes" or "on";
+    /// <summary>PLAN_ENFORCEMENT=true: moduller kiracinin planina gore kisitlanir.</summary>
+    public static bool PlanEnforcement => On("PLAN_ENFORCEMENT");
+    /// <summary>BILLING_ENABLED=true: abonelik/fatura ekranlari ve aylik fatura uretimi.</summary>
+    public static bool Billing => On("BILLING_ENABLED");
+}
+
+/// <summary>
 /// Plan bazlı modül kısıtı. Kiracının planı (platform_tenants.Plan, 60 sn önbellek)
 /// istenen seviyenin altındaysa 402 döner. Platform yöneticisi etkilenmez.
-/// Sıra: Trial &lt; Standard &lt; Enterprise. Arayüz aynı tabloyu
-/// (apps/web/src/lib/plan-features.ts) kullanıp menüyü gizler.
+/// Sıra: Trial &lt; Standard &lt; Enterprise. Arayüz /api/governance/plan yanıtına
+/// göre menüyü gizler. PLAN_ENFORCEMENT kapalıyken (varsayılan) hiçbir şey kısıtlanmaz.
 /// </summary>
 [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method)]
 public sealed class RequiresPlanAttribute : Attribute, IAsyncActionFilter
@@ -180,7 +195,7 @@ public sealed class RequiresPlanAttribute : Attribute, IAsyncActionFilter
     public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
     {
         var tenant = context.HttpContext.RequestServices.GetRequiredService<ITenantContext>();
-        if (tenant.IsPlatformAdmin || string.IsNullOrEmpty(Cs) || string.IsNullOrEmpty(tenant.TenantSlug))
+        if (!FeatureFlags.PlanEnforcement || tenant.IsPlatformAdmin || string.IsNullOrEmpty(Cs) || string.IsNullOrEmpty(tenant.TenantSlug))
         {
             await next();
             return;

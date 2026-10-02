@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.EntityFrameworkCore;
 using GovernanceService.Data;
 using GovernanceService.Infrastructure;
@@ -39,11 +40,14 @@ public class PlanController : AppController
         var plan = string.IsNullOrEmpty(tc.TenantSlug) ? "Enterprise"
             : await Db.ScalarAsync("SELECT \"Plan\" FROM platform_tenants WHERE \"Slug\" = $1", ct, tc.TenantSlug) as string ?? "Trial";
         var rank = RequiresPlanAttribute.Rank(plan);
+        var enforced = FeatureFlags.PlanEnforcement;
         return Ok(new
         {
             plan, rank,
+            enforced,
+            billingEnabled = FeatureFlags.Billing,
             features = Features,
-            enabled = Features.Where(f => tc.IsPlatformAdmin || RequiresPlanAttribute.Rank(f.Value) <= rank).Select(f => f.Key),
+            enabled = Features.Where(f => !enforced || tc.IsPlatformAdmin || RequiresPlanAttribute.Rank(f.Value) <= rank).Select(f => f.Key),
         });
     }
 }
@@ -54,8 +58,20 @@ public class PlanController : AppController
  * (iyzico/Stripe) PAYMENT_PROVIDER ile bağlanır; tanımlı değilse havale/EFT
  * bilgisi gösterilir ve ödeme platform yöneticisince işaretlenir.
  * ==================================================================== */
+/// <summary>BILLING_ENABLED kapaliyken faturalandirma uclari yokmus gibi davranir.</summary>
+public sealed class RequiresBillingAttribute : Attribute, IActionFilter
+{
+    public void OnActionExecuting(ActionExecutingContext context)
+    {
+        if (!FeatureFlags.Billing)
+            context.Result = new NotFoundObjectResult(new { message = "Bu kurulumda faturalandırma kapalı (BILLING_ENABLED).", code = "billing_disabled" });
+    }
+    public void OnActionExecuted(ActionExecutedContext context) { }
+}
+
 [Route("api/billing")]
 [Authorize(Policy = "RequireHrAdmin")]
+[RequiresBilling]
 public class BillingController : AppController
 {
     private readonly GovernanceDbContext _db;

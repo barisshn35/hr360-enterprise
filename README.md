@@ -145,7 +145,7 @@ performans, eğitim, ücret, masraf, işe alım, işe giriş, bildirimler) dış
 | Yönetici | Ekip sağlığı paneli (uzun süre izin kullanmama, fazla mesai, performans düşüşü, 1:1 aralığı ve ruh hâli işaretleri), 1:1 defteri (yöneticiye özel notlar, takvime ekleme), org senaryo planlama (taşıma/ekleme/çıkarma ve maliyet etkisi), ardıl planlama |
 | İK ve uyum | Denetim kaydı ekranı (filtre, aynı istekte yapılanlar, CSV), KVKK (açık rıza, veri sahibi talepleri, JSON dışa aktarım, anonimleştirme, saklama süreleri), offboarding (kontrol listesi, zimmet iadesi, çıkış görüşmesi, kıdem/ihbar/izin hesabı), belge şablonları ve toplu yazdırma, kural motoru (olay → koşul → bildirim/webhook/Slack), toplu içe/dışa aktarım (Excel/CSV), bordro simülasyonu (2026 parametreleriyle brütten nete/netten brüte), işe alım saga'sı (teklif → çalışan kaydı → işe giriş planı) |
 | İçgörü | Analitik (veritabanındaki `analytics_*` görünümlerinden), doğal dilde rapor ("son 6 ayda departmanlara göre izin günleri"), zaman makinesi (geçmiş bir tarihteki org yapısı), canlı olay radarı, İK asistanı (bilgi bankası + kendi verileriniz) |
-| Entegrasyon | Webhook (HMAC imzalı, teslim geçmişi), API anahtarları ve açık REST API (`/api/governance/public/v1`, OpenAPI tanımı, dakikada 120 istek), Slack/Teams gelen webhook ve Slack slash komutu, kişisel takvim aboneliği (.ics), Google/Microsoft ile SSO (Keycloak Organizations), TOTP ile iki adımlı doğrulama zorunluluğu, abonelik faturaları |
+| Entegrasyon | Webhook (HMAC imzalı, teslim geçmişi), API anahtarları ve açık REST API (`/api/governance/public/v1`, OpenAPI tanımı, dakikada 120 istek), Slack/Teams gelen webhook ve Slack slash komutu, kişisel takvim aboneliği (.ics), Google/Microsoft ile SSO (Keycloak Organizations), TOTP ile iki adımlı doğrulama zorunluluğu |
 | Sunum | Org şeması sunum modu (tam ekran, klavye ile gezinme) |
 
 ### AI araçları hakkında
@@ -174,7 +174,6 @@ sağlayıcısı yoktur.
 |---|---|
 | Slack/Teams | Gelen webhook URL'si Entegrasyonlar ekranından girilir. Slack slash komutu için Slack'te bir uygulama açıp imzalama anahtarını girmeniz gerekir. Etkileşimli butonlar yok. |
 | SSO | Google veya Microsoft (Azure AD) OAuth istemci kimliği ve sırrı Güvenlik ekranından girilir; e-posta alan adı organizasyona bağlanır. |
-| Ödeme | Faturalar üretilir ve HTML olarak görüntülenir; iyzico/Stripe entegrasyonu yazılmadı. Ödeme, platform yöneticisinin "ödendi" işaretiyle kapanır. |
 | E-posta | Bildirimler için SMTP (`scripts/smtp.sh set`). |
 
 ## Mimari
@@ -209,9 +208,12 @@ sağlayıcısı yoktur.
 - **Olaylar:** governance-service tüm `hr360.*` Kafka konularını dinler; olay
   radarı (SSE ile canlı akış), kural motoru, webhook'lar ve Slack/Teams
   bildirimleri bu akıştan beslenir
-- **Plan kısıtı:** Kiracının aboneliği (Trial / Standard / Enterprise) bazı
-  modülleri açar. Sunucu tarafında `402`, arayüzde menüden gizleme ve
-  "planı yükseltin" kartı
+- **Açık kaynak varsayılanı:** Her kiracı bütün modülleri kullanır; plan
+  kısıtı ve faturalandırma kapalıdır. SaaS olarak işletmek isteyen
+  `.env`'de `PLAN_ENFORCEMENT=true` (modüller Trial / Standard / Enterprise
+  planına göre açılır; sunucu `402` döner, arayüz menüden gizler) ve
+  `BILLING_ENABLED=true` (abonelik ekranı ve aylık fatura üretimi; ödeme
+  sağlayıcısı entegrasyonu yoktur) ayarlarını açabilir
 - **Gateway:** Nginx — path tabanlı routing (`/api/<servis>/`), `/auth/`
   üzerinden Keycloak'a, `/ml/` üzerinden inference servisine, `/logos/`
   üzerinden MinIO'ya passthrough, `/grafana/` üzerinden Grafana'ya (izleme açıksa). HTTPS (Let's Encrypt dahil) ve Keycloak

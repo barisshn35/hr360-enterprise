@@ -13,7 +13,7 @@ const BASE = '/api/governance'
 
 /* ---------------------------------------------------------------- plan */
 export type PlanName = 'Trial' | 'Standard' | 'Enterprise'
-export interface PlanInfo { plan: PlanName; rank: number; features: Record<string, PlanName>; enabled: string[] }
+export interface PlanInfo { plan: PlanName; rank: number; enforced: boolean; billingEnabled: boolean; features: Record<string, PlanName>; enabled: string[] }
 
 /* -------------------------------------------------------------- denetim */
 export interface AuditEntry {

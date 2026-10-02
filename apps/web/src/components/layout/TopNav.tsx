@@ -59,6 +59,7 @@ import {
 import { useNavGroups } from './use-nav'
 import { useInstallPrompt } from '@/lib/pwa'
 import { usePrivacyScreen } from '@/lib/privacy-screen'
+import { usePlan } from '@/lib/plan'
 
 const SPRING = { type: 'spring' as const, mass: 0.5, damping: 14, stiffness: 120, restDelta: 0.001 }
 
@@ -72,6 +73,8 @@ function useVisibleGroups() {
 
 function Brand() {
   const { tenant } = useAuth()
+  // Plan kısıtı kapalıyken (açık kaynak varsayılanı) plan adı anlamsız.
+  const { enforced } = usePlan()
   const name = tenant?.name ?? 'HR360'
   return (
     <Link to="/panel" className="group flex min-w-0 items-center gap-2.5 rounded-xl pr-2 outline-none focus-visible:ring-2 focus-visible:ring-primary/50">
@@ -85,7 +88,7 @@ function Brand() {
       <span className="hidden min-w-0 flex-col leading-none sm:flex">
         <span className="truncate text-[13.5px] font-semibold tracking-tight">{name}</span>
         <span className="mt-1 text-[10.5px] font-medium tracking-[0.12em] text-muted-foreground uppercase">
-          {tenant?.plan ? planLabels[tenant.plan] : 'HR360'}
+          {enforced && tenant?.plan ? planLabels[tenant.plan] : 'HR360'}
         </span>
       </span>
     </Link>

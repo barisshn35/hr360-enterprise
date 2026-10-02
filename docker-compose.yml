@@ -331,6 +331,7 @@ services:
     build: ./apps/services/engagement-service
     environment:
       ENGAGEMENT_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD}"
+      PLAN_ENFORCEMENT: "${PLAN_ENFORCEMENT:-false}"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
       KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
       TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=5"
@@ -354,7 +355,9 @@ services:
       ONBOARDING_SERVICE_URL: "http://onboarding-service:8080"
       # Odeme saglayicisi (iyzico/stripe) baglandiginda doldurulur; bos ise
       # faturalar havale/EFT ile odenip platform yoneticisince isaretlenir.
-      PAYMENT_PROVIDER: "${PAYMENT_PROVIDER:-}"
+      # Acik kaynak varsayilani: plan kisiti ve faturalandirma kapali.
+      PLAN_ENFORCEMENT: "${PLAN_ENFORCEMENT:-false}"
+      BILLING_ENABLED: "${BILLING_ENABLED:-false}"
       ASPNETCORE_ENVIRONMENT: "Production"
     depends_on:
       postgres:

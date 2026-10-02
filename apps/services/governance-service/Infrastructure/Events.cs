@@ -400,7 +400,7 @@ public sealed class Housekeeping : BackgroundService
                     p.LastRunAt = DateTime.UtcNow;
                 }
                 await db.SaveChangesAsync(ct);
-                await Billing.GenerateAsync(sql, db, DateTime.UtcNow, ct);
+                if (FeatureFlags.Billing) await Billing.GenerateAsync(sql, db, DateTime.UtcNow, ct);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

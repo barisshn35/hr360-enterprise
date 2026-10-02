@@ -343,7 +343,7 @@ export function App() {
                     <Route path="guvenlik" element={guarded('tenant:manage', <PlanGate feature="sso"><SecurityPage /></PlanGate>, ['tenant-admin', 'platform-admin'])} />
                     <Route path="ice-disa-aktarim" element={guarded('employee:manage', <PlanGate feature="import-export"><ImportExportPage /></PlanGate>)} />
                     <Route path="abonelik" element={guarded('tenant:manage', <PlanGate feature="billing"><BillingPage /></PlanGate>)} />
-                    <Route path="platform/faturalar" element={guarded('platform:manage', <PlatformInvoicesPage />)} />
+                    <Route path="platform/faturalar" element={guarded('platform:manage', <PlanGate feature="billing"><PlatformInvoicesPage /></PlanGate>)} />
 
                     <Route path="404" element={<NotFoundPage />} />
                     <Route path="*" element={<Navigate to="/panel/404" replace />} />

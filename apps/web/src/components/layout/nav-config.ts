@@ -193,7 +193,7 @@ export const navGroups: NavGroupData[] = [
     icon: Globe2,
     items: [
       { id: 'tenants', title: 'Kiracılar', description: 'Şirketler, plan ve kota', icon: Shield, path: '/panel/platform/kiracilar', permission: 'platform:manage' },
-      { id: 'platform-invoices', title: 'Faturalar', description: 'Tüm kiracıların faturaları', icon: Receipt, path: '/panel/platform/faturalar', permission: 'platform:manage' },
+      { id: 'platform-invoices', title: 'Faturalar', description: 'Tüm kiracıların faturaları', icon: Receipt, path: '/panel/platform/faturalar', permission: 'platform:manage', feature: 'billing' },
     ],
   },
 ]

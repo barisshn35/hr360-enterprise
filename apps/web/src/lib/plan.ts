@@ -24,13 +24,16 @@ export function usePlan() {
   })
   const data = q.data
   const hasFeature = (feature: string) => {
+    // Faturalandırma kurulum ayarıdır (BILLING_ENABLED); kiracı seçmemiş
+    // platform yöneticisi de görür (tüm kiracıların faturaları).
+    if (feature === 'billing') return data?.billingEnabled === true
     // Yeni modüller kiracı bağlamında çalışır; şirket seçmemiş platform
     // yöneticisine gösterilmez (aksi hâlde her uç "kiracı yok" der).
     if (status === 'authenticated' && !tenantSlug) return false
-    if (!data) return true
+    if (!data || !data.enforced) return true
     const min = data.features[feature]
     return !min || data.enabled.includes(feature) || RANK[data.plan] >= RANK[min]
   }
   const requiredPlan = (feature: string) => data?.features[feature]
-  return { plan: data?.plan, hasFeature, requiredPlan, isLoading: q.isPending, noTenant: status === 'authenticated' && !tenantSlug }
+  return { plan: data?.plan, enforced: data?.enforced ?? false, billingEnabled: data?.billingEnabled ?? false, hasFeature, requiredPlan, isLoading: q.isPending, noTenant: status === 'authenticated' && !tenantSlug }
 }

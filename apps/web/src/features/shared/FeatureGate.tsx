@@ -7,7 +7,18 @@ import { usePlan, planLabels } from '@/lib/plan'
 
 /** Planın dışında kalan modül için yükseltme kartı. */
 export function PlanGate({ feature, children }: { feature: string; children: ReactNode }) {
-  const { hasFeature, requiredPlan, plan, noTenant } = usePlan()
+  const { hasFeature, requiredPlan, plan, noTenant, billingEnabled, isLoading } = usePlan()
+  if (feature === 'billing') {
+    if (billingEnabled) return <>{children}</>
+    if (isLoading) return null
+    return (
+      <Card className="mx-auto mt-10 max-w-lg items-center gap-3 p-8 text-center">
+        <span className="grid size-12 place-items-center rounded-2xl bg-primary/10 text-primary"><Lock className="size-5" /></span>
+        <h2 className="text-[17px] font-semibold">Faturalandırma kapalı</h2>
+        <p className="text-[13.5px] text-muted-foreground">HR360 açık kaynak olarak kuruldu; abonelik ve fatura modülü kullanılmıyor. Açmak için sunucuda <code className="font-mono text-[12px]">BILLING_ENABLED=true</code> ayarlanır.</p>
+      </Card>
+    )
+  }
   if (noTenant)
     return (
       <Card className="mx-auto mt-10 max-w-lg items-center gap-3 p-8 text-center">
