@@ -250,7 +250,7 @@ public class LeaveRequestsController : ControllerBase
             PartitionKey = leave.EmployeeId.ToString(),
             Payload = JsonSerializer.Serialize(new LeaveDecidedEvent(
                 leave.TenantSlug, leave.Id, leave.EmployeeId, leave.StartDate, leave.EndDate,
-                request.Approved, DateTimeOffset.UtcNow)),
+                request.Approved, DateTimeOffset.UtcNow, leave.Type.ToString(), leave.Days)),
         });
 
         try
