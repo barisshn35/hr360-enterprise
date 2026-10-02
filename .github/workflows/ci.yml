@@ -112,8 +112,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Ornek .env
+        # .env.example'dan; orada olmayan degiskenler (sir/parola) sahte degerle eklenir.
         run: |
-          for v in $(grep -oE '\$\{[A-Z0-9_]+' docker-compose.yml | cut -c3- | sort -u); do echo "$v=ci"; done > .env
+          cp .env.example .env
+          for v in $(grep -oE '\$\{[A-Z0-9_]+' docker-compose.yml | cut -c3- | sort -u); do
+            grep -q "^$v=" .env || echo "$v=ci" >> .env
+          done
       - name: docker compose config (tum profiller)
         run: docker compose --profile monitoring --profile letsencrypt config -q
       - name: nginx -t
