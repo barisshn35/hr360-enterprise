@@ -15,6 +15,8 @@ import { formatDateTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { Initials, PlanGate, errMsg, useAction } from '@/features/shared/kit'
 import { useToast } from '@/components/ui/Toast'
+import { useMyEmployeeId } from '@/api/queries'
+import { MeetingPanel, SlotFinder } from '@/features/shared/Meetings'
 
 const MOODS = ['😞', '🙁', '😐', '🙂', '😄']
 
@@ -67,6 +69,11 @@ function MeetingDetail({ m }: { m: OneOnOne }) {
           </div>
         }
       />
+      {m.status === 'Planned' && (
+        <div className="border-b border-border px-5 py-3">
+          <MeetingPanel sourceType="one-on-one" sourceId={m.id} canCreate={m.iAmManager} />
+        </div>
+      )}
       <PanelBody className="grid gap-6 lg:grid-cols-2">
         <div className="space-y-6">
           <Checklist title="Ortak gündem" items={m.agenda} onChange={(agenda) => upd.mutate({ agenda })} />
@@ -98,6 +105,7 @@ function MeetingDetail({ m }: { m: OneOnOne }) {
 function NewMeetingModal({ onClose, preset }: { onClose: () => void; preset?: string }) {
   const team = useQuery({ queryKey: ['one-on-ones', 'team'], queryFn: ({ signal }) => engagementApi.oneOnOneTeam(signal) })
   const [emp, setEmp] = useState(preset ?? '')
+  const { employeeId: me } = useMyEmployeeId()
   const tomorrow = new Date(Date.now() + 86400000)
   const [when, setWhen] = useState(`${tomorrow.toISOString().slice(0, 10)}T10:00`)
   const [agenda, setAgenda] = useState('Geçen haftadan aksiyonlar\nEngeller ve destek ihtiyacı\nKariyer ve gelişim')
@@ -110,6 +118,7 @@ function NewMeetingModal({ onClose, preset }: { onClose: () => void; preset?: st
       <div className="space-y-4">
         <SelectField label="Ekip üyesi" value={emp} onChange={setEmp} options={(team.data ?? []).map((t) => ({ value: t.employeeId, label: t.name }))} />
         <TextField label="Tarih ve saat" type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} />
+        {emp && me && <SlotFinder employeeIds={[me, emp]} durationMinutes={30} onPick={setWhen} />}
         <TextAreaField label="Gündem (her satır bir madde)" rows={4} value={agenda} onChange={(e) => setAgenda(e.target.value)} />
       </div>
     </Modal>

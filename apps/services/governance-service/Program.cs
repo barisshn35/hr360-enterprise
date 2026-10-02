@@ -35,6 +35,10 @@ builder.Services.AddSingleton<GovernanceService.Infrastructure.Chat.SlackApi>();
 builder.Services.AddSingleton<GovernanceService.Infrastructure.Chat.TeamsApi>();
 builder.Services.AddSingleton<GovernanceService.Infrastructure.Chat.BotFrameworkAuth>();
 builder.Services.AddSingleton<GovernanceService.Infrastructure.Chat.ChatService>();
+builder.Services.AddSingleton<GovernanceService.Infrastructure.Calendar.GoogleCalendar>();
+builder.Services.AddSingleton<GovernanceService.Infrastructure.Calendar.MicrosoftCalendar>();
+builder.Services.AddSingleton<GovernanceService.Infrastructure.Calendar.ZoomApi>();
+builder.Services.AddSingleton<GovernanceService.Infrastructure.Calendar.CalendarService>();
 builder.Services.AddHostedService<GovernanceService.Infrastructure.EventConsumer>();
 builder.Services.AddHostedService<GovernanceService.Infrastructure.Housekeeping>();
 

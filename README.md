@@ -151,6 +151,24 @@ sunucunun kendisinden erişilebilir.
 
 ## Modüller
 
+### Takvimler ve toplantılar (Google, Microsoft 365, Zoom)
+
+- **Takvim bağlama:** Çalışan Profil › Takvim'den Google Takvim ya da Outlook
+  (Microsoft 365) hesabını bağlar (OAuth 2.0 + PKCE). Onaylanan izinleri anında
+  takvime "dışarıda" etkinliği olarak yazılır; bağlantı kurulunca gelecekteki izinler
+  de eklenir. Takvim bağlamayanlar için .ics aboneliği her takvimle çalışır.
+- **Toplantı:** 1:1 ve mülakat ekranlarında tek tıkla **Zoom**, **Microsoft Teams**
+  ya da **Google Meet** bağlantısı; katılımcılara (istenirse adaya) takvim daveti
+  gider, iptal edilince toplantı ve davetler silinir.
+- **Uygun saat:** Yönetici 1:1 planlarken herkesin boş olduğu iş saatleri önerilir;
+  bağlı takvimlerden yalnızca dolu aralıklar okunur (başlık görülmez), HR360'taki
+  izin ve 1:1'ler de hesaba katılır.
+- **Kurulum:** Entegrasyonlar › Takvim ve toplantı'da Google (OAuth istemcisi),
+  Microsoft (Entra ID uygulama kaydı) ve Zoom (Server-to-Server OAuth) bilgileri
+  girilir; adım adım yönerge ekrandadır. Google ve Microsoft yönlendirme adresi
+  için HTTPS gerekir.
+- Uçtan uca test (sahte Google/Graph/Zoom ile): `tests/integration/test_calendar.py`.
+
 ### Slack ve Microsoft Teams'ten onay
 
 Onaycıya izin, masraf ve diğer talepler **Onayla / Reddet** düğmeli kişisel mesaj
@@ -208,6 +226,8 @@ sağlayıcısı yoktur.
 |---|---|
 | Slack uygulaması | Entegrasyonlar › Sohbet uygulamaları. HR360'ın verdiği manifestle Slack'te uygulama açılır; bot jetonu ve imzalama anahtarı girilir. Sunucunun **internetten HTTPS ile** erişilebilmesi gerekir. |
 | Microsoft Teams botu | Azure'da tek kiracılı bir **Azure Bot** (App ID, gizli anahtar, kiracı kimliği) açılır; HR360'ın ürettiği Teams paketi yönetim merkezinden yüklenir. Teams, bota kişinin ilk mesajından sonra yazmaya izin verir; kullanıcı uygulamayı bir kez ekler. HTTPS gerekir. |
+| Google / Microsoft 365 takvim | Google Cloud'da OAuth istemcisi, Entra ID'de uygulama kaydı (Calendars.ReadWrite); yönlendirme adresi ekranda verilir. HTTPS gerekir. |
+| Zoom | Zoom Marketplace'te Server-to-Server OAuth uygulaması (Account ID, Client ID, Secret). |
 | Teams/Slack kanal bildirimi | Gelen webhook adresi (Teams'te Workflows şablonu) Entegrasyonlar › Kanal bildirimleri'nden girilir. |
 | SSO | Google veya Microsoft (Azure AD) OAuth istemci kimliği ve sırrı Güvenlik ekranından girilir; e-posta alan adı organizasyona bağlanır. |
 | E-posta | Bildirimler için SMTP (`scripts/smtp.sh set`). |

@@ -16,6 +16,7 @@ import { governanceApi, type Webhook } from '@/api/governance'
 import { formatDateTime, formatRelativeToNow } from '@/lib/format'
 import { PlanGate, useAction } from '@/features/shared/kit'
 import { ChatAppsPanel } from './ChatAppsPanel'
+import { CalendarProvidersPanel } from './CalendarProvidersPanel'
 
 const EVENTS = ['*', 'employee.hired', 'employee.assigned', 'employee.status-changed', 'workflow.submitted', 'workflow.approved', 'workflow.rejected', 'leave.approved']
 
@@ -195,14 +196,15 @@ function ChatIntegrations() {
 }
 
 export function IntegrationsPage() {
-  const [tab, setTab] = useTabParam<'webhook' | 'api' | 'uygulama' | 'sohbet'>('sekme', 'uygulama')
+  const [tab, setTab] = useTabParam<'webhook' | 'api' | 'uygulama' | 'sohbet' | 'takvim'>('sekme', 'uygulama')
   return (
     <PlanGate feature="webhooks">
-      <PageHeader title="Entegrasyonlar" description="Slack ve Microsoft Teams'ten onay, kanal bildirimleri, imzalı webhook'lar, açık API ve API anahtarları." />
-      <div className="mb-5"><Tabs label="Entegrasyon" value={tab} onChange={setTab} tabs={[{ key: 'uygulama', label: 'Sohbet uygulamaları' }, { key: 'sohbet', label: 'Kanal bildirimleri' }, { key: 'webhook', label: 'Webhook' }, { key: 'api', label: 'API anahtarları' }]} /></div>
+      <PageHeader title="Entegrasyonlar" description="Slack ve Microsoft Teams'ten onay, Google ve Microsoft 365 takvimleri, Zoom/Teams/Meet toplantıları, kanal bildirimleri, webhook'lar ve açık API." />
+      <div className="mb-5"><Tabs label="Entegrasyon" value={tab} onChange={setTab} tabs={[{ key: 'uygulama', label: 'Sohbet uygulamaları' }, { key: 'takvim', label: 'Takvim ve toplantı' }, { key: 'sohbet', label: 'Kanal bildirimleri' }, { key: 'webhook', label: 'Webhook' }, { key: 'api', label: 'API anahtarları' }]} /></div>
       {tab === 'webhook' && <Webhooks />}
       {tab === 'api' && <ApiKeys />}
       {tab === 'uygulama' && <ChatAppsPanel />}
+      {tab === 'takvim' && <CalendarProvidersPanel />}
       {tab === 'sohbet' && <ChatIntegrations />}
     </PlanGate>
   )

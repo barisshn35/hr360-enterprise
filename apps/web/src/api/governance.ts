@@ -334,6 +334,56 @@ export interface ChatIdentityRow {
   lastSeenAt: string | null
 }
 
+/* ------------------------------------------------- takvim ve toplantı */
+export type CalendarProviderName = 'Google' | 'Microsoft' | 'Zoom'
+export interface CalendarProviderInfo {
+  provider: CalendarProviderName
+  configured: boolean
+  isEnabled: boolean
+  clientId: string | null
+  hasSecret: boolean
+  msTenant: string | null
+  zoomAccountId: string | null
+  zoomDefaultHost: string | null
+  lastError: string | null
+  connections: number
+  redirectUri: string | null
+  scopes: string
+  publicOriginIsHttps: boolean
+}
+export interface CalendarConnectionInfo {
+  id: string
+  provider: 'Google' | 'Microsoft'
+  accountEmail: string | null
+  syncLeaves: boolean
+  status: 'Active' | 'Error'
+  lastError: string | null
+  lastSyncAt: string | null
+  createdAt: string
+}
+export type MeetingProvider = 'zoom' | 'teams' | 'google' | 'none'
+export interface MeetingInfo {
+  id: string
+  sourceType: 'one-on-one' | 'interview' | 'custom'
+  sourceId: string | null
+  title: string
+  description: string | null
+  startsAt: string
+  durationMinutes: number
+  provider: MeetingProvider
+  joinUrl: string | null
+  status: string
+  organizerEmployeeId: string
+  participantEmployeeIds: string[]
+  externalEmails: string[]
+  warnings: string[] | null
+  createdAt: string
+}
+export interface AvailabilityResult {
+  people: { employeeId: string; name: string; calendarConnected: boolean; busy: { start: string; end: string; source: string }[] }[]
+  suggestions: string[]
+}
+
 export const governanceApi = {
   plan: (signal?: AbortSignal) => apiFetch<PlanInfo>(`${BASE}/plan`, { signal }),
 
@@ -434,6 +484,23 @@ export const governanceApi = {
   slackManifest: (id?: string, name?: string) =>
     apiFetch<unknown>(id ? `${BASE}/chat-apps/${id}/slack-manifest` : `${BASE}/chat-apps/slack-manifest${qs({ name })}`),
   teamsPackage: (id: string) => downloadAuthed(`${BASE}/chat-apps/${id}/teams-package`, 'hr360-teams.zip'),
+  calendarProviders: (signal?: AbortSignal) => apiFetch<CalendarProviderInfo[]>(`${BASE}/calendar/providers`, { signal }),
+  saveCalendarProvider: (provider: CalendarProviderName, body: { clientId: string; clientSecret?: string; msTenant?: string; zoomAccountId?: string; zoomDefaultHost?: string; isEnabled: boolean }) =>
+    apiFetch<{ provider: string }>(`${BASE}/calendar/providers/${provider.toLowerCase()}`, { method: 'PUT', body }),
+  deleteCalendarProvider: (provider: CalendarProviderName) => apiFetch<void>(`${BASE}/calendar/providers/${provider.toLowerCase()}`, { method: 'DELETE' }),
+  calendarConnections: (signal?: AbortSignal) =>
+    apiFetch<{ available: ('Google' | 'Microsoft')[]; linked: boolean; connections: CalendarConnectionInfo[] }>(`${BASE}/calendar/connections`, { signal }),
+  connectCalendar: (provider: 'Google' | 'Microsoft') => apiFetch<{ authorizeUrl: string }>(`${BASE}/calendar/connect/${provider.toLowerCase()}`, { method: 'POST' }),
+  patchCalendarConnection: (id: string, syncLeaves: boolean) => apiFetch<unknown>(`${BASE}/calendar/connections/${id}`, { method: 'PATCH', body: { syncLeaves } }),
+  disconnectCalendar: (id: string) => apiFetch<void>(`${BASE}/calendar/connections/${id}`, { method: 'DELETE' }),
+  meetingOptions: (signal?: AbortSignal) => apiFetch<{ zoom: boolean; teams: boolean; google: boolean; calendar: boolean }>(`${BASE}/meetings/options`, { signal }),
+  meetings: (sourceType?: string, sourceId?: string, signal?: AbortSignal) => apiFetch<MeetingInfo[]>(`${BASE}/meetings${qs({ sourceType, sourceId })}`, { signal }),
+  createMeeting: (body: { sourceType: string; sourceId?: string; title?: string; description?: string; startsAt?: string; durationMinutes: number; provider: MeetingProvider;
+    participantEmployeeIds?: string[]; externalEmails?: string[]; includeCandidate?: boolean; addToCalendars: boolean }) =>
+    apiFetch<MeetingInfo>(`${BASE}/meetings`, { method: 'POST', body }),
+  cancelMeeting: (id: string) => apiFetch<void>(`${BASE}/meetings/${id}`, { method: 'DELETE' }),
+  availability: (body: { employeeIds: string[]; from: string; to: string; durationMinutes: number }) =>
+    apiFetch<AvailabilityResult>(`${BASE}/meetings/availability`, { method: 'POST', body }),
   testIntegration: (id: string) => apiFetch<{ lastStatus: number | null; ok: boolean }>(`${BASE}/integrations/${id}/test`, { method: 'POST' }),
 
   /* faturalama */

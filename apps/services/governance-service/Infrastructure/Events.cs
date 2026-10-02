@@ -233,6 +233,10 @@ public sealed class Dispatcher
         try { await sp.GetRequiredService<Chat.ChatService>().OnEventAsync(db, tenant, type, payload, ct); }
         catch (Exception ex) when (ex is not OperationCanceledException) { _log.LogWarning(ex, "Sohbet uygulaması bildirimi başarısız ({Type})", type); }
 
+        // ------------------------------------------------------------ Google / Outlook takvimleri (onaylanan izinler)
+        try { await sp.GetRequiredService<Calendar.CalendarService>().OnEventAsync(db, tenant, type, payload, ct); }
+        catch (Exception ex) when (ex is not OperationCanceledException) { _log.LogWarning(ex, "Takvim senkronizasyonu başarısız ({Type})", type); }
+
         await db.SaveChangesAsync(ct);
     }
 

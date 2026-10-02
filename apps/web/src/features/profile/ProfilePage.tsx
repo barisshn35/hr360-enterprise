@@ -18,6 +18,7 @@ import { useAuth } from '@/auth/useAuth'
 import { useMyEmployeeId } from '@/api/queries'
 import { formatDate } from '@/lib/format'
 import { ChipInput, Initials, errMsg, useAction } from '@/features/shared/kit'
+import { CalendarConnections } from '@/features/shared/Meetings'
 
 type TabKey = 'bilgiler' | 'gizlilik' | 'takvim' | 'guvenlik'
 
@@ -195,7 +196,9 @@ function CalendarTab() {
   const rotate = useAction(() => governanceApi.rotateCalendarFeed(), { success: 'Yeni bağlantı oluşturuldu; eski bağlantı artık çalışmaz.', invalidate: [['calendar-feed']] })
   const url = feed.data ? `${window.location.origin}${feed.data.path}` : ''
   return (
-    <Panel className="max-w-3xl">
+    <div className="max-w-3xl space-y-5">
+      <CalendarConnections />
+      <Panel>
       <PanelHead title={<span className="flex items-center gap-2"><CalendarPlus className="size-4 text-primary" /> Takvim aboneliği (.ics)</span>} note="İzinleriniz, ekip izinleri, resmî tatiller, 1:1'ler ve masa rezervasyonlarınız takviminizde." />
       <PanelBody className="space-y-4">
         {feed.isPending ? <RowsSkeleton rows={1} /> : feed.isError ? <ErrorState message={(feed.error as Error).message} /> : (
@@ -214,7 +217,8 @@ function CalendarTab() {
           </>
         )}
       </PanelBody>
-    </Panel>
+      </Panel>
+    </div>
   )
 }
 

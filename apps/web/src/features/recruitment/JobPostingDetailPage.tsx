@@ -27,6 +27,7 @@ import {
 } from '@/api/types'
 import { formatDate, formatDateTime, formatNumber, fullName } from '@/lib/format'
 import { ApplicationFunnel } from './ApplicationFunnel'
+import { MeetingPanel } from '@/features/shared/Meetings'
 
 /** Başvuru durumunu ilerletme — sıradaki mantıklı aşamayı önerir. */
 const NEXT_STAGE: Partial<Record<ApplicationStatus, ApplicationStatus>> = {
@@ -386,6 +387,11 @@ export function JobPostingDetailPage() {
                             </span>
                             <span className="tabular">{formatDateTime(iv.scheduledAt)}</span>
                             <InterviewResultBadge result={iv.result} />
+                            {iv.result === 'Pending' && new Date(iv.scheduledAt) > new Date() && (
+                              <div className="w-full pt-1">
+                                <MeetingPanel sourceType="interview" sourceId={iv.id} canCreate={canManage} candidate />
+                              </div>
+                            )}
                           </li>
                         ))}
                       </ul>

@@ -301,3 +301,96 @@ public class ChatMessage : ITenantOwned
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAt { get; set; }
 }
+
+/* ============================================================ Takvim ve toplantı entegrasyonu */
+
+/// <summary>Kiracının Google / Microsoft 365 / Zoom uygulama bilgileri (OAuth istemcisi).</summary>
+public class ProviderConfig : ITenantOwned
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string TenantSlug { get; set; } = "";
+    /// <summary>Google | Microsoft | Zoom</summary>
+    public string Provider { get; set; } = "";
+    public string ClientId { get; set; } = "";
+    public string? ClientSecretEnc { get; set; }
+    /// <summary>Microsoft: Entra ID kiracı kimliği ya da "organizations".</summary>
+    public string? MsTenant { get; set; }
+    /// <summary>Zoom: Server-to-Server OAuth hesap kimliği.</summary>
+    public string? ZoomAccountId { get; set; }
+    /// <summary>Zoom: düzenleyicinin Zoom hesabı yoksa toplantının açılacağı kullanıcı.</summary>
+    public string? ZoomDefaultHost { get; set; }
+    public bool IsEnabled { get; set; } = true;
+    public string? LastError { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>Bir çalışanın bağladığı Google / Outlook takvimi.</summary>
+public class CalendarConnection : ITenantOwned
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string TenantSlug { get; set; } = "";
+    public Guid EmployeeId { get; set; }
+    public string UserId { get; set; } = "";
+    /// <summary>Google | Microsoft</summary>
+    public string Provider { get; set; } = "";
+    public string? AccountEmail { get; set; }
+    public string? AccessTokenEnc { get; set; }
+    public string? RefreshTokenEnc { get; set; }
+    public DateTime? ExpiresAt { get; set; }
+    public bool SyncLeaves { get; set; } = true;
+    /// <summary>Active | Error</summary>
+    public string Status { get; set; } = "Active";
+    public string? LastError { get; set; }
+    public DateTime? LastSyncAt { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>Bekleyen OAuth yetkilendirmesi (state + PKCE doğrulayıcısı), 10 dk geçerli.</summary>
+public class OAuthState : ITenantOwned
+{
+    public string State { get; set; } = "";
+    public string TenantSlug { get; set; } = "";
+    public Guid EmployeeId { get; set; }
+    public string UserId { get; set; } = "";
+    public string Provider { get; set; } = "";
+    public string CodeVerifier { get; set; } = "";
+    public DateTime ExpiresAt { get; set; }
+}
+
+/// <summary>HR360 kaydı ↔ dış takvimdeki etkinlik (silme/güncelleme için).</summary>
+public class CalendarEventLink : ITenantOwned
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string TenantSlug { get; set; } = "";
+    public Guid ConnectionId { get; set; }
+    /// <summary>leave | meeting</summary>
+    public string SourceType { get; set; } = "";
+    public Guid SourceId { get; set; }
+    public string ExternalEventId { get; set; } = "";
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>1:1, mülakat ya da serbest toplantı; Zoom / Teams / Google Meet bağlantısıyla.</summary>
+public class Meeting : ITenantOwned
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string TenantSlug { get; set; } = "";
+    /// <summary>one-on-one | interview | custom</summary>
+    public string SourceType { get; set; } = "custom";
+    public Guid? SourceId { get; set; }
+    public string Title { get; set; } = "";
+    public string? Description { get; set; }
+    public DateTime StartsAt { get; set; }
+    public int DurationMinutes { get; set; } = 30;
+    /// <summary>zoom | teams | google | none</summary>
+    public string Provider { get; set; } = "none";
+    public string? JoinUrl { get; set; }
+    public string? ExternalMeetingId { get; set; }
+    public Guid OrganizerEmployeeId { get; set; }
+    public List<Guid> ParticipantEmployeeIds { get; set; } = new();
+    public List<string> ExternalEmails { get; set; } = new();
+    /// <summary>Scheduled | Cancelled</summary>
+    public string Status { get; set; } = "Scheduled";
+    public string? Warnings { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}

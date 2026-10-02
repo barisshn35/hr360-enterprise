@@ -1,4 +1,4 @@
-# YALNIZCA TEST: governance-service'i Slack/Teams/Microsoft giris uclarinin sahtesine
+# YALNIZCA TEST: governance-service'i Slack, Teams, Microsoft, Google ve Zoom uclarinin sahtesine
 # (tests/integration/chatmock.py) yonlendirir. Uretimde KULLANMAYIN.
 #   docker compose -f docker-compose.yml -f deploy/testing/chat-mock.yml up -d governance-service
 services:
@@ -7,3 +7,10 @@ services:
       SLACK_API_BASE: "http://chatmock:8000/api"
       TEAMS_LOGIN_BASE: "http://chatmock:8000"
       TEAMS_OPENID_METADATA: "http://chatmock:8000/botframework/openid"
+      GOOGLE_AUTH_URL: "http://chatmock:8000/google/auth"
+      GOOGLE_OAUTH_BASE: "http://chatmock:8000/google"
+      GOOGLE_API_BASE: "http://chatmock:8000/googleapis"
+      MS_LOGIN_BASE: "http://chatmock:8000/ms"
+      GRAPH_BASE: "http://chatmock:8000/graph/v1.0"
+      ZOOM_OAUTH_BASE: "http://chatmock:8000/zoom"
+      ZOOM_API_BASE: "http://chatmock:8000/zoomapi/v2"

@@ -1,0 +1,71 @@
+"""Entegrasyon testlerinin ortak yardımcıları (HTTP, jetonlar, sahte sunucu kaydı)."""
+
+import json
+import subprocess
+import time
+import urllib.parse
+import urllib.request
+
+BASE = "http://localhost"
+G = "/api/governance"
+FAIL = []
+AYSE = "8c7dd608-46e2-4bee-900f-6a175b21d3b2"
+
+
+def tok(w):
+    return open(f"/tmp/tok_{w}.txt").read().strip()
+
+
+def http(method, path, body=None, headers=None, form=None, raw_body=None):
+    h = dict(headers or {})
+    data = None
+    if raw_body is not None:
+        data = raw_body.encode()
+    elif form is not None:
+        data = urllib.parse.urlencode(form).encode()
+        h["Content-Type"] = "application/x-www-form-urlencoded"
+    elif body is not None:
+        data = json.dumps(body).encode()
+        h["Content-Type"] = "application/json"
+    req = urllib.request.Request(BASE + path, data=data, method=method, headers=h)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            code, txt = r.status, r.read().decode()
+    except urllib.error.HTTPError as e:
+        code, txt = e.code, e.read().decode()
+    try:
+        return code, json.loads(txt) if txt else None
+    except ValueError:
+        return code, txt
+
+
+def check(name, cond, detail=""):
+    print(("OK  " if cond else "XX  ") + name + ("" if cond else f"  -> {detail}"))
+    if not cond:
+        FAIL.append(name)
+
+
+def api(who, method, path, body=None):
+    return http(method, path, body, {"Authorization": "Bearer " + tok(who)})
+
+
+def mock(path, method="GET"):
+    out = subprocess.run(["docker", "exec", "hr360-gateway-1", "wget", "-qO-"] + (["--post-data", ""] if method == "POST" else [])
+                         + [f"http://chatmock:8000{path}"], capture_output=True, text=True)
+    return json.loads(out.stdout or "null")
+
+
+def mock_calls(substr, since=0):
+    return [c for c in mock("/_log") if substr in c["path"] and c["at"] >= since]
+
+
+def wait_for(substr, pred=lambda c: True, since=0, timeout=40):
+    end = time.time() + timeout
+    while time.time() < end:
+        hits = [c for c in mock_calls(substr, since) if pred(c)]
+        if hits:
+            return hits
+        time.sleep(1)
+    return []
+
+

@@ -1,6 +1,6 @@
-"""Slack Web API, Microsoft kimlik (token), Bot Framework OpenID/JWKS ve Teams Bot
-Connector'ın sahtesi. Entegrasyon testleri gerçek Slack/Teams hesabı olmadan
-uçtan uca çalışsın diye.
+"""Slack Web API, Microsoft kimlik (token), Bot Framework OpenID/JWKS, Teams Bot
+Connector, Google OAuth + Takvim, Microsoft Graph (takvim) ve Zoom API'sinin sahtesi.
+Entegrasyon testleri gerçek hesaplar olmadan uçtan uca çalışsın diye.
 
 Çalıştırma (hr360-net ağında, "chatmock" adıyla):
     docker run -d --name chatmock --network hr360-net -v $PWD/tests/integration:/t \
@@ -31,6 +31,19 @@ LOG = []
 LOCK = threading.Lock()
 EMAILS = {}  # slack user id -> email
 SEQ = [0]
+EVENTS = {}  # takvim etkinlikleri: id -> gövde
+SHORT = {"ayse": "ayse.yilmaz", "mehmet": "mehmet.demir", "zeynep": "zeynep.kaya"}
+
+
+def user_of_token(auth: str) -> str:
+    # "Bearer gtok-ayse" / "Bearer mstok-mehmet" -> ayse.yilmaz@demo.hr360
+    short = (auth or "").split("-", 1)[-1]
+    return SHORT.get(short, short) + "@demo.hr360"
+
+
+def next_id(prefix):
+    SEQ[0] += 1
+    return f"{prefix}-{SEQ[0]}"
 
 
 def b64u(n: int) -> str:
@@ -104,6 +117,14 @@ class H(BaseHTTPRequestHandler):
             key = OTHER_KEY if q.get("wrongkey") == "1" else KEY
             tok = jwt.encode(claims, key, algorithm="RS256", headers={"kid": KID})
             return self._send(200, {"token": tok})
+        if u.path == "/googleapis/oauth2/v3/userinfo":
+            self._record("")
+            return self._send(200, {"email": user_of_token(self.headers.get("Authorization"))})
+        if u.path == "/graph/v1.0/me":
+            self._record("")
+            return self._send(200, {"mail": user_of_token(self.headers.get("Authorization")), "userPrincipalName": "x"})
+        if u.path == "/google/auth" or u.path.endswith("/oauth2/v2.0/authorize"):
+            return self._send(200, {"note": "test: authorize"})
         if "/v3/conversations/" in u.path and "/members/" in u.path:
             self._record("")
             uid = unquote(u.path.rsplit("/", 1)[1])
@@ -122,11 +143,63 @@ class H(BaseHTTPRequestHandler):
             with LOCK:
                 LOG.clear()
             return self._send(200, {"ok": True})
-        if u.path.endswith("/oauth2/v2.0/token"):
+        if u.path.endswith("/oauth2/v2.0/token") or u.path == "/google/token":
             f = {k: v[0] for k, v in parse_qs(body).items()}
             if f.get("client_secret") == "wrong":
                 return self._send(401, {"error": "invalid_client", "error_description": "AADSTS7000215: Invalid client secret provided."})
-            return self._send(200, {"token_type": "Bearer", "expires_in": 3599, "access_token": "teams-bot-token"})
+            google = u.path == "/google/token"
+            pre = "g" if google else "ms"
+            grant = f.get("grant_type")
+            if grant == "client_credentials":
+                return self._send(200, {"token_type": "Bearer", "expires_in": 3599, "access_token": "teams-bot-token"})
+            if grant == "authorization_code":
+                if not f.get("code_verifier"):
+                    return self._send(400, {"error": "invalid_request", "error_description": "PKCE code_verifier eksik"})
+                who = f["code"].split("-", 1)[-1]
+                return self._send(200, {"access_token": f"{pre}tok-{who}", "refresh_token": f"{pre}refresh-{who}", "expires_in": 3600})
+            if grant == "refresh_token":
+                if f["refresh_token"].endswith("revoked"):
+                    return self._send(400, {"error": "invalid_grant", "error_description": "Token has been expired or revoked."})
+                who = f["refresh_token"].split("-", 1)[-1]
+                return self._send(200, {"access_token": f"{pre}tok-{who}", "expires_in": 3600})
+            return self._send(400, {"error": "unsupported_grant_type"})
+        if u.path == "/zoom/oauth/token":
+            auth = base64.b64decode((self.headers.get("Authorization") or "Basic Og==")[6:]).decode()
+            if not auth.endswith(":zsecret"):
+                return self._send(401, {"reason": "Invalid client_id or client_secret", "error": "invalid_client"})
+            return self._send(200, {"access_token": "zoom-token", "expires_in": 3599})
+        if u.path.startswith("/zoomapi/v2/users/") and u.path.endswith("/meetings"):
+            user = unquote(u.path.split("/")[4])
+            if user.startswith("zeynep"):
+                return self._send(404, {"code": 1001, "message": "User does not exist."})
+            mid = 83100000000 + SEQ[0]
+            SEQ[0] += 1
+            return self._send(201, {"id": mid, "join_url": f"https://zoom.us/j/{mid}?pwd=test", "host_email": user})
+        if u.path == "/googleapis/calendar/v3/calendars/primary/events":
+            ev = json.loads(body)
+            eid = next_id("gev")
+            EVENTS[eid] = ev
+            out = {"id": eid, "htmlLink": f"https://calendar.google.com/event?eid={eid}"}
+            if ev.get("conferenceData"):
+                out["hangoutLink"] = f"https://meet.google.com/abc-{eid}"
+            return self._send(200, out)
+        if u.path == "/graph/v1.0/me/events":
+            ev = json.loads(body)
+            eid = next_id("msev")
+            EVENTS[eid] = ev
+            out = {"id": eid, "webLink": f"https://outlook.office.com/calendar/item/{eid}"}
+            if ev.get("isOnlineMeeting"):
+                out["onlineMeeting"] = {"joinUrl": f"https://teams.microsoft.com/l/meetup-join/{eid}"}
+            return self._send(201, out)
+        if u.path == "/googleapis/calendar/v3/freeBusy":
+            q = json.loads(body)
+            day = q["timeMin"][:10]
+            return self._send(200, {"calendars": {"primary": {"busy": [{"start": f"{day}T07:00:00Z", "end": f"{day}T08:00:00Z"}]}}})
+        if u.path == "/graph/v1.0/me/calendar/getSchedule":
+            q = json.loads(body)
+            day = q["startTime"]["dateTime"][:10]
+            return self._send(200, {"value": [{"scheduleItems": [{"status": "busy", "start": {"dateTime": f"{day}T08:00:00.0000000"}, "end": {"dateTime": f"{day}T09:00:00.0000000"}},
+                                                                 {"status": "free", "start": {"dateTime": f"{day}T12:00:00"}, "end": {"dateTime": f"{day}T13:00:00"}}]}]})
         if u.path.startswith("/api/"):
             return self._slack(u.path[5:], {k: v[0] for k, v in parse_qs(body).items()})
         if u.path.startswith("/slack-response/"):
@@ -137,6 +210,16 @@ class H(BaseHTTPRequestHandler):
         if "/v3/conversations/" in u.path and "/activities/" in u.path:
             return self._send(200, {"id": u.path.rsplit("/", 1)[1]})
         self._send(404, {"error": "not_found"})
+
+    def do_DELETE(self):
+        self._record("")
+        u = urlparse(self.path)
+        if u.path.startswith("/googleapis/calendar/v3/calendars/primary/events/") or u.path.startswith("/graph/v1.0/me/events/"):
+            eid = unquote(u.path.rsplit("/", 1)[1])
+            return self._send(204 if EVENTS.pop(eid, None) is not None else 404)
+        if u.path.startswith("/zoomapi/v2/meetings/"):
+            return self._send(204)
+        self._send(404, {})
 
     def do_PUT(self):
         body = self._body()

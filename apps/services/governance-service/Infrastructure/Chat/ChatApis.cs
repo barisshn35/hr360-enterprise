@@ -108,7 +108,7 @@ public sealed class TeamsApi
 
     public async Task<string> TokenAsync(string appId, string password, string azureTenantId, CancellationToken ct)
     {
-        var key = $"{azureTenantId}:{appId}";
+        var key = $"{azureTenantId}:{appId}:{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(password)))[..16]}";
         if (Tokens.TryGetValue(key, out var cached) && cached.Exp > DateTime.UtcNow.AddMinutes(2)) return cached.Token;
         var client = _http.CreateClient();
         client.Timeout = TimeSpan.FromSeconds(10);
