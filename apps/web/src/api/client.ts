@@ -1,6 +1,17 @@
 import { getValidToken, keycloak } from '@/auth/keycloak'
 import { env } from '@/lib/env'
 
+/**
+ * `?optional=true` ile çağrılan `/me` uçları, hesaba bağlı çalışan kaydı yoksa
+ * 404 yerine 204 döner (tarayıcı konsolunda kırmızı hata oluşmasın). Mevcut
+ * çağıranlar "kayıt yok" durumunu 404 ApiError olarak beklediği için yanıt
+ * burada aynı hataya çevrilir.
+ */
+export function requireLinked<T>(v: T | undefined): T {
+  if (v === undefined || v === null) throw new ApiError(404, 'Bu hesaba bağlı çalışan kaydı bulunamadı')
+  return v
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,

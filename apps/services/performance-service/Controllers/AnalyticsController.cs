@@ -159,9 +159,12 @@ public class AnalyticsController : ControllerBase
     [HttpGet("me")]
     public async Task<IActionResult> Me(
         [FromQuery] AnalyticsPeriod period = AnalyticsPeriod.Quarter,
+        [FromQuery] bool optional = false,
         CancellationToken ct = default)
     {
         var me = await _directory.FindMeAsync(ct);
+        // optional=true: calisan kaydi olmayan hesaplar icin 204 (bkz. EmployeesController.GetMe).
+        if (me is null && optional) return NoContent();
         if (me is null)
             return NotFound(new { message = "Bu hesaba bağlı çalışan kaydı bulunamadı" });
 

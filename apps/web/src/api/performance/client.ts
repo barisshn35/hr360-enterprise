@@ -9,7 +9,7 @@
  * Her yanıt `adapters.ts`'ten geçer: ekranlar normalize edilmiş şekli görür.
  */
 
-import { apiFetch, qs } from '../client'
+import { apiFetch, qs, requireLinked } from '../client'
 import {
   toCycle,
   toCycleAnalytics,
@@ -207,7 +207,7 @@ export const analyticsApi = {
 
   /** Token'daki e-postayı çalışan kaydıyla eşler; eşleşme yoksa 404. */
   me: async (period: AnalyticsPeriod, signal?: AbortSignal) =>
-    toMyAnalytics(await apiFetch<unknown>(`${PERF}/analytics/me${qs({ period })}`, { signal })),
+    toMyAnalytics(requireLinked(await apiFetch<unknown>(`${PERF}/analytics/me${qs({ period, optional: true })}`, { signal }))),
 }
 
 export const cycleAnalyticsApi = {
@@ -228,7 +228,7 @@ export const cycleAnalyticsApi = {
     ),
 
   me: async (year?: number, signal?: AbortSignal) =>
-    toCycleHistory(await apiFetch<unknown>(`${PERF}/cycle-analytics/me${qs({ year })}`, { signal })),
+    toCycleHistory(requireLinked(await apiFetch<unknown>(`${PERF}/cycle-analytics/me${qs({ year, optional: true })}`, { signal }))),
 }
 
 export const feedbackApi = {

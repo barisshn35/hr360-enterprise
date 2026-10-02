@@ -75,15 +75,21 @@ public class EmployeesController : ControllerBase
     /// Her rol cagirabilir - bu "kendi kaydim" sorgusu, employee:viewAll
     /// gerektirmez.
     /// </summary>
+    /// <remarks>
+    /// Calisan kaydina bagli olmayan hesaplar (platform yoneticisi, salt kiraci
+    /// yoneticisi) icin 404 doner. Arayuz <c>?optional=true</c> ile cagirir ve
+    /// 204 alir: "kayit yok" bir hata degil, tarayici konsolunu kirletmesin.
+    /// </remarks>
     [HttpGet("me")]
-    public async Task<IActionResult> GetMe()
+    public async Task<IActionResult> GetMe([FromQuery] bool optional = false)
     {
         var keycloakUserId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
             ?? User.FindFirst("sub")?.Value;
-        if (string.IsNullOrEmpty(keycloakUserId)) return NotFound();
+        if (string.IsNullOrEmpty(keycloakUserId)) return optional ? NoContent() : NotFound();
 
         var me = await _db.Employees.FirstOrDefaultAsync(e => e.KeycloakUserId == keycloakUserId);
-        return me is null ? NotFound() : Ok(me);
+        if (me is null) return optional ? NoContent() : NotFound();
+        return Ok(me);
     }
 
     /// <summary>

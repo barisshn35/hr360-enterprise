@@ -47,9 +47,10 @@ public class CycleAnalyticsController : ControllerBase
 
     /// <summary>Calisanin kendi donemsel gecmisi.</summary>
     [HttpGet("me")]
-    public async Task<IActionResult> MyCycles([FromQuery] int? year, CancellationToken ct = default)
+    public async Task<IActionResult> MyCycles([FromQuery] int? year, [FromQuery] bool optional = false, CancellationToken ct = default)
     {
         var me = await _directory.FindMeAsync(ct);
+        if (me is null && optional) return NoContent();
         if (me is null)
             return NotFound(new { message = "Bu hesaba bağlı çalışan kaydı bulunamadı" });
 

@@ -1,4 +1,4 @@
-import { apiFetch, qs } from './client'
+import { apiFetch, qs, requireLinked } from './client'
 import type { Assignment, CreateAssignmentInput, CreateEmployeeInput, Employee } from './types'
 
 const BASE = '/api/employee'
@@ -14,7 +14,7 @@ export const employeeApi = {
 
   /** Oturumdaki kullanıcının kendi çalışan kaydı (KeycloakUserId eşlemesiyle).
    * Kayıt yoksa (ör. platform/tenant-admin hesapları) 404 döner. */
-  me: (signal?: AbortSignal) => apiFetch<Employee>(`${BASE}/employees/me`, { signal }),
+  me: async (signal?: AbortSignal) => requireLinked(await apiFetch<Employee | undefined>(`${BASE}/employees/me?optional=true`, { signal })),
 
   create: (input: CreateEmployeeInput) =>
     apiFetch<Employee>(`${BASE}/employees`, { method: 'POST', body: input }),

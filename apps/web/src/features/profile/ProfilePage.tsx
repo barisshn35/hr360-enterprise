@@ -62,7 +62,7 @@ function InfoTab({ p }: { p: MyProfile }) {
     address: p.address ?? '', emergencyContactName: p.emergencyContactName ?? '', emergencyContactPhone: p.emergencyContactPhone ?? '',
     skills: p.skills, interests: p.interests, iban: '', nationalId: '',
   })
-  const me = useQuery({ queryKey: ['my-employee-record'], queryFn: ({ signal }) => apiFetch<{ phone: string | null }>('/api/employee/employees/me', { signal }) })
+  const me = useQuery({ queryKey: ['my-employee-record'], queryFn: ({ signal }) => apiFetch<{ phone: string | null } | undefined>('/api/employee/employees/me?optional=true', { signal }).then((r) => r ?? null) })
   const [phone, setPhone] = useState('')
   useEffect(() => setPhone(me.data?.phone ?? ''), [me.data?.phone])
   const save = useAction(async () => {
