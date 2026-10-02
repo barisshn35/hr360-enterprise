@@ -38,6 +38,10 @@ services:
   postgres:
     image: postgres:18-alpine
     restart: unless-stopped
+    # Baglanti butcesi: 15 servis x (12 ana + 3 kiraci durum) havuzu + Keycloak (20) + MLflow.
+    # Onceden varsayilan 100'du; her servis 100'luk havuzla acildigindan yuk altinda
+    # "too many clients" ile 500 donuyordu (k6 stress testiyle bulundu).
+    command: ["postgres", "-c", "max_connections=300"]
     environment:
       POSTGRES_USER: hr360admin
       POSTGRES_PASSWORD: ${HR360_DB_PASSWORD}
@@ -198,6 +202,7 @@ services:
       KC_DB_URL: "jdbc:postgresql://postgres:5432/keycloak"
       KC_DB_USERNAME: "hr360admin"
       KC_DB_PASSWORD: "${HR360_DB_PASSWORD}"
+      KC_DB_POOL_MAX_SIZE: "20"
     volumes:
       - ./deploy/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
       # HR360 giris ekrani temasi (Obsidyen Zumrut). Bkz. scripts/keycloak-theme.sh
@@ -214,10 +219,10 @@ services:
     <<: *dotnet-service
     build: ./apps/services/organization-service
     environment:
-      ORG_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD}"
+      ORG_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=12"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
       KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
-      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=5"
+      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=3"
       ASPNETCORE_ENVIRONMENT: "Production"
     mem_limit: "512m"
 
@@ -225,10 +230,10 @@ services:
     <<: *dotnet-service
     build: ./apps/services/employee-service
     environment:
-      EMPLOYEE_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD}"
+      EMPLOYEE_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=12"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
       KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
-      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=5"
+      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=3"
       KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
       ORGANIZATION_SERVICE_URL: "http://organization-service:8080"
       ASPNETCORE_ENVIRONMENT: "Production"
@@ -239,10 +244,10 @@ services:
     build: ./apps/services/workflow-service
     environment:
       INTERNAL_SERVICE_TOKEN: "${INTERNAL_SERVICE_TOKEN:-}"
-      WORKFLOW_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD}"
+      WORKFLOW_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=12"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
       KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
-      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=5"
+      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=3"
       KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
       EMPLOYEE_SERVICE_URL: "http://employee-service:8080"
       ASPNETCORE_ENVIRONMENT: "Production"
@@ -252,10 +257,10 @@ services:
     <<: *dotnet-service
     build: ./apps/services/leave-service
     environment:
-      LEAVE_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD}"
+      LEAVE_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=12"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
       KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
-      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=5"
+      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=3"
       KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
       EMPLOYEE_SERVICE_URL: "http://employee-service:8080"
       ORGANIZATION_SERVICE_URL: "http://organization-service:8080"
@@ -267,10 +272,10 @@ services:
     <<: *dotnet-service
     build: ./apps/services/recruitment-service
     environment:
-      RECRUITMENT_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD}"
+      RECRUITMENT_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=12"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
       KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
-      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=5"
+      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=3"
       ASPNETCORE_ENVIRONMENT: "Production"
     mem_limit: "512m"
 
@@ -279,10 +284,10 @@ services:
     build: ./apps/services/onboarding-service
     environment:
       EMPLOYEE_SERVICE_URL: "http://employee-service:8080"
-      ONBOARDING_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD}"
+      ONBOARDING_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=12"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
       KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
-      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=5"
+      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=3"
       ASPNETCORE_ENVIRONMENT: "Production"
     mem_limit: "512m"
 
@@ -290,10 +295,10 @@ services:
     <<: *dotnet-service
     build: ./apps/services/timeshift-service
     environment:
-      TIMESHIFT_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD}"
+      TIMESHIFT_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=12"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
       KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
-      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=5"
+      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=3"
       KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
       ORGANIZATION_SERVICE_URL: "http://organization-service:8080"
       EMPLOYEE_SERVICE_URL: "http://employee-service:8080"
@@ -304,10 +309,10 @@ services:
     <<: *dotnet-service
     build: ./apps/services/performance-service
     environment:
-      PERFORMANCE_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD}"
+      PERFORMANCE_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=12"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
       KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
-      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=5"
+      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=3"
       ORGANIZATION_SERVICE_URL: "http://organization-service:8080"
       EMPLOYEE_SERVICE_URL: "http://employee-service:8080"
       ML_INFERENCE_URL: "http://ml-inference:8000"
@@ -319,10 +324,10 @@ services:
     build: ./apps/services/learning-service
     environment:
       EMPLOYEE_SERVICE_URL: "http://employee-service:8080"
-      LEARNING_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD}"
+      LEARNING_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=12"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
       KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
-      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=5"
+      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=3"
       ASPNETCORE_ENVIRONMENT: "Production"
     mem_limit: "512m"
 
@@ -332,11 +337,11 @@ services:
     <<: *dotnet-service
     build: ./apps/services/engagement-service
     environment:
-      ENGAGEMENT_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD}"
+      ENGAGEMENT_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=12"
       PLAN_ENFORCEMENT: "${PLAN_ENFORCEMENT:-false}"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
       KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
-      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=5"
+      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=3"
       EMPLOYEE_SERVICE_URL: "http://employee-service:8080"
       ASPNETCORE_ENVIRONMENT: "Production"
     mem_limit: "384m"
@@ -349,10 +354,10 @@ services:
     build: ./apps/services/governance-service
     environment:
       INTERNAL_SERVICE_TOKEN: "${INTERNAL_SERVICE_TOKEN:-}"
-      GOVERNANCE_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD}"
+      GOVERNANCE_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=12"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
       KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
-      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=5"
+      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=3"
       KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
       EMPLOYEE_SERVICE_URL: "http://employee-service:8080"
       ONBOARDING_SERVICE_URL: "http://onboarding-service:8080"
@@ -388,10 +393,10 @@ services:
     <<: *dotnet-service
     build: ./apps/services/compensation-service
     environment:
-      COMPENSATION_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD}"
+      COMPENSATION_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=12"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
       KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
-      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=5"
+      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=3"
       ASPNETCORE_ENVIRONMENT: "Production"
     mem_limit: "512m"
 
@@ -399,10 +404,10 @@ services:
     <<: *dotnet-service
     build: ./apps/services/expense-service
     environment:
-      EXPENSE_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD}"
+      EXPENSE_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=12"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
       KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
-      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=5"
+      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=3"
       KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
       EMPLOYEE_SERVICE_URL: "http://employee-service:8080"
       ORGANIZATION_SERVICE_URL: "http://organization-service:8080"
@@ -414,10 +419,10 @@ services:
     <<: *dotnet-service
     build: ./apps/services/notification-service
     environment:
-      NOTIFICATION_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD}"
+      NOTIFICATION_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=12"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
       KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
-      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=5"
+      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=3"
       KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
       TENANT_SERVICE_URL: "http://tenant-service:8080"
       # NOT: POST /api/notifications (Email kanali), calisanin e-postasini
@@ -442,10 +447,10 @@ services:
     <<: *dotnet-service
     build: ./apps/services/tenant-service
     environment:
-      TENANT_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD}"
+      TENANT_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=12"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
       KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
-      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=5"
+      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=3"
       KEYCLOAK_BASE_URL: "http://keycloak:8080/auth"
       KEYCLOAK_REALM: "hr360"
       KEYCLOAK_ADMIN_USER: ${KEYCLOAK_ADMIN_USER}

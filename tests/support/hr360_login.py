@@ -52,13 +52,13 @@ def _exp(token: str) -> float:
         return 0
 
 
-def token(who: str, browser=None) -> str:
-    """Geçerli erişim jetonu; yoksa ya da 60 sn içinde dolacaksa tarayıcıyla yeniden giriş yapılır.
-    Zaten açık bir Playwright tarayıcısı varsa (e2e testleri) `browser` ile verilir."""
+def token(who: str, browser=None, min_valid: int = 60) -> str:
+    """Geçerli erişim jetonu; yoksa ya da `min_valid` sn içinde dolacaksa tarayıcıyla yeniden giriş
+    yapılır. Zaten açık bir Playwright tarayıcısı varsa (e2e testleri) `browser` ile verilir."""
     cache = Path(f"/tmp/hr360-tok-{who}.json")
     if cache.exists():
         t = json.loads(cache.read_text()).get("token", "")
-        if t and _exp(t) - time.time() > 60:
+        if t and _exp(t) - time.time() > min_valid:
             return t
 
     holder = {}
@@ -95,3 +95,10 @@ def token(who: str, browser=None) -> str:
     cache.write_text(json.dumps({"token": holder["t"]}))
     cache.chmod(0o600)
     return holder["t"]
+
+
+if __name__ == "__main__":
+    # Yük testi gibi araçlar için: python3 hr360_login.py ayse mehmet  -> {"ayse": "...", ...}
+    import sys
+
+    print(json.dumps({w: token(w, min_valid=270) for w in sys.argv[1:]}))

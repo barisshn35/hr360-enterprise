@@ -94,6 +94,7 @@ kayıt ekranından açılır. Demo şirketini `platform.admin` hesabıyla askıy
 | İzleme (Prometheus + Grafana + Loki + Alertmanager) | `scripts/monitoring.sh enable / status / password / disable / purge` |
 | Alarm kanalları (e-posta, Slack, Teams) | `scripts/monitoring.sh alerts status / email … / slack … / teams … / test` |
 | Testler | `scripts/test.sh unit / integration / e2e / all` (ayrıntı: [tests/README.md](tests/README.md)) |
+| Yük testi | `scripts/loadtest.sh smoke / load / stress` |
 | Yedek al | `scripts/backup.sh [--keep 14] [--with-env] [--no-minio] [--out DİZİN]` |
 | Yedekten dön | `scripts/restore.sh backups/hr360-….tar.gz [--with-env] [--only-db] [--yes]` |
 
@@ -256,6 +257,10 @@ dille yeniden yazma**, **performans özeti** ve bilgi bankasına dayalı **İK a
 - **Tarayıcı testleri (Playwright):** Dört rolle tüm ekranları ve izin onay akışını
   baştan sona dener.
 - Hepsi `scripts/test.sh` ile çalışır; ayrıntılar [tests/README.md](tests/README.md)'de.
+- **Yük testi (k6):** `scripts/loadtest.sh [smoke|load|stress]`. 2 vCPU'lu test
+  sunucusunda 100 eşzamanlı kullanıcıda p95 46 ms ve sıfır hata. Stres testinde
+  bulunan veritabanı bağlantı darboğazı ve düzeltmesi
+  [docs/performans/yuk-testi.md](docs/performans/yuk-testi.md)'de.
 
 ## Mimari
 

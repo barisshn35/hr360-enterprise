@@ -43,3 +43,4 @@ backups/
 .env.before-restore-*
 tests/credentials.json
 .pytest_cache/
+tests/load/results/
