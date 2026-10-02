@@ -14,17 +14,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="dark light" />
     <meta name="theme-color" content="#050a08" />
-    <script>
-      // Uygulama paketi yüklenmeden temayı uygula: açılışta beyaz parlama olmasın.
-      // Varsayılan koyu (lib/theme.ts DEFAULT_THEME ile aynı).
-      try {
-        var t = localStorage.getItem('hr360.theme') || 'dark'
-        var dark = t === 'dark' || (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches)
-        if (dark) document.documentElement.classList.add('dark')
-      } catch (e) {
-        document.documentElement.classList.add('dark')
-      }
-    </script>
+    <script src="/theme-init.js"></script>
     <meta
       name="description"
       content="HR360 Enterprise — çok kiracılı kurumsal insan kaynakları platformu."

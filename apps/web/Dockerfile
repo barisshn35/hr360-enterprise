@@ -17,6 +17,7 @@ RUN npm run build
 FROM nginx:alpine
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY docker/nginx-spa.conf /etc/nginx/conf.d/default.conf
+COPY docker/security-headers.conf /etc/nginx/snippets/security-headers.conf
 
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s \
