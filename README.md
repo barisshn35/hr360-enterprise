@@ -14,7 +14,7 @@ Gereksinimler: Docker Engine + Docker Compose v2 plugin (yoksa `install.sh` kurm
 teklif eder), `curl` ve `openssl`.
 
 ```bash
-git clone <bu-repo>
+git clone https://github.com/barisshn35/hr360-enterprise.git
 cd hr360-enterprise
 ./install.sh
 ```
@@ -51,7 +51,7 @@ Veritabanı, MinIO, Mailpit ve MLflow yalnızca sunucunun kendisine açılır
 ### 2. Kurun
 
 ```bash
-git clone <bu-repo> hr360-enterprise
+git clone https://github.com/barisshn35/hr360-enterprise.git hr360-enterprise
 cd hr360-enterprise
 ./install.sh
 ```

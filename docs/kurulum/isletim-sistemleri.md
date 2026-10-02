@@ -55,7 +55,7 @@ kuruldu ve test edildi. "—" işaretli satırlar bu ortamda denenmedi.
 
 ```bash
 sudo apt-get update && sudo apt-get install -y git
-git clone <repo-adresi> hr360-enterprise && cd hr360-enterprise
+git clone https://github.com/barisshn35/hr360-enterprise.git hr360-enterprise && cd hr360-enterprise
 ./install.sh
 ```
 
@@ -81,7 +81,7 @@ sudo ufw enable
 
 ```bash
 sudo dnf install -y git
-git clone <repo-adresi> hr360-enterprise && cd hr360-enterprise
+git clone https://github.com/barisshn35/hr360-enterprise.git hr360-enterprise && cd hr360-enterprise
 ./install.sh
 ```
 
@@ -116,7 +116,7 @@ kullanılır. Fedora'nın kendi `moby-engine` paketi kuruluysa önce kaldırın:
 
 ```bash
 sudo dnf install -y git        # Amazon Linux 2: sudo yum install -y git
-git clone <repo-adresi> hr360-enterprise && cd hr360-enterprise
+git clone https://github.com/barisshn35/hr360-enterprise.git hr360-enterprise && cd hr360-enterprise
 ./install.sh
 ```
 
@@ -130,7 +130,7 @@ git clone <repo-adresi> hr360-enterprise && cd hr360-enterprise
 
 ```bash
 sudo zypper -n install git
-git clone <repo-adresi> hr360-enterprise && cd hr360-enterprise
+git clone https://github.com/barisshn35/hr360-enterprise.git hr360-enterprise && cd hr360-enterprise
 ./install.sh
 ```
 
@@ -146,7 +146,7 @@ Firewall (`firewalld`):
 
 ```bash
 sudo pacman -Sy --needed git
-git clone <repo-adresi> hr360-enterprise && cd hr360-enterprise
+git clone https://github.com/barisshn35/hr360-enterprise.git hr360-enterprise && cd hr360-enterprise
 ./install.sh
 ```
 
@@ -157,7 +157,7 @@ dağıtım olduğu için üretim sunucusu olarak LTS dağıtımları öneririz.
 
 ```bash
 apk add git bash
-git clone <repo-adresi> hr360-enterprise && cd hr360-enterprise
+git clone https://github.com/barisshn35/hr360-enterprise.git hr360-enterprise && cd hr360-enterprise
 bash install.sh
 ```
 
@@ -197,7 +197,7 @@ Betikler Linux'ta çalışır. Windows'ta **WSL2** içindeki bir Linux dağıtı
    yavaştır. Ubuntu terminalinde:
    ```bash
    sudo apt-get update && sudo apt-get install -y git
-   cd ~ && git clone <repo-adresi> hr360-enterprise && cd hr360-enterprise
+   cd ~ && git clone https://github.com/barisshn35/hr360-enterprise.git hr360-enterprise && cd hr360-enterprise
    ./install.sh
    ```
 5. **Uygulamayı açın.** Windows tarayıcısında `http://localhost` adresini açın. Kurulumda adres
@@ -215,7 +215,7 @@ betik `$'\r': command not found` gibi hatalarla durur; repoyu WSL içinde yenide
 3. Terminalde:
    ```bash
    xcode-select --install        # git yoksa
-   git clone <repo-adresi> hr360-enterprise && cd hr360-enterprise
+   git clone https://github.com/barisshn35/hr360-enterprise.git hr360-enterprise && cd hr360-enterprise
    ./install.sh
    ```
 4. Tarayıcıda `http://localhost` adresini açın.
