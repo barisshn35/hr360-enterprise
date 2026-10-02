@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { Suspense, lazy, useState } from 'react'
 import { useLocation, useOutlet } from 'react-router-dom'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { TriangleAlert } from 'lucide-react'
@@ -22,6 +22,9 @@ import { CommandPalette } from './CommandPalette'
  * Çıkış animasyonu sırasında eski sayfa görünmeye devam etsin: Outlet her
  * render'da GÜNCEL rotayı basar, bu yüzden ilk değer saklanır.
  */
+/** İK asistanı ayrı paket: ilk yükleme ağırlaşmasın. */
+const AssistantWidget = lazy(async () => ({ default: (await import('./AssistantWidget')).AssistantWidget }))
+
 function FrozenOutlet() {
   const outlet = useOutlet()
   const [frozen] = useState(outlet)
@@ -89,6 +92,7 @@ export function AppShell() {
       </div>
 
       <AppDock unreadCount={unread.data?.unreadCount ?? 0} onOpenCommandPalette={() => setPaletteOpen(true)} />
+      <Suspense fallback={null}><AssistantWidget /></Suspense>
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
     </div>
   )

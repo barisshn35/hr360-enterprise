@@ -10,7 +10,10 @@ import {
   BadgeDollarSign, FileText, Bell, Shield, UsersRound, UserRound, Crosshair,
   ClipboardList, Gauge, LineChart, MessageSquareText, Lightbulb, CalendarRange,
   Ruler, SlidersHorizontal, CalendarClock, Key, Sparkles, Briefcase, Sprout,
-  Settings2, Globe2,
+  Settings2, Globe2, HeartHandshake, PartyPopper, MapPin, Handshake, Megaphone,
+  MessagesSquare, HeartPulse, GitBranch, LogOut, ScrollText, ShieldCheck, FileStack,
+  Workflow, PlugZap, Receipt, Radar, History, BarChart3, Bot, Calculator, FileSpreadsheet,
+  Route, Telescope, Award, Search, Lock,
 } from 'lucide-react'
 import type { Permission, Role } from '@/auth/roles'
 import { hasStandardRole } from '@/auth/roles'
@@ -24,6 +27,8 @@ export type NavItemData = {
   path?: string
   badge?: number | string
   permission?: Permission
+  /** Plan bazlı modül kısıtı: governance /plan yanıtındaki özellik anahtarı. */
+  feature?: string
   /** permission yerine/yanında: sadece bu sabit rollerden biri varsa göster
    * (Ek İzin - ext-* - sayılmaz). Bkz. roller öğesindeki kullanım notu. */
   requireRoles?: Role[]
@@ -60,6 +65,8 @@ export const navGroups: NavGroupData[] = [
       { id: 'cases', title: 'İK vakaları', description: 'Soru, talep ve şikâyet defteri', icon: LifeBuoy, path: '/panel/ik-vakalari', permission: 'case:view' },
       { id: 'timeshift', title: 'Puantaj', description: 'Giriş/çıkış ve fazla mesai', icon: Clock, path: '/panel/puantaj', permission: 'timeshift:view' },
       { id: 'shift-engine', title: 'Vardiya planı', description: 'Döngüsel desenler, 7/24 kapsama', icon: CalendarClock, path: '/panel/vardiya-motoru', permission: 'timeshift:view' },
+      { id: 'workplace', title: 'Ofis ve masa', description: 'Kim nerede, masa/oda rezervasyonu', icon: MapPin, path: '/panel/ofis', feature: 'workplace' },
+      { id: 'payroll-sim', title: 'Bordro simülasyonu', description: 'Brütten nete, 2026 parametreleri', icon: Calculator, path: '/panel/bordro-simulasyonu', feature: 'payroll-sim' },
     ],
   },
   {
@@ -76,6 +83,7 @@ export const navGroups: NavGroupData[] = [
         children: [
           { id: 'postings', title: 'İlanlar', description: 'Açık pozisyonlar', icon: FileText, path: '/panel/ise-alim' },
           { id: 'candidates', title: 'Adaylar', description: 'Aday havuzu', icon: Users, path: '/panel/ise-alim/adaylar' },
+          { id: 'hire-saga', title: 'Teklif → işe giriş', description: 'İşe alım sagası izleme', icon: Route, path: '/panel/ise-alim/saga', feature: 'sagas', requireRoles: ['hr-admin', 'tenant-admin', 'platform-admin'] },
         ],
       },
       {
@@ -85,6 +93,9 @@ export const navGroups: NavGroupData[] = [
           { id: 'assets', title: 'Zimmet', description: 'Demirbaş ve atamalar', icon: Laptop, path: '/panel/zimmet' },
         ],
       },
+      { id: 'offboarding', title: 'İşten ayrılış', description: 'Kontrol listesi, çıkış görüşmesi, hak ediş', icon: LogOut, path: '/panel/offboarding', permission: 'onboarding:manage', feature: 'offboarding' },
+      { id: 'succession', title: 'Ardıl planlama', description: 'Kritik roller ve yedekler', icon: GitBranch, path: '/panel/ardil-planlama', permission: 'performance:manage', feature: 'succession' },
+      { id: 'org-scenarios', title: 'Org senaryoları', description: '"Ya şöyle olsaydı?" planlama', icon: Workflow, path: '/panel/org-senaryolari', permission: 'performance:manage', feature: 'org-scenarios' },
     ],
   },
   {
@@ -114,6 +125,35 @@ export const navGroups: NavGroupData[] = [
         ],
       },
       { id: 'learning', title: 'Eğitim', description: 'Katalog ve sertifikalar', icon: GraduationCap, path: '/panel/egitim', permission: 'learning:view' },
+      { id: 'mentorship', title: 'Mentorluk', description: 'Beceri eşleştirmeli mentor bulma', icon: Handshake, path: '/panel/mentorluk', feature: 'mentorship' },
+      { id: 'mobility', title: 'İç ilanlar', description: 'Şirket içi açık pozisyonlar', icon: Megaphone, path: '/panel/ic-ilanlar', feature: 'mobility' },
+      { id: 'one-on-ones', title: '1:1 görüşmeler', description: 'Ortak gündem, aksiyonlar, notlar', icon: MessagesSquare, path: '/panel/birebir', feature: 'one-on-ones' },
+      { id: 'team-health', title: 'Ekip sağlığı', description: 'Tükenmişlik sinyalleri', icon: HeartPulse, path: '/panel/ekip-sagligi', permission: 'performance:manage', feature: 'team-health' },
+    ],
+  },
+  {
+    id: 'community',
+    heading: 'Topluluk',
+    tagline: 'Takdir, kutlama ve nabız — şirket kültürü burada görünür.',
+    icon: HeartHandshake,
+    items: [
+      { id: 'kudos', title: 'Takdir duvarı', description: 'Rozetli teşekkürler', icon: Award, path: '/panel/takdir', feature: 'kudos' },
+      { id: 'celebrations', title: 'Kutlamalar', description: 'Doğum günü ve iş yıl dönümleri', icon: PartyPopper, path: '/panel/kutlamalar', feature: 'celebrations' },
+      { id: 'surveys', title: 'Anketler ve eNPS', description: 'Anonim nabız anketleri', icon: MessagesSquare, path: '/panel/anketler', feature: 'surveys' },
+      { id: 'directory', title: 'Yetenek dizini', description: 'Kim ne biliyor?', icon: Search, path: '/panel/yetenek-dizini', feature: 'profile' },
+    ],
+  },
+  {
+    id: 'insights',
+    heading: 'İçgörü',
+    tagline: 'Rakamlar, zaman yolculuğu ve yapay zekâ destekli araçlar.',
+    icon: Telescope,
+    items: [
+      { id: 'analytics', title: 'Analitik', description: 'Kadro, devir, izin, mesai eğilimi', icon: BarChart3, path: '/panel/analitik', permission: 'performance:manage', feature: 'analytics' },
+      { id: 'nl-report', title: 'Rapor asistanı', description: 'Türkçe sorun, tablo ve grafik gelsin', icon: Sparkles, path: '/panel/rapor-asistani', permission: 'performance:manage', feature: 'nl-report' },
+      { id: 'time-machine', title: 'Zaman makinesi', description: 'Organizasyon geçmişte nasıldı?', icon: History, path: '/panel/zaman-makinesi', permission: 'performance:manage', feature: 'time-machine' },
+      { id: 'event-radar', title: 'Canlı olay radarı', description: 'Kafka olayları gerçek zamanlı', icon: Radar, path: '/panel/olay-radari', permission: 'performance:manage', feature: 'events' },
+      { id: 'ai-tools', title: 'Yapay zekâ araçları', description: 'CV, ilan, eşleşme, tahmin', icon: Bot, path: '/panel/ai-araclari', permission: 'recruitment:view', feature: 'ai-tools' },
     ],
   },
   {
@@ -136,6 +176,14 @@ export const navGroups: NavGroupData[] = [
       { id: 'compensation', title: 'Ücret', description: 'Bantlar, geçmiş, zam simülasyonu', icon: BadgeDollarSign, path: '/panel/ucret', permission: 'compensation:view' },
       { id: 'documents', title: 'Dokümanlar', description: 'Çalışan dosyaları', icon: FileText, path: '/panel/dokumanlar', permission: 'document:manage' },
       { id: 'notifications', title: 'Bildirimler', description: 'Gelen kutusu ve şablonlar', icon: Bell, path: '/panel/bildirimler', permission: 'notification:view' },
+      { id: 'doc-templates', title: 'Belge şablonları', description: 'Toplu belge ve PDF üretimi', icon: FileStack, path: '/panel/belge-sablonlari', permission: 'document:manage', feature: 'documents' },
+      { id: 'privacy', title: 'KVKK', description: 'Rıza, başvuru, saklama süresi', icon: ShieldCheck, path: '/panel/kvkk', permission: 'employee:manage', feature: 'privacy' },
+      { id: 'audit', title: 'Denetim kaydı', description: 'Kim neyi ne zaman değiştirdi', icon: ScrollText, path: '/panel/denetim', permission: 'employee:manage', feature: 'audit' },
+      { id: 'rules', title: 'Kural motoru', description: '"Olursa → yap" otomasyonları', icon: Workflow, path: '/panel/kural-motoru', permission: 'employee:manage', feature: 'rules' },
+      { id: 'integrations', title: 'Entegrasyonlar', description: 'Webhook, API, Slack/Teams', icon: PlugZap, path: '/panel/entegrasyonlar', permission: 'employee:manage', feature: 'webhooks' },
+      { id: 'security', title: 'Güvenlik', description: 'SSO ve iki adımlı doğrulama', icon: Lock, path: '/panel/guvenlik', permission: 'tenant:manage', requireRoles: ['tenant-admin', 'platform-admin'], feature: 'sso' },
+      { id: 'import-export', title: 'İçe/dışa aktarım', description: 'Excel ile toplu veri', icon: FileSpreadsheet, path: '/panel/ice-disa-aktarim', permission: 'employee:manage', feature: 'import-export' },
+      { id: 'billing', title: 'Abonelik', description: 'Plan, koltuk ve faturalar', icon: Receipt, path: '/panel/abonelik', permission: 'tenant:manage', feature: 'billing' },
     ],
   },
   {
@@ -145,6 +193,7 @@ export const navGroups: NavGroupData[] = [
     icon: Globe2,
     items: [
       { id: 'tenants', title: 'Kiracılar', description: 'Şirketler, plan ve kota', icon: Shield, path: '/panel/platform/kiracilar', permission: 'platform:manage' },
+      { id: 'platform-invoices', title: 'Faturalar', description: 'Tüm kiracıların faturaları', icon: Receipt, path: '/panel/platform/faturalar', permission: 'platform:manage' },
     ],
   },
 ]
@@ -154,10 +203,12 @@ export function filterByPermission(
   groups: NavGroupData[],
   can: (p: Permission) => boolean,
   roles: string[],
+  hasFeature: (feature: string) => boolean = () => true,
 ): NavGroupData[] {
   const allowed = (item: NavItemData) =>
     (!item.permission || can(item.permission)) &&
-    (!item.requireRoles || hasStandardRole(roles, item.requireRoles))
+    (!item.requireRoles || hasStandardRole(roles, item.requireRoles)) &&
+    (!item.feature || hasFeature(item.feature))
   return groups
     .map((group) => ({
       ...group,

@@ -1,0 +1,436 @@
+import { apiFetch, qs } from './client'
+import { getValidToken } from '@/auth/keycloak'
+import { env } from '@/lib/env'
+import { downloadAuthed } from './engagement'
+
+/* ============================== governance-service ==============================
+ * Denetim, canlı olaylar, zaman makinesi, KVKK, belge şablonları, kural
+ * motoru, webhook/API anahtarı, Slack/Teams, faturalama, takvim, analitik,
+ * İK asistanı, teklif→işe alım sagası, plan özellikleri.
+ * ============================================================================== */
+
+const BASE = '/api/governance'
+
+/* ---------------------------------------------------------------- plan */
+export type PlanName = 'Trial' | 'Standard' | 'Enterprise'
+export interface PlanInfo { plan: PlanName; rank: number; features: Record<string, PlanName>; enabled: string[] }
+
+/* -------------------------------------------------------------- denetim */
+export interface AuditEntry {
+  id: number
+  service: string
+  entityType: string
+  entityId: string | null
+  action: 'Created' | 'Updated' | 'Deleted' | string
+  changes: Record<string, unknown> | null
+  userId: string | null
+  userName: string | null
+  correlationId: string | null
+  ipAddress: string | null
+  occurredAt: string
+}
+export interface AuditFilter {
+  service?: string
+  entityType?: string
+  entityId?: string
+  userId?: string
+  action?: string
+  q?: string
+  from?: string
+  to?: string
+  page?: number
+  pageSize?: number
+}
+export interface AuditFacets {
+  services: Array<{ name: string; count: number }>
+  entityTypes: Array<{ name: string; count: number }>
+  users: Array<{ id: string | null; name: string | null; count: number }>
+  daily: Array<{ day: string; count: number }>
+}
+
+/* ---------------------------------------------------------------- olaylar */
+export interface RadarEvent {
+  id: string
+  tenantSlug: string | null
+  topic: string
+  eventType: string
+  payload: Record<string, unknown> | null
+  occurredAt: string
+  summary: string
+}
+
+/* ---------------------------------------------------------- zaman makinesi */
+export interface TimeSnapshot {
+  date: string
+  headcount: number
+  headcountToday: number
+  departments: Array<{
+    department: string
+    count: number
+    head: string | null
+    people: Array<{ employeeId: string; name: string; position: string | null; hireDate: string; isHead: boolean }>
+  }>
+  changesSince: Array<{ entityType: string; action: string; count: number }>
+}
+export interface TimelinePoint { month: string; headcount: number; hires: number; exits: number }
+
+/* --------------------------------------------------------------- analitik */
+export interface AnalyticsOverview {
+  months: number
+  timeline: TimelinePoint[]
+  leave: Array<{ month: string; type: string; days: number; requests: number }>
+  overtime: Array<{ month: string; workedHours: number; overtimeHours: number }>
+  departments: Array<{ department: string; headcount: number }>
+  tenure: Array<{ bucket: string; count: number }>
+  expense: Array<{ month: string; amount: number; claims: number }>
+  kpis: { headcount: number; hires: number; exits: number; turnoverPercent: number; leaveDays: number; overtimeHours: number; expenseTotal: number }
+}
+
+/* ------------------------------------------------------------------- KVKK */
+export interface ConsentState {
+  type: string
+  title: string
+  version: string
+  required: boolean
+  text: string
+  granted: boolean | null
+  recordedAt: string | null
+  outdated: boolean
+  history: Array<{ granted: boolean; version: string; recordedAt: string }>
+}
+export interface ConsentSummary {
+  population: number
+  types: Array<{ type: string; title: string; required: boolean; version: string; granted: number; denied: number; pending: number }>
+  missingRequired: Array<{ employeeId: string; name: string; department: string | null }>
+}
+export type DataRequestKind = 'Access' | 'Rectification' | 'Erasure' | 'Objection'
+export const dataRequestLabels: Record<DataRequestKind, string> = {
+  Access: 'Bilgi/erişim talebi', Rectification: 'Düzeltme', Erasure: 'Silme/yok etme', Objection: 'İtiraz',
+}
+export interface DataRequest {
+  id: string
+  personName: string
+  employeeId: string | null
+  kind: DataRequestKind
+  details: string | null
+  status: 'Received' | 'InProgress' | 'Completed' | 'Rejected'
+  response: string | null
+  dueAt: string
+  createdAt: string
+  completedAt: string | null
+  overdue: boolean
+  daysLeft: number
+}
+export interface RetentionPolicy {
+  id: string
+  category: string
+  label: string
+  allowedActions: string[]
+  retentionMonths: number
+  action: string
+  isEnabled: boolean
+  lastRunAt: string | null
+  lastAffected: number
+}
+
+/* -------------------------------------------------------- belge şablonları */
+export interface DocTemplate { id: string; name: string; category: string; body: string; createdAt: string; updatedAt: string }
+export interface RenderedDoc { employeeId: string; name: string; html: string }
+
+/* ---------------------------------------------------------- kural motoru */
+export interface RuleCondition { field: string; op: string; value: string }
+export interface RuleAction { type: 'notify' | 'slack' | 'teams' | 'webhook'; target?: string | null; message: string }
+export interface Rule {
+  id: string
+  name: string
+  description: string | null
+  trigger: string
+  conditions: RuleCondition[]
+  actions: RuleAction[]
+  isEnabled: boolean
+  fireCount: number
+  lastFiredAt: string | null
+  createdAt: string
+}
+export interface RuleCatalog {
+  events: Array<{ type: string; label: string; fields: string[] }>
+  operators: Array<{ op: string; label: string }>
+  actions: Array<{ type: string; label: string }>
+}
+export interface RuleRun { id: string; ruleId: string; ruleName: string; eventType: string; result: string; occurredAt: string }
+
+/* ---------------------------------------------- webhook / API / entegrasyon */
+export interface Webhook {
+  id: string
+  name: string
+  url: string
+  secret: string
+  events: string[]
+  isEnabled: boolean
+  lastStatus: number | null
+  lastDeliveredAt: string | null
+  failureCount: number
+  createdAt: string
+}
+export interface WebhookDelivery { id: string; eventType: string; statusCode: number | null; error: string | null; durationMs: number; occurredAt: string }
+export interface ApiKeyRow { id: string; name: string; prefix: string; scopes: string[]; createdByName: string | null; createdAt: string; lastUsedAt: string | null; revokedAt: string | null; active: boolean }
+export interface Integration {
+  id: string
+  kind: 'Slack' | 'Teams'
+  name: string
+  webhookUrl: string
+  events: string[]
+  isEnabled: boolean
+  lastStatus: number | null
+  createdAt: string
+  hasSigningSecret: boolean
+}
+
+/* ------------------------------------------------------------ faturalama */
+export interface Invoice {
+  id: string
+  tenantSlug: string
+  number: string
+  period: string
+  plan: PlanName
+  seats: number
+  unitPrice: number
+  amount: number
+  taxAmount: number
+  total: number
+  currency: string
+  status: 'Issued' | 'Paid' | 'Void'
+  issuedAt: string
+  dueAt: string
+  paidAt: string | null
+  paymentRef: string | null
+}
+export interface BillingSummary {
+  company: string
+  plan: PlanName
+  activeEmployees: number
+  billableSeats: number
+  maxEmployees: number
+  pricePerSeat: number
+  estimate: { amount: number; tax: number; total: number }
+  paymentProvider: string | null
+  invoices: Invoice[]
+  outstanding: number
+}
+export interface PlanPrice { plan: PlanName; pricePerSeat: number; currency: string; vatRate: number; minimumSeats: number; features: string[] }
+
+/* ---------------------------------------------------------- asistan/rapor */
+export interface NlReport {
+  understood: boolean
+  interpretation: string
+  metric: string
+  groupBy: string
+  from: string
+  to: string
+  columns: string[]
+  rows: Array<Array<string | number | null>>
+  chart: 'bar' | 'line' | 'number' | 'none'
+  sql: string
+  suggestions: string[]
+}
+export interface AssistantReply {
+  reply: string
+  source: 'help' | 'data' | 'kb' | 'report' | 'fallback'
+  links?: Array<{ label: string; path: string }>
+  report?: NlReport
+  related?: string[]
+}
+export interface KbArticle { id: string; title: string; body: string; tags: string[]; createdAt: string; updatedAt: string }
+
+/* ----------------------------------------------------------------- saga */
+export interface HireSaga {
+  applicationId: string
+  candidate: string
+  email: string
+  posting: string
+  applicationStatus: 'Offer' | 'Hired'
+  stage: 'Offer' | 'AwaitingEmployee' | 'AwaitingOnboarding' | 'Completed'
+  steps: Array<{ key: string; label: string; done: boolean }>
+  employeeId: string | null
+  onboardingPlanId: string | null
+  onboardingStatus: string | null
+  daysInStage: number
+  stuck: boolean
+}
+
+/** Server-Sent Events'i fetch akışıyla okur (EventSource Authorization başlığı gönderemez). */
+export async function streamEvents(onEvent: (e: RadarEvent) => void, signal: AbortSignal, onOpen?: () => void) {
+  const token = await getValidToken()
+  const res = await fetch(`${env.apiBase}${BASE}/events/stream`, {
+    headers: { Authorization: `Bearer ${token}`, Accept: 'text/event-stream' },
+    signal,
+  })
+  if (!res.ok || !res.body) throw new Error(`Akış açılamadı (HTTP ${res.status})`)
+  onOpen?.()
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  for (;;) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    let idx
+    while ((idx = buffer.indexOf('\n\n')) >= 0) {
+      const chunk = buffer.slice(0, idx)
+      buffer = buffer.slice(idx + 2)
+      const data = chunk.split('\n').filter((l) => l.startsWith('data:')).map((l) => l.slice(5).trim()).join('')
+      if (data) {
+        try { onEvent(JSON.parse(data) as RadarEvent) } catch { /* bozuk parça */ }
+      }
+    }
+  }
+}
+
+export const governanceApi = {
+  plan: (signal?: AbortSignal) => apiFetch<PlanInfo>(`${BASE}/plan`, { signal }),
+
+  /* denetim */
+  audit: (f: AuditFilter, signal?: AbortSignal) =>
+    apiFetch<{ total: number; page: number; pageSize: number; items: AuditEntry[] }>(`${BASE}/audit${qs(f)}`, { signal }),
+  auditFacets: (signal?: AbortSignal) => apiFetch<AuditFacets>(`${BASE}/audit/facets`, { signal }),
+  auditCorrelation: (id: string, signal?: AbortSignal) => apiFetch<AuditEntry[]>(`${BASE}/audit/correlation/${encodeURIComponent(id)}`, { signal }),
+  auditExport: (f: AuditFilter) => downloadAuthed(`${BASE}/audit/export${qs(f)}`, `denetim-kaydi.csv`),
+
+  /* olaylar */
+  recentEvents: (limit = 100, signal?: AbortSignal) => apiFetch<RadarEvent[]>(`${BASE}/events/recent${qs({ limit })}`, { signal }),
+  eventStats: (signal?: AbortSignal) =>
+    apiFetch<{ byType: Array<{ type: string; count: number }>; hourly: Array<{ hour: string; count: number }>; listeners: number }>(`${BASE}/events/stats`, { signal }),
+
+  /* zaman makinesi */
+  snapshot: (date: string, signal?: AbortSignal) => apiFetch<TimeSnapshot>(`${BASE}/time-machine${qs({ date })}`, { signal }),
+  timeline: (months = 24, signal?: AbortSignal) =>
+    apiFetch<{ series: TimelinePoint[]; earliest: string | null }>(`${BASE}/time-machine/timeline${qs({ months })}`, { signal }),
+
+  /* analitik */
+  analytics: (months = 12, signal?: AbortSignal) => apiFetch<AnalyticsOverview>(`${BASE}/analytics/overview${qs({ months })}`, { signal }),
+
+  /* KVKK */
+  myConsents: (signal?: AbortSignal) => apiFetch<ConsentState[]>(`${BASE}/privacy/consents/me`, { signal }),
+  recordConsent: (consentType: string, granted: boolean) =>
+    apiFetch<unknown>(`${BASE}/privacy/consents/me`, { method: 'POST', body: { consentType, granted } }),
+  consentSummary: (signal?: AbortSignal) => apiFetch<ConsentSummary>(`${BASE}/privacy/consents`, { signal }),
+  dataRequests: (signal?: AbortSignal) => apiFetch<DataRequest[]>(`${BASE}/privacy/requests`, { signal }),
+  createDataRequest: (kind: DataRequestKind, details?: string) =>
+    apiFetch<DataRequest>(`${BASE}/privacy/requests`, { method: 'POST', body: { kind, details } }),
+  updateDataRequest: (id: string, status: DataRequest['status'], response?: string) =>
+    apiFetch<DataRequest>(`${BASE}/privacy/requests/${id}`, { method: 'PATCH', body: { status, response } }),
+  exportPersonalData: (employeeId: string) => downloadAuthed(`${BASE}/privacy/export/${employeeId}`, `kisisel-veri-${employeeId.slice(0, 8)}.json`),
+  anonymize: (employeeId: string) => apiFetch<{ anonymized: number }>(`${BASE}/privacy/anonymize/${employeeId}`, { method: 'POST' }),
+  retention: (signal?: AbortSignal) => apiFetch<RetentionPolicy[]>(`${BASE}/privacy/retention`, { signal }),
+  updateRetention: (id: string, body: { retentionMonths: number; action: string; isEnabled: boolean }) =>
+    apiFetch<RetentionPolicy>(`${BASE}/privacy/retention/${id}`, { method: 'PUT', body }),
+  runRetention: (id: string) => apiFetch<{ affected: number }>(`${BASE}/privacy/retention/${id}/run`, { method: 'POST' }),
+
+  /* belge şablonları */
+  templates: (signal?: AbortSignal) => apiFetch<DocTemplate[]>(`${BASE}/documents/templates`, { signal }),
+  placeholders: (signal?: AbortSignal) => apiFetch<Array<{ key: string; label: string }>>(`${BASE}/documents/templates/placeholders`, { signal }),
+  createTemplate: (body: { name: string; category: string; body: string }) =>
+    apiFetch<DocTemplate>(`${BASE}/documents/templates`, { method: 'POST', body }),
+  updateTemplate: (id: string, body: { name: string; category: string; body: string }) =>
+    apiFetch<DocTemplate>(`${BASE}/documents/templates/${id}`, { method: 'PUT', body }),
+  deleteTemplate: (id: string) => apiFetch<void>(`${BASE}/documents/templates/${id}`, { method: 'DELETE' }),
+  sampleTemplates: () => apiFetch<{ added: number }>(`${BASE}/documents/templates/samples`, { method: 'POST' }),
+  renderTemplate: (id: string, employeeIds: string[]) =>
+    apiFetch<{ template: string; documents: RenderedDoc[] }>(`${BASE}/documents/templates/${id}/render`, { method: 'POST', body: { employeeIds } }),
+
+  /* kural motoru */
+  ruleCatalog: (signal?: AbortSignal) => apiFetch<RuleCatalog>(`${BASE}/rules/catalog`, { signal }),
+  rules: (signal?: AbortSignal) => apiFetch<Rule[]>(`${BASE}/rules`, { signal }),
+  createRule: (body: Omit<Rule, 'id' | 'fireCount' | 'lastFiredAt' | 'createdAt'>) => apiFetch<Rule>(`${BASE}/rules`, { method: 'POST', body }),
+  updateRule: (id: string, body: Omit<Rule, 'id' | 'fireCount' | 'lastFiredAt' | 'createdAt'>) =>
+    apiFetch<Rule>(`${BASE}/rules/${id}`, { method: 'PUT', body }),
+  deleteRule: (id: string) => apiFetch<void>(`${BASE}/rules/${id}`, { method: 'DELETE' }),
+  testRule: (body: { conditions: RuleCondition[]; actions: RuleAction[]; payload: Record<string, unknown> }) =>
+    apiFetch<{ matched: boolean; reason: string; actions: Array<{ type: string; target: string | null; message: string }> | null }>(`${BASE}/rules/test`, { method: 'POST', body }),
+  ruleRuns: (ruleId?: string, signal?: AbortSignal) => apiFetch<RuleRun[]>(`${BASE}/rules/runs${qs({ ruleId })}`, { signal }),
+  sampleRules: () => apiFetch<{ added: number }>(`${BASE}/rules/samples`, { method: 'POST' }),
+
+  /* webhook */
+  webhooks: (signal?: AbortSignal) => apiFetch<Webhook[]>(`${BASE}/webhooks`, { signal }),
+  createWebhook: (body: { name: string; url: string; events: string[]; isEnabled: boolean }) => apiFetch<Webhook>(`${BASE}/webhooks`, { method: 'POST', body }),
+  updateWebhook: (id: string, body: { name: string; url: string; events: string[]; isEnabled: boolean }) =>
+    apiFetch<Webhook>(`${BASE}/webhooks/${id}`, { method: 'PUT', body }),
+  deleteWebhook: (id: string) => apiFetch<void>(`${BASE}/webhooks/${id}`, { method: 'DELETE' }),
+  pingWebhook: (id: string) => apiFetch<{ lastStatus: number | null; ok: boolean }>(`${BASE}/webhooks/${id}/ping`, { method: 'POST' }),
+  rotateWebhookSecret: (id: string) => apiFetch<{ secret: string }>(`${BASE}/webhooks/${id}/rotate-secret`, { method: 'POST' }),
+  webhookDeliveries: (id: string, signal?: AbortSignal) => apiFetch<WebhookDelivery[]>(`${BASE}/webhooks/${id}/deliveries`, { signal }),
+  createTestReceiver: () => apiFetch<{ id: string; token: string }>(`${BASE}/webhooks/test-receiver`, { method: 'POST' }),
+  webhookInbox: (token: string, signal?: AbortSignal) =>
+    apiFetch<Array<{ receivedAt: string; event: string | null; signatureValid: boolean | null; body: string }>>(`${BASE}/webhooks/inbox/${token}`, { signal }),
+
+  /* API anahtarı */
+  apiKeys: (signal?: AbortSignal) => apiFetch<ApiKeyRow[]>(`${BASE}/api-keys`, { signal }),
+  apiScopes: (signal?: AbortSignal) => apiFetch<string[]>(`${BASE}/api-keys/scopes`, { signal }),
+  createApiKey: (name: string, scopes: string[]) =>
+    apiFetch<{ id: string; name: string; prefix: string; scopes: string[]; key: string }>(`${BASE}/api-keys`, { method: 'POST', body: { name, scopes } }),
+  revokeApiKey: (id: string) => apiFetch<void>(`${BASE}/api-keys/${id}`, { method: 'DELETE' }),
+
+  /* Slack / Teams */
+  integrations: (signal?: AbortSignal) => apiFetch<Integration[]>(`${BASE}/integrations`, { signal }),
+  createIntegration: (body: { kind: string; name: string; webhookUrl: string; events: string[]; signingSecret?: string | null; isEnabled: boolean }) =>
+    apiFetch<{ id: string }>(`${BASE}/integrations`, { method: 'POST', body }),
+  updateIntegration: (id: string, body: { kind: string; name: string; webhookUrl: string; events: string[]; signingSecret?: string | null; isEnabled: boolean }) =>
+    apiFetch<{ id: string }>(`${BASE}/integrations/${id}`, { method: 'PUT', body }),
+  deleteIntegration: (id: string) => apiFetch<void>(`${BASE}/integrations/${id}`, { method: 'DELETE' }),
+  testIntegration: (id: string) => apiFetch<{ lastStatus: number | null; ok: boolean }>(`${BASE}/integrations/${id}/test`, { method: 'POST' }),
+
+  /* faturalama */
+  billingPlans: (signal?: AbortSignal) => apiFetch<PlanPrice[]>(`${BASE}/billing/plans`, { signal }),
+  billing: (signal?: AbortSignal) => apiFetch<BillingSummary>(`${BASE}/billing/me`, { signal }),
+  invoices: (signal?: AbortSignal) => apiFetch<Invoice[]>(`${BASE}/billing/invoices`, { signal }),
+  generateInvoices: () => apiFetch<{ created: number }>(`${BASE}/billing/generate`, { method: 'POST' }),
+  payInvoice: (id: string, reference?: string) => apiFetch<Invoice>(`${BASE}/billing/invoices/${id}/pay`, { method: 'POST', body: { reference } }),
+  voidInvoice: (id: string) => apiFetch<Invoice>(`${BASE}/billing/invoices/${id}/void`, { method: 'POST' }),
+  invoiceHtml: async (id: string) => {
+    const token = await getValidToken()
+    const res = await fetch(`${env.apiBase}${BASE}/billing/invoices/${id}/html`, { headers: { Authorization: `Bearer ${token}` } })
+    if (!res.ok) throw new Error('Fatura alınamadı')
+    return res.text()
+  },
+
+  /* takvim */
+  calendarFeed: (signal?: AbortSignal) => apiFetch<{ path: string; createdAt: string }>(`${BASE}/calendar/feed`, { signal }),
+  rotateCalendarFeed: () => apiFetch<{ path: string; createdAt: string }>(`${BASE}/calendar/feed/rotate`, { method: 'POST' }),
+
+  /* asistan & rapor */
+  examples: (signal?: AbortSignal) => apiFetch<string[]>(`${BASE}/insights/examples`, { signal }),
+  report: (question: string) => apiFetch<NlReport>(`${BASE}/insights/report`, { method: 'POST', body: { question } }),
+  assistant: (question: string) => apiFetch<AssistantReply>(`${BASE}/insights/assistant`, { method: 'POST', body: { question } }),
+  kb: (signal?: AbortSignal) => apiFetch<KbArticle[]>(`${BASE}/insights/kb`, { signal }),
+  createKb: (body: { title: string; body: string; tags: string[] }) => apiFetch<KbArticle>(`${BASE}/insights/kb`, { method: 'POST', body }),
+  updateKb: (id: string, body: { title: string; body: string; tags: string[] }) => apiFetch<KbArticle>(`${BASE}/insights/kb/${id}`, { method: 'PUT', body }),
+  deleteKb: (id: string) => apiFetch<void>(`${BASE}/insights/kb/${id}`, { method: 'DELETE' }),
+  sampleKb: () => apiFetch<{ added: number }>(`${BASE}/insights/kb/samples`, { method: 'POST' }),
+
+  /* saga */
+  hireSagas: (signal?: AbortSignal) => apiFetch<HireSaga[]>(`${BASE}/sagas/offer-to-hire`, { signal }),
+  advanceSaga: (applicationId: string, startDate?: string) =>
+    apiFetch<{ log: string[]; saga: HireSaga }>(`${BASE}/sagas/offer-to-hire/${applicationId}/advance`, { method: 'POST', body: { startDate } }),
+}
+
+/* ============================== tenant-service: güvenlik ============================== */
+export interface SsoStatus {
+  domain: string | null
+  providers: Array<{ alias: string; displayName: string | null; providerId: string | null; enabled: boolean; redirectUri: string }>
+  supported: Array<{ id: 'google' | 'microsoft'; label: string; redirectUri: string }>
+}
+export interface MfaStatus {
+  members: number
+  withOtp: number
+  pendingSetup: number
+  without: number
+  users: Array<{ userId: string; username: string | null; hasOtp: boolean; pendingSetup: boolean }>
+}
+export const securityApi = {
+  sso: (signal?: AbortSignal) => apiFetch<SsoStatus>('/api/tenant/security/sso', { signal }),
+  addSso: (body: { provider: 'google' | 'microsoft'; clientId: string; clientSecret: string; directoryId?: string; domain?: string }) =>
+    apiFetch<{ alias: string; redirectUri: string }>('/api/tenant/security/sso', { method: 'POST', body }),
+  removeSso: (alias: string) => apiFetch<void>(`/api/tenant/security/sso/${encodeURIComponent(alias)}`, { method: 'DELETE' }),
+  mfa: (signal?: AbortSignal) => apiFetch<MfaStatus>('/api/tenant/security/mfa', { signal }),
+  enforceMfa: () => apiFetch<{ required: number; members: number }>('/api/tenant/security/mfa/enforce', { method: 'POST' }),
+}

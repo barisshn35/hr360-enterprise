@@ -1,0 +1,317 @@
+import { useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { motion } from 'motion/react'
+import { Armchair, Building2, ChevronLeft, ChevronRight, DoorOpen, Home, Laptop, MapPin, Plane, Plus, Trash2, Users } from 'lucide-react'
+import { PageHeader } from '@/components/layout/PageHeader'
+import { Panel, PanelBody, PanelHead } from '@/components/ui/Panel'
+import { Button } from '@/components/ui/button'
+import { Modal } from '@/components/ui/Modal'
+import { SelectField, TextField } from '@/components/ui/Field'
+import { EmptyState, ErrorState, RowsSkeleton } from '@/components/ui/States'
+import { Tabs, useTabParam } from '@/components/ui/Tabs'
+import { engagementApi, presenceLabels, type Booking, type Desk, type PresenceMode } from '@/api/engagement'
+import { useAuth } from '@/auth/useAuth'
+import { isHr } from '@/auth/roles'
+import { useMyEmployeeId } from '@/api/queries'
+import { cn } from '@/lib/utils'
+import { Initials, Metric, PlanGate, isoDate, minutesToHHMM, useAction } from '@/features/shared/kit'
+
+const MODE_STYLE: Record<PresenceMode, { cls: string; icon: React.ElementType }> = {
+  Office: { cls: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30', icon: Building2 },
+  Remote: { cls: 'bg-sky-500/15 text-sky-400 border-sky-500/30', icon: Home },
+  Travel: { cls: 'bg-violet-500/15 text-violet-400 border-violet-500/30', icon: Plane },
+  Off: { cls: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30', icon: Laptop },
+  Leave: { cls: 'bg-amber-500/15 text-amber-400 border-amber-500/30', icon: Plane },
+  Unknown: { cls: 'border-dashed border-border text-muted-foreground', icon: MapPin },
+}
+const DAY = new Intl.DateTimeFormat('tr-TR', { weekday: 'short', day: 'numeric', month: 'short' })
+
+function startOfWeek(d: Date) {
+  const x = new Date(d)
+  x.setDate(x.getDate() - ((x.getDay() + 6) % 7))
+  return x
+}
+
+function PresenceBoard() {
+  const [anchor, setAnchor] = useState(() => startOfWeek(new Date()))
+  const from = isoDate(anchor)
+  const to = isoDate(new Date(anchor.getTime() + 4 * 86400000))
+  const { employeeId } = useMyEmployeeId()
+  const q = useQuery({ queryKey: ['presence', from], queryFn: ({ signal }) => engagementApi.presence(from, to, signal) })
+  const set = useAction((v: { date: string; mode: PresenceMode }) => engagementApi.setPresence(v), { invalidate: [['presence']] })
+  const today = isoDate()
+  const mine = q.data?.people.find((p) => p.employeeId === employeeId)
+
+  return (
+    <div className="space-y-5">
+      <div className="grid gap-3 sm:grid-cols-4">
+        {(['Office', 'Remote', 'Leave', 'Unknown'] as PresenceMode[]).map((m) => (
+          <Metric key={m} label={`Bugün ${presenceLabels[m].toLocaleLowerCase('tr-TR')}`} value={q.data?.today[m] ?? '—'} />
+        ))}
+      </div>
+      {employeeId && (
+        <Panel>
+          <PanelHead title="Bu hafta nerede çalışıyorum?" note="Bir güne tıklayıp çalışma yerinizi seçin. Masa ayırırsanız otomatik “Ofiste” olur." />
+          <PanelBody className="grid gap-3 sm:grid-cols-5">
+            {q.data?.days.map((d) => {
+              const cur = mine?.days.find((x) => x.date === d)?.mode ?? 'Unknown'
+              return (
+                <div key={d} className={cn('rounded-2xl border p-3', d === today ? 'border-primary/50 bg-primary/5' : 'border-border')}>
+                  <p className="mb-2 text-[12.5px] font-medium">{DAY.format(new Date(d))}</p>
+                  {cur === 'Leave' ? <p className="text-[12.5px] text-amber-400">İzinli</p> : (
+                    <div className="grid grid-cols-2 gap-1">
+                      {(['Office', 'Remote', 'Travel', 'Off'] as PresenceMode[]).map((m) => {
+                        const I = MODE_STYLE[m].icon
+                        return (
+                          <button key={m} type="button" title={presenceLabels[m]} onClick={() => set.mutate({ date: d, mode: m })}
+                            className={cn('flex cursor-pointer items-center justify-center gap-1 rounded-lg border px-1.5 py-1.5 text-[11px] transition', cur === m ? MODE_STYLE[m].cls : 'border-transparent text-muted-foreground hover:bg-accent')}>
+                            <I className="size-3.5" />
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </PanelBody>
+        </Panel>
+      )}
+      <Panel>
+        <PanelHead
+          title="Kim nerede?"
+          action={
+            <div className="flex items-center gap-1">
+              <Button size="icon" variant="ghost" aria-label="Önceki hafta" onClick={() => setAnchor(new Date(anchor.getTime() - 7 * 86400000))}><ChevronLeft className="size-4" /></Button>
+              <Button size="sm" variant="outline" onClick={() => setAnchor(startOfWeek(new Date()))}>Bu hafta</Button>
+              <Button size="icon" variant="ghost" aria-label="Sonraki hafta" onClick={() => setAnchor(new Date(anchor.getTime() + 7 * 86400000))}><ChevronRight className="size-4" /></Button>
+            </div>
+          }
+        />
+        <PanelBody className="overflow-x-auto p-0">
+          {q.isPending ? <div className="p-5"><RowsSkeleton /></div> : q.isError ? <ErrorState message={(q.error as Error).message} /> : (
+            <table className="w-full min-w-[720px] text-[13px]">
+              <thead>
+                <tr className="border-b border-border text-left text-[11.5px] text-muted-foreground">
+                  <th className="px-5 py-2.5 font-medium">Çalışan</th>
+                  {q.data.days.map((d) => <th key={d} className={cn('px-2 py-2.5 font-medium', d === today && 'text-primary')}>{DAY.format(new Date(d))}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {q.data.people.map((p, i) => (
+                  <motion.tr key={p.employeeId} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.03 }} className="border-b border-border/60 last:border-0">
+                    <td className="px-5 py-2.5">
+                      <div className="flex items-center gap-2.5"><Initials name={p.name} size={28} /><div><p className="font-medium">{p.name}</p><p className="text-[11.5px] text-muted-foreground">{p.department ?? '—'}</p></div></div>
+                    </td>
+                    {p.days.map((d) => {
+                      const S = MODE_STYLE[d.mode]
+                      return (
+                        <td key={d.date} className="px-2 py-2.5">
+                          <span title={d.note ?? undefined} className={cn('inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11.5px]', S.cls)}>
+                            <S.icon className="size-3" /> {presenceLabels[d.mode]}
+                          </span>
+                        </td>
+                      )
+                    })}
+                  </motion.tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </PanelBody>
+      </Panel>
+    </div>
+  )
+}
+
+const HOURS = Array.from({ length: 13 }, (_, i) => 8 + i) // 08–20
+
+function BookingBoard() {
+  const { roles } = useAuth()
+  const [date, setDate] = useState(isoDate())
+  const desks = useQuery({ queryKey: ['desks'], queryFn: ({ signal }) => engagementApi.desks(signal) })
+  const bookings = useQuery({ queryKey: ['bookings', date], queryFn: ({ signal }) => engagementApi.bookings(date, signal) })
+  const sample = useAction(() => engagementApi.sampleDesks(), { success: 'Örnek ofis planı oluşturuldu', invalidate: [['desks']] })
+  const [booking, setBooking] = useState<Desk | null>(null)
+  const cancel = useAction((id: string) => engagementApi.cancelBooking(id), { success: 'Rezervasyon iptal edildi', invalidate: [['bookings'], ['presence']] })
+
+  const byDesk = useMemo(() => {
+    const m = new Map<string, Booking[]>()
+    bookings.data?.forEach((b) => m.set(b.deskId, [...(m.get(b.deskId) ?? []), b]))
+    return m
+  }, [bookings.data])
+
+  if (desks.isPending) return <RowsSkeleton />
+  if (desks.isError) return <ErrorState message={(desks.error as Error).message} />
+  if (desks.data.length === 0)
+    return <EmptyState icon={Armchair} title="Ofis planı tanımlı değil" detail="İK, masa ve toplantı odalarını “Ofis planı” sekmesinden ekler." action={isHr(roles) && <Button onClick={() => sample.mutate(undefined)}>Örnek plan oluştur</Button>} />
+
+  const floors = [...new Set(desks.data.filter((d) => d.kind === 'Desk').map((d) => d.floor ?? '—'))]
+  const rooms = desks.data.filter((d) => d.kind === 'Room')
+  const myBookings = (bookings.data ?? []).filter((b) => b.mine)
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="w-48"><TextField label="Tarih" type="date" value={date} min={isoDate()} onChange={(e) => setDate(e.target.value)} /></div>
+        {myBookings.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {myBookings.map((b) => (
+              <span key={b.id} className="inline-flex items-center gap-2 rounded-full border border-primary/40 bg-primary/10 px-3 py-1.5 text-[12.5px]">
+                {desks.data.find((d) => d.id === b.deskId)?.name} · {minutesToHHMM(b.startMinute)}–{minutesToHHMM(b.endMinute)}
+                <button className="cursor-pointer text-muted-foreground hover:text-destructive" onClick={() => cancel.mutate(b.id)} aria-label="İptal"><Trash2 className="size-3.5" /></button>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="grid gap-5 xl:grid-cols-[1fr_1.1fr]">
+        {floors.map((floor) => (
+          <Panel key={floor}>
+            <PanelHead title={<span className="flex items-center gap-2"><Armchair className="size-4 text-primary" /> {floor} — masalar</span>} note="Yeşil boş, kırmızı dolu, mavi sizin." />
+            <PanelBody className="grid grid-cols-3 gap-3 sm:grid-cols-6 xl:grid-cols-3 2xl:grid-cols-6">
+              {desks.data.filter((d) => d.kind === 'Desk' && (d.floor ?? '—') === floor).map((d, i) => {
+                const bs = byDesk.get(d.id) ?? []
+                const mine = bs.some((b) => b.mine)
+                const taken = bs.length > 0
+                return (
+                  <motion.button
+                    key={d.id}
+                    type="button"
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: i * 0.03 }}
+                    whileHover={{ y: -3 }}
+                    disabled={taken && !mine}
+                    onClick={() => setBooking(d)}
+                    title={taken ? bs.map((b) => `${b.personName} ${minutesToHHMM(b.startMinute)}–${minutesToHHMM(b.endMinute)}`).join('\n') : `${d.zone ?? ''} ${d.features.join(', ')}`}
+                    className={cn(
+                      'relative flex cursor-pointer flex-col items-center gap-1 rounded-2xl border p-3 text-center transition disabled:cursor-not-allowed',
+                      mine ? 'border-sky-400/60 bg-sky-500/15' : taken ? 'border-rose-500/40 bg-rose-500/10 opacity-80' : 'border-emerald-500/30 bg-emerald-500/5 hover:bg-emerald-500/15',
+                    )}
+                  >
+                    <Armchair className={cn('size-5', mine ? 'text-sky-400' : taken ? 'text-rose-400' : 'text-emerald-400')} />
+                    <span className="text-[12px] font-medium">{d.code}</span>
+                    <span className="max-w-full truncate text-[10.5px] text-muted-foreground">{taken ? bs[0].personName.split(' ')[0] : d.zone}</span>
+                  </motion.button>
+                )
+              })}
+            </PanelBody>
+          </Panel>
+        ))}
+        {rooms.length > 0 && (
+          <Panel>
+            <PanelHead title={<span className="flex items-center gap-2"><DoorOpen className="size-4 text-primary" /> Toplantı odaları</span>} note="Boş zaman dilimine tıklayın." />
+            <PanelBody className="space-y-4 overflow-x-auto">
+              <div className="ml-28 flex min-w-[520px] text-[10.5px] text-muted-foreground">{HOURS.map((h) => <span key={h} className="flex-1">{h}:00</span>)}</div>
+              {rooms.map((r) => (
+                <div key={r.id} className="flex min-w-[640px] items-center gap-3">
+                  <div className="w-25 shrink-0">
+                    <p className="text-[13px] font-medium">{r.name}</p>
+                    <p className="flex items-center gap-1 text-[11px] text-muted-foreground"><Users className="size-3" /> {r.capacity} · {r.floor}</p>
+                  </div>
+                  <div className="relative h-9 flex-1 rounded-xl bg-muted/40">
+                    {HOURS.slice(0, -1).map((h, i) => (
+                      <button key={h} type="button" onClick={() => setBooking(r)} aria-label={`${r.name} ${h}:00`} className="absolute inset-y-0 cursor-pointer border-r border-border/40 hover:bg-primary/10" style={{ left: `${(i / 12) * 100}%`, width: `${100 / 12}%` }} />
+                    ))}
+                    {(byDesk.get(r.id) ?? []).map((b) => (
+                      <motion.div key={b.id} initial={{ scaleX: 0 }} animate={{ scaleX: 1 }} style={{ left: `${((b.startMinute - 480) / 720) * 100}%`, width: `${((b.endMinute - b.startMinute) / 720) * 100}%`, transformOrigin: 'left' }}
+                        className={cn('absolute inset-y-1 truncate rounded-lg px-2 text-[11px] leading-7', b.mine ? 'bg-sky-500/80 text-white' : 'bg-rose-500/70 text-white')} title={`${b.title ?? ''} — ${b.personName}`}>
+                        {b.title ?? b.personName}
+                      </motion.div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </PanelBody>
+          </Panel>
+        )}
+      </div>
+      {booking && <BookModal desk={booking} date={date} onClose={() => setBooking(null)} />}
+    </div>
+  )
+}
+
+function BookModal({ desk, date, onClose }: { desk: Desk; date: string; onClose: () => void }) {
+  const [start, setStart] = useState(desk.kind === 'Desk' ? '09:00' : '10:00')
+  const [end, setEnd] = useState(desk.kind === 'Desk' ? '18:00' : '11:00')
+  const [title, setTitle] = useState('')
+  const toMin = (s: string) => Number(s.slice(0, 2)) * 60 + Number(s.slice(3, 5))
+  const book = useAction(() => engagementApi.book({ deskId: desk.id, date, startMinute: toMin(start), endMinute: toMin(end), title: title || undefined }), {
+    success: `${desk.name} ayrıldı`, invalidate: [['bookings'], ['presence']], onDone: onClose,
+  })
+  return (
+    <Modal open onClose={onClose} title={`${desk.name} — ${desk.kind === 'Desk' ? 'masa' : 'oda'} ayır`} note={[desk.floor, desk.zone, ...desk.features].filter(Boolean).join(' · ')}
+      footer={<><Button variant="outline" onClick={onClose}>Vazgeç</Button><Button onClick={() => book.mutate(undefined)} disabled={book.isPending}>Ayır</Button></>}>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <TextField label="Başlangıç" type="time" value={start} onChange={(e) => setStart(e.target.value)} />
+        <TextField label="Bitiş" type="time" value={end} onChange={(e) => setEnd(e.target.value)} />
+        {desk.kind === 'Room' && <div className="sm:col-span-2"><TextField label="Toplantı adı" value={title} onChange={(e) => setTitle(e.target.value)} /></div>}
+      </div>
+    </Modal>
+  )
+}
+
+function OfficePlan() {
+  const desks = useQuery({ queryKey: ['desks'], queryFn: ({ signal }) => engagementApi.desks(signal) })
+  const [f, setF] = useState({ code: '', name: '', kind: 'Desk', floor: '1. kat', zone: '', capacity: '1', features: '' })
+  const create = useAction(() => engagementApi.createDesk({ code: f.code, name: f.name, kind: f.kind as Desk['kind'], floor: f.floor, zone: f.zone || null, capacity: Number(f.capacity) || 1, features: f.features.split(',').map((s) => s.trim()).filter(Boolean) }), {
+    success: 'Eklendi', invalidate: [['desks']], onDone: () => setF((x) => ({ ...x, code: '', name: '' })),
+  })
+  const del = useAction((id: string) => engagementApi.deleteDesk(id), { success: 'Kaldırıldı', invalidate: [['desks']] })
+  const sample = useAction(() => engagementApi.sampleDesks(), { success: 'Örnek plan oluşturuldu', invalidate: [['desks']] })
+  return (
+    <div className="grid gap-5 lg:grid-cols-[360px_1fr]">
+      <Panel>
+        <PanelHead title="Yeni masa / oda" />
+        <PanelBody className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <TextField label="Kod" value={f.code} onChange={(e) => setF({ ...f, code: e.target.value })} />
+            <SelectField label="Tür" value={f.kind} onChange={(v) => setF({ ...f, kind: v })} options={[{ value: 'Desk', label: 'Masa' }, { value: 'Room', label: 'Toplantı odası' }]} />
+          </div>
+          <TextField label="Ad" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
+          <div className="grid grid-cols-2 gap-3">
+            <TextField label="Kat" value={f.floor} onChange={(e) => setF({ ...f, floor: e.target.value })} />
+            <TextField label="Kapasite" type="number" min={1} value={f.capacity} onChange={(e) => setF({ ...f, capacity: e.target.value })} />
+          </div>
+          <TextField label="Bölge" value={f.zone} onChange={(e) => setF({ ...f, zone: e.target.value })} />
+          <TextField label="Özellikler (virgülle)" value={f.features} onChange={(e) => setF({ ...f, features: e.target.value })} />
+          <Button onClick={() => create.mutate(undefined)} disabled={!f.code || !f.name}><Plus className="size-4" /> Ekle</Button>
+        </PanelBody>
+      </Panel>
+      <Panel>
+        <PanelHead title="Ofis envanteri" action={(desks.data?.length ?? 0) === 0 && <Button size="sm" variant="outline" onClick={() => sample.mutate(undefined)}>Örnek plan</Button>} />
+        <PanelBody className="p-0">
+          <ul className="divide-y divide-border">
+            {desks.data?.map((d) => (
+              <li key={d.id} className="flex items-center gap-3 px-5 py-2.5 text-[13px]">
+                {d.kind === 'Desk' ? <Armchair className="size-4 text-muted-foreground" /> : <DoorOpen className="size-4 text-muted-foreground" />}
+                <span className="w-24 font-mono text-[12px]">{d.code}</span>
+                <span className="flex-1">{d.name} <span className="text-muted-foreground">· {d.floor} {d.zone ? `· ${d.zone}` : ''}</span></span>
+                <span className="text-muted-foreground">{d.features.join(', ')}</span>
+                <Button size="icon" variant="ghost" aria-label="Kaldır" onClick={() => del.mutate(d.id)}><Trash2 className="size-4" /></Button>
+              </li>
+            ))}
+          </ul>
+        </PanelBody>
+      </Panel>
+    </div>
+  )
+}
+
+export function WorkplacePage() {
+  const { roles } = useAuth()
+  const hr = isHr(roles, 'ext-engagement-manage')
+  const [tab, setTab] = useTabParam<'kim-nerede' | 'rezervasyon' | 'plan'>('sekme', 'kim-nerede')
+  return (
+    <PlanGate feature="workplace">
+      <PageHeader title="Ofis ve masa" description="Hibrit çalışmada kimin nerede olduğunu görün, masa ve toplantı odası ayırın." />
+      <div className="mb-5">
+        <Tabs label="Ofis" value={tab} onChange={setTab} tabs={[{ key: 'kim-nerede', label: 'Kim nerede' }, { key: 'rezervasyon', label: 'Masa & oda' }, ...(hr ? [{ key: 'plan' as const, label: 'Ofis planı' }] : [])]} />
+      </div>
+      {tab === 'kim-nerede' && <PresenceBoard />}
+      {tab === 'rezervasyon' && <BookingBoard />}
+      {tab === 'plan' && hr && <OfficePlan />}
+    </PlanGate>
+  )
+}

@@ -1,0 +1,157 @@
+import { useState } from 'react'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { AnimatePresence, motion } from 'motion/react'
+import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis } from 'recharts'
+import { ChevronDown, Download, Link2, ScrollText, Search } from 'lucide-react'
+import { PageHeader } from '@/components/layout/PageHeader'
+import { Panel, PanelBody, PanelHead } from '@/components/ui/Panel'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { SelectField, TextField } from '@/components/ui/Field'
+import { StatusBadge } from '@/components/ui/StatusBadge'
+import { EmptyState, ErrorState, RowsSkeleton } from '@/components/ui/States'
+import { Modal } from '@/components/ui/Modal'
+import { useToast } from '@/components/ui/Toast'
+import { governanceApi, type AuditEntry, type AuditFilter } from '@/api/governance'
+import { formatDateTime } from '@/lib/format'
+import { cn } from '@/lib/utils'
+import { PlanGate, errMsg } from '@/features/shared/kit'
+
+const ALL = '__all__'
+const actionTone = { Created: 'success', Updated: 'info', Deleted: 'danger' } as const
+const actionLabel: Record<string, string> = { Created: 'Oluşturma', Updated: 'Güncelleme', Deleted: 'Silme', Revealed: 'Görüntüleme', Exported: 'Dışa aktarma', Anonymized: 'Anonimleştirme' }
+
+function fmt(v: unknown): string {
+  if (v === null || v === undefined) return '∅'
+  if (typeof v === 'object') return JSON.stringify(v)
+  return String(v)
+}
+
+function Changes({ e }: { e: AuditEntry }) {
+  const ch = e.changes ?? {}
+  const keys = Object.keys(ch)
+  if (keys.length === 0) return <p className="text-[12px] text-muted-foreground">Ayrıntı yok.</p>
+  return (
+    <table className="w-full text-[12px]">
+      <tbody>
+        {keys.map((k) => {
+          const v = ch[k] as unknown
+          const diff = v && typeof v === 'object' && 'old' in (v as object) && 'new' in (v as object)
+          return (
+            <tr key={k} className="border-t border-border/60 align-top">
+              <td className="w-40 py-1 pr-3 font-mono text-muted-foreground">{k}</td>
+              {diff ? (
+                <td className="py-1"><span className="rounded bg-rose-500/15 px-1 line-through">{fmt((v as { old: unknown }).old)}</span> → <span className="rounded bg-emerald-500/15 px-1">{fmt((v as { new: unknown }).new)}</span></td>
+              ) : <td className="py-1 break-all">{fmt(v)}</td>}
+            </tr>
+          )
+        })}
+      </tbody>
+    </table>
+  )
+}
+
+export function AuditPage() {
+  const toast = useToast()
+  const [f, setF] = useState<AuditFilter>({ page: 1, pageSize: 50 })
+  const [q, setQ] = useState('')
+  const [open, setOpen] = useState<number | null>(null)
+  const [corr, setCorr] = useState<string | null>(null)
+  const facets = useQuery({ queryKey: ['audit', 'facets'], queryFn: ({ signal }) => governanceApi.auditFacets(signal) })
+  const list = useQuery({ queryKey: ['audit', f], queryFn: ({ signal }) => governanceApi.audit(f, signal), placeholderData: keepPreviousData })
+  const chain = useQuery({ queryKey: ['audit', 'corr', corr], enabled: !!corr, queryFn: ({ signal }) => governanceApi.auditCorrelation(corr!, signal) })
+  const set = (patch: Partial<AuditFilter>) => setF((x) => ({ ...x, ...patch, page: 1 }))
+  const pages = list.data ? Math.max(1, Math.ceil(list.data.total / list.data.pageSize)) : 1
+  return (
+    <PlanGate feature="audit">
+      <PageHeader title="Denetim kaydı" description="Kim, neyi, ne zaman, hangi istekle değiştirdi? Tüm servislerdeki ekleme/güncelleme/silme işlemleri eski → yeni değerleriyle." actions={<Button variant="outline" onClick={() => governanceApi.auditExport(f).catch((e) => toast.stop(errMsg(e)))}><Download className="size-4" /> CSV</Button>} />
+      <div className="grid gap-6 xl:grid-cols-[300px_1fr]">
+        <div className="space-y-5">
+          <Panel>
+            <PanelHead title="Filtre" />
+            <PanelBody className="space-y-3">
+              <form onSubmit={(e) => { e.preventDefault(); set({ q: q || undefined }) }} className="relative">
+                <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Değer, kişi veya kimlik ara" className="pl-9" />
+              </form>
+              <SelectField label="Servis" value={f.service ?? ALL} onChange={(v) => set({ service: v === ALL ? undefined : v })} options={[{ value: ALL, label: 'Tümü' }, ...(facets.data?.services ?? []).map((s) => ({ value: s.name, label: `${s.name} (${s.count})` }))]} />
+              <SelectField label="Varlık" value={f.entityType ?? ALL} onChange={(v) => set({ entityType: v === ALL ? undefined : v })} options={[{ value: ALL, label: 'Tümü' }, ...(facets.data?.entityTypes ?? []).map((s) => ({ value: s.name, label: `${s.name} (${s.count})` }))]} />
+              <SelectField label="Kullanıcı" value={f.userId ?? ALL} onChange={(v) => set({ userId: v === ALL ? undefined : v })} options={[{ value: ALL, label: 'Tümü' }, ...(facets.data?.users ?? []).filter((u) => u.id).map((u) => ({ value: u.id!, label: `${u.name ?? u.id} (${u.count})` }))]} />
+              <SelectField label="İşlem" value={f.action ?? ALL} onChange={(v) => set({ action: v === ALL ? undefined : v })} options={[{ value: ALL, label: 'Tümü' }, ...Object.entries(actionLabel).map(([k, v]) => ({ value: k, label: v }))]} />
+              <div className="grid grid-cols-2 gap-2">
+                <TextField label="Başlangıç" type="date" value={f.from ?? ''} onChange={(e) => set({ from: e.target.value || undefined })} />
+                <TextField label="Bitiş" type="date" value={f.to ?? ''} onChange={(e) => set({ to: e.target.value || undefined })} />
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => { setQ(''); setF({ page: 1, pageSize: 50 }) }}>Temizle</Button>
+            </PanelBody>
+          </Panel>
+          <Panel>
+            <PanelHead title="Son 90 gün" />
+            <PanelBody className="h-28 p-2">
+              <ResponsiveContainer>
+                <AreaChart data={facets.data?.daily ?? []}>
+                  <XAxis dataKey="day" hide />
+                  <Tooltip contentStyle={{ background: 'hsl(var(--popover))', border: '1px solid hsl(var(--border))', borderRadius: 12, fontSize: 12 }} />
+                  <Area dataKey="count" name="Kayıt" stroke="hsl(var(--primary))" fill="hsl(var(--primary)/0.2)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </PanelBody>
+          </Panel>
+        </div>
+        <Panel>
+          <PanelHead title={`${list.data?.total ?? 0} kayıt`} note="Satıra tıklayın: alan bazında eski → yeni değer. Hassas alanlar *** olarak tutulur." />
+          <PanelBody className="p-0">
+            {list.isPending ? <div className="p-5"><RowsSkeleton /></div> : list.isError ? <ErrorState message={(list.error as Error).message} /> : list.data.items.length === 0 ? <EmptyState icon={ScrollText} title="Kayıt yok" /> : (
+              <ul className="divide-y divide-border">
+                {list.data.items.map((e) => (
+                  <li key={e.id}>
+                    <button onClick={() => setOpen(open === e.id ? null : e.id)} className="flex w-full cursor-pointer flex-wrap items-center gap-3 px-5 py-2.5 text-left text-[13px] hover:bg-accent/30">
+                      <span className="tabular w-36 shrink-0 text-[12px] text-muted-foreground">{formatDateTime(e.occurredAt)}</span>
+                      <StatusBadge tone={actionTone[e.action as keyof typeof actionTone] ?? 'neutral'}>{actionLabel[e.action] ?? e.action}</StatusBadge>
+                      <span className="font-medium">{e.entityType}</span>
+                      <span className="truncate font-mono text-[11.5px] text-muted-foreground">{e.entityId?.slice(0, 8)}</span>
+                      <span className="ml-auto text-[12.5px]">{e.userName ?? e.userId}</span>
+                      <span className="hidden text-[11.5px] text-muted-foreground md:inline">{e.service}</span>
+                      <ChevronDown className={cn('size-4 text-muted-foreground transition', open === e.id && 'rotate-180')} />
+                    </button>
+                    <AnimatePresence>
+                      {open === e.id && (
+                        <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden bg-muted/20 px-5">
+                          <div className="space-y-2 py-3">
+                            <Changes e={e} />
+                            <div className="flex flex-wrap gap-3 text-[11.5px] text-muted-foreground">
+                              <span>IP: {e.ipAddress ?? '—'}</span>
+                              {e.correlationId && <button onClick={() => setCorr(e.correlationId)} className="flex cursor-pointer items-center gap-1 text-primary hover:underline"><Link2 className="size-3" /> Aynı istekteki tüm değişiklikler ({e.correlationId.slice(0, 10)}…)</button>}
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="flex items-center justify-between border-t border-border px-5 py-2.5 text-[12.5px]">
+              <span className="text-muted-foreground">Sayfa {f.page} / {pages}</span>
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" disabled={(f.page ?? 1) <= 1} onClick={() => setF((x) => ({ ...x, page: (x.page ?? 1) - 1 }))}>Önceki</Button>
+                <Button size="sm" variant="outline" disabled={(f.page ?? 1) >= pages} onClick={() => setF((x) => ({ ...x, page: (x.page ?? 1) + 1 }))}>Sonraki</Button>
+              </div>
+            </div>
+          </PanelBody>
+        </Panel>
+      </div>
+      {corr && (
+        <Modal open onClose={() => setCorr(null)} size="lg" title="İstek zinciri" note={`X-Correlation-Id: ${corr}`}>
+          {chain.isPending ? <RowsSkeleton rows={3} /> : (
+            <ol className="relative space-y-4 border-l border-border pl-5">
+              {chain.data?.map((e) => (
+                <li key={e.id}><span className="absolute -left-1.5 mt-1 size-3 rounded-full bg-primary" /><p className="text-[13px]"><b>{e.service}</b> · {e.entityType} {actionLabel[e.action] ?? e.action}</p><Changes e={e} /></li>
+              ))}
+            </ol>
+          )}
+        </Modal>
+      )}
+    </PlanGate>
+  )
+}

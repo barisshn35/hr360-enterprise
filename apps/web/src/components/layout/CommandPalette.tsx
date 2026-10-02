@@ -13,7 +13,8 @@ import { workflowApi } from '@/api/workflows'
 import { qk } from '@/api/queries'
 import { workflowTypeLabels } from '@/api/types'
 import { useAuth } from '@/auth/useAuth'
-import { filterByPermission, navGroups, overviewItem, type NavItemData } from './nav-config'
+import { overviewItem, type NavItemData } from './nav-config'
+import { useNavGroups } from './use-nav'
 
 /**
  * ⌘K paleti — dört kaynağı tek arama kutusunda birleştirir:
@@ -32,6 +33,7 @@ export function CommandPalette({
   const navigate = useNavigate()
   const qc = useQueryClient()
   const { can, roles } = useAuth()
+  const navTree = useNavGroups()
 
   const sources = useMemo<OmniSource[]>(() => {
     const list: OmniSource[] = []
@@ -42,7 +44,7 @@ export function CommandPalette({
 
     const goItems: OmniItem[] = [
       overviewItem,
-      ...filterByPermission(navGroups, can, roles).flatMap((g) =>
+      ...navTree.flatMap((g) =>
         g.items.flatMap((i) => (i.children ? flatten([i]) : [i])),
       ),
     ]
@@ -163,7 +165,7 @@ export function CommandPalette({
     }
 
     return list
-  }, [can, roles, navigate, qc])
+  }, [can, roles, navigate, qc, navTree])
 
   return (
     <OmniCommandPalette

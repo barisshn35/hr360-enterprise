@@ -12,6 +12,7 @@ import { CenteredSpinner, FullPageSpinner } from '@/components/ui/States'
 import { ErrorBoundary } from '@/app/ErrorBoundary'
 import { DashboardPage } from '@/features/dashboard/DashboardPage'
 import { NotFoundPage } from '@/features/NotFoundPage'
+import { PlanGate } from '@/features/shared/FeatureGate'
 
 /**
  * Adlandırılmış dışa aktarımı olan sayfaları tembel yükler.
@@ -71,6 +72,38 @@ const NotificationsPage = page(() => import('@/features/notification/Notificatio
 const SettingsPage = page(() => import('@/features/settings/SettingsPage'), 'SettingsPage')
 const RolesPage = page(() => import('@/features/settings/RolesPage'), 'RolesPage')
 const TenantsPage = page(() => import('@/features/platform/TenantsPage'), 'TenantsPage')
+
+/* -------- Topluluk, gelişim, kişiler, içgörü, yönetişim (2026-10 eklemeleri) -------- */
+const ProfilePage = page(() => import('@/features/profile/ProfilePage'), 'ProfilePage')
+const KudosPage = page(() => import('@/features/community/KudosPage'), 'KudosPage')
+const CelebrationsPage = page(() => import('@/features/community/CelebrationsPage'), 'CelebrationsPage')
+const SurveysPage = page(() => import('@/features/community/SurveysPage'), 'SurveysPage')
+const DirectoryPage = page(() => import('@/features/community/DirectoryPage'), 'DirectoryPage')
+const WorkplacePage = page(() => import('@/features/workplace/WorkplacePage'), 'WorkplacePage')
+const MentorshipPage = page(() => import('@/features/growth/MentorshipPage'), 'MentorshipPage')
+const MobilityPage = page(() => import('@/features/growth/MobilityPage'), 'MobilityPage')
+const OneOnOnesPage = page(() => import('@/features/growth/OneOnOnesPage'), 'OneOnOnesPage')
+const TeamHealthPage = page(() => import('@/features/growth/TeamHealthPage'), 'TeamHealthPage')
+const OffboardingPage = page(() => import('@/features/people/OffboardingPage'), 'OffboardingPage')
+const SuccessionPage = page(() => import('@/features/people/SuccessionPage'), 'SuccessionPage')
+const OrgScenariosPage = page(() => import('@/features/people/OrgScenariosPage'), 'OrgScenariosPage')
+const HireSagaPage = page(() => import('@/features/people/HireSagaPage'), 'HireSagaPage')
+const InsightsAnalyticsPage = page(() => import('@/features/insights/AnalyticsPage'), 'AnalyticsPage')
+const NlReportPage = page(() => import('@/features/insights/NlReportPage'), 'NlReportPage')
+const TimeMachinePage = page(() => import('@/features/insights/TimeMachinePage'), 'TimeMachinePage')
+const EventRadarPage = page(() => import('@/features/insights/EventRadarPage'), 'EventRadarPage')
+const AiToolsPage = page(() => import('@/features/insights/AiToolsPage'), 'AiToolsPage')
+const PayrollSimPage = page(() => import('@/features/insights/PayrollSimPage'), 'PayrollSimPage')
+const AuditPage = page(() => import('@/features/governance/AuditPage'), 'AuditPage')
+const PrivacyAdminPage = page(() => import('@/features/governance/PrivacyAdminPage'), 'PrivacyAdminPage')
+const DocTemplatesPage = page(() => import('@/features/governance/DocTemplatesPage'), 'DocTemplatesPage')
+const RulesPage = page(() => import('@/features/governance/RulesPage'), 'RulesPage')
+const IntegrationsPage = page(() => import('@/features/governance/IntegrationsPage'), 'IntegrationsPage')
+const SecurityPage = page(() => import('@/features/governance/SecurityPage'), 'SecurityPage')
+const ImportExportPage = page(() => import('@/features/governance/ImportExportPage'), 'ImportExportPage')
+const BillingPage = page(() => import('@/features/governance/BillingPage'), 'BillingPage')
+const PlatformInvoicesPage = page(() => import('@/features/governance/BillingPage'), 'PlatformInvoicesPage')
+const OrgPresentationPage = page(() => import('@/features/organization/OrgPresentationPage'), 'OrgPresentationPage')
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -269,6 +302,48 @@ export function App() {
                       path="platform/kiracilar"
                       element={guarded('platform:manage', <TenantsPage />)}
                     />
+
+                    {/* ---------------- Hesabım ---------------- */}
+                    <Route path="profil" element={<ProfilePage />} />
+
+                    {/* ---------------- Topluluk ---------------- */}
+                    <Route path="takdir" element={<PlanGate feature="kudos"><KudosPage /></PlanGate>} />
+                    <Route path="kutlamalar" element={<PlanGate feature="celebrations"><CelebrationsPage /></PlanGate>} />
+                    <Route path="anketler" element={<PlanGate feature="surveys"><SurveysPage /></PlanGate>} />
+                    <Route path="yetenek-dizini" element={<PlanGate feature="profile"><DirectoryPage /></PlanGate>} />
+                    <Route path="ofis" element={<PlanGate feature="workplace"><WorkplacePage /></PlanGate>} />
+                    <Route path="bordro-simulasyonu" element={<PlanGate feature="payroll-sim"><PayrollSimPage /></PlanGate>} />
+
+                    {/* ---------------- Gelişim ---------------- */}
+                    <Route path="mentorluk" element={<PlanGate feature="mentorship"><MentorshipPage /></PlanGate>} />
+                    <Route path="ic-ilanlar" element={<PlanGate feature="mobility"><MobilityPage /></PlanGate>} />
+                    <Route path="birebir" element={<PlanGate feature="one-on-ones"><OneOnOnesPage /></PlanGate>} />
+                    <Route path="ekip-sagligi" element={guarded('performance:manage', <PlanGate feature="team-health"><TeamHealthPage /></PlanGate>)} />
+
+                    {/* ---------------- Kişiler ---------------- */}
+                    <Route path="offboarding" element={guarded('onboarding:manage', <PlanGate feature="offboarding"><OffboardingPage /></PlanGate>)} />
+                    <Route path="ardil-planlama" element={guarded('performance:manage', <PlanGate feature="succession"><SuccessionPage /></PlanGate>)} />
+                    <Route path="org-senaryolari" element={guarded('performance:manage', <PlanGate feature="org-scenarios"><OrgScenariosPage /></PlanGate>)} />
+                    <Route path="ise-alim/saga" element={guarded('recruitment:view', <PlanGate feature="sagas"><HireSagaPage /></PlanGate>, ['hr-admin', 'tenant-admin', 'platform-admin'])} />
+                    <Route path="organizasyon/sunum" element={guarded('organization:view', <PlanGate feature="profile"><OrgPresentationPage /></PlanGate>)} />
+
+                    {/* ---------------- İçgörü ---------------- */}
+                    <Route path="analitik" element={guarded('performance:manage', <PlanGate feature="analytics"><InsightsAnalyticsPage /></PlanGate>)} />
+                    <Route path="rapor-asistani" element={guarded('performance:manage', <PlanGate feature="nl-report"><NlReportPage /></PlanGate>)} />
+                    <Route path="zaman-makinesi" element={guarded('performance:manage', <PlanGate feature="time-machine"><TimeMachinePage /></PlanGate>)} />
+                    <Route path="olay-radari" element={guarded('performance:manage', <PlanGate feature="events"><EventRadarPage /></PlanGate>)} />
+                    <Route path="ai-araclari" element={guarded('recruitment:view', <PlanGate feature="ai-tools"><AiToolsPage /></PlanGate>)} />
+
+                    {/* ---------------- Yönetişim ---------------- */}
+                    <Route path="denetim" element={guarded('employee:manage', <PlanGate feature="audit"><AuditPage /></PlanGate>)} />
+                    <Route path="kvkk" element={guarded('employee:manage', <PlanGate feature="privacy"><PrivacyAdminPage /></PlanGate>)} />
+                    <Route path="belge-sablonlari" element={guarded('document:manage', <PlanGate feature="documents"><DocTemplatesPage /></PlanGate>)} />
+                    <Route path="kural-motoru" element={guarded('employee:manage', <PlanGate feature="rules"><RulesPage /></PlanGate>)} />
+                    <Route path="entegrasyonlar" element={guarded('employee:manage', <PlanGate feature="webhooks"><IntegrationsPage /></PlanGate>)} />
+                    <Route path="guvenlik" element={guarded('tenant:manage', <PlanGate feature="sso"><SecurityPage /></PlanGate>, ['tenant-admin', 'platform-admin'])} />
+                    <Route path="ice-disa-aktarim" element={guarded('employee:manage', <PlanGate feature="import-export"><ImportExportPage /></PlanGate>)} />
+                    <Route path="abonelik" element={guarded('tenant:manage', <PlanGate feature="billing"><BillingPage /></PlanGate>)} />
+                    <Route path="platform/faturalar" element={guarded('platform:manage', <PlatformInvoicesPage />)} />
 
                     <Route path="404" element={<NotFoundPage />} />
                     <Route path="*" element={<Navigate to="/panel/404" replace />} />

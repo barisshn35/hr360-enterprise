@@ -13,7 +13,7 @@
  * ekran animasyonlu menüye dönüşür.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
@@ -28,6 +28,10 @@ import {
   Search,
   Sun,
   UserCog,
+  UserRound,
+  Download,
+  Eye,
+  EyeOff,
   X,
 } from 'lucide-react'
 import {
@@ -47,21 +51,21 @@ import { primaryRole, roleLabels } from '@/auth/roles'
 import { useTheme } from '@/lib/theme'
 import { cn } from '@/lib/utils'
 import {
-  filterByPermission,
   locate,
-  navGroups,
   overviewItem,
   type NavGroupData,
   type NavItemData,
 } from './nav-config'
+import { useNavGroups } from './use-nav'
+import { useInstallPrompt } from '@/lib/pwa'
+import { usePrivacyScreen } from '@/lib/privacy-screen'
 
 const SPRING = { type: 'spring' as const, mass: 0.5, damping: 14, stiffness: 120, restDelta: 0.001 }
 
 const planLabels: Record<string, string> = { Trial: 'Deneme', Standard: 'Standart', Enterprise: 'Kurumsal' }
 
 function useVisibleGroups() {
-  const { can, roles } = useAuth()
-  return useMemo(() => filterByPermission(navGroups, can, roles), [can, roles])
+  return useNavGroups()
 }
 
 /* ------------------------------- Marka ------------------------------- */
@@ -311,6 +315,8 @@ function ThemeToggle() {
 
 function AccountMenu() {
   const { user, roles, logout, accountUrl, tenant, canSwitchTenant, availableTenants, switchTenant } = useAuth()
+  const install = useInstallPrompt()
+  const [privacy, setPrivacy] = usePrivacyScreen()
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -354,11 +360,27 @@ function AccountMenu() {
           </>
         )}
         <DropdownMenuItem asChild>
+          <Link to="/panel/profil">
+            <UserRound className="size-4" strokeWidth={1.5} />
+            Profilim
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
           <Link to="/panel/ayarlar">
             <UserCog className="size-4" strokeWidth={1.5} />
             Ayarlar
           </Link>
         </DropdownMenuItem>
+        <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setPrivacy(!privacy) }}>
+          {privacy ? <EyeOff className="size-4" strokeWidth={1.5} /> : <Eye className="size-4" strokeWidth={1.5} />}
+          Ekran paylaşım modu {privacy ? 'açık' : 'kapalı'}
+        </DropdownMenuItem>
+        {install && (
+          <DropdownMenuItem onSelect={() => void install()}>
+            <Download className="size-4" strokeWidth={1.5} />
+            Uygulama olarak yükle
+          </DropdownMenuItem>
+        )}
         {accountUrl !== '#' && (
           <DropdownMenuItem asChild>
             <a href={accountUrl} target="_blank" rel="noreferrer">

@@ -23,6 +23,16 @@ async function prepare() {
   }
 }
 
+/**
+ * PWA: üretim derlemesinde servis çalışanını kaydet (mock modunda MSW kendi
+ * çalışanını kullandığı için atlanır). Uygulama kabuğu çevrimdışı da açılır.
+ */
+if (import.meta.env.PROD && !__MOCK_API__ && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch((e: unknown) => console.warn('[HR360] Servis çalışanı kaydedilemedi:', e))
+  })
+}
+
 void prepare()
   .catch((e: unknown) => console.error('[HR360] Mock katmanı başlatılamadı:', e))
   .finally(() => {

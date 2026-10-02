@@ -384,3 +384,17 @@
     animation: none !important;
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * Ekran paylaşım modu (lib/privacy-screen.ts): hassas sayılar bulanık,
+ * üzerine gelince görünür.
+ * ------------------------------------------------------------------------ */
+[data-privacy='on'] .sensitive-scope .tabular,
+[data-privacy='on'] .sensitive {
+  filter: blur(7px);
+  transition: filter 0.2s ease;
+}
+[data-privacy='on'] .sensitive-scope .tabular:hover,
+[data-privacy='on'] .sensitive:hover {
+  filter: none;
+}

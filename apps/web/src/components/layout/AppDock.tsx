@@ -7,22 +7,22 @@ import { useMemo } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { Command, Settings } from 'lucide-react'
 import { FloatingDock, type DockItem } from '@/components/fx/floating-dock'
-import { useAuth } from '@/auth/useAuth'
 import { cn } from '@/lib/utils'
-import { filterByPermission, flattenItems, locate, navGroups, overviewItem } from './nav-config'
+import { flattenItems, locate, overviewItem } from './nav-config'
+import { useNavGroups } from './use-nav'
 
 /** Rıhtıma girecek modüller, öncelik sırasıyla; yetkisi olmayanlar atlanır. */
-const PREFERRED = ['approvals', 'leave', 'expense', 'employees', 'timeshift', 'perf-me', 'learning', 'tenants', 'notifications']
+const PREFERRED = ['approvals', 'leave', 'workplace', 'kudos', 'expense', 'employees', 'timeshift', 'perf-me', 'learning', 'tenants', 'notifications']
 
 export function AppDock({ unreadCount, onOpenCommandPalette }: { unreadCount: number; onOpenCommandPalette: () => void }) {
-  const { can, roles } = useAuth()
   const { pathname } = useLocation()
   const here = locate(pathname)
 
+  const groups = useNavGroups()
   const modules = useMemo(() => {
-    const flat = flattenItems(filterByPermission(navGroups, can, roles))
+    const flat = flattenItems(groups)
     return PREFERRED.map((id) => flat.find((f) => f.id === id)).filter(Boolean) as typeof flat
-  }, [can, roles])
+  }, [groups])
 
   const desktop: DockItem[] = [
     { id: overviewItem.id, title: overviewItem.title, icon: overviewItem.icon, href: '/panel', active: here.item?.id === 'overview' },

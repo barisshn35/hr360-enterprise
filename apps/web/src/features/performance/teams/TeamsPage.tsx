@@ -9,8 +9,8 @@
  */
 
 import { useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
-import { Network, Plus, Settings2 } from 'lucide-react'
+import { Link, useSearchParams } from 'react-router-dom'
+import { Network, Plus, Presentation, Settings2 } from 'lucide-react'
 import { useAuth } from '@/auth/useAuth'
 import { Button } from '@/components/ui/button'
 import { Panel } from '@/components/ui/Panel'
@@ -74,12 +74,20 @@ export function TeamsPage() {
             : 'Şirketin departmanları, ekipleri ve ekip üyeleri. Bir ekibe tıklayıp üyelerini görebilirsiniz.'
         }
         actions={
-          canManage && (
-            <Button onClick={() => (view === 'yonetim' ? setCreating(true) : (setParam({ gorunum: 'yonetim' }), setCreating(true)))}>
-              <Plus aria-hidden />
-              Yeni ekip
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" asChild>
+              <Link to="/panel/organizasyon/sunum">
+                <Presentation aria-hidden />
+                Sunum modu
+              </Link>
             </Button>
-          )
+            {canManage && (
+              <Button onClick={() => (view === 'yonetim' ? setCreating(true) : (setParam({ gorunum: 'yonetim' }), setCreating(true)))}>
+                <Plus aria-hidden />
+                Yeni ekip
+              </Button>
+            )}
+          </div>
         }
       >
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">

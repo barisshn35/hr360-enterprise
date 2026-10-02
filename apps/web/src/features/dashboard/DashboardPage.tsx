@@ -36,7 +36,8 @@ import { OrbitingCircles } from '@/components/fx/orbiting-circles'
 import { GradientText } from '@/components/fx/shiny-text'
 import { TextReveal } from '@/components/fx/text-reveal'
 import { Spotlight } from '@/components/fx/spotlight'
-import { filterByPermission, flattenItems, navGroups } from '@/components/layout/nav-config'
+import { flattenItems } from '@/components/layout/nav-config'
+import { useNavGroups } from '@/components/layout/use-nav'
 import { useAuth } from '@/auth/useAuth'
 import {
   useCompanies,
@@ -120,7 +121,7 @@ function Tile({ className, children, i = 0 }: { className?: string; children: Re
 type Kpi = StatCardProps & { key: string; to: string }
 
 export function DashboardPage() {
-  const { user, can, roles } = useAuth()
+  const { user, can } = useAuth()
   const reduced = useReducedMotion()
   const canSeeEmployees = can('employee:viewAll')
   const canDecide = can('workflow:decide')
@@ -176,7 +177,8 @@ export function DashboardPage() {
     [pending.data],
   )
 
-  const modules = useMemo(() => flattenItems(filterByPermission(navGroups, can, roles)), [can, roles])
+  const navTree = useNavGroups()
+  const modules = useMemo(() => flattenItems(navTree), [navTree])
 
   const firstName = user?.fullName?.split(' ')[0] ?? ''
   const statsLoading = (canSeeEmployees && employees.isPending) || (canWorkflow && pending.isPending)

@@ -863,7 +863,7 @@ export function CompensationPage() {
   ]
 
   return (
-    <div className="space-y-5">
+    <div className="sensitive-scope space-y-5">
       <PageHeader
         title="Ücret"
         description="Ücret bantları, çalışan ücret geçmişi ve zam simülasyonu. Bu sayfa yalnızca İK yönetimine açıktır."
