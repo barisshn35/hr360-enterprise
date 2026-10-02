@@ -36,7 +36,7 @@ unit() {
   (cd apps/web && { [ -d node_modules ] || npm ci --no-audit --no-fund; } && run npx vitest run)
   step "ML servisi (pytest)"
   run docker run --rm -v "$ROOT/apps/ml-inference:/src:ro" python:3.11-slim sh -c \
-    "cp -r /src /w && cd /w && grep -E '^(fastapi|pydantic|httpx|numpy|scikit-learn)==' requirements.txt > r.txt && cat requirements-ai.txt requirements-dev.txt >> r.txt && pip install -q -r r.txt >/dev/null 2>&1 && python -m pytest -q -p no:warnings tests"
+    "cp -r /src /w && cd /w && grep -E '^(fastapi|starlette|pydantic|httpx|numpy|scikit-learn)==' requirements.txt > r.txt && cat requirements-ai.txt requirements-dev.txt >> r.txt && pip install -q -r r.txt >/dev/null 2>&1 && python -m pytest -q -p no:warnings tests"
 }
 
 integration() {

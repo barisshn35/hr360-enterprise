@@ -486,12 +486,21 @@ services:
       MLFLOW_S3_ENDPOINT_URL: "http://minio:9000"
       AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
       AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
-    command: >
-      mlflow server
-      --backend-store-uri postgresql://hr360admin:${HR360_DB_PASSWORD}@postgres:5432/hr360_mlflow
-      --default-artifact-root s3://hr360-mlflow-artifacts/
-      --host 0.0.0.0
-      --port 5000
+      # Baglanti dizesi sunucu komut satirinda degil ortamda: parola "ps" ciktisinda gorunmez.
+      MLFLOW_BACKEND_STORE_URI: "postgresql://hr360admin:${HR360_DB_PASSWORD}@postgres:5432/hr360_mlflow"
+      MLFLOW_DEFAULT_ARTIFACT_ROOT: "s3://hr360-mlflow-artifacts/"
+      # MLflow 3'un GenAI arka plan isleri kullanilmiyor; ek surec ve bellek harcamasin.
+      MLFLOW_SERVER_ENABLE_JOB_EXECUTION: "false"
+    # Surum yukseltmelerinde sema once guncellenir (bos veritabaninda da calisir).
+    # Host basligi denetimi: yalnizca ic ag adi ve yerel erisim kabul edilir.
+    # Her isci ~200 MB; varsayilan 4 isci bellek sinirini asar.
+    command:
+      - sh
+      - -c
+      - >-
+        mlflow db upgrade "$$MLFLOW_BACKEND_STORE_URI" &&
+        exec mlflow server --host 0.0.0.0 --port 5000 --workers 2
+        --allowed-hosts mlflow,mlflow:5000,localhost,localhost:5000,127.0.0.1,127.0.0.1:5000
     depends_on:
       postgres:
         condition: service_healthy

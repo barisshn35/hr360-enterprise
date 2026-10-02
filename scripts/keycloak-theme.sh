@@ -49,7 +49,11 @@ if [ "$theme" = hr360 ] && ! docker compose exec -T keycloak test -f /opt/keyclo
     || die "Tema klasoru hala gorunmuyor; docker-compose.yml'de keycloak volumes altinda themes/hr360 satiri var mi?"
 fi
 
-docker compose exec -T -e THEME="$theme" keycloak sh -c '
+# Giris ekraninin icerik guvenligi politikasi (Keycloak varsayilani yalnizca cerceveleri kisitlar).
+# Keycloak sablonlari satir ici betik kullandigindan script-src 'unsafe-inline' gerekir.
+KC_CSP="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; frame-src 'self'; frame-ancestors 'self'; object-src 'none'; base-uri 'self'"
+
+docker compose exec -T -e THEME="$theme" -e KC_CSP="$KC_CSP" keycloak sh -c '
   K=/opt/keycloak/bin/kcadm.sh; C=/tmp/kcadm-theme.config
   for i in $(seq 1 30); do
     $K config credentials --config $C --server http://127.0.0.1:8080/auth --realm master \
@@ -58,7 +62,8 @@ docker compose exec -T -e THEME="$theme" keycloak sh -c '
   done
   $K update realms/hr360 --config $C \
     -s "loginTheme=$THEME" -s "displayName=HR360" \
-    -s internationalizationEnabled=true -s "supportedLocales=[\"tr\",\"en\"]" -s defaultLocale=tr
+    -s internationalizationEnabled=true -s "supportedLocales=[\"tr\",\"en\"]" -s defaultLocale=tr \
+    -s "browserSecurityHeaders.contentSecurityPolicy=$KC_CSP"
   rc=$?; rm -f $C; exit $rc
 ' || die "Keycloak ayari guncellenemedi"
 

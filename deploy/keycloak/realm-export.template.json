@@ -24,6 +24,15 @@
   },
   "editUsernameAllowed": false,
   "bruteForceProtected": true,
+  "browserSecurityHeaders": {
+    "contentSecurityPolicy": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; frame-src 'self'; frame-ancestors 'self'; object-src 'none'; base-uri 'self'",
+    "contentSecurityPolicyReportOnly": "",
+    "xContentTypeOptions": "nosniff",
+    "xFrameOptions": "SAMEORIGIN",
+    "referrerPolicy": "no-referrer",
+    "xRobotsTag": "none",
+    "strictTransportSecurity": "max-age=31536000; includeSubDomains"
+  },
   "organizationsEnabled": true,
   "roles": {
     "realm": [

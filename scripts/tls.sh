@@ -256,6 +256,11 @@ ssl_certificate_key ${keyfile};
 ssl_protocols       TLSv1.2 TLSv1.3;
 ssl_session_cache   shared:tls:10m;
 EOF
+    # HSTS yalnizca guvenilir sertifikada: kendinden imzalida tarayici uyariyi gecmeye
+    # izin vermez ve site 6 ay boyunca acilamaz hale gelir. Alt alan adlari kapsanmaz.
+    if [ "$self" != 1 ]; then
+      echo 'add_header Strict-Transport-Security "max-age=15552000" always;' >> "$DIR/listen.conf"
+    fi
     write_redirect "$port"
     if [ "$port" = "443" ]; then origin="https://$host"; else origin="https://$host:$port"; fi
     set_env GATEWAY_TLS_BIND 0.0.0.0

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { LoaderCircle, Upload, FileSpreadsheet, CheckCircle2, XCircle } from 'lucide-react'
-import * as XLSX from 'xlsx'
+import { headerField, readSpreadsheet, SpreadsheetError } from '@/lib/spreadsheet'
 import { employeeApi } from '@/api/employees'
 import { tenantApi } from '@/api/tenant'
 import { qk } from '@/api/queries'
@@ -48,10 +48,6 @@ const HEADER_ALIASES: Record<string, keyof Omit<ParsedRow, 'rowNumber' | 'error'
   departman: 'departmentLabel',
 }
 
-function normalizeHeader(h: string): string {
-  return h.trim().toLowerCase().replace(/\s+/g, '')
-}
-
 function excelDateToIso(value: unknown): string {
   if (value instanceof Date) {
     const y = value.getFullYear()
@@ -68,17 +64,14 @@ function excelDateToIso(value: unknown): string {
   return ''
 }
 
-function parseWorkbook(buffer: ArrayBuffer, departments: DepartmentOption[]): ParsedRow[] {
-  const wb = XLSX.read(buffer, { type: 'array', cellDates: true })
-  const sheet = wb.Sheets[wb.SheetNames[0]]
-  const raw: Record<string, unknown>[] = XLSX.utils.sheet_to_json(sheet, { defval: '' })
+function parseWorkbook(raw: Record<string, unknown>[], departments: DepartmentOption[]): ParsedRow[] {
 
   const deptByLabel = new Map(departments.map((d) => [d.label.trim().toLowerCase(), d.id]))
 
   return raw.map((record, idx) => {
     const mapped: Record<string, unknown> = {}
     for (const [key, value] of Object.entries(record)) {
-      const field = HEADER_ALIASES[normalizeHeader(key)]
+      const field = headerField(HEADER_ALIASES, key)
       if (field) mapped[field] = value
     }
 
@@ -148,10 +141,9 @@ export function ImportEmployeesModal({
     setResults(null)
     setParsing(true)
     try {
-      const buffer = await file.arrayBuffer()
-      setRows(parseWorkbook(buffer, departments))
-    } catch {
-      toast.stop('Dosya okunamadı. Geçerli bir .xlsx dosyası seçin.')
+      setRows(parseWorkbook(await readSpreadsheet(file), departments))
+    } catch (err) {
+      toast.stop(err instanceof SpreadsheetError ? err.message : 'Dosya okunamadı. Geçerli bir .xlsx ya da .csv dosyası seçin.')
       setRows([])
     } finally {
       setParsing(false)
@@ -261,7 +253,7 @@ export function ImportEmployeesModal({
             <input
               id="employee-import-file"
               type="file"
-              accept=".xlsx,.xls,.csv"
+              accept=".xlsx,.csv"
               className="hidden"
               onChange={handleFile}
             />

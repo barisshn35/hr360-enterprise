@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'motion/react'
-import * as XLSX from 'xlsx'
+import { downloadWorkbook } from '@/lib/spreadsheet'
 import { Building2, CalendarDays, Download, FileSpreadsheet, GraduationCap, LoaderCircle, Upload, Users, Wallet } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Panel, PanelBody, PanelHead } from '@/components/ui/Panel'
@@ -19,15 +19,7 @@ import { PlanGate, errMsg } from '@/features/shared/kit'
 
 type Dataset = { id: string; title: string; detail: string; icon: React.ElementType; load: () => Promise<Record<string, unknown>[]> }
 
-function download(name: string, sheets: Record<string, Record<string, unknown>[]>) {
-  const wb = XLSX.utils.book_new()
-  for (const [title, rows] of Object.entries(sheets)) {
-    const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{ Bilgi: 'Kayıt yok' }])
-    ws['!cols'] = Object.keys(rows[0] ?? { Bilgi: '' }).map((k) => ({ wch: Math.max(12, Math.min(40, k.length + 4)) }))
-    XLSX.utils.book_append_sheet(wb, ws, title.slice(0, 31))
-  }
-  XLSX.writeFile(wb, name)
-}
+const download = downloadWorkbook
 
 export function ImportExportPage() {
   const toast = useToast()
@@ -53,7 +45,7 @@ export function ImportExportPage() {
     setBusy(d.id)
     try {
       const rows = await d.load()
-      download(`hr360-${d.id}-${new Date().toISOString().slice(0, 10)}.xlsx`, { [d.title]: rows })
+      await download(`hr360-${d.id}-${new Date().toISOString().slice(0, 10)}.xlsx`, { [d.title]: rows })
       toast.ok(`${rows.length} satır indirildi`)
     } catch (e) { toast.stop(errMsg(e)) } finally { setBusy(null) }
   }
@@ -64,9 +56,9 @@ export function ImportExportPage() {
       for (const d of datasets) {
         try { sheets[d.title] = await d.load() } catch { sheets[d.title] = [] }
       }
-      download(`hr360-tum-veriler-${new Date().toISOString().slice(0, 10)}.xlsx`, sheets)
+      await download(`hr360-tum-veriler-${new Date().toISOString().slice(0, 10)}.xlsx`, sheets)
       toast.ok('Tüm veriler tek dosyada indirildi')
-    } finally { setBusy(null) }
+    } catch (e) { toast.stop(errMsg(e)) } finally { setBusy(null) }
   }
 
   return (

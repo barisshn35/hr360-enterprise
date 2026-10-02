@@ -1,2 +1,2 @@
-pypdf==5.1.0
-python-multipart==0.0.17
+pypdf==6.19.0
+python-multipart==0.0.32

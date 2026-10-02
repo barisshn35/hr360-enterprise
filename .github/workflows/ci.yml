@@ -1,5 +1,5 @@
 # HR360 surekli entegrasyon: her push / PR'da arayuz, .NET servisleri,
-# ML servisi ve dagitim dosyalari dogrulanir. main'e push'ta ek olarak Docker
+# ML servisi, dagitim dosyalari ve guvenlik taramasi (Trivy, npm audit, NuGet) dogrulanir. main'e push'ta ek olarak Docker
 # imajlari derlenir (yayinlanmaz).
 name: CI
 
@@ -117,7 +117,7 @@ jobs:
         # Testler yalnizca ai_tools router'ini yukler; mlflow/shap gibi agir
         # paketler gerekmez. Surumler requirements dosyalarindan alinir.
         run: |
-          grep -E '^(fastapi|pydantic|httpx|numpy|scikit-learn)==' requirements.txt > ci-req.txt
+          grep -E '^(fastapi|starlette|pydantic|httpx|numpy|scikit-learn)==' requirements.txt > ci-req.txt
           cat requirements-ai.txt requirements-dev.txt >> ci-req.txt
           pip install -r ci-req.txt
       - name: Sozdizimi
@@ -167,10 +167,39 @@ jobs:
           docker exec -i pg psql -U hr360admin -d hr360_operational -v ON_ERROR_STOP=1 -q < data/migrations/sql-all-schemas.sql
           docker exec pg psql -U hr360admin -d hr360_operational -Atc "select count(*) from information_schema.tables where table_schema='public'"
 
+  security:
+    name: Guvenlik taramasi
+    runs-on: ubuntu-latest
+    env:
+      TRIVY_IMAGE: aquasec/trivy:0.57.1@sha256:5c59e08f980b5d4d503329773480fcea2c9bdad7e381d846fbf9f2ecb8050f6b
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trivy — bagimliliklar, gizli anahtarlar, Dockerfile/compose
+        run: |
+          docker run --rm -v "$PWD:/src:ro" "$TRIVY_IMAGE" fs --scanners vuln,secret,misconfig --file-patterns 'pip:requirements-.*\.txt' \
+            --severity HIGH,CRITICAL --exit-code 1 --skip-dirs /src/apps/web/node_modules /src
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: npm audit (uretim bagimliliklari)
+        working-directory: apps/web
+        run: npm audit --omit=dev --audit-level=high
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+      - name: NuGet — bilinen acigi olan paketler
+        run: |
+          rc=0
+          for p in apps/services/*/; do
+            out=$(cd "$p" && dotnet list package --vulnerable --include-transitive 2>&1)
+            if echo "$out" | grep -q "has the following vulnerable packages"; then echo "$out"; rc=1; fi
+          done
+          exit $rc
+
   images:
     name: Docker imajlari
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [web, dotnet, dotnet-tests, ml, deploy-config]
+    needs: [web, dotnet, dotnet-tests, ml, deploy-config, security]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -188,5 +217,12 @@ jobs:
         with:
           context: ${{ matrix.context }}
           push: false
+          load: true
+          tags: hr360-${{ matrix.name }}:ci
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+      - name: Trivy — imaj (duzeltmesi yayimlanmis kritik aciklar)
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.57.1@sha256:5c59e08f980b5d4d503329773480fcea2c9bdad7e381d846fbf9f2ecb8050f6b \
+            image --scanners vuln --severity CRITICAL --ignore-unfixed --exit-code 1 hr360-${{ matrix.name }}:ci

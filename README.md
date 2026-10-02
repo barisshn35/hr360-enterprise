@@ -95,6 +95,7 @@ kayıt ekranından açılır. Demo şirketini `platform.admin` hesabıyla askıy
 | Alarm kanalları (e-posta, Slack, Teams) | `scripts/monitoring.sh alerts status / email … / slack … / teams … / test` |
 | Testler | `scripts/test.sh unit / integration / e2e / all` (ayrıntı: [tests/README.md](tests/README.md)) |
 | Yük testi | `scripts/loadtest.sh smoke / load / stress` |
+| Güvenlik taraması | `scripts/security-scan.sh repo / deps / images` (Trivy, npm audit, NuGet) |
 | Yedek al | `scripts/backup.sh [--keep 14] [--with-env] [--no-minio] [--out DİZİN]` |
 | Yedekten dön | `scripts/restore.sh backups/hr360-….tar.gz [--with-env] [--only-db] [--yes]` |
 
@@ -250,7 +251,7 @@ dille yeniden yazma**, **performans özeti** ve bilgi bankasına dayalı **İK a
 
 ## Testler
 
-- **Birim testleri:** 47 .NET testi (xUnit), arayüzde bordro hesabı (Vitest) ve ML
+- **Birim testleri:** 47 .NET testi (xUnit), arayüzde bordro hesabı ve Excel/CSV okuma (Vitest) ve ML
   servisi (pytest). Her push'ta CI'da çalışır.
 - **API entegrasyon testleri:** Slack, Teams, takvim/toplantı ve LLM için. Sahte
   sağlayıcı sunucusuyla gerçek hesap gerektirmez.
@@ -463,3 +464,9 @@ ve 5 dakika önbellekte tutar. Değişiklikler e-postalara en geç 5 dakikada ya
   dışarıya yalnızca gateway açılır: 80 (`GATEWAY_PORT`), HTTPS açıkken 443 ve
   Keycloak paneli "ayrı port" modundaysa 8090. Bu servislere uzaktan erişmek
   için SSH tüneli veya VPN kullanın.
+- Hiçbir uygulama konteyneri root çalışmaz. Gateway IP başına hız sınırı uygular
+  (API 50 istek/sn, giriş 10 istek/sn), arayüz katı bir içerik güvenliği politikası
+  (CSP) ile sunulur; güvenilir sertifikayla HTTPS açıldığında HSTS eklenir.
+- Bağımlılıklar, imajlar ve repo her push'ta Trivy, `npm audit` ve NuGet denetimiyle
+  taranır. Korumaların tam listesi, son taramanın bulguları ve kabul edilen riskler:
+  [docs/guvenlik/README.md](docs/guvenlik/README.md).

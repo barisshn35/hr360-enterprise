@@ -2,6 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException, Header
 from pydantic import BaseModel
 from prometheus_fastapi_instrumentator import Instrumentator
 import asyncio
+from contextlib import asynccontextmanager
 import httpx
 import os
 import mlflow
@@ -21,7 +22,24 @@ import shap
 os.environ.setdefault("MLFLOW_HTTP_REQUEST_TIMEOUT", "10")
 os.environ.setdefault("MLFLOW_HTTP_REQUEST_MAX_RETRIES", "2")
 
-app = FastAPI(title="HR360 ML Inference Service")
+_background: set[asyncio.Task] = set()
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # Bilerek AWAIT edilmiyor: MLflow henuz hazir degilse (docker compose'da
+    # mlflow icin healthcheck yok, ml-inference sadece container'in
+    # BASLAMIS olmasini bekliyor) bu cagri dakikalarca surebilir. Arka
+    # planda calistirarak /health ve diger uclar bu sure boyunca da yanit
+    # vermeye devam eder; model hazir olunca 'model_loaded' otomatik true olur.
+    # Gorev referansi tutulur (aksi halde cop toplayici yarida kesebilir).
+    task = asyncio.create_task(_load_model_and_explainer())
+    _background.add(task)
+    task.add_done_callback(_background.discard)
+    yield
+
+
+app = FastAPI(title="HR360 ML Inference Service", lifespan=lifespan)
 
 # Performans ML katmani: anomali tespiti + yorunge tahmini.
 # Terfi karari VERMEZ - karar performance-service icindeki kural
@@ -72,16 +90,6 @@ def _load_model_blocking():
     FastAPI'nin startup'ini ve /health'i BLOKE ETMEZ."""
     model_uri = f"models:/{MODEL_NAME}/{MODEL_STAGE}"
     return mlflow.sklearn.load_model(model_uri)
-
-
-@app.on_event("startup")
-async def load_model():
-    # Bilerek AWAIT edilmiyor: MLflow henuz hazir degilse (docker compose'da
-    # mlflow icin healthcheck yok, ml-inference sadece container'in
-    # BASLAMIS olmasini bekliyor) bu cagri dakikalarca surebilir. Arka
-    # planda calistirarak /health ve diger uclar bu sure boyunca da yanit
-    # vermeye devam eder; model hazir olunca 'model_loaded' otomatik true olur.
-    asyncio.create_task(_load_model_and_explainer())
 
 
 async def _load_model_and_explainer():

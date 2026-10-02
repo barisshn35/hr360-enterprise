@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { LoaderCircle, Plus, Upload } from 'lucide-react'
-import * as XLSX from 'xlsx'
+import { headerField, readSpreadsheet, SpreadsheetError } from '@/lib/spreadsheet'
 import { Button } from '@/components/ui/button'
 import { Modal, ErrorSummary, type SummaryItem } from '@/components/ui/Modal'
 import { SelectField, TextField } from '@/components/ui/Field'
@@ -57,10 +57,6 @@ function excelDateToIso(value: unknown): string {
   return localISODate()
 }
 
-function normalizeHeader(h: string): string {
-  return h.trim().toLowerCase().replace(/\s+/g, '')
-}
-
 const ITEM_HEADER_ALIASES: Record<string, 'category' | 'amount' | 'expenseDate' | 'description'> = {
   tür: 'category',
   tur: 'category',
@@ -74,16 +70,13 @@ const ITEM_HEADER_ALIASES: Record<string, 'category' | 'amount' | 'expenseDate' 
 /** Excel dosyasını okuyup DraftItem listesine çevirir - tutarı 0 ya da
  * negatif olan satırlar (başlık tekrarı, boş satır vb.) atlanır. */
 async function parseItemsFromFile(file: File): Promise<DraftItem[]> {
-  const buffer = await file.arrayBuffer()
-  const wb = XLSX.read(buffer, { type: 'array', cellDates: true })
-  const sheet = wb.Sheets[wb.SheetNames[0]]
-  const raw: Record<string, unknown>[] = XLSX.utils.sheet_to_json(sheet, { defval: '' })
+  const raw = await readSpreadsheet(file)
 
   const drafts: DraftItem[] = []
   for (const record of raw) {
     const mapped: Record<string, unknown> = {}
     for (const [key, value] of Object.entries(record)) {
-      const field = ITEM_HEADER_ALIASES[normalizeHeader(key)]
+      const field = headerField(ITEM_HEADER_ALIASES, key)
       if (field) mapped[field] = value
     }
     const amount = Number(mapped.amount)
@@ -161,8 +154,8 @@ export function NewClaimModal({ open, onClose }: { open: boolean; onClose: () =>
         return isUntouched ? imported : [...prev, ...imported]
       })
       toast.ok(`${imported.length} kalem içe aktarıldı.`)
-    } catch {
-      toast.stop('Dosya okunamadı. Geçerli bir .xlsx dosyası seçin.')
+    } catch (err) {
+      toast.stop(err instanceof SpreadsheetError ? err.message : 'Dosya okunamadı. Geçerli bir .xlsx ya da .csv dosyası seçin.')
     }
   }
 
@@ -314,7 +307,7 @@ export function NewClaimModal({ open, onClose }: { open: boolean; onClose: () =>
               <input
                 id="claim-items-import"
                 type="file"
-                accept=".xlsx,.xls,.csv"
+                accept=".xlsx,.csv"
                 className="hidden"
                 onChange={handleImportFile}
               />

@@ -14,10 +14,15 @@ ENV VITE_KEYCLOAK_URL=/auth \
 RUN npm run build
 
 # --- Aşama 2: serve ---
-FROM nginx:alpine
+# Root olmayan nginx (UID 101, 8080'i dinler).
+FROM nginxinc/nginx-unprivileged:stable-alpine
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY docker/nginx-spa.conf /etc/nginx/conf.d/default.conf
 COPY docker/security-headers.conf /etc/nginx/snippets/security-headers.conf
+# Taban imajdaki Alpine paketlerinin guvenlik yamalari.
+USER root
+RUN apk upgrade --no-cache
+USER 101
 
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s \
