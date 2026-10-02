@@ -44,6 +44,8 @@ ACME_DIR=deploy/nginx/acme
 # "enable" degisiklik yaparken hata olursa yarim kalan ayarlar geri alinir
 # (onceden nginx'e TLS ayari yazilip sonraki adim basarisiz olunca site
 # tamamen erisilemez ya da giris bozuk kalabiliyordu).
+# GNU sed (Linux) ve BSD sed (macOS) icin ortak "yerinde degistir".
+sed_i() { if sed --version >/dev/null 2>&1; then sed -i "$@"; else sed -i '' "$@"; fi; }
 ROLLBACK=""
 die() {
   echo "HATA: $*" >&2
@@ -76,7 +78,7 @@ end_change() { [ -n "$ROLLBACK" ] && rm -rf "$ROLLBACK"; ROLLBACK=""; }
 mkdir -p "$DIR" "$LE_DIR" "$ACME_DIR"
 
 set_env() {
-  if grep -q "^$1=" "$ENV_FILE"; then sed -i "s#^$1=.*#$1=$2#" "$ENV_FILE"
+  if grep -q "^$1=" "$ENV_FILE"; then sed_i "s#^$1=.*#$1=$2#" "$ENV_FILE"
   else printf '%s=%s\n' "$1" "$2" >> "$ENV_FILE"; fi
 }
 get_env() { grep "^$1=" "$ENV_FILE" | tail -1 | cut -d= -f2- || true; }

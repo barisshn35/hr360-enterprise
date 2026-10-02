@@ -37,6 +37,8 @@ DIR=deploy/nginx/keycloak-admin
 MAIN="$DIR/main-access.conf"
 PORT_FILE="$DIR/port-access.conf"
 
+# GNU sed (Linux) ve BSD sed (macOS) icin ortak "yerinde degistir".
+sed_i() { if sed --version >/dev/null 2>&1; then sed -i "$@"; else sed -i '' "$@"; fi; }
 die() { echo "HATA: $*" >&2; exit 1; }
 [ -f "$ENV_FILE" ] || die ".env bulunamadi; once install.sh calistirin."
 
@@ -49,7 +51,7 @@ mkdir -p "$DIR"
 set_env() { # set_env KEY VALUE
   local k="$1" v="$2"
   if grep -q "^${k}=" "$ENV_FILE"; then
-    sed -i "s#^${k}=.*#${k}=${v}#" "$ENV_FILE"
+    sed_i "s#^${k}=.*#${k}=${v}#" "$ENV_FILE"
   else
     printf '%s=%s\n' "$k" "$v" >> "$ENV_FILE"
   fi

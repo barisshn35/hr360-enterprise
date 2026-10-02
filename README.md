@@ -39,9 +39,9 @@ uygulama `http://localhost` adresinde açılır, e-postalar Mailpit'e düşer.
 
 | | |
 |---|---|
-| İşletim sistemi | Ubuntu/Debian veya Rocky/RHEL/AlmaLinux. Docker yoksa `install.sh` kurmayı teklif eder. |
+| İşletim sistemi | Ubuntu, Debian, RHEL, Rocky, AlmaLinux, Oracle Linux, Fedora, Amazon Linux, openSUSE/SLES, Arch, Alpine (Windows'ta WSL2, macOS'ta Docker Desktop). Docker yoksa `install.sh` kurmayı teklif eder. Sisteme özel adımlar: [docs/kurulum/isletim-sistemleri.md](docs/kurulum/isletim-sistemleri.md) |
 | Disk | En az **40 GB** boş alan (imajlar ve derleme ~20 GB tutar). |
-| Bellek | En az **16 GB** RAM (container bellek limitlerinin toplamı ~10,5 GB). |
+| Bellek | En az **8 GB**, önerilen **16 GB** RAM (container bellek limitlerinin toplamı ~10,5 GB; hepsi aynı anda dolmaz). |
 | DNS | Alan adının (ör. `hr.sirket.com`) A kaydı sunucunun genel IP'sini göstermeli. |
 | Firewall | Dışarıya yalnızca **80** ve **443** açık. SSH (22) yalnızca yönetim IP'lerine. |
 
@@ -168,6 +168,7 @@ platform/
   keycloak-themes/        Keycloak giriş teması (tek sunucu kurulumu şu an yüklemiyor)
 docs/
   architecture/           Mimari dokümanlar
+  kurulum/                İşletim sistemlerine göre kurulum adımları
   runbooks/               HTTPS, Keycloak paneli erişimi, Keycloak veritabanı geçişi
 docker-compose.yml         Tek-sunucu servis tanımı
 install.sh                 Kurulum script'i

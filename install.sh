@@ -27,6 +27,8 @@ GREEN=$(tput setaf 2 2>/dev/null || echo "")
 YELLOW=$(tput setaf 3 2>/dev/null || echo "")
 
 info()  { echo "${BOLD}==>${RESET} $*"; }
+# GNU sed (Linux) ve BSD sed (macOS) icin ortak "yerinde degistir".
+sed_i() { if sed --version >/dev/null 2>&1; then sed -i "$@"; else sed -i '' "$@"; fi; }
 warn()  { echo "${YELLOW}${BOLD}!!${RESET} $*"; }
 
 random_secret() {
@@ -49,7 +51,8 @@ random_aes_key() {
 
 # Gecerli bir AES-256 anahtari mi: base64, cozulunce tam 32 byte.
 is_aes_key() {
-  [ "$(printf '%s' "$1" | base64 -d 2>/dev/null | wc -c)" = "32" ]
+  # wc -c macOS'ta basa bosluk koyar; aritmetik ile sayiya cevrilir.
+  [ "$(( $(printf '%s' "$1" | base64 -d 2>/dev/null | wc -c) ))" = "32" ]
 }
 
 ask_secret_aes_key() {
@@ -99,38 +102,189 @@ echo "----------------------------------------------"
 
 # --- 1) On kosullar -----------------------------------------------------
 USE_SUDO_DOCKER=0
+# root olarak calisirken (ozellikle sudo'nun kurulu olmadigi minimal Debian/Alpine
+# sunucularda) "sudo" komutlari dogrudan calistirilir.
+if [ "$(id -u)" = 0 ] && ! command -v sudo >/dev/null 2>&1; then
+  sudo() { "$@"; }
+fi
+OS_KERNEL="$(uname -s)"
+IS_WSL=0
+if [ "$OS_KERNEL" = "Linux" ] && grep -qi microsoft /proc/version 2>/dev/null; then IS_WSL=1; fi
+
+# Isletim sistemi kimligi (/etc/os-release). OS_RELEASE_FILE test icin degistirilebilir.
+OS_ID=""; OS_LIKE=""; OS_VERSION=""; OS_CODENAME=""
+if [ -r "${OS_RELEASE_FILE:-/etc/os-release}" ]; then
+  # shellcheck disable=SC1090
+  OS_ID="$(. "${OS_RELEASE_FILE:-/etc/os-release}"; echo "${ID:-}")"
+  OS_LIKE="$(. "${OS_RELEASE_FILE:-/etc/os-release}"; echo "${ID_LIKE:-}")"
+  OS_VERSION="$(. "${OS_RELEASE_FILE:-/etc/os-release}"; echo "${VERSION_ID:-}")"
+  OS_CODENAME="$(. "${OS_RELEASE_FILE:-/etc/os-release}"; echo "${UBUNTU_CODENAME:-${VERSION_CODENAME:-}}")"
+fi
+
+# Docker'in hangi yolla kurulacagi: apt-ubuntu | apt-debian | apt-raspbian |
+# dnf-fedora | dnf-rhel | dnf-centos | amzn | zypper | pacman | apk | (bos = desteklenmiyor)
+docker_install_method() {
+  local like=" ${OS_LIKE} "
+  case "$OS_ID" in
+    ubuntu) echo apt-ubuntu; return ;;
+    debian) echo apt-debian; return ;;
+    raspbian) echo apt-raspbian; return ;;
+    fedora) echo dnf-fedora; return ;;
+    rhel) echo dnf-rhel; return ;;
+    centos|rocky|almalinux|ol|eurolinux|navy|circle|virtuozzo|cloudlinux) echo dnf-centos; return ;;
+    amzn) echo amzn; return ;;
+    opensuse*|sles|sled|suse) echo zypper; return ;;
+    arch|manjaro|endeavouros|garuda) echo pacman; return ;;
+    alpine) echo apk; return ;;
+  esac
+  # Turev dagitimlar (Linux Mint, Pop!_OS, Zorin, Kali...) ID_LIKE ile eslesir.
+  case "$like" in
+    *" ubuntu "*) echo apt-ubuntu ;;
+    *" debian "*) echo apt-debian ;;
+    *" rhel "*|*" centos "*) echo dnf-centos ;;
+    *" fedora "*) echo dnf-fedora ;;
+    *" suse "*|*" opensuse "*) echo zypper ;;
+    *" arch "*) echo pacman ;;
+    *) echo "" ;;
+  esac
+}
+
+pkg_manager() {
+  case "$(docker_install_method)" in
+    apt-*) echo apt ;;
+    dnf-*) command -v dnf >/dev/null 2>&1 && echo dnf || echo yum ;;
+    amzn) command -v dnf >/dev/null 2>&1 && echo dnf || echo yum ;;
+    zypper) echo zypper ;;
+    pacman) echo pacman ;;
+    apk) echo apk ;;
+  esac
+}
+
+# Kurulumun kullandigi temel araclar (curl, openssl) yoksa paket yoneticisiyle kurulur.
+ensure_tools() {
+  local missing=()
+  for t in curl openssl; do command -v "$t" >/dev/null 2>&1 || missing+=("$t"); done
+  [ ${#missing[@]} -eq 0 ] && return 0
+  if [ "$OS_KERNEL" != "Linux" ]; then
+    echo "Gerekli araclar eksik: ${missing[*]}. Kurup scripti tekrar calistirin."; exit 1
+  fi
+  info "Eksik araclar kuruluyor: ${missing[*]}"
+  case "$(pkg_manager)" in
+    apt) sudo apt-get update -qq && sudo apt-get install -y -qq "${missing[@]}" ca-certificates ;;
+    dnf) sudo dnf install -y -q "${missing[@]}" ;;
+    yum) sudo yum install -y -q "${missing[@]}" ;;
+    zypper) sudo zypper -n -q install "${missing[@]}" ;;
+    pacman) sudo pacman -Sy --noconfirm --needed "${missing[@]}" ;;
+    apk) sudo apk add --no-cache "${missing[@]}" ;;
+    *) echo "Gerekli araclar eksik: ${missing[*]}. Kurup scripti tekrar calistirin."; exit 1 ;;
+  esac
+}
+
+# Docker Compose v2 eklentisi paketle gelmeyen dagitimlarda (Amazon Linux, bazi
+# SUSE surumleri) resmi ikili indirilir.
+install_compose_plugin() {
+  if sudo docker compose version >/dev/null 2>&1; then return 0; fi
+  local arch; arch="$(uname -m)"
+  case "$arch" in x86_64|aarch64|armv7l|ppc64le|s390x) ;; arm64) arch=aarch64 ;; *) echo "Compose icin desteklenmeyen mimari: $arch"; exit 1 ;; esac
+  info "Docker Compose eklentisi indiriliyor..."
+  sudo mkdir -p /usr/local/lib/docker/cli-plugins
+  sudo curl -fsSL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-${arch}" \
+    -o /usr/local/lib/docker/cli-plugins/docker-compose
+  sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+}
 
 install_docker() {
-  # Otomatik kurulum, get.docker.com scriptinin desteklendigi paket
-  # yoneticilerinde calisir: apt (Ubuntu/Debian) veya dnf/yum
-  # (Rocky/RHEL/CentOS/AlmaLinux/Fedora). Diger dagitimlarda elle kurulum
-  # gerekir.
-  if ! command -v apt-get >/dev/null 2>&1 \
-    && ! command -v dnf >/dev/null 2>&1 \
-    && ! command -v yum >/dev/null 2>&1; then
-    echo "Docker otomatik kurulumu bu dagitimda desteklenmiyor (apt/dnf/yum bulunamadi)."
-    echo "Once Docker Engine'i kurun: https://docs.docker.com/engine/install/"
+  local method; method="$(docker_install_method)"
+
+  if [ "$OS_KERNEL" = "Darwin" ]; then
+    echo "macOS'ta Docker Desktop gerekir: https://www.docker.com/products/docker-desktop/"
+    echo "Kurduktan sonra Settings > Resources'ta bellegi en az 8 GB (onerilen 12 GB) yapin, Docker Desktop'i"
+    echo "baslatin ve bu scripti tekrar calistirin. Ayrintilar: docs/kurulum/isletim-sistemleri.md"
+    exit 1
+  fi
+  if [ "$IS_WSL" = 1 ] && [ "$(ps -p 1 -o comm= 2>/dev/null)" != "systemd" ]; then
+    echo "WSL'de Docker iki yoldan kullanilabilir:"
+    echo "  1) Windows'a Docker Desktop kurup Settings > Resources > WSL Integration'da bu dagitimi acin (onerilen)."
+    echo "  2) Docker Engine'i WSL icine kurun: once systemd'yi acin (/etc/wsl.conf -> [boot] systemd=true,"
+    echo "     PowerShell'de 'wsl --shutdown'), sonra bu scripti tekrar calistirin."
+    echo "Ayrintilar: docs/kurulum/isletim-sistemleri.md"
+    exit 1
+  fi
+  if [ -z "$method" ]; then
+    echo "Bu dagitim (${OS_ID:-bilinmiyor}) icin Docker otomatik kurulamiyor."
+    echo "Once Docker Engine + Compose eklentisini kurun: https://docs.docker.com/engine/install/"
+    echo "Ayrintilar: docs/kurulum/isletim-sistemleri.md"
     exit 1
   fi
 
   warn "Docker Engine bulunamadi."
-  echo "Docker'i resmi kurulum scripti (get.docker.com) ile 'sudo' yetkisiyle sisteminize kurmami ister misiniz?"
-  echo "Bu islem: paket listelerini gunceller, Docker Engine + Compose plugin'ini kurar ve"
-  echo "mevcut kullaniciyi (${USER:-$(whoami)}) 'docker' grubuna ekler."
+  echo "Docker Engine ve Compose eklentisini ${OS_ID} ${OS_VERSION} icin resmi depodan, 'sudo'"
+  echo "yetkisiyle kurmami ister misiniz? Mevcut kullanici (${USER:-$(whoami)}) 'docker' grubuna eklenir."
   read -r -p "Devam edilsin mi? [e/H]: " reply || true
   if [[ ! "$reply" =~ ^[eEyY]$ ]]; then
     echo "Kurulum iptal edildi. Docker'i elle kurup scripti tekrar calistirabilirsiniz: https://docs.docker.com/engine/install/"
     exit 1
   fi
 
-  info "Docker Engine kuruluyor (sudo sifresi istenebilir)..."
-  curl -fsSL https://get.docker.com | sudo sh
+  info "Docker Engine kuruluyor (${method}; sudo sifresi istenebilir)..."
+  local pkgs="docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin"
+  case "$method" in
+    apt-*)
+      local repo="${method#apt-}" codename="$OS_CODENAME"
+      sudo apt-get update -qq
+      sudo apt-get install -y -qq ca-certificates curl gnupg
+      sudo install -m 0755 -d /etc/apt/keyrings
+      sudo curl -fsSL "https://download.docker.com/linux/${repo}/gpg" -o /etc/apt/keyrings/docker.asc
+      sudo chmod a+r /etc/apt/keyrings/docker.asc
+      echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/${repo} ${codename} stable" \
+        | sudo tee /etc/apt/sources.list.d/docker.list >/dev/null
+      sudo apt-get update -qq
+      # shellcheck disable=SC2086
+      sudo apt-get install -y -qq $pkgs
+      ;;
+    dnf-*)
+      local repo="${method#dnf-}" pm; pm="$(pkg_manager)"
+      sudo curl -fsSL "https://download.docker.com/linux/${repo}/docker-ce.repo" -o /etc/yum.repos.d/docker-ce.repo
+      # RHEL/Rocky/Alma'da onceden gelen podman-docker/runc paketleriyle cakisma
+      # olursa --allowerasing onlari kaldirir.
+      if [ "$pm" = dnf ]; then
+        # shellcheck disable=SC2086
+        sudo dnf install -y --allowerasing $pkgs
+      else
+        # shellcheck disable=SC2086
+        sudo yum install -y $pkgs
+      fi
+      ;;
+    amzn)
+      if command -v dnf >/dev/null 2>&1; then sudo dnf install -y docker; else sudo yum install -y docker; fi
+      ;;
+    zypper)
+      sudo zypper -n install docker || {
+        echo "SLES'te once Containers modulunu acin: sudo SUSEConnect -p sle-module-containers/${OS_VERSION}/$(uname -m)"
+        exit 1
+      }
+      sudo zypper -n install docker-compose >/dev/null 2>&1 || true
+      ;;
+    pacman)
+      sudo pacman -Sy --noconfirm --needed docker docker-compose docker-buildx
+      ;;
+    apk)
+      sudo apk add --no-cache docker docker-cli-compose
+      sudo rc-update add docker default >/dev/null 2>&1 || true
+      ;;
+  esac
 
-  sudo systemctl enable --now docker >/dev/null 2>&1 \
-    || warn "docker servisi systemctl ile baslatilamadi, devam ediliyor (farkli bir init sistemi olabilir)."
+  if [ "$method" = apk ]; then
+    sudo rc-service docker start >/dev/null 2>&1 || sudo service docker start >/dev/null 2>&1 || true
+  else
+    sudo systemctl enable --now docker >/dev/null 2>&1 \
+      || warn "docker servisi systemctl ile baslatilamadi, devam ediliyor (farkli bir init sistemi olabilir)."
+  fi
+  for _ in $(seq 1 15); do sudo docker info >/dev/null 2>&1 && break; sleep 2; done
+  install_compose_plugin
 
-  if ! id -nG "${USER:-$(whoami)}" 2>/dev/null | grep -qw docker; then
-    sudo usermod -aG docker "${USER:-$(whoami)}"
+  if [ "$(id -u)" != 0 ] && ! id -nG "${USER:-$(whoami)}" 2>/dev/null | grep -qw docker; then
+    sudo usermod -aG docker "${USER:-$(whoami)}" 2>/dev/null || sudo addgroup "${USER:-$(whoami)}" docker 2>/dev/null || true
     warn "Kullaniciniz 'docker' grubuna eklendi; bu ancak yeni bir oturumda (yeniden giris/SSH) etkin olur."
     warn "Bu kurulumun geri kalaninda gecici olarak 'sudo docker' kullanilacak."
     USE_SUDO_DOCKER=1
@@ -139,16 +293,31 @@ install_docker() {
   info "Docker Engine kuruldu: $(sudo docker --version 2>/dev/null || docker --version)"
 }
 
+# Windows dosya sisteminde (/mnt/c/...) calismak hem cok yavas hem de satir sonu
+# (CRLF) sorunlarina acik; repo WSL'in kendi dosya sistemine klonlanmali.
+if [ "$IS_WSL" = 1 ]; then
+  case "$PWD" in
+    /mnt/[a-z]/*) warn "Repo Windows diski uzerinde ($PWD). Build cok yavas olur; ~/ altina klonlamaniz onerilir." ;;
+  esac
+fi
+
+[ "$OS_KERNEL" = "Linux" ] && ensure_tools
+
 if ! command -v docker >/dev/null 2>&1; then
   install_docker
 elif ! docker info >/dev/null 2>&1; then
   # Docker kurulu ama mevcut kullanicinin 'docker' grup yetkisi henuz aktif
   # olmayabilir (yeni eklenmis olabilir) - sudo ile devam edelim.
-  if sudo docker info >/dev/null 2>&1; then
+  if [ "$OS_KERNEL" = "Darwin" ] || { [ "$IS_WSL" = 1 ] && [ "$(ps -p 1 -o comm= 2>/dev/null)" != "systemd" ]; }; then
+    echo "Docker'a ulasilamiyor. Docker Desktop'in calistigindan (WSL'de: Settings > Resources >"
+    echo "WSL Integration'da bu dagitimin acik oldugundan) emin olup scripti tekrar calistirin."
+    exit 1
+  elif [ "$(id -u)" != 0 ] && sudo docker info >/dev/null 2>&1; then
     warn "Docker kurulu ama mevcut oturumda 'docker' grubu yetkiniz henuz aktif degil, 'sudo docker' kullanilacak."
     USE_SUDO_DOCKER=1
   else
-    echo "Docker kurulu gorunuyor ama calismiyor. 'sudo systemctl status docker' ile kontrol edin."
+    echo "Docker kurulu gorunuyor ama calismiyor. 'sudo systemctl start docker' ile baslatip"
+    echo "'sudo systemctl status docker' ile kontrol edin."
     exit 1
   fi
 fi
@@ -168,8 +337,28 @@ export USE_SUDO_DOCKER
 export -f docker
 
 if ! docker compose version >/dev/null 2>&1; then
-  echo "Docker Compose (v2 plugin) bulunamadi. 'docker compose' calisir hale getirin."
-  exit 1
+  if [ "$OS_KERNEL" = "Linux" ] && [ "$IS_WSL" = 0 ]; then
+    # Dagitimin kendi docker paketiyle kurulmus sistemlerde eklenti eksik olabilir.
+    install_compose_plugin
+  fi
+  if ! docker compose version >/dev/null 2>&1; then
+    echo "Docker Compose (v2 eklentisi) bulunamadi. 'docker compose version' calisir hale getirin:"
+    echo "https://docs.docker.com/compose/install/linux/"
+    exit 1
+  fi
+fi
+
+# Kaynak kontrolu: Docker'in kullanabildigi bellek ve bulundugumuz diskteki bos alan.
+mem_bytes="$(docker info --format '{{.MemTotal}}' 2>/dev/null || echo 0)"
+if [ "${mem_bytes:-0}" -gt 0 ] && [ "$mem_bytes" -lt $((7 * 1024 * 1024 * 1024)) ]; then
+  warn "Docker'in kullanabildigi bellek $((mem_bytes / 1024 / 1024 / 1024)) GB; en az 8 GB (onerilen 16 GB) gerekir."
+  if [ "$OS_KERNEL" = "Darwin" ] || [ "$IS_WSL" = 1 ]; then
+    warn "Docker Desktop: Settings > Resources > Memory (WSL'de ayrica %UserProfile%\\.wslconfig)."
+  fi
+fi
+free_kb="$(df -Pk . 2>/dev/null | awk 'NR==2 {print $4}')"
+if [ -n "$free_kb" ] && [ "$free_kb" -lt $((40 * 1024 * 1024)) ]; then
+  warn "Bu diskte $((free_kb / 1024 / 1024)) GB bos alan var; imajlar ve derleme icin en az 40 GB onerilir."
 fi
 
 if [ -f .env ]; then
@@ -457,7 +646,7 @@ info "Keycloak realm sablonu dolduruldu."
 
 # Keycloak'in genel adresi (KC_HOSTNAME) bu kokenden uretilir.
 if grep -q "^PUBLIC_ORIGIN=" .env; then
-  sed -i "s#^PUBLIC_ORIGIN=.*#PUBLIC_ORIGIN=${PUBLIC_ORIGIN}#" .env
+  sed_i "s#^PUBLIC_ORIGIN=.*#PUBLIC_ORIGIN=${PUBLIC_ORIGIN}#" .env
 else
   echo "PUBLIC_ORIGIN=${PUBLIC_ORIGIN}" >> .env
 fi
