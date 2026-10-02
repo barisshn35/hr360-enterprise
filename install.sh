@@ -458,8 +458,25 @@ while :; do
   warn "Gecersiz adres: ${PUBLIC_URL} (ornek: https://hr.sirket.com ya da http://10.0.0.5 - yol icermemeli)"
 done
 
-read -r -p "Gateway'in disariya acacagi port [80]: " GATEWAY_PORT || true
-GATEWAY_PORT=${GATEWAY_PORT:-80}
+echo ""
+echo "HTTP portu: uygulama bu porttan yayinlanir. Alan adiyla kurulumda 80 kalmali;"
+echo "HTTPS (443) ayri ayarlanir ve birkac adim sonra sorulur."
+while :; do
+  GATEWAY_PORT=""
+  read -r -p "Gateway'in disariya acacagi HTTP portu [80]: " GATEWAY_PORT || true
+  GATEWAY_PORT=${GATEWAY_PORT:-80}
+  if ! [[ "$GATEWAY_PORT" =~ ^[0-9]+$ ]] || [ "$GATEWAY_PORT" -lt 1 ] || [ "$GATEWAY_PORT" -gt 65535 ]; then
+    warn "Gecersiz port: ${GATEWAY_PORT}"
+  elif [ "$GATEWAY_PORT" = 443 ]; then
+    # 443 HTTPS icin ayrilmis: tls.sh gateway'in 443'unu ayrica yayinlar; buraya
+    # 443 verilirse iki eslesme cakisir ("port is already allocated").
+    warn "443 HTTPS icindir ve sonraki adimda otomatik acilir. Buraya HTTP portunu (genelde 80) girin."
+  elif [ "$GATEWAY_PORT" = 8090 ]; then
+    warn "8090 Keycloak yonetim paneline ayrilmis; baska bir port girin."
+  else
+    break
+  fi
+done
 
 echo ""
 echo "Keycloak yonetim paneline erisim:"
@@ -541,8 +558,12 @@ else
   if [ -n "${SMTP_USER}" ]; then
     read -r -s -p "SMTP parolasi: " SMTP_PASSWORD || true; echo ""
   fi
-  read -r -p "Gonderen adres (orn. noreply@sirket.com): " SMTP_FROM_ADDRESS || true
-  [ -n "${SMTP_FROM_ADDRESS}" ] || { echo "Gonderen adres zorunlu."; exit 1; }
+  while :; do
+    SMTP_FROM_ADDRESS=""
+    read -r -p "Gonderen adres (orn. noreply@sirket.com): " SMTP_FROM_ADDRESS || true
+    [[ "$SMTP_FROM_ADDRESS" =~ ^[^@[:space:]]+@[^@[:space:]]+[.][^@[:space:]]+$ ]] && break
+    warn "Gecerli bir e-posta adresi girin (ornek: noreply@sirket.com)."
+  done
   read -r -p "Gonderen adi [HR360]: " SMTP_FROM_NAME || true
   SMTP_FROM_NAME=${SMTP_FROM_NAME:-HR360}
   SMTP_AUTH=$([ -n "${SMTP_USER}" ] && echo true || echo false)
