@@ -235,7 +235,7 @@ export interface NlReport {
 }
 export interface AssistantReply {
   reply: string
-  source: 'help' | 'data' | 'kb' | 'report' | 'fallback'
+  source: 'help' | 'data' | 'kb' | 'report' | 'fallback' | 'llm'
   links?: Array<{ label: string; path: string }>
   report?: NlReport
   related?: string[]
@@ -384,6 +384,20 @@ export interface AvailabilityResult {
   suggestions: string[]
 }
 
+/* ------------------------------------------------- yapay zekâ (LLM) */
+export interface AiSettingsInfo {
+  configured: boolean
+  configError: string | null
+  provider: string
+  model: string
+  local: boolean
+  enabled: boolean
+  tenantEnabled: boolean
+  allowPersonalData: boolean
+  hourlyLimit: number
+  usage: { task: string; calls: number; failed: number; inputTokens: number; outputTokens: number }[] | null
+}
+
 export const governanceApi = {
   plan: (signal?: AbortSignal) => apiFetch<PlanInfo>(`${BASE}/plan`, { signal }),
 
@@ -501,6 +515,15 @@ export const governanceApi = {
   cancelMeeting: (id: string) => apiFetch<void>(`${BASE}/meetings/${id}`, { method: 'DELETE' }),
   availability: (body: { employeeIds: string[]; from: string; to: string; durationMinutes: number }) =>
     apiFetch<AvailabilityResult>(`${BASE}/meetings/availability`, { method: 'POST', body }),
+  aiSettings: (signal?: AbortSignal) => apiFetch<AiSettingsInfo>(`${BASE}/ai/settings`, { signal }),
+  saveAiSettings: (enabled: boolean, allowPersonalData: boolean) => apiFetch<unknown>(`${BASE}/ai/settings`, { method: 'PUT', body: { enabled, allowPersonalData } }),
+  aiJobDraft: (body: { title: string; department?: string; level?: string; skills?: string[]; responsibilities?: string[]; location?: string; workModel?: string; employmentType?: string; benefits?: string[]; tone?: string }) =>
+    apiFetch<{ text: string; bias: import('./ai').BiasResult | null; model: string }>(`${BASE}/ai/job-draft`, { method: 'POST', body }),
+  aiRewrite: (text: string, phrases: string[]) =>
+    apiFetch<{ text: string; bias: import('./ai').BiasResult | null }>(`${BASE}/ai/inclusive-rewrite`, { method: 'POST', body: { text, phrases } }),
+  aiPerfSummary: (body: { name: string; score?: number | null; previousScore?: number | null; goals: { title: string; progress: number | null }[];
+    reviews: { type?: string | null; strengths?: string | null; improvements?: string | null; comments?: string | null }[]; feedback: string[] }) =>
+    apiFetch<{ text: string; model: string }>(`${BASE}/ai/perf-summary`, { method: 'POST', body }),
   testIntegration: (id: string) => apiFetch<{ lastStatus: number | null; ok: boolean }>(`${BASE}/integrations/${id}/test`, { method: 'POST' }),
 
   /* faturalama */

@@ -397,6 +397,15 @@ public class InsightsController : AppController
                 return Ok(new { reply = report.Interpretation + ":", source = "report", report, links = new[] { new { label = "Doğal dilde rapor", path = "/panel/rapor-asistani" } } });
         }
 
+        // Yapay zekâ açıksa: bilgi bankası bağlamıyla model yanıtı (kişisel veri gönderilmez).
+        var ai = HttpContext.RequestServices.GetRequiredService<Infrastructure.Ai.AiGateway>();
+        if (await ai.EnabledAsync(ct))
+        {
+            var (reply, related, failure) = await ai.AssistantAsync(Me.UserId, raw, ct);
+            if (failure is null && !string.IsNullOrWhiteSpace(reply))
+                return Ok(new { reply, source = "llm", related, links = Array.Empty<object>() });
+        }
+
         // Bilgi bankası
         var words = q.Split(new[] { ' ', ',', '.', '?', '!', ':', ';' }, StringSplitOptions.RemoveEmptyEntries).Where(w => w.Length > 2).ToHashSet();
         var articles = await _db.KbArticles.AsNoTracking().ToListAsync(ct);

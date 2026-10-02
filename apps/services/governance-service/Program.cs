@@ -39,6 +39,8 @@ builder.Services.AddSingleton<GovernanceService.Infrastructure.Calendar.GoogleCa
 builder.Services.AddSingleton<GovernanceService.Infrastructure.Calendar.MicrosoftCalendar>();
 builder.Services.AddSingleton<GovernanceService.Infrastructure.Calendar.ZoomApi>();
 builder.Services.AddSingleton<GovernanceService.Infrastructure.Calendar.CalendarService>();
+builder.Services.AddSingleton<GovernanceService.Infrastructure.Ai.LlmClient>();
+builder.Services.AddScoped<GovernanceService.Infrastructure.Ai.AiGateway>();
 builder.Services.AddHostedService<GovernanceService.Infrastructure.EventConsumer>();
 builder.Services.AddHostedService<GovernanceService.Infrastructure.Housekeeping>();
 

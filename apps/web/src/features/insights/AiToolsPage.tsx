@@ -2,7 +2,10 @@ import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { AnimatePresence, motion } from 'motion/react'
 import { Area, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { Bot, FileUp, GraduationCap, ScanSearch, Users, Wand2 } from 'lucide-react'
+import { Bot, FileUp, GraduationCap, ScanSearch, ShieldCheck, Sparkles, Users, Wand2 } from 'lucide-react'
+import { Checkbox } from '@/components/ui/checkbox'
+import { StatusBadge } from '@/components/ui/StatusBadge'
+import { useDirectory } from '@/api/directory'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Panel, PanelBody, PanelHead } from '@/components/ui/Panel'
 import { Button } from '@/components/ui/button'
@@ -22,7 +25,48 @@ import { ChipInput, Metric, PersonSelect, PlanGate, errMsg, useAction } from '@/
 
 type TabKey = 'cv' | 'ilan' | 'eslesme' | 'performans' | 'izin' | 'egitim'
 
-const HONEST = 'Bu araçlar dil modeli kullanmaz: sözlük, düzenli ifade, TF-IDF ve istatistik tabanlıdır. Karar vermez, gerekçeli öneri üretir; veriler sunucu dışına çıkmaz.'
+const HONEST = 'Temel araçlar dil modeli kullanmaz: sözlük, düzenli ifade, TF-IDF ve istatistik tabanlıdır; veriler sunucu dışına çıkmaz. Karar vermez, gerekçeli öneri üretir.'
+
+/** Kurulumda LLM tanımlı ve şirket açmışsa "Yapay zekâ ile" seçenekleri görünür. */
+function useLlm() {
+  const q = useQuery({ queryKey: ['ai-settings'], queryFn: ({ signal }) => governanceApi.aiSettings(signal), staleTime: 60_000 })
+  return q.data
+}
+
+const TASK_LABEL: Record<string, string> = { 'job-draft': 'İlan taslağı', 'inclusive-rewrite': 'Kapsayıcı yeniden yazım', 'perf-summary': 'Performans özeti', assistant: 'İK asistanı' }
+
+function LlmCard() {
+  const { can } = useAuth()
+  const admin = can('tenant:manage') || can('employee:manage')
+  const s = useLlm()
+  const save = useAction(({ enabled, personal }: { enabled: boolean; personal: boolean }) => governanceApi.saveAiSettings(enabled, personal), { success: 'Kaydedildi', invalidate: [['ai-settings']] })
+  if (!s) return null
+  if (!s.configured)
+    return <InfoNote><Bot className="mr-1 inline size-3.5" /> {HONEST} Bu kurulumda bir dil modeli tanımlı değil{admin ? ` (${s.configError}; sunucu .env › LLM_PROVIDER)` : ''}.</InfoNote>
+  return (
+    <Panel>
+      <PanelBody className="flex flex-wrap items-start gap-4">
+        <span className="grid size-10 place-items-center rounded-xl bg-primary/10 text-primary"><Sparkles className="size-5" /></span>
+        <div className="min-w-0 flex-1 space-y-1 text-[13px]">
+          <p className="font-semibold">Dil modeli: {s.provider} · <span className="font-mono text-[12px]">{s.model}</span> {s.local ? <StatusBadge tone="success">Yerel — veri dışarı çıkmaz</StatusBadge> : <StatusBadge tone="warning">Harici hizmet</StatusBadge>}</p>
+          <p className="text-muted-foreground">
+            {s.enabled ? 'Açık: ilan taslağı, kapsayıcı yeniden yazım, İK asistanı' + (s.allowPersonalData ? ' ve performans özeti (ad takma adla gönderilir).' : '. Kişisel veri içeren görevler kapalı.') : 'Kapalı: hiçbir veri modele gönderilmez; araçlar kural tabanlı çalışır.'}
+            {' '}İstek içerikleri kaydedilmez; yalnızca görev ve jeton sayısı tutulur. Saatlik kota {s.hourlyLimit}.
+          </p>
+          {admin && s.usage && s.usage.length > 0 && (
+            <p className="text-[12px] text-muted-foreground">Son 30 gün: {s.usage.map((u) => `${TASK_LABEL[u.task] ?? u.task} ${u.calls}`).join(' · ')}</p>
+          )}
+        </div>
+        {admin && (
+          <div className="space-y-2 text-[13px]">
+            <label className="flex items-center gap-2"><Checkbox checked={s.tenantEnabled} onCheckedChange={(v) => save.mutate({ enabled: v === true, personal: v === true && s.allowPersonalData })} /> Şirkette yapay zekâyı kullan</label>
+            <label className="flex items-center gap-2"><Checkbox disabled={!s.tenantEnabled} checked={s.allowPersonalData} onCheckedChange={(v) => save.mutate({ enabled: s.tenantEnabled, personal: v === true })} /> <ShieldCheck className="size-3.5" /> Kişisel veri içeren görevlere izin ver</label>
+          </div>
+        )}
+      </PanelBody>
+    </Panel>
+  )
+}
 
 /* ------------------------------------------------------------------ CV */
 function CvTool() {
@@ -94,6 +138,20 @@ function JobAdTool() {
     try { const d = await aiApi.jobDraft(f); setText(d.text); setBias(d.bias) } catch (e) { toast.stop(errMsg(e)) }
   }
   const check = async () => { try { setBias(await aiApi.biasCheck(text)) } catch (e) { toast.stop(errMsg(e)) } }
+  const llm = useLlm()
+  const [llmBusy, setLlmBusy] = useState(false)
+  const llmDraft = async () => {
+    setLlmBusy(true)
+    try {
+      const d = await governanceApi.aiJobDraft({ title: f.title, department: f.department, level: f.level, skills: f.skills, benefits: f.benefits, location: f.location, workModel: f.work_model, employmentType: f.employment_type, tone: f.tone })
+      setText(d.text)
+      setBias(d.bias)
+    } catch (e) { toast.stop(errMsg(e)) } finally { setLlmBusy(false) }
+  }
+  const rewrite = async () => {
+    setLlmBusy(true)
+    try { const d = await governanceApi.aiRewrite(text, bias?.findings.map((x) => x.phrase) ?? []); setText(d.text); setBias(d.bias) } catch (e) { toast.stop(errMsg(e)) } finally { setLlmBusy(false) }
+  }
   return (
     <div className="grid gap-5 xl:grid-cols-[380px_1fr]">
       <Panel>
@@ -107,7 +165,10 @@ function JobAdTool() {
           </div>
           <ChipInput label="Yetkinlikler" value={f.skills} onChange={(v) => setF({ ...f, skills: v })} suggestions={['.NET', 'React', 'SQL', 'İletişim', 'Excel']} />
           <ChipInput label="Yan haklar" value={f.benefits} onChange={(v) => setF({ ...f, benefits: v })} suggestions={['Özel sağlık sigortası', 'Yemek kartı', 'Eğitim bütçesi', 'Esnek saat']} />
-          <Button onClick={draft} disabled={!f.title.trim()}><Wand2 className="size-4" /> Taslak oluştur</Button>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={draft} disabled={!f.title.trim()}><Wand2 className="size-4" /> Taslak oluştur</Button>
+            {llm?.enabled && <Button variant="outline" onClick={llmDraft} disabled={!f.title.trim() || llmBusy}><Sparkles className="size-4" /> {llmBusy ? 'Yazılıyor…' : 'Yapay zekâ ile yaz'}</Button>}
+          </div>
         </PanelBody>
       </Panel>
       <div className="space-y-5">
@@ -120,6 +181,9 @@ function JobAdTool() {
                 <Metric label="Kapsayıcılık" value={`${bias.score}/100`} tone={bias.score >= 90 ? 'good' : bias.score >= 60 ? 'warn' : 'bad'} hint={bias.verdict} />
                 <div className="rounded-2xl border border-border p-3"><Highlighted text={text} bias={bias} /></div>
               </div>
+            )}
+            {llm?.enabled && (bias?.findings.length ?? 0) > 0 && (
+              <Button size="sm" variant="outline" onClick={rewrite} disabled={llmBusy}><Sparkles className="size-4" /> Kapsayıcı dille yeniden yaz</Button>
             )}
             <AnimatePresence>
               {bias?.findings.map((x, i) => (
@@ -197,6 +261,24 @@ function MatchTool() {
 /* ------------------------------------------------------- performans özeti */
 function PerfTool() {
   const [emp, setEmp] = useState('')
+  const llm = useLlm()
+  const dir = useDirectory()
+  const toast = useToast()
+  const [llmText, setLlmText] = useState<string | null>(null)
+  const [llmBusy, setLlmBusy] = useState(false)
+  const llmSummary = async () => {
+    setLlmBusy(true)
+    try {
+      const [reviews, goals] = await Promise.all([reviewsApi.list({ employeeId: emp }), goalsApi.list({ employeeId: emp })])
+      const r = await governanceApi.aiPerfSummary({
+        name: dir.data?.find((d) => d.id === emp)?.fullName ?? '',
+        goals: goals.map((g) => ({ title: g.title, progress: g.targetValue ? Math.min(100, ((g.currentValue ?? 0) / g.targetValue) * 100) : g.status === 'Achieved' ? 100 : null })),
+        reviews: reviews.filter((x) => x.isSubmitted).map((x) => ({ type: x.type, strengths: x.strengths, improvements: x.improvements, comments: x.comments })),
+        feedback: [],
+      })
+      setLlmText(r.text)
+    } catch (e) { toast.stop(errMsg(e)) } finally { setLlmBusy(false) }
+  }
   const summary = useQuery({
     queryKey: ['ai', 'perf', emp],
     enabled: !!emp,
@@ -213,10 +295,23 @@ function PerfTool() {
   const s = summary.data
   return (
     <div className="grid gap-5 lg:grid-cols-[320px_1fr]">
-      <Panel><PanelHead title="Çalışan" /><PanelBody><PersonSelect label="Kimin özeti?" value={emp} onChange={setEmp} /></PanelBody></Panel>
+      <Panel>
+        <PanelHead title="Çalışan" />
+        <PanelBody className="space-y-3">
+          <PersonSelect label="Kimin özeti?" value={emp} onChange={(v) => { setEmp(v); setLlmText(null) }} />
+          {llm?.enabled && llm.allowPersonalData && <Button variant="outline" disabled={!emp || llmBusy} onClick={llmSummary}><Sparkles className="size-4" /> {llmBusy ? 'Özetleniyor…' : 'Yapay zekâ ile özetle'}</Button>}
+          {llm?.enabled && !llm.allowPersonalData && <p className="text-[12px] text-muted-foreground">Yapay zekâ özeti için kişisel veri izni gerekir (İK yöneticisi).</p>}
+        </PanelBody>
+      </Panel>
       <Panel>
         <PanelHead title="Dönem özeti" note={s?.method} />
         <PanelBody>
+          {llmText && (
+            <div className="mb-5 space-y-2 rounded-2xl border border-primary/30 bg-primary/5 p-4">
+              <p className="flex items-center gap-1.5 text-[12px] font-medium text-primary"><Sparkles className="size-3.5" /> Yapay zekâ özeti · {llm?.model} · ad modele gönderilmedi</p>
+              <div className="space-y-1 text-[13.5px] leading-relaxed">{llmText.split('\n').map((l, i) => <p key={i}>{l}</p>)}</div>
+            </div>
+          )}
           {!emp ? <p className="text-[13px] text-muted-foreground">Bir çalışan seçin; gönderilmiş değerlendirmeler ve hedeflerden özet çıkarılır.</p> : summary.isPending ? <RowsSkeleton rows={3} /> : summary.isError ? <p className="text-[13px] text-destructive">{errMsg(summary.error)}</p> : s && (
             <div className="space-y-4">
               <p className="text-[13.5px] leading-relaxed">{s.paragraph}</p>
@@ -315,7 +410,7 @@ export function AiToolsPage() {
   return (
     <PlanGate feature="ai-tools">
       <PageHeader title="Yapay zekâ araçları" description="CV ayrıştırma, kapsayıcı ilan yazımı, aday eşleştirme, performans özeti, izin tahmini ve eğitim önerisi." />
-      <div className="mb-4"><InfoNote><Bot className="mr-1 inline size-3.5" /> {HONEST}</InfoNote></div>
+      <div className="mb-4"><LlmCard /></div>
       <div className="mb-5">
         <Tabs label="Araç" value={tab} onChange={setTab} tabs={[
           { key: 'cv', label: 'CV ayrıştırma' }, { key: 'ilan', label: 'İlan yazıcı' }, { key: 'eslesme', label: 'Aday eşleşme' },

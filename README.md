@@ -217,8 +217,22 @@ yöntemlerle çalışır:
   kalıpları önceden yazılmış, kiracıya filtreli SQL şablonlarına çevirir. Serbest
   SQL üretilmez.
 
-Bir LLM bağlamak bu uçların arkasına eklenebilir; şu an yapılandırılmış bir LLM
-sağlayıcısı yoktur.
+**İsteğe bağlı dil modeli (LLM).** `.env`'de `LLM_PROVIDER` (`anthropic`, `openai`
+ya da yerel model için `ollama`), `LLM_MODEL` ve gerekiyorsa `LLM_API_KEY` tanımlanırsa
+AI araçları ekranında ek seçenekler açılır: **yapay zekâ ile ilan yazma**, **kapsayıcı
+dille yeniden yazma**, **performans özeti** ve bilgi bankasına dayalı **İK asistanı**.
+
+- Kurulumda tanımlı olsa bile **şirketin İK yöneticisi açmadıkça hiçbir veri modele
+  gönderilmez** (varsayılan kapalı).
+- Kişisel veri içeren görevler (performans özeti) ayrıca izin ister; çalışanın adı
+  modele gönderilmez, takma adla gönderilip yanıtta yerine konur.
+- İK asistanında modele yalnızca bilgi bankası makaleleri gider; izin bakiyesi gibi
+  kişisel sorular yine veritabanından, modelsiz yanıtlanır.
+- Model çıktıları da ayrımcı ifade denetiminden geçer.
+- İstek içerikleri kaydedilmez; görev, süre ve jeton sayısı tutulur. Şirket başına
+  saatlik kota vardır (`LLM_HOURLY_LIMIT`).
+- `ollama` ile model kendi sunucunuzda çalışır, veri kurum dışına çıkmaz.
+- Uçtan uca test (sahte model ile): `tests/integration/test_ai_llm.py`.
 
 ### Yapılandırma gerektirenler
 

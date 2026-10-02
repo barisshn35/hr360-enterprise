@@ -14,3 +14,8 @@ services:
       GRAPH_BASE: "http://chatmock:8000/graph/v1.0"
       ZOOM_OAUTH_BASE: "http://chatmock:8000/zoom"
       ZOOM_API_BASE: "http://chatmock:8000/zoomapi/v2"
+      LLM_PROVIDER: "anthropic"
+      LLM_BASE_URL: "http://chatmock:8000/anthropic"
+      LLM_API_KEY: "test"
+      LLM_MODEL: "mock-model"
+      LLM_HOURLY_LIMIT: "50"

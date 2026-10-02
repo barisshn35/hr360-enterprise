@@ -163,6 +163,19 @@ class H(BaseHTTPRequestHandler):
                 who = f["refresh_token"].split("-", 1)[-1]
                 return self._send(200, {"access_token": f"{pre}tok-{who}", "expires_in": 3600})
             return self._send(400, {"error": "unsupported_grant_type"})
+        if u.path == "/anthropic/v1/messages":
+            q = json.loads(body)
+            if self.headers.get("x-api-key") != "test" or not self.headers.get("anthropic-version"):
+                return self._send(401, {"type": "error", "error": {"type": "authentication_error", "message": "invalid x-api-key"}})
+            user = q["messages"][0]["content"]
+            text = f"MOCK-LLM[{q['model']}] Çalışan için yanıt. Girdi: {user[:120]}"
+            return self._send(200, {"type": "message", "role": "assistant", "model": q["model"],
+                                    "content": [{"type": "text", "text": text}], "usage": {"input_tokens": len(user) // 4, "output_tokens": 42}})
+        if u.path == "/openai/v1/chat/completions":
+            q = json.loads(body)
+            user = q["messages"][-1]["content"]
+            return self._send(200, {"choices": [{"message": {"role": "assistant", "content": f"MOCK-OPENAI {user[:80]}"}}],
+                                    "usage": {"prompt_tokens": 10, "completion_tokens": 5}})
         if u.path == "/zoom/oauth/token":
             auth = base64.b64decode((self.headers.get("Authorization") or "Basic Og==")[6:]).decode()
             if not auth.endswith(":zsecret"):

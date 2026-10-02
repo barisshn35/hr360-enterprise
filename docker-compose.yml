@@ -361,6 +361,15 @@ services:
       PUBLIC_ORIGIN: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}"
       # Entegrasyon sirlari (bot jetonlari, OAuth) bu anahtarla sifrelenir.
       TENANT_SECRET_KEY: "${TENANT_SECRET_KEY}"
+      ML_INFERENCE_URL: "http://ml-inference:8000"
+      # Yapay zeka (istege bagli): anthropic | openai | ollama. Bos ise kapali.
+      # Kiraci yoneticisi ayrica AI araclari ekranindan acmadikca veri gonderilmez.
+      LLM_PROVIDER: "${LLM_PROVIDER:-}"
+      LLM_MODEL: "${LLM_MODEL:-}"
+      LLM_API_KEY: "${LLM_API_KEY:-}"
+      LLM_BASE_URL: "${LLM_BASE_URL:-}"
+      LLM_LOCAL: "${LLM_LOCAL:-false}"
+      LLM_HOURLY_LIMIT: "${LLM_HOURLY_LIMIT:-200}"
       # Acik kaynak varsayilani: plan kisiti ve faturalandirma kapali.
       PLAN_ENFORCEMENT: "${PLAN_ENFORCEMENT:-false}"
       BILLING_ENABLED: "${BILLING_ENABLED:-false}"

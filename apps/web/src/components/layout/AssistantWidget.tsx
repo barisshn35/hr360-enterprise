@@ -77,6 +77,9 @@ export function AssistantWidget() {
                 <motion.div key={i} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className={cn('flex', m.role === 'user' ? 'justify-end' : 'justify-start')}>
                   <div className={cn('max-w-[88%] rounded-2xl px-3.5 py-2.5 leading-relaxed', m.role === 'user' ? 'rounded-br-md bg-primary text-primary-foreground' : 'rounded-bl-md bg-muted')}>
                     <MiniMarkdown text={m.text} />
+                    {m.reply?.source === 'llm' && (
+                      <p className="mt-1.5 text-[10.5px] text-muted-foreground">Yapay zekâ yanıtı · bilgi bankasına dayanır{m.reply.related?.length ? ` (${m.reply.related.join(', ')})` : ''}; hatalı olabilir.</p>
+                    )}
                     {m.reply?.report?.understood && m.reply.report.rows.length > 0 && (
                       <table className="mt-2 w-full text-[12px]"><tbody>{m.reply.report.rows.slice(0, 8).map((r, j) => <tr key={j} className="border-t border-border/50"><td className="py-1">{String(r[0])}</td><td className="tabular py-1 text-right font-medium">{String(r[1])}</td></tr>)}</tbody></table>
                     )}

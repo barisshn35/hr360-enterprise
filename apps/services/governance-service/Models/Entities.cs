@@ -394,3 +394,33 @@ public class Meeting : ITenantOwned
     public string? Warnings { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
+
+/* ============================================================ Yapay zekâ (LLM) */
+
+/// <summary>Kiracının LLM kullanım izni. Varsayılan kapalı (KVKK: veri dışarı çıkabilir).</summary>
+public class AiSettings : ITenantOwned
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string TenantSlug { get; set; } = "";
+    public bool Enabled { get; set; }
+    /// <summary>Performans özeti gibi kişisel veri içeren isteklere izin (ad yine takma adla gönderilir).</summary>
+    public bool AllowPersonalData { get; set; }
+    public string? UpdatedBy { get; set; }
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>LLM çağrı kaydı (içerik tutulmaz): hesap verebilirlik ve kota için.</summary>
+public class AiUsage : ITenantOwned
+{
+    public long Id { get; set; }
+    public string TenantSlug { get; set; } = "";
+    public string? UserId { get; set; }
+    public string Task { get; set; } = "";
+    public string Provider { get; set; } = "";
+    public string Model { get; set; } = "";
+    public int InputTokens { get; set; }
+    public int OutputTokens { get; set; }
+    public int DurationMs { get; set; }
+    public bool Success { get; set; }
+    public DateTime At { get; set; } = DateTime.UtcNow;
+}

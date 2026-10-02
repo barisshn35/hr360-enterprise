@@ -40,6 +40,8 @@ public class GovernanceDbContext : DbContext, ITenantAwareContext
     public DbSet<OAuthState> OAuthStates => Set<OAuthState>();
     public DbSet<CalendarEventLink> CalendarEventLinks => Set<CalendarEventLink>();
     public DbSet<Meeting> Meetings => Set<Meeting>();
+    public DbSet<AiSettings> AiSettings => Set<AiSettings>();
+    public DbSet<AiUsage> AiUsage => Set<AiUsage>();
     public DbSet<Invoice> Invoices => Set<Invoice>();
     public DbSet<CalendarFeed> CalendarFeeds => Set<CalendarFeed>();
     public DbSet<KbArticle> KbArticles => Set<KbArticle>();
@@ -69,6 +71,8 @@ public class GovernanceDbContext : DbContext, ITenantAwareContext
         b.Entity<OAuthState>().ConfigureTenantColumn();
         b.Entity<CalendarEventLink>().ToTable("governance_calendar_events").ConfigureTenantColumn();
         b.Entity<Meeting>().ToTable("governance_meetings").ConfigureTenantColumn();
+        b.Entity<AiSettings>().ToTable("governance_ai_settings").ConfigureTenantColumn();
+        b.Entity<AiUsage>().ToTable("governance_ai_usage").ConfigureTenantColumn();
         b.Entity<Invoice>().ToTable("governance_invoices").ConfigureTenantColumn();
         b.Entity<Invoice>().Property(x => x.UnitPrice).HasPrecision(12, 2);
         b.Entity<Invoice>().Property(x => x.Amount).HasPrecision(12, 2);
