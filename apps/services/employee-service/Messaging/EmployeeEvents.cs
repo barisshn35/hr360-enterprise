@@ -10,6 +10,7 @@ public static class EmployeeEventTypes
 {
     public const string Hired = "employee.hired";
     public const string Assigned = "employee.assigned";
+    public const string StatusChanged = "employee.status-changed";
 }
 
 /// <summary>employee.hired olayinin govdesi.</summary>
@@ -34,3 +35,8 @@ public record EmployeeAssignedEvent(
     string Email,
     string FirstName,
     string LastName);
+
+/// <summary>Calisan durumu degisti (ise devam / izinde / ayrildi).</summary>
+public record EmployeeStatusChangedEvent(
+    string TenantSlug, Guid EmployeeId, string FirstName, string LastName,
+    string OldStatus, string NewStatus, DateOnly? EffectiveDate, DateTimeOffset OccurredAt);

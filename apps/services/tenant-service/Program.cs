@@ -14,7 +14,8 @@ var connectionString = Environment.GetEnvironmentVariable("TENANT_DB_CONNECTION"
     ?? throw new InvalidOperationException("DB connection string not configured");
 
 builder.Services.AddDbContext<TenantDbContext>(options =>
-    options.UseNpgsql(connectionString));
+    options.UseNpgsql(connectionString)
+        .AddInterceptors(new TenantService.Auditing.AuditInterceptor("tenant-service")));
 
 builder.Services.AddHttpClient<KeycloakAdminClient>();
 builder.Services.AddHttpContextAccessor();

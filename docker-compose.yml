@@ -321,6 +321,47 @@ services:
       ASPNETCORE_ENVIRONMENT: "Production"
     mem_limit: "512m"
 
+  # Calisan deneyimi: takdir duvari, kutlamalar, ofis/masa, mentorluk, ic ilan,
+  # 1:1, ardil planlama, anket/eNPS, offboarding, ekip sagligi, org senaryolari.
+  engagement-service:
+    <<: *dotnet-service
+    build: ./apps/services/engagement-service
+    environment:
+      ENGAGEMENT_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD}"
+      KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
+      KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
+      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=5"
+      EMPLOYEE_SERVICE_URL: "http://employee-service:8080"
+      ASPNETCORE_ENVIRONMENT: "Production"
+    mem_limit: "384m"
+
+  # Yonetisim: denetim kaydi, canli olay radari (Kafka), zaman makinesi, KVKK,
+  # belge sablonlari, kural motoru, webhook/API anahtari/acik API, Slack/Teams,
+  # faturalama, takvim (.ics), analitik, IK asistani, teklif->ise alim sagasi.
+  governance-service:
+    <<: *dotnet-service
+    build: ./apps/services/governance-service
+    environment:
+      GOVERNANCE_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD}"
+      KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
+      KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
+      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=5"
+      KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
+      EMPLOYEE_SERVICE_URL: "http://employee-service:8080"
+      ONBOARDING_SERVICE_URL: "http://onboarding-service:8080"
+      # Odeme saglayicisi (iyzico/stripe) baglandiginda doldurulur; bos ise
+      # faturalar havale/EFT ile odenip platform yoneticisince isaretlenir.
+      PAYMENT_PROVIDER: "${PAYMENT_PROVIDER:-}"
+      ASPNETCORE_ENVIRONMENT: "Production"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+      kafka:
+        condition: service_started
+    mem_limit: "384m"
+
   compensation-service:
     <<: *dotnet-service
     build: ./apps/services/compensation-service
@@ -394,6 +435,8 @@ services:
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
       # Port ve sema (https) PUBLIC_ORIGIN'de; PUBLIC_URL'de port yok.
       LOGO_PUBLIC_BASE_URL: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/logos"
+      # SSO: kimlik saglayicisina kaydedilecek yonlendirme adresi bundan uretilir.
+      PUBLIC_ORIGIN: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}"
       ASPNETCORE_ENVIRONMENT: "Production"
     depends_on:
       postgres:

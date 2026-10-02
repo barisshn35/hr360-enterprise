@@ -23,7 +23,8 @@ builder.Services.AddHostedService<WorkflowEventConsumer>();
 builder.Services.AddHostedService<OutboxPublisher>();
 
 builder.Services.AddDbContext<LeaveDbContext>(options =>
-    options.UseNpgsql(connectionString));
+    options.UseNpgsql(connectionString)
+        .AddInterceptors(new LeaveService.Auditing.AuditInterceptor("leave-service")));
 
 var keycloakAuthority = Environment.GetEnvironmentVariable("KEYCLOAK_AUTHORITY")
     ?? "http://keycloak:8080/auth/realms/hr360";

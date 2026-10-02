@@ -443,4 +443,84 @@ public class KeycloakAdminClient
         if (!resp.IsSuccessStatusCode)
             _logger.LogWarning("Kullanıcı durumu değiştirilemedi {Id}", userId);
     }
+
+    // ------------------------------------------------- SSO (kimlik sağlayıcı aracılığı)
+
+    /// <summary>Organizasyona bağlı dış kimlik sağlayıcıları (Google, Azure AD…).</summary>
+    public async Task<List<JsonElement>> ListOrganizationIdentityProvidersAsync(string orgId, CancellationToken ct)
+    {
+        var req = await BuildAsync(HttpMethod.Get, $"/organizations/{Uri.EscapeDataString(orgId)}/identity-providers", null, ct);
+        using var resp = await _http.SendAsync(req, ct);
+        if (!resp.IsSuccessStatusCode) return new();
+        using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
+        return doc.RootElement.EnumerateArray().Select(e => e.Clone()).ToList();
+    }
+
+    /// <summary>
+    /// Realm'e bir kimlik sağlayıcı ekler ve organizasyona bağlar. Bağlandığında
+    /// Keycloak giriş ekranında, e-posta alanı organizasyonun alan adıyla eşleşen
+    /// kullanıcıyı doğrudan bu sağlayıcıya yönlendirir (identity-first login).
+    /// </summary>
+    public async Task CreateOrganizationIdentityProviderAsync(
+        string orgId, string alias, string displayName, string providerId, Dictionary<string, string> config, CancellationToken ct)
+    {
+        var create = await BuildAsync(HttpMethod.Post, "/identity-provider/instances", new
+        {
+            alias, displayName, providerId, enabled = true, trustEmail = true, storeToken = false,
+            firstBrokerLoginFlowAlias = "first broker login", config,
+        }, ct);
+        using (var resp = await _http.SendAsync(create, ct))
+        {
+            if (!resp.IsSuccessStatusCode && resp.StatusCode != System.Net.HttpStatusCode.Conflict)
+                throw new InvalidOperationException($"Kimlik sağlayıcı oluşturulamadı ({(int)resp.StatusCode}): {await resp.Content.ReadAsStringAsync(ct)}");
+        }
+        var link = await BuildAsync(HttpMethod.Post, $"/organizations/{Uri.EscapeDataString(orgId)}/identity-providers", null, ct);
+        // Keycloak 25 gövdeyi ham metin olarak okur: JSON tırnaklı ("alias") gönderilirse
+        // tırnaklar takma adın parçası sayılıp "bulunamadı" (400) döner.
+        link.Content = new StringContent(alias, Encoding.UTF8, "application/json");
+        using var linkResp = await _http.SendAsync(link, ct);
+        if (!linkResp.IsSuccessStatusCode && linkResp.StatusCode != System.Net.HttpStatusCode.Conflict)
+            throw new InvalidOperationException($"Kimlik sağlayıcı organizasyona bağlanamadı ({(int)linkResp.StatusCode}): {await linkResp.Content.ReadAsStringAsync(ct)}");
+    }
+
+    public async Task DeleteIdentityProviderAsync(string orgId, string alias, CancellationToken ct)
+    {
+        var unlink = await BuildAsync(HttpMethod.Delete, $"/organizations/{Uri.EscapeDataString(orgId)}/identity-providers/{Uri.EscapeDataString(alias)}", null, ct);
+        using (await _http.SendAsync(unlink, ct)) { }
+        var del = await BuildAsync(HttpMethod.Delete, $"/identity-provider/instances/{Uri.EscapeDataString(alias)}", null, ct);
+        using var resp = await _http.SendAsync(del, ct);
+        if (!resp.IsSuccessStatusCode && resp.StatusCode != System.Net.HttpStatusCode.NotFound)
+            throw new InvalidOperationException($"Kimlik sağlayıcı silinemedi ({(int)resp.StatusCode})");
+    }
+
+    // ----------------------------------------------------------------- MFA
+
+    /// <summary>Kullanıcının OTP (TOTP) kimlik bilgisi var mı, kurulum bekliyor mu?</summary>
+    public async Task<(bool HasOtp, bool PendingSetup, string? Username)> GetOtpStatusAsync(string userId, CancellationToken ct)
+    {
+        var user = await GetUserRepresentationAsync(userId, ct);
+        if (user is null) return (false, false, null);
+        var pending = user["requiredActions"] is System.Text.Json.Nodes.JsonArray ra && ra.Any(a => a?.GetValue<string>() == "CONFIGURE_TOTP");
+        var req = await BuildAsync(HttpMethod.Get, $"/users/{Uri.EscapeDataString(userId)}/credentials", null, ct);
+        using var resp = await _http.SendAsync(req, ct);
+        var hasOtp = false;
+        if (resp.IsSuccessStatusCode)
+        {
+            using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
+            hasOtp = doc.RootElement.EnumerateArray().Any(c => c.TryGetProperty("type", out var t) && t.GetString() == "otp");
+        }
+        return (hasOtp, pending, user["username"]?.GetValue<string>());
+    }
+
+    /// <summary>Bir sonraki girişte doğrulayıcı uygulama kurulumunu zorunlu kılar.</summary>
+    public async Task RequireOtpSetupAsync(string userId, CancellationToken ct)
+    {
+        var user = await GetUserRepresentationAsync(userId, ct);
+        if (user is null) return;
+        var actions = user["requiredActions"] as System.Text.Json.Nodes.JsonArray ?? new System.Text.Json.Nodes.JsonArray();
+        if (actions.Any(a => a?.GetValue<string>() == "CONFIGURE_TOTP")) return;
+        actions.Add("CONFIGURE_TOTP");
+        user["requiredActions"] = actions.DeepClone();
+        await PutUserAsync(userId, user, ct);
+    }
 }

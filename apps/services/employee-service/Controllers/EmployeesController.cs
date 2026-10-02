@@ -252,6 +252,68 @@ public class EmployeesController : ControllerBase
         return CreatedAtAction(nameof(GetById), new { id = employee.Id }, employee);
     }
 
+    /// <summary>
+    /// Calisan durumu: Active / OnLeave / Terminated. Ayrilista (Terminated) acik
+    /// gorevlendirme ayrilis tarihinde kapatilir; olay outbox'a yazilir (bildirim,
+    /// kural motoru ve canli olay akisi dinler). engagement-service offboarding
+    /// sureci kapaninca bu ucu kullanicinin kendi jetonuyla cagirir.
+    /// </summary>
+    public record ChangeStatusRequest(string Status, DateOnly? EffectiveDate);
+
+    [HttpPatch("{id}/status")]
+    [Authorize(Policy = "RequireHrAdmin")]
+    public async Task<IActionResult> ChangeStatus(Guid id, [FromBody] ChangeStatusRequest request, CancellationToken ct)
+    {
+        if (!Enum.TryParse<EmployeeStatus>(request.Status, true, out var status))
+            return BadRequest(new { message = "Durum Active, OnLeave veya Terminated olmali" });
+        var employee = await _db.Employees.FirstOrDefaultAsync(e => e.Id == id, ct);
+        if (employee is null) return NotFound();
+        var old = employee.Status;
+        if (old == status) return Ok(employee);
+        employee.Status = status;
+
+        if (status == EmployeeStatus.Terminated)
+        {
+            var end = request.EffectiveDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
+            var open = await _db.Assignments.Where(a => a.EmployeeId == id && a.EffectiveTo == null).ToListAsync(ct);
+            foreach (var a in open) a.EffectiveTo = end < a.EffectiveFrom ? a.EffectiveFrom : end;
+        }
+
+        _db.OutboxMessages.Add(new OutboxMessage
+        {
+            Topic = EmployeeTopics.Events,
+            EventType = EmployeeEventTypes.StatusChanged,
+            PartitionKey = id.ToString(),
+            Payload = JsonSerializer.Serialize(new EmployeeStatusChangedEvent(
+                _db.CurrentTenantSlug ?? "", id, employee.FirstName, employee.LastName,
+                old.ToString(), status.ToString(), request.EffectiveDate, DateTimeOffset.UtcNow)),
+        });
+        await _db.SaveChangesAsync(ct);
+        return Ok(employee);
+    }
+
+    /// <summary>
+    /// Self-servis: calisan kendi iletisim telefonunu gunceller. Ad, e-posta ve
+    /// ise giris tarihi gibi kimlik alanlari yalnizca IK tarafindan degisir.
+    /// </summary>
+    public record UpdateMyContactRequest(string? Phone);
+
+    [HttpPut("me/contact")]
+    public async Task<IActionResult> UpdateMyContact([FromBody] UpdateMyContactRequest request, CancellationToken ct)
+    {
+        var keycloakUserId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+            ?? User.FindFirst("sub")?.Value;
+        if (string.IsNullOrEmpty(keycloakUserId)) return NotFound();
+        var me = await _db.Employees.FirstOrDefaultAsync(e => e.KeycloakUserId == keycloakUserId, ct);
+        if (me is null) return NotFound();
+        var phone = request.Phone?.Trim();
+        if (!string.IsNullOrEmpty(phone) && !System.Text.RegularExpressions.Regex.IsMatch(phone, @"^\+?[0-9 ()-]{7,20}$"))
+            return BadRequest(new { message = "Telefon numarasi gecersiz" });
+        me.Phone = string.IsNullOrEmpty(phone) ? null : phone;
+        await _db.SaveChangesAsync(ct);
+        return Ok(me);
+    }
+
     [HttpPost("{id}/assignments")]
     [Authorize(Policy = "RequireManagerOrAbove")]
     public async Task<IActionResult> CreateAssignment(Guid id, [FromBody] CreateAssignmentRequest request, CancellationToken ct)

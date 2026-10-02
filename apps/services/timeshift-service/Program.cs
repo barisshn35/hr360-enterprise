@@ -23,7 +23,8 @@ builder.Services.AddHttpClient<EmployeeDirectoryClient>();
 builder.Services.AddHttpClient<DepartmentDirectoryClient>();
 
 builder.Services.AddDbContext<TimeShiftDbContext>(options =>
-    options.UseNpgsql(connectionString));
+    options.UseNpgsql(connectionString)
+        .AddInterceptors(new TimeShiftService.Auditing.AuditInterceptor("timeshift-service")));
 
 var keycloakAuthority = Environment.GetEnvironmentVariable("KEYCLOAK_AUTHORITY")
     ?? "http://keycloak:8080/auth/realms/hr360";

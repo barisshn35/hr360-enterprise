@@ -21,7 +21,8 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddHttpClient<EmployeeDirectoryClient>();
 
 builder.Services.AddDbContext<WorkflowDbContext>(options =>
-    options.UseNpgsql(connectionString));
+    options.UseNpgsql(connectionString)
+        .AddInterceptors(new WorkflowService.Auditing.AuditInterceptor("workflow-service")));
 
 var keycloakAuthority = Environment.GetEnvironmentVariable("KEYCLOAK_AUTHORITY")
     ?? "http://keycloak:8080/auth/realms/hr360";

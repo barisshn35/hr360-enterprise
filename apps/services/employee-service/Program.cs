@@ -21,7 +21,8 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddHttpClient<OrganizationDirectoryClient>();
 
 builder.Services.AddDbContext<EmployeeDbContext>(options =>
-    options.UseNpgsql(connectionString));
+    options.UseNpgsql(connectionString)
+        .AddInterceptors(new EmployeeService.Auditing.AuditInterceptor("employee-service")));
 
 var keycloakAuthority = Environment.GetEnvironmentVariable("KEYCLOAK_AUTHORITY")
     ?? "http://keycloak:8080/auth/realms/hr360";

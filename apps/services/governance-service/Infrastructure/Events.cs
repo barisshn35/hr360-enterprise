@@ -1,0 +1,531 @@
+using System.Collections.Concurrent;
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using System.Threading.Channels;
+using Confluent.Kafka;
+using Microsoft.EntityFrameworkCore;
+using GovernanceService.Data;
+using GovernanceService.Models;
+using GovernanceService.Tenancy;
+
+namespace GovernanceService.Infrastructure;
+
+/// <summary>Canlı olay radarında gösterilen olay.</summary>
+public sealed record RadarEvent(Guid Id, string? TenantSlug, string Topic, string EventType, JsonElement? Payload, DateTime OccurredAt, string Summary);
+
+/// <summary>
+/// Süreç içi yayın: Kafka tüketicisi her yeni olayı buraya yazar, açık SSE
+/// bağlantıları (EventsController.Stream) okur. Yavaş istemci diğerlerini
+/// bekletmesin diye her abonenin sınırlı, eskiyi düşüren kendi kanalı var.
+/// </summary>
+public sealed class EventHub
+{
+    private readonly ConcurrentDictionary<Guid, Channel<RadarEvent>> _subs = new();
+
+    public (Guid Id, ChannelReader<RadarEvent> Reader) Subscribe()
+    {
+        var ch = Channel.CreateBounded<RadarEvent>(new BoundedChannelOptions(200) { FullMode = BoundedChannelFullMode.DropOldest });
+        var id = Guid.NewGuid();
+        _subs[id] = ch;
+        return (id, ch.Reader);
+    }
+
+    public void Unsubscribe(Guid id)
+    {
+        if (_subs.TryRemove(id, out var ch)) ch.Writer.TryComplete();
+    }
+
+    public int Subscribers => _subs.Count;
+
+    public void Publish(RadarEvent e)
+    {
+        foreach (var ch in _subs.Values) ch.Writer.TryWrite(e);
+    }
+
+    /// <summary>Olay tipini ve yükünü tek satırlık Türkçe cümleye çevirir.</summary>
+    public static string Describe(string type, JsonElement? p)
+    {
+        string F(string name) => Field(p, name) ?? "";
+        var person = $"{F("FirstName")} {F("LastName")}".Trim();
+        if (person.Length == 0) person = F("RequesterName");
+        if (person.Length == 0) person = F("EmployeeName");
+        if (person.Length == 0) person = "Bir çalışan";
+        return type switch
+        {
+            "employee.hired" => $"{person} işe alındı",
+            "employee.assigned" => $"{person} yeni görevine atandı{(F("PositionTitle") is { Length: > 0 } pos ? $": {pos}" : "")}",
+            "employee.status-changed" => $"{person} durumu: {F("OldStatus")} → {F("NewStatus")}",
+            "workflow.submitted" => $"{person} onaya gönderdi: {F("Subject")}",
+            "workflow.approved" => $"Onaylandı: {F("Subject")}".TrimEnd(':', ' '),
+            "workflow.rejected" => $"Reddedildi: {F("Subject")}".TrimEnd(':', ' '),
+            "workflow.step-approved" => $"Onay adımı geçti: {F("Subject")}".TrimEnd(':', ' '),
+            "leave.approved" => $"İzin onaylandı ({F("Days")} gün, {F("StartDate")})",
+            "leave.cancelled" => "İzin iptal edildi",
+            "leave.rejected" => "İzin reddedildi",
+            _ => type,
+        };
+    }
+
+    /// <summary>Yükten alan okur: büyük/küçük harf duyarsız, "a.b" ile iç içe.</summary>
+    public static string? Field(JsonElement? payload, string path)
+    {
+        if (payload is not { ValueKind: JsonValueKind.Object } cur) return null;
+        foreach (var part in path.Split('.'))
+        {
+            if (cur.ValueKind != JsonValueKind.Object) return null;
+            var found = false;
+            foreach (var prop in cur.EnumerateObject())
+            {
+                if (string.Equals(prop.Name, part, StringComparison.OrdinalIgnoreCase))
+                {
+                    cur = prop.Value;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) return null;
+        }
+        return cur.ValueKind switch
+        {
+            JsonValueKind.String => cur.GetString(),
+            JsonValueKind.Null or JsonValueKind.Undefined => null,
+            _ => cur.GetRawText(),
+        };
+    }
+}
+
+/// <summary>
+/// Tüm hr360.* konularını dinler (kendi tüketici grubu — notification-service'i
+/// etkilemez). Her olay governance_events'e bir kez yazılır (event-id birincil
+/// anahtar = idempotency), radara yayınlanır ve kural/webhook/entegrasyon
+/// gönderimi için Dispatcher'a verilir.
+/// </summary>
+public sealed class EventConsumer : BackgroundService
+{
+    private readonly IServiceProvider _sp;
+    private readonly EventHub _hub;
+    private readonly ILogger<EventConsumer> _log;
+
+    public EventConsumer(IServiceProvider sp, EventHub hub, ILogger<EventConsumer> log) { _sp = sp; _hub = hub; _log = log; }
+
+    protected override Task ExecuteAsync(CancellationToken stoppingToken) => Task.Run(() => Loop(stoppingToken), stoppingToken);
+
+    private async Task Loop(CancellationToken ct)
+    {
+        var config = new ConsumerConfig
+        {
+            BootstrapServers = Environment.GetEnvironmentVariable("KAFKA_BOOTSTRAP_SERVERS") ?? "kafka:9092",
+            GroupId = "governance-service",
+            AutoOffsetReset = AutoOffsetReset.Earliest,
+            EnableAutoCommit = false,
+            TopicMetadataRefreshIntervalMs = 10_000,
+        };
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                using var consumer = new ConsumerBuilder<string, string>(config)
+                    .SetErrorHandler((_, e) => _log.LogDebug("Kafka: {Reason}", e.Reason)).Build();
+                consumer.Subscribe("^hr360\\..*");
+                _log.LogInformation("Olay radarı Kafka'yı dinliyor (hr360.*)");
+                while (!ct.IsCancellationRequested)
+                {
+                    var r = consumer.Consume(TimeSpan.FromSeconds(1));
+                    if (r?.Message is null) continue;
+                    try { await HandleAsync(r, ct); }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        _log.LogError(ex, "Olay işlenemedi, atlanıyor: {Offset}", r.TopicPartitionOffset);
+                    }
+                    consumer.Commit(r);
+                }
+                consumer.Close();
+            }
+            catch (OperationCanceledException) { break; }
+            catch (Exception ex)
+            {
+                _log.LogWarning(ex, "Kafka tüketicisi yeniden başlatılıyor");
+                await Task.Delay(TimeSpan.FromSeconds(5), CancellationToken.None);
+            }
+        }
+    }
+
+    private async Task HandleAsync(ConsumeResult<string, string> r, CancellationToken ct)
+    {
+        string? H(string key) => r.Message.Headers?.TryGetLastBytes(key, out var b) == true ? Encoding.UTF8.GetString(b) : null;
+        var type = H("event-type") ?? "unknown";
+        var id = Guid.TryParse(H("event-id"), out var g) ? g : DeterministicId(r);
+        JsonElement? payload = null;
+        try { payload = JsonDocument.Parse(r.Message.Value).RootElement.Clone(); } catch (JsonException) { }
+        var tenant = EventHub.Field(payload, "TenantSlug");
+        var at = r.Message.Timestamp.UtcDateTime;
+        if (at.Year < 2000) at = DateTime.UtcNow;
+
+        using var scope = _sp.CreateScope();
+        scope.ServiceProvider.GetRequiredService<TenantContext>().IsPlatformAdmin = true;
+        var sql = scope.ServiceProvider.GetRequiredService<Sql>();
+        var inserted = await sql.ExecuteAsync(
+            """
+            INSERT INTO governance_events ("Id","TenantSlug","Topic","EventType","Payload","OccurredAt")
+            VALUES ($1,$2,$3,$4,$5::jsonb,$6) ON CONFLICT ("Id") DO NOTHING
+            """, ct, id, string.IsNullOrEmpty(tenant) ? null : tenant, r.Topic, type,
+            payload is null ? null : payload.Value.GetRawText(), at);
+        if (inserted == 0) return; // daha önce işlendi
+
+        _hub.Publish(new RadarEvent(id, tenant, r.Topic, type, payload, at, EventHub.Describe(type, payload)));
+        if (!string.IsNullOrEmpty(tenant))
+            await scope.ServiceProvider.GetRequiredService<Dispatcher>().DispatchAsync(scope.ServiceProvider, tenant, id, type, payload, ct);
+    }
+
+    private static Guid DeterministicId(ConsumeResult<string, string> r) =>
+        new(MD5.HashData(Encoding.UTF8.GetBytes($"{r.Topic}:{r.Partition.Value}:{r.Offset.Value}")));
+}
+
+/// <summary>
+/// Olay → kural motoru, giden webhook'lar ve Slack/Teams gönderimi.
+/// Hepsi "en iyi çaba": bir hedefin hatası diğerlerini etkilemez, sonuç
+/// governance_rule_runs / governance_webhook_deliveries'e yazılır.
+/// </summary>
+public sealed class Dispatcher
+{
+    private readonly IHttpClientFactory _http;
+    private readonly ILogger<Dispatcher> _log;
+    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+
+    public Dispatcher(IHttpClientFactory http, ILogger<Dispatcher> log) { _http = http; _log = log; }
+
+    public async Task DispatchAsync(IServiceProvider sp, string tenant, Guid eventId, string type, JsonElement? payload, CancellationToken ct)
+    {
+        var db = sp.GetRequiredService<GovernanceDbContext>();
+        var notifier = sp.GetRequiredService<Notifier>();
+        var summary = EventHub.Describe(type, payload);
+
+        // ------------------------------------------------------------ kurallar
+        var rules = await db.Rules.Where(x => x.TenantSlug == tenant && x.IsEnabled && (x.Trigger == type || x.Trigger == "*")).ToListAsync(ct);
+        foreach (var rule in rules)
+        {
+            var (matched, why) = Evaluate(rule.Conditions, payload);
+            if (!matched) continue;
+            var results = new List<string>();
+            foreach (var action in rule.Actions)
+            {
+                try { results.Add(await ExecuteAsync(db, notifier, tenant, rule, action, type, payload, summary, ct)); }
+                catch (Exception ex) when (ex is not OperationCanceledException) { results.Add($"{action.Type}: hata ({ex.Message})"); }
+            }
+            rule.FireCount++;
+            rule.LastFiredAt = DateTime.UtcNow;
+            db.RuleRuns.Add(new RuleRun { TenantSlug = tenant, RuleId = rule.Id, RuleName = rule.Name, EventType = type, Result = string.Join("; ", results) });
+        }
+
+        // ------------------------------------------------------------ webhook'lar
+        var hooks = await db.Webhooks.Where(w => w.TenantSlug == tenant && w.IsEnabled).ToListAsync(ct);
+        foreach (var hook in hooks.Where(h => h.Events.Contains(type) || h.Events.Contains("*")))
+            await DeliverWebhookAsync(db, hook, eventId, type, payload, ct);
+
+        // ------------------------------------------------------------ Slack / Teams
+        var integrations = await db.Integrations.Where(i => i.TenantSlug == tenant && i.IsEnabled).ToListAsync(ct);
+        foreach (var integ in integrations.Where(i => i.Events.Contains(type) || i.Events.Contains("*")))
+            integ.LastStatus = await PostChatAsync(integ.Kind, integ.WebhookUrl, summary, type, ct);
+
+        await db.SaveChangesAsync(ct);
+    }
+
+    public static (bool, string) Evaluate(IEnumerable<RuleCondition> conditions, JsonElement? payload)
+    {
+        foreach (var c in conditions)
+        {
+            var actual = EventHub.Field(payload, c.Field);
+            var ok = Compare(actual, c.Op, c.Value);
+            if (!ok) return (false, $"{c.Field} {c.Op} {c.Value} sağlanmadı (değer: {actual ?? "yok"})");
+        }
+        return (true, "tüm koşullar sağlandı");
+    }
+
+    private static bool Compare(string? actual, string op, string expected)
+    {
+        if (actual is null) return op == "neq";
+        var inv = CultureInfo.InvariantCulture;
+        var numeric = decimal.TryParse(actual, NumberStyles.Any, inv, out var a) & decimal.TryParse(expected, NumberStyles.Any, inv, out var e);
+        return op switch
+        {
+            "eq" => numeric ? a == e : string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase),
+            "neq" => numeric ? a != e : !string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase),
+            "gt" => numeric && a > e,
+            "gte" => numeric && a >= e,
+            "lt" => numeric && a < e,
+            "lte" => numeric && a <= e,
+            "contains" => actual.Contains(expected, StringComparison.OrdinalIgnoreCase),
+            _ => false,
+        };
+    }
+
+    public static string Render(string template, JsonElement? payload, string summary) =>
+        System.Text.RegularExpressions.Regex.Replace(template.Replace("{{ozet}}", summary), @"\{\{\s*([\w.]+)\s*\}\}",
+            m => EventHub.Field(payload, m.Groups[1].Value) ?? m.Value);
+
+    private async Task<string> ExecuteAsync(GovernanceDbContext db, Notifier notifier, string tenant, Rule rule, RuleAction action,
+        string type, JsonElement? payload, string summary, CancellationToken ct)
+    {
+        var message = Render(string.IsNullOrWhiteSpace(action.Message) ? "{{ozet}}" : action.Message, payload, summary);
+        switch (action.Type)
+        {
+            case "notify":
+                var target = action.Target?.Trim() ?? "requester";
+                var field = target switch
+                {
+                    "requester" => EventHub.Field(payload, "RequesterEmployeeId") ?? EventHub.Field(payload, "EmployeeId"),
+                    "approver" => EventHub.Field(payload, "ApproverEmployeeId"),
+                    "employee" => EventHub.Field(payload, "EmployeeId"),
+                    _ => target,
+                };
+                if (!Guid.TryParse(field, out var emp)) return "notify: alıcı bulunamadı";
+                await notifier.InAppAsync(tenant, emp, rule.Name, message, "governance.rule", ct);
+                return "notify: gönderildi";
+            case "webhook":
+                if (string.IsNullOrWhiteSpace(action.Target)) return "webhook: adres yok";
+                var hookCode = await PostJsonAsync(action.Target, new { rule = rule.Name, type, message, data = payload }, null, ct);
+                return $"webhook: HTTP {hookCode?.ToString() ?? "hata"}";
+            case "slack":
+            case "teams":
+                var kind = action.Type == "slack" ? "Slack" : "Teams";
+                if (!string.IsNullOrWhiteSpace(action.Target))
+                {
+                    var code = await PostChatAsync(kind, action.Target, message, type, ct);
+                    return $"{action.Type}: HTTP {code?.ToString() ?? "hata"}";
+                }
+                var targets = await db.Integrations.Where(i => i.TenantSlug == tenant && i.IsEnabled && i.Kind == kind).ToListAsync(ct);
+                foreach (var t in targets) t.LastStatus = await PostChatAsync(kind, t.WebhookUrl, message, type, ct);
+                return $"{action.Type}: {targets.Count} kanala gönderildi";
+            default:
+                return $"{action.Type}: bilinmeyen eylem";
+        }
+    }
+
+    public async Task DeliverWebhookAsync(GovernanceDbContext db, Webhook hook, Guid eventId, string type, JsonElement? payload, CancellationToken ct)
+    {
+        var started = DateTime.UtcNow;
+        var body = JsonSerializer.Serialize(new { id = eventId, type, tenant = hook.TenantSlug, occurredAt = started, data = payload }, Json);
+        var signature = "sha256=" + Convert.ToHexString(HMACSHA256.HashData(Encoding.UTF8.GetBytes(hook.Secret), Encoding.UTF8.GetBytes(body))).ToLowerInvariant();
+        int? status = null;
+        string? error = null;
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Post, hook.Url) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
+            req.Headers.Add("X-HR360-Event", type);
+            req.Headers.Add("X-HR360-Delivery", eventId.ToString());
+            req.Headers.Add("X-HR360-Signature", signature);
+            var client = _http.CreateClient();
+            client.Timeout = TimeSpan.FromSeconds(5);
+            using var res = await client.SendAsync(req, ct);
+            status = (int)res.StatusCode;
+            if (!res.IsSuccessStatusCode) error = $"HTTP {status}";
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            error = ex.Message.Length > 300 ? ex.Message[..300] : ex.Message;
+        }
+        hook.LastStatus = status;
+        hook.LastDeliveredAt = DateTime.UtcNow;
+        hook.FailureCount = error is null ? 0 : hook.FailureCount + 1;
+        if (hook.FailureCount >= 20) hook.IsEnabled = false; // sürekli düşen uç otomatik kapanır
+        db.WebhookDeliveries.Add(new WebhookDelivery
+        {
+            TenantSlug = hook.TenantSlug, WebhookId = hook.Id, EventType = type, StatusCode = status, Error = error,
+            DurationMs = (int)(DateTime.UtcNow - started).TotalMilliseconds,
+        });
+    }
+
+    public async Task<int?> PostChatAsync(string kind, string url, string text, string type, CancellationToken ct)
+    {
+        object body = kind == "Teams"
+            ? new Dictionary<string, object>
+            {
+                ["@type"] = "MessageCard", ["@context"] = "http://schema.org/extensions",
+                ["summary"] = text, ["themeColor"] = "10B981", ["title"] = "HR360", ["text"] = $"{text}\n\n_{type}_",
+            }
+            : new { text = $"*HR360* — {text}", blocks = new object[]
+            {
+                new { type = "section", text = new { type = "mrkdwn", text = $"*HR360* · {text}" } },
+                new { type = "context", elements = new object[] { new { type = "mrkdwn", text = $"`{type}`" } } },
+            } };
+        return await PostJsonAsync(url, body, null, ct);
+    }
+
+    private async Task<int?> PostJsonAsync(string url, object body, string? signature, CancellationToken ct)
+    {
+        try
+        {
+            var client = _http.CreateClient();
+            client.Timeout = TimeSpan.FromSeconds(5);
+            using var res = await client.PostAsJsonAsync(url, body, Json, ct);
+            return (int)res.StatusCode;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            _log.LogInformation("Gönderim başarısız ({Url}): {Message}", url, ex.Message);
+            return null;
+        }
+    }
+}
+
+/// <summary>
+/// Saatlik bakım: 30 günden eski olayları siler, süresi gelen saklama
+/// politikalarını (KVKK) çalıştırır, ay başında kiracı faturalarını keser.
+/// </summary>
+public sealed class Housekeeping : BackgroundService
+{
+    private readonly IServiceProvider _sp;
+    private readonly ILogger<Housekeeping> _log;
+    public Housekeeping(IServiceProvider sp, ILogger<Housekeeping> log) { _sp = sp; _log = log; }
+
+    protected override async Task ExecuteAsync(CancellationToken ct)
+    {
+        await Task.Delay(TimeSpan.FromSeconds(30), ct);
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                using var scope = _sp.CreateScope();
+                scope.ServiceProvider.GetRequiredService<TenantContext>().IsPlatformAdmin = true;
+                var sql = scope.ServiceProvider.GetRequiredService<Sql>();
+                await sql.ExecuteAsync("DELETE FROM governance_events WHERE \"OccurredAt\" < now() - interval '30 days'", ct);
+
+                var db = scope.ServiceProvider.GetRequiredService<GovernanceDbContext>();
+                var due = await db.RetentionPolicies.Where(p => p.IsEnabled && (p.LastRunAt == null || p.LastRunAt < DateTime.UtcNow.AddHours(-24))).ToListAsync(ct);
+                foreach (var p in due)
+                {
+                    p.LastAffected = await Retention.RunAsync(sql, p, ct);
+                    p.LastRunAt = DateTime.UtcNow;
+                }
+                await db.SaveChangesAsync(ct);
+                await Billing.GenerateAsync(sql, db, DateTime.UtcNow, ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _log.LogWarning(ex, "Bakım turu hata verdi");
+            }
+            await Task.Delay(TimeSpan.FromHours(1), ct);
+        }
+    }
+}
+
+/// <summary>KVKK saklama süresi uygulayıcısı (anonimleştirme/silme).</summary>
+public static class Retention
+{
+    public static readonly Dictionary<string, (string Label, string[] Actions, int DefaultMonths)> Categories = new()
+    {
+        ["RejectedCandidates"] = ("Olumsuz sonuçlanan aday başvuruları", new[] { "Anonymize", "Delete" }, 12),
+        ["TerminatedEmployees"] = ("Ayrılmış çalışanların kişisel verileri", new[] { "Anonymize" }, 120),
+        ["AuditLog"] = ("Denetim kayıtları", new[] { "Delete" }, 24),
+        ["Notifications"] = ("Bildirim geçmişi", new[] { "Delete" }, 6),
+    };
+
+    public static async Task<int> RunAsync(Sql sql, RetentionPolicy p, CancellationToken ct)
+    {
+        var t = p.TenantSlug;
+        var months = Math.Max(1, p.RetentionMonths);
+        switch (p.Category)
+        {
+            case "RejectedCandidates":
+                const string stale = """
+                    c."TenantSlug" = $1 AND NOT EXISTS (
+                        SELECT 1 FROM recruitment_applications a WHERE a."CandidateId" = c."Id"
+                        AND (a."Status" NOT IN ('Rejected','Withdrawn') OR coalesce(a."StatusChangedAt", a."AppliedAt") > now() - make_interval(months => $2)))
+                    AND c."CreatedAt" < now() - make_interval(months => $2) AND c."Email" NOT LIKE 'anon-%'
+                    """;
+                return p.Action == "Delete"
+                    ? await sql.ExecuteAsync($"DELETE FROM recruitment_candidates c WHERE {stale}", ct, t, months)
+                    : await sql.ExecuteAsync($"""
+                        UPDATE recruitment_candidates c SET "FirstName" = 'Anonim', "LastName" = 'Aday',
+                            "Email" = 'anon-' || c."Id" || '@anonim.invalid', "Phone" = NULL, "ResumeStorageKey" = NULL
+                        WHERE {stale}
+                        """, ct, t, months);
+            case "TerminatedEmployees":
+                return await AnonymizeEmployeesAsync(sql, t, null, months, ct);
+            case "AuditLog":
+                return await sql.ExecuteAsync("DELETE FROM audit_log WHERE \"TenantSlug\" = $1 AND \"OccurredAt\" < now() - make_interval(months => $2)", ct, t, months);
+            case "Notifications":
+                return await sql.ExecuteAsync("DELETE FROM notification_messages WHERE \"TenantSlug\" = $1 AND \"CreatedAt\" < now() - make_interval(months => $2)", ct, t, months);
+            default:
+                return 0;
+        }
+    }
+
+    /// <summary>
+    /// Ayrılmış çalışan(lar)ın kimliğini geri döndürülemez biçimde siler: ad, e-posta,
+    /// telefon, profil (adres, IBAN, TCKN, acil durum kişisi, doğum tarihi). İstatistik
+    /// için gereken alanlar (işe giriş, departman geçmişi) kalır.
+    /// </summary>
+    public static async Task<int> AnonymizeEmployeesAsync(Sql sql, string tenant, Guid? employeeId, int months, CancellationToken ct)
+    {
+        var filter = employeeId is null
+            ? """
+              e."TenantSlug" = $1 AND e."Status" = 'Terminated' AND e."Email" NOT LIKE 'anon-%'
+              AND coalesce((SELECT max(a."EffectiveTo") FROM employee_assignments a WHERE a."EmployeeId" = e."Id"), e."CreatedAt"::date)
+                  < (now() - make_interval(months => $2))::date
+              """
+            : """e."TenantSlug" = $1 AND e."Id" = $2 AND e."Status" = 'Terminated'""";
+        var ids = employeeId is null
+            ? await sql.QueryAsync($"SELECT e.\"Id\" FROM employee_employees e WHERE {filter}", r => r.GetGuid(0), ct, tenant, months)
+            : await sql.QueryAsync($"SELECT e.\"Id\" FROM employee_employees e WHERE {filter}", r => r.GetGuid(0), ct, tenant, employeeId.Value);
+        if (ids.Count == 0) return 0;
+        var arr = ids.ToArray();
+        await sql.ExecuteAsync("""
+            UPDATE employee_employees SET "FirstName" = 'Anonim', "LastName" = upper(left("Id"::text, 6)),
+                "Email" = 'anon-' || "Id" || '@anonim.invalid', "Phone" = NULL, "KeycloakUserId" = NULL
+            WHERE "TenantSlug" = $1 AND "Id" = ANY($2)
+            """, ct, tenant, arr);
+        await sql.ExecuteAsync("""
+            UPDATE engagement_profiles SET "BirthDate" = NULL, "Bio" = NULL, "Address" = NULL, "EmergencyContactName" = NULL,
+                "EmergencyContactPhone" = NULL, "Iban" = NULL, "NationalId" = NULL, "LinkedInUrl" = NULL, "Skills" = '{}', "Interests" = '{}'
+            WHERE "TenantSlug" = $1 AND "EmployeeId" = ANY($2)
+            """, ct, tenant, arr);
+        await sql.ExecuteAsync("""
+            UPDATE engagement_kudos SET "ToName" = 'Anonim' WHERE "TenantSlug" = $1 AND "ToEmployeeId" = ANY($2)
+            """, ct, tenant, arr);
+        return ids.Count;
+    }
+}
+
+/// <summary>Plan bazlı aylık fatura üretimi (koltuk = aktif çalışan sayısı).</summary>
+public static class Billing
+{
+    public static readonly Dictionary<string, decimal> PricePerSeat = new()
+    {
+        ["Trial"] = 0m, ["Standard"] = 45m, ["Enterprise"] = 85m,
+    };
+    public const decimal VatRate = 0.20m;
+    public const int MinimumSeats = 5;
+
+    public static async Task<int> GenerateAsync(Sql sql, GovernanceDbContext db, DateTime now, CancellationToken ct, string? onlyTenant = null)
+    {
+        var period = now.ToString("yyyy-MM");
+        var tenants = await sql.QueryAsync(
+            """
+            SELECT t."Slug", t."Plan", (SELECT count(*) FROM employee_employees e WHERE e."TenantSlug" = t."Slug" AND e."Status" <> 'Terminated')
+            FROM platform_tenants t WHERE t."Status" = 'Active' AND ($1::text IS NULL OR t."Slug" = $1)
+            """, r => (Slug: r.GetString(0), Plan: r.GetString(1), Seats: Convert.ToInt32(r.GetValue(2))), ct, onlyTenant);
+        var existing = await db.Invoices.IgnoreQueryFilters().Where(i => i.Period == period).Select(i => i.TenantSlug).ToListAsync(ct);
+        var created = 0;
+        var seq = await db.Invoices.IgnoreQueryFilters().CountAsync(ct);
+        foreach (var t in tenants.Where(t => !existing.Contains(t.Slug)))
+        {
+            var price = PricePerSeat.GetValueOrDefault(t.Plan);
+            var seats = Math.Max(MinimumSeats, t.Seats);
+            var amount = price * seats;
+            var tax = Math.Round(amount * VatRate, 2);
+            db.Invoices.Add(new Invoice
+            {
+                TenantSlug = t.Slug, Number = $"HR{now:yyyyMM}-{++seq:00000}", Period = period, Plan = t.Plan, Seats = seats,
+                UnitPrice = price, Amount = amount, TaxAmount = tax, Total = amount + tax,
+                Status = amount == 0 ? "Paid" : "Issued", PaidAt = amount == 0 ? DateTime.UtcNow : null,
+                IssuedAt = DateTime.UtcNow, DueAt = DateTime.UtcNow.AddDays(15),
+            });
+            created++;
+        }
+        if (created > 0) await db.SaveChangesAsync(ct);
+        return created;
+    }
+}

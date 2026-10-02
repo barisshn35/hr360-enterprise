@@ -30,7 +30,8 @@ builder.Services.AddHttpClient<EmployeeDirectoryClient>();
 builder.Services.AddHostedService<EmailSenderWorker>();
 
 builder.Services.AddDbContext<NotificationDbContext>(options =>
-    options.UseNpgsql(connectionString));
+    options.UseNpgsql(connectionString)
+        .AddInterceptors(new NotificationService.Auditing.AuditInterceptor("notification-service")));
 
 var keycloakAuthority = Environment.GetEnvironmentVariable("KEYCLOAK_AUTHORITY")
     ?? "http://keycloak:8080/auth/realms/hr360";
