@@ -99,8 +99,8 @@ MinIO verisi (logolar), `.env` ve `deploy/letsencrypt/`.
   idempotency) desenleriyle
 - **Veritabanı:** PostgreSQL — tüm servisler `hr360_operational`
   veritabanını, kendi tablo kümeleriyle ve ortak tenant filtreleme
-  altyapısıyla izole şekilde paylaşır; MLflow için ayrı `hr360_mlflow`
-  veritabanı
+  altyapısıyla izole şekilde paylaşır; Keycloak (`keycloak`) ve MLflow
+  (`hr360_mlflow`) için aynı PostgreSQL'de ayrı veritabanları
 - **Depolama:** MinIO (S3 uyumlu nesne depolama — logo ve ML artefact'ları)
 - **E-posta:** `install.sh` kurulumda SMTP sunucusunu sorar; boş
   bırakılırsa Mailpit (yerel SMTP yakalayıcı, demo/dev için — e-postalar
@@ -113,7 +113,9 @@ MinIO verisi (logolar), `.env` ve `deploy/letsencrypt/`.
   store
 - **Gateway:** Nginx — path tabanlı routing (`/api/<servis>/`), `/auth/`
   üzerinden Keycloak'a, `/ml/` üzerinden inference servisine, `/logos/`
-  üzerinden MinIO'ya passthrough
+  üzerinden MinIO'ya passthrough. HTTPS (Let's Encrypt dahil) ve Keycloak
+  yönetim paneli erişim kısıtı da burada yapılır. Her servisin tek kopyası
+  çalışır; yük dengeleme yoktur.
 
 Servisler birbirini Docker'ın dahili servis-adı DNS'i üzerinden bulur
 (örn. `http://employee-service:8080`) — IP adresi hardcode edilmemiştir.
@@ -142,16 +144,22 @@ apps/
 data/
   migrations/            Tüm servislerin birleşik SQL şeması
 deploy/
-  nginx/                 Tek-sunucu gateway yapılandırması
-  postgres/              İkinci veritabanının (mlflow) init script'i
+  nginx/                 Tek-sunucu gateway yapılandırması (tls/, acme/, keycloak-admin/ betiklerle doldurulur)
+  postgres/              Ek veritabanlarının (keycloak, mlflow) init script'i
   keycloak/              Realm şablonu (sırlar kurulumda dolduruluyor)
+  letsencrypt/           Let's Encrypt sertifikaları (git'e girmez)
+scripts/
+  tls.sh                 HTTPS aç/kapat (Let's Encrypt, kendi sertifika, kendinden imzalı)
+  keycloak-admin-access.sh  Keycloak yönetim paneli erişimi (açık / IP kısıtı / ayrı port)
+  sql/                   Mevcut kurulumlar için veritabanı göçleri (güncellemede otomatik)
 platform/
   ansible/               Orijinal 7-VM dağıtımının Ansible playbook'ları (referans)
   monitoring/             Orijinal Prometheus scrape target tanımları (referans)
   nginx/                  Orijinal gateway nginx snippet'i (referans)
-  keycloak-themes/        Özel Keycloak giriş teması
+  keycloak-themes/        Keycloak giriş teması (tek sunucu kurulumu şu an yüklemiyor)
 docs/
   architecture/           Mimari dokümanlar
+  runbooks/               HTTPS, Keycloak paneli erişimi, Keycloak veritabanı geçişi
 docker-compose.yml         Tek-sunucu servis tanımı
 install.sh                 Kurulum script'i
 .env.example                Kullanılan ortam değişkenlerinin referans listesi
@@ -169,56 +177,69 @@ orijinal DevOps tasarımını göstermek amacıyla saklanmaktadır. `.gitlab-ci.
 de aynı şekilde orijinal CI/CD pipeline'ının bir referansıdır.
 
 Tek-sunucu sürümü, aynı servislerin tamamını Docker Compose ile tek
-makinede, servis adı üzerinden birbirini bulacak şekilde çalıştırır —
-mimari olarak birebir aynı, sadece dağıtım topolojisi farklıdır.
+makinede, servis adı üzerinden birbirini bulacak şekilde çalıştırır. Uygulama
+ve iş mantığı aynıdır; 7-VM tasarımındaki altyapı katmanları ise bu sürümde
+yoktur: iki uygulama sunucusu arasında yedeklilik, PostgreSQL standby,
+Prometheus/Grafana izleme ve NSX-V Edge yük dengeleyicisi. Not: referans
+Ansible envanteri de servisleri iki uygulama sunucusuna **bölerek** dağıtır,
+kopyalamaz.
 
-## Kendi logonuzu ekleme (beyaz etiketleme)
+## Beyaz etiketleme (şirkete özel marka)
 
-Sistem çok kiracılı (multi-tenant): platformu kullanan her şirket kendi
-logosunu ve ana rengini yükleyip HR360'ın varsayılan markasının **yerine**
-gösterebilir — kod değiştirmeye gerek yok.
+Sistem çok kiracılıdır. Platformu kuran kişi (siz) platform sahibidir; platformu
+kullanan her şirket (kiracı) kendi logosunu, ana rengini ve e-posta sunucusunu
+tanımlayarak HR360'ın varsayılan markasının **yerine** kendi markasını gösterebilir.
+Kod değiştirmeye gerek yoktur ve özellik, repoyu kuran herkes için hazır gelir.
+Ancak her şirket için **plan** ile açılır.
 
-**Nereden yüklenir:** Uygulama içinde `Ayarlar → Marka` (yalnızca
-Enterprise plandaki kiracılar ve `tenant-admin`/`platform-admin` rolü —
-`apps/web/src/features/settings/BrandingPanel.tsx`). Yükleme,
-`tenant-service`'in `POST /api/my-tenant/logo` ucuna gider, MinIO'da
-(`tenant-logos` bucket'ı) saklanır ve gateway üzerinden `/logos/` yolundan
-herkese açık servis edilir.
+### Kimler kullanabilir
 
-**Kabul edilen format:** PNG, JPEG, SVG veya WebP — en fazla **2 MB**
-(`LogoStorageService.cs` içinde sabit).
+| Koşul | Ayrıntı |
+|---|---|
+| Şirketin planı **Enterprise** olmalı | Uygulamadan kayıt olan her yeni şirket **Deneme (Trial)** planıyla başlar. Ödeme akışı olmadığı için planı platform yöneticisi yükseltir: `platform.admin` → **Kiracılar** → şirket → **Planı değiştir**. Kurulumla gelen **demo** şirketi Enterprise'dır. |
+| Ayarı yapan kişi şirket yöneticisi olmalı | `tenant-admin` rolü ya da **Roller** sayfasından "şirket ayarlarını yönetme" (`tenant:manage`) ek izni verilmiş biri. `platform-admin` da yapabilir. |
 
-**Önerilen ebat:** Logo, aşağıdaki farklı yerlerde farklı boyutlarda
-gösterildiği için **kare veya yatay, şeffaf arka planlı** bir dosya en iyi
-sonucu verir; sistem tek bir dosyayı otomatik olarak küçültüp gösterir,
-ayrı boyutlar yüklemenize gerek yoktur:
+Plan Enterprise değilse marka ayarları **Ayarlar** sayfasında hiç görünmez, API de reddeder.
+Şirket adı ise bütün planlarda değiştirilebilir.
 
-| Kullanıldığı yer | Görüntülenen boyut | Not |
+### Neler değiştirilebilir
+
+Hepsi uygulamada **Ayarlar** sayfasındadır (`apps/web/src/features/settings/BrandingPanel.tsx`).
+
+| Ayar | Nerede etkili olur |
+|---|---|
+| **Logo** | Panelde sol menünün üstü ve şirketin çalışanlarına giden bildirim e-postalarının başlığı. |
+| **Ana renk** | Panelin ana rengi: butonlar, vurgular. Yazı rengi okunur kalacak şekilde otomatik seçilir. E-posta şablonları HR360 renginde kalır. |
+| **Kendi SMTP sunucusu** | Uygulamanın bildirim e-postaları (izin, onay, hoş geldiniz vb.) şirketin kendi sunucusundan, kendi gönderen adresiyle gider. Parola şifrelenerek saklanır. **Davet ve parola sıfırlama e-postaları** Keycloak'tan, platformun kurulumda girilen SMTP'si üzerinden gitmeye devam eder. |
+
+### Logo dosyası
+
+- **Format:** PNG, JPEG veya WebP; en fazla **2 MB** (`LogoStorageService.cs`).
+  **SVG kabul edilmez**: SVG içinde betik taşınabildiği ve logolar uygulamanın kendi
+  alan adından sunulduğu için güvenlik nedeniyle kapatıldı. Dosya türü, dosya adına
+  değil içeriğine bakılarak belirlenir.
+- **Saklama:** MinIO'daki `tenant-logos` bucket'ı; gateway üzerinden `/logos/` yolundan sunulur.
+- **Önerilen ebat:** Şeffaf arka planlı PNG ya da WebP. Kare logo için en az
+  **256×256 px**, yatay (wordmark) logo için en az **512×160 px**. Sistem tek dosyayı
+  her yerde otomatik küçültür.
+
+| Kullanıldığı yer | Görüntülenen boyut | Kaynak |
 |---|---|---|
-| Sol menü (sidebar) | ~36×36 px, azami 64 px genişlik | `SidebarNav.tsx` |
-| E-posta bildirim başlığı | azami 36 px yükseklik, 220 px genişlik | `EmailTemplateRenderer.cs` |
+| Sol menü | 36 px yükseklik, en fazla 64 px genişlik | `SidebarNav.tsx` |
+| E-posta başlığı | en fazla 36 px yükseklik, 220 px genişlik | `EmailTemplateRenderer.cs` |
 
-Kaynak dosyanın en az **256×256 px** (kare logo) veya **512×160 px**
-(yatay/wordmark logo) olması, yüksek çözünürlüklü ekranlarda ve
-büyütülmüş görünümlerde netliği korur. SVG kullanmak, tüm boyutlarda
-piksel bozulması olmadan en güvenli seçenektir.
+Bildirim servisi şirketin logosunu, adını ve SMTP ayarını `tenant-service`'ten çeker
+ve 5 dakika önbellekte tutar. Değişiklikler e-postalara en geç 5 dakikada yansır.
 
-**Logo nerelerde gösterilir:**
-- Panel içi sol menü (giriş yaptıktan sonra)
-- Kiracıya gönderilen e-posta bildirimlerinin başlığı (`notification-service`,
-  `tenant-service`'ten `GET /api/registration/branding/{slug}` anonim
-  ucuyla anlık olarak çekilir, 5 dakika önbelleğe alınır)
+### Markanın görünmediği yerler
 
-**Logo gösterilmeyen yer:** Ortak giriş ekranı (`/giris`) — kullanıcı
-henüz kimliğini doğrulamadığı için tarayıcı tarafında hangi kiracıya ait
-olduğu bilinmez; bu ekran kasıtlı olarak platform (HR360) markasıyla
-kalır. Kiracıya özel oturum açma markalaması, Keycloak Organizations'ın
-identity-first akışıyla ileride eklenebilir (`platform/keycloak-themes/`
-bu genişletme için referans nokta).
-
-Repo genelinde artık "Staffware" ibaresi kalmadı — logo/başlık/giriş
-ekranı ve e-posta şablonları dahil tüm kullanıcıya görünen metinler HR360
-kimliğiyle güncellendi (`grep -rniI "staffware" .` sıfır sonuç döner).
+- **Giriş ekranı** (`/giris` ve Keycloak giriş sayfası): Kullanıcı henüz giriş
+  yapmadığı için hangi şirkete ait olduğu bilinmez; bu ekranlar platform markasıyla
+  (HR360) kalır.
+- **Platformun kendi markası** (HR360 adı, varsayılan logo ve renk) ayarlardan
+  değiştirilemez; bunun için kod değişikliği gerekir. `platform/keycloak-themes/hr360`
+  klasöründe Keycloak giriş sayfası için hazırlanmış bir tema var, ama tek sunucu
+  kurulumu bu temayı şu an yüklemiyor.
 
 ## Güvenlik notu
 
@@ -227,7 +248,7 @@ kimliğiyle güncellendi (`grep -rniI "staffware" .` sıfır sonuç döner).
   yalnızca `.gitignore`'da hariç tutulan `.env` ve
   `deploy/keycloak/realm-export.json` dosyalarında saklanır.
 - Varsayılan olarak tüm veri servisi portları (`postgres`, `minio` konsolu,
-  `keycloak` admin, `mlflow`, `mailpit`) yalnızca `127.0.0.1`'e bağlanır;
-  dışarıya yalnızca gateway (80/`GATEWAY_PORT`) açılır. Gerçek bir sunucuya
-  kurarken bu servislere uzaktan erişmek isterseniz bir SSH tüneli veya
-  VPN kullanmanız önerilir.
+  `keycloak` (8080), `mlflow`, `mailpit`) yalnızca `127.0.0.1`'e bağlanır;
+  dışarıya yalnızca gateway açılır: 80 (`GATEWAY_PORT`), HTTPS açıkken 443 ve
+  Keycloak paneli "ayrı port" modundaysa 8090. Bu servislere uzaktan erişmek
+  için SSH tüneli veya VPN kullanın.
