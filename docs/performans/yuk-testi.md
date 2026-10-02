@@ -24,6 +24,7 @@ Her "ekran", tarayıcının yaptığı gibi paralel isteklerle yüklenir. Kullan
 | load | 100 | 70 | %0,00 | 19 / 46 / 99 ms | 62 ms | geçti |
 | stress (düzeltme öncesi) | 400 | 83 | **%17,55** | 3,1 sn / 14,4 sn / 20,6 sn | 17,4 sn | kaldı |
 | stress (düzeltme sonrası) | 400 | 189 | %0,08 | 380 / 1.574 / 2.911 ms | 2,5 sn | gecikmede kaldı |
+| stress (Redis önbelleği ile, 3 Ekim) | 400 | 213 | %0,00 | 179 / 735 / 1.135 ms | 986 ms | **geçti** |
 
 ## Bulunan sorun ve düzeltme
 
@@ -49,13 +50,47 @@ Sonuç:
 - Aynı donanımda saniyedeki istek 83'ten 189'a çıktı (2,3 kat).
 - p95 14,4 sn'den 1,6 sn'ye düştü.
 
+## Redis önbelleği (3 Ekim 2026)
+
+Stres testinde en yavaş uçlar birden çok tabloyu birleştiren, kiracı genelinde aynı
+sonucu veren okumalardı. Bunlar için kısa ömürlü paylaşılan önbellek eklendi
+(Valkey, Redis uyumlu; `REDIS_URL`):
+
+| Önbellek | Süre | Anahtar | Eskitme |
+|---|---|---|---|
+| Çalışan dizini (`PeopleDirectory`, engagement + governance) | 30 sn | kiracı | süre dolunca |
+| Ofis doluluğu (`workplace/presence`) | 30 sn | kiracı + tarih aralığı | biri yerini güncelleyince hemen |
+| Ekip sağlığı (`team-health`) | 60 sn | kiracı + kullanıcı + filtre | süre dolunca |
+| Analitik özet (`analytics/overview`) | 2 dk | kiracı + dönem + gün | süre dolunca |
+
+Yetki denetimi önbellekten önce yapılır; kullanıcıya göre değişen sonuçların
+anahtarında kullanıcı vardır. Redis kapanırsa servisler 30 sn boyunca Redis'i hiç
+denemeden doğrudan veritabanından okur (devre kesici), sonra yeniden bağlanır.
+Açık API'nin dakikalık istek sınırı da artık Redis'teki ortak sayaçla tutulur;
+servisin birden çok kopyası çalışsa da sınır doğru uygulanır.
+
+Aynı 400 kullanıcılık stres profili, önbellekten önce ve sonra:
+
+| Uç | p95 önce | p95 sonra |
+|---|---|---|
+| `team-health` | 3.393 ms | 323 ms |
+| `workplace/presence` | 2.963 ms | 364 ms |
+| `celebrations` (dizini kullanır) | 1.984 ms | 618 ms |
+| `analytics/overview` | 1.953 ms | 346 ms |
+| `kudos` (dizini kullanır) | 1.345 ms | 472 ms |
+| Tüm istekler | 1.574 ms | 735 ms |
+
+Pahalı sorgular aradan çıkınca veritabanı ve işlemci diğer uçlara da yetti:
+önbelleğe alınmayan uçların çoğunda da p95 %15–40 düştü, saniyedeki istek 189'dan 213'e
+çıktı ve 400 kullanıcıda tüm eşikler karşılandı. İsabet oranı Grafana panosundaki
+"Önbellek isabet oranı" grafiğinde izlenir; Redis'e ulaşılamazsa
+`OnbellekKullanilamiyor` alarmı tetiklenir.
+
 ## Yorum
 
 - **100 eşzamanlı kullanıcı:** Tüm eşikler rahatça karşılandı (p95 46 ms). Bu yük, ekranlar arasındaki bekleme süreleriyle kabaca 1.000–2.000 kişilik bir şirketin yoğun saatine karşılık gelir.
-- **400 eşzamanlı kullanıcı:** Hata oranı düşük kaldı, ama 2 vCPU doydu ve gecikme eşiği aşıldı.
-- **En pahalı uçlar:** ekip sağlığı (`team-health`), ofis doluluğu (`workplace/presence`) ve analitik. Hepsi birden çok tabloyu birleştiren sorgulardır. Sonraki iyileştirme adayları:
-  - kısa süreli önbellek (Redis);
-  - analitik görünümlerin materialized view'e çevrilmesi.
+- **400 eşzamanlı kullanıcı:** Önbellek öncesinde hata oranı düşük kaldı ama 2 vCPU doydu ve gecikme eşiği aşıldı. Redis önbelleğiyle aynı donanımda eşikler karşılanıyor (p95 735 ms).
+- **En pahalı uçlar** (ekip sağlığı, ofis doluluğu, analitik) önbelleğe alındı. Sıradaki aday analitik görünümlerin materialized view'e çevrilmesidir.
 - 400 kullanıcının üzerinde yatay ölçek gerekir: servislerin birden fazla kopyası ve gateway'de yük dengeleme. Orijinal 7 sunuculu mimari bunun içindir.
 
 Test sırasında servis davranışı Grafana'daki "HR360 — Servis sağlığı" panosunda izlendi: istek hızı, p95, CPU, bellek ve PostgreSQL bağlantıları.

@@ -85,7 +85,8 @@ public sealed record Person(
 public sealed class PeopleDirectory
 {
     private readonly Sql _sql;
-    public PeopleDirectory(Sql sql) => _sql = sql;
+    private readonly AppCache? _cache;
+    public PeopleDirectory(Sql sql, AppCache? cache = null) { _sql = sql; _cache = cache; }
 
     private const string Base = """
         SELECT e."Id", e."FirstName" || ' ' || e."LastName", e."Email", a."PositionTitle", a."DepartmentId",
@@ -104,8 +105,18 @@ public sealed class PeopleDirectory
         r.GetGuid(0), r.GetString(1), r.Str(2), r.Str(3), r.GuidOrNull(4), r.Str(5),
         r.GetFieldValue<DateOnly>(6), r.GetString(7), r.Str(8), r.GuidOrNull(9));
 
+    /// <summary>
+    /// Kiracının çalışan listesi. Neredeyse her ekran bunu çağırdığı için 30 sn
+    /// önbellekte tutulur (Redis varsa); ad/departman değişikliği en geç 30 sn'de yansır.
+    /// </summary>
     public Task<List<Person>> ListAsync(string tenant, CancellationToken ct, bool includeTerminated = false)
-        => _sql.QueryAsync(Base + (includeTerminated ? "" : " AND e.\"Status\" <> 'Terminated'") + " ORDER BY 2", Map, ct, tenant);
+    {
+        Task<List<Person>> Load(CancellationToken c) =>
+            _sql.QueryAsync(Base + (includeTerminated ? "" : " AND e.\"Status\" <> 'Terminated'") + " ORDER BY 2", Map, c, tenant);
+        return _cache is null
+            ? Load(ct)
+            : _cache.GetOrSetAsync("people", tenant, includeTerminated ? "all" : "active", TimeSpan.FromSeconds(30), Load, ct);
+    }
 
     public async Task<Person?> FindAsync(string tenant, Guid id, CancellationToken ct)
         => (await _sql.QueryAsync(Base + " AND e.\"Id\" = $2", Map, ct, tenant, id)).FirstOrDefault();

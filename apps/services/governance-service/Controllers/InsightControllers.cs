@@ -269,10 +269,17 @@ public class TimeMachineController : AppController
 [RequiresPlan("Standard")]
 public class AnalyticsController : AppController
 {
+    /// <summary>Kiracı geneli özet; aylık eğilim olduğu için 2 dk önbellekte tutulur (Redis varsa).</summary>
     [HttpGet("overview")]
-    public async Task<IActionResult> Overview([FromQuery] int months = 12, CancellationToken ct = default)
+    public Task<IActionResult> Overview([FromQuery] int months = 12, CancellationToken ct = default)
     {
         months = Math.Clamp(months, 3, 36);
+        return HttpContext.RequestServices.GetRequiredService<AppCache>().JsonAsync(HttpContext, "analytics-overview", Tenant,
+            $"{months}:{DateTime.UtcNow:yyyyMMdd}", TimeSpan.FromMinutes(2), c => BuildOverviewAsync(months, c), ct);
+    }
+
+    private async Task<object> BuildOverviewAsync(int months, CancellationToken ct)
+    {
         var since = DateOnly.FromDateTime(DateTime.UtcNow).AddMonths(-(months - 1));
         since = new DateOnly(since.Year, since.Month, 1);
 
@@ -306,7 +313,7 @@ public class AnalyticsController : AppController
 
         var exits = timeline.Sum(t => t.exits);
         var avgHead = timeline.Count == 0 ? 0 : timeline.Average(t => t.headcount);
-        return Ok(new
+        return new
         {
             months, timeline, leave, overtime, departments, tenure, expense,
             kpis = new
@@ -318,6 +325,6 @@ public class AnalyticsController : AppController
                 overtimeHours = overtime.Sum(o => o.overtimeHours),
                 expenseTotal = expense.Sum(e => e.amount),
             },
-        });
+        };
     }
 }

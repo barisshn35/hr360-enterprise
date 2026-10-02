@@ -851,6 +851,113 @@
    }
   },
   {
+   "id": 19,
+   "title": "Önbellek isabet oranı (Redis)",
+   "type": "timeseries",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 42,
+    "w": 12,
+    "h": 7
+   },
+   "targets": [
+    {
+     "expr": "sum by (cache) (rate(hr360_cache_requests_total{result=\"hit\"}[5m])) / sum by (cache) (rate(hr360_cache_requests_total{result=~\"hit|miss\"}[5m]))",
+     "legendFormat": "{{cache}}",
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit",
+     "min": 0,
+     "max": 1,
+     "custom": {
+      "lineWidth": 2,
+      "fillOpacity": 12,
+      "showPoints": "never"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "table",
+     "placement": "right",
+     "calcs": [
+      "lastNotNull",
+      "mean"
+     ]
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   }
+  },
+  {
+   "id": 20,
+   "title": "Önbellek istekleri / sn (hit, miss, bypass, error)",
+   "type": "timeseries",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 12,
+    "y": 42,
+    "w": 12,
+    "h": 7
+   },
+   "targets": [
+    {
+     "expr": "sum by (result) (rate(hr360_cache_requests_total[5m]))",
+     "legendFormat": "{{result}}",
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "reqps",
+     "custom": {
+      "lineWidth": 2,
+      "fillOpacity": 12,
+      "showPoints": "never",
+      "stacking": {
+       "mode": "normal"
+      }
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "table",
+     "placement": "right",
+     "calcs": [
+      "lastNotNull",
+      "max"
+     ]
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   }
+  },
+  {
    "id": 17,
    "title": "Hata logları / dk",
    "type": "timeseries",
@@ -860,7 +967,7 @@
    },
    "gridPos": {
     "x": 0,
-    "y": 42,
+    "y": 49,
     "w": 24,
     "h": 6
    },
@@ -910,7 +1017,7 @@
    },
    "gridPos": {
     "x": 0,
-    "y": 48,
+    "y": 55,
     "w": 24,
     "h": 14
    },

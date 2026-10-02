@@ -7,6 +7,7 @@ using GovernanceService.Infrastructure;
 using GovernanceService.Infrastructure.Calendar;
 using GovernanceService.Infrastructure.Chat;
 using GovernanceService.Models;
+using Microsoft.Extensions.Configuration;
 using Xunit;
 
 namespace Governance.Tests;
@@ -235,5 +236,52 @@ public class TeamsPackageTests
         Assert.Equal(new byte[] { 0x89, 0x50, 0x4E, 0x47 }, png[..4]);
         var w = (png[16] << 24) | (png[17] << 16) | (png[18] << 8) | png[19];
         Assert.Equal(size, w);
+    }
+}
+
+public class AppCacheTests
+{
+    private static AppCache Make(string? url)
+    {
+        var cfg = new Microsoft.Extensions.Configuration.ConfigurationBuilder()
+            .AddInMemoryCollection(url is null ? new Dictionary<string, string?>() : new Dictionary<string, string?> { ["REDIS_URL"] = url })
+            .Build();
+        return new AppCache(cfg, Microsoft.Extensions.Logging.Abstractions.NullLogger<AppCache>.Instance);
+    }
+
+    [Fact]
+    public async Task Redis_tanimli_degilse_her_cagri_kaynaktan_okunur()
+    {
+        using var cache = Make(null);
+        var calls = 0;
+        for (var i = 0; i < 3; i++)
+            Assert.Equal(42, await cache.GetOrSetAsync("t", "acme", "x", TimeSpan.FromMinutes(1), _ => { calls++; return Task.FromResult(42); }, default));
+        Assert.False(cache.Enabled);
+        Assert.Equal(3, calls);
+        Assert.Null(await cache.CountInWindowAsync("rate", "k", TimeSpan.FromMinutes(1)));
+    }
+
+    [Fact]
+    public async Task Redis_erisilemezse_sonuc_doner_ve_sonraki_cagrilar_beklemez()
+    {
+        using var cache = Make("127.0.0.1:1");
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        Assert.Equal("ok", await cache.GetOrSetAsync("t", "acme", "x", TimeSpan.FromMinutes(1), _ => Task.FromResult("ok"), default));
+        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(6), $"ilk çağrı {sw.Elapsed}");
+        sw.Restart();
+        for (var i = 0; i < 20; i++)
+            await cache.GetOrSetAsync("t", "acme", "x", TimeSpan.FromMinutes(1), _ => Task.FromResult("ok"), default);
+        Assert.True(sw.Elapsed < TimeSpan.FromMilliseconds(200), $"devre kesici açıkken 20 çağrı {sw.Elapsed}");
+        Assert.Equal("0", await cache.VersionAsync("presence", "acme"));
+    }
+
+    [Fact]
+    public async Task Kayit_tipleri_json_ile_bozulmadan_doner()
+    {
+        using var cache = Make(null);
+        var p = new Person(Guid.NewGuid(), "Ayşe Yılmaz", "a@x.com", "Geliştirici", Guid.NewGuid(), "Ar-Ge", new DateOnly(2020, 1, 2), "Active", "u1", null);
+        var round = System.Text.Json.JsonSerializer.Deserialize<List<Person>>(System.Text.Json.JsonSerializer.Serialize(new List<Person> { p }))!;
+        Assert.Equal(p, round[0]);
+        Assert.Equal(p, (await cache.GetOrSetAsync("people", "acme", "active", TimeSpan.FromSeconds(30), _ => Task.FromResult(new List<Person> { p }), default))[0]);
     }
 }

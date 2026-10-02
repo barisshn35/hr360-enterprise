@@ -63,10 +63,25 @@ services:
     ports:
       - "127.0.0.1:5432:5432"
 
+  # Kisa omurlu paylasilan onbellek (Valkey: Redis ile uyumlu, BSD lisansli).
+  # Kalici veri tutmaz; silinirse servisler veritabanindan okumaya devam eder.
   redis:
-    image: redis:7-alpine
+    image: valkey/valkey:8.1-alpine
     restart: unless-stopped
-    command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    command:
+      - sh
+      - -c
+      - >-
+        exec docker-entrypoint.sh valkey-server --save "" --appendonly no --maxmemory 128mb --maxmemory-policy allkeys-lru
+        $${REDIS_PASSWORD:+--requirepass "$$REDIS_PASSWORD"}
+    healthcheck:
+      test: ["CMD-SHELL", "valkey-cli $${REDIS_PASSWORD:+-a \"$$REDIS_PASSWORD\" --no-auth-warning} ping | grep -q PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    mem_limit: "160m"
 
   # NOT: resmi minio/minio ve minio/mc imajlari 2026 itibariyle hem Docker
   # Hub'da hem quay.io'da anonim (girissiz) pull'a kapatildi ("pull access
@@ -343,6 +358,8 @@ services:
       KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
       TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=3"
       EMPLOYEE_SERVICE_URL: "http://employee-service:8080"
+      # Paylasilan onbellek (dizin, ofis dolulugu, ekip sagligi). Bos ise kapali.
+      REDIS_URL: "redis:6379,password=${REDIS_PASSWORD:-}"
       ASPNETCORE_ENVIRONMENT: "Production"
     mem_limit: "384m"
 
@@ -359,6 +376,8 @@ services:
       KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
       TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=3"
       KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
+      # Paylasilan onbellek (dizin, analitik) ve acik API hiz siniri sayaci. Bos ise kapali.
+      REDIS_URL: "redis:6379,password=${REDIS_PASSWORD:-}"
       EMPLOYEE_SERVICE_URL: "http://employee-service:8080"
       ONBOARDING_SERVICE_URL: "http://onboarding-service:8080"
       WORKFLOW_SERVICE_URL: "http://workflow-service:8080"

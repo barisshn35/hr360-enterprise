@@ -5,7 +5,7 @@
 | .NET birim | `tests/dotnet/` | Kural motoru, şablonlar, Slack imzası, PKCE, şifreli sırlar, Slack/Teams mesaj biçimleri, toplantı saati önerisi, kıdem/ihbar/izin hesabı | `scripts/test.sh unit` (CI'da her push) |
 | Arayüz birim | `apps/web/src/**/*.test.ts` | Bordro (2026 GV dilimleri, asgari ücret istisnası, SGK tavanı, netten brüte) | `cd apps/web && npm test` |
 | ML birim | `apps/ml-inference/tests/` | CV ayrıştırma, ayrımcı ifade, eşleşme, izin tahmini, eğitim önerisi | `scripts/test.sh unit` |
-| API entegrasyon | `tests/integration/` | Slack uygulaması ve Teams botu (onay düğmeleri, imza/JWT, yetki), Google/Outlook takvim + Zoom/Teams/Meet, LLM (izin, takma ad, kota) | `scripts/test.sh integration` |
+| API entegrasyon | `tests/integration/` | Slack uygulaması ve Teams botu (onay düğmeleri, imza/JWT, yetki), Google/Outlook takvim + Zoom/Teams/Meet, LLM (izin, takma ad, kota), Redis önbelleği (anahtar ayrımı, yazınca eskitme, Redis kapalıyken çalışma, açık API sayacı) | `scripts/test.sh integration` |
 | Tarayıcı (e2e) | `tests/e2e/` | Dört rolle 50+ ekranda hata olmaması; izin talebi → yönetici onayı → Kafka → onaylı izin ve bildirim | `scripts/test.sh e2e` |
 
 Entegrasyon ve e2e testleri **çalışan bir kurulum** ister:

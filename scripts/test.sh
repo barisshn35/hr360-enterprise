@@ -2,7 +2,7 @@
 # HR360 testlerini calistirir.
 #
 #   scripts/test.sh unit          Birim testleri: .NET (xUnit), arayuz (Vitest), ML (pytest)
-#   scripts/test.sh integration   API entegrasyon testleri: Slack/Teams, takvim/toplanti, LLM
+#   scripts/test.sh integration   API entegrasyon testleri: Slack/Teams, takvim/toplanti, LLM, Redis onbellegi
 #                                 (sahte saglayici sunucusu "chatmock" otomatik baslar; bitince
 #                                 governance-service normal ayarlarla yeniden baslatilir)
 #   scripts/test.sh e2e           Tarayici testleri (Playwright): tum ekranlar x tum roller, izin akisi
@@ -47,7 +47,7 @@ integration() {
   docker compose -f docker-compose.yml -f deploy/testing/chat-mock.yml up -d governance-service >/dev/null
   for _ in $(seq 1 60); do docker logs chatmock 2>&1 | grep -q "chatmock :8000" && break; sleep 2; done
   sleep 10
-  for t in test_chat test_calendar test_ai_llm; do
+  for t in test_chat test_calendar test_ai_llm test_cache; do
     step "Entegrasyon: $t"
     run python3 "tests/integration/$t.py"
   done

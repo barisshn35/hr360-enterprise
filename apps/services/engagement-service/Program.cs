@@ -26,6 +26,7 @@ builder.Services.AddDbContext<EngagementDbContext>(options =>
     options.UseNpgsql(dataSource)
         .AddInterceptors(new EngagementService.Auditing.AuditInterceptor("engagement-service")));
 builder.Services.AddSingleton<EngagementService.Infrastructure.Sql>();
+builder.Services.AddSingleton<EngagementService.Infrastructure.AppCache>();
 builder.Services.AddSingleton<EngagementService.Infrastructure.PeopleDirectory>();
 builder.Services.AddSingleton<EngagementService.Infrastructure.Notifier>();
 builder.Services.AddHttpClient();

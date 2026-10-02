@@ -411,6 +411,13 @@ if [ -f .env ]; then
       info "INTERNAL_SERVICE_TOKEN .env'e eklendi."
     fi
 
+    # Redis (Valkey) onbellek parolasi; eski .env'lerde yok.
+    if [ -z "${REDIS_PASSWORD:-}" ]; then
+      REDIS_PASSWORD="$(random_secret)$(random_secret)"
+      echo "REDIS_PASSWORD=${REDIS_PASSWORD}" >> .env
+      info "REDIS_PASSWORD .env'e eklendi."
+    fi
+
     # NOT: Onceden bu yol yalnizca "docker compose up --build" calistiriyordu -
     # scripts/sql altindaki goc betikleri hic uygulanmiyordu (yeni kolon eksik
     # kalinca ilgili servis tum sorgularda 500 veriyordu).
@@ -592,6 +599,7 @@ ask_secret PLATFORM_ADMIN_PASSWORD    "Platform yoneticisi (platform.admin) paro
 KEYCLOAK_ADMIN_USER=admin
 MINIO_ROOT_USER=hr360minio
 INTERNAL_SERVICE_TOKEN="$(random_secret)$(random_secret)"
+REDIS_PASSWORD="$(random_secret)$(random_secret)"
 
 # --- 3) .env yaz ----------------------------------------------------------
 cat > .env <<EOF
@@ -612,6 +620,9 @@ ML_KEYCLOAK_CLIENT_SECRET=${ML_KEYCLOAK_CLIENT_SECRET}
 
 # Servisler arasi ic cagri anahtari (yalnizca konteynerler arasi; gateway disariya acmaz).
 INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN}
+
+# Redis (Valkey) onbellegi; yalnizca ic agda.
+REDIS_PASSWORD=${REDIS_PASSWORD}
 
 # NOT: DEMO_ADMIN_PASSWORD daha once bu dosyaya hic yazilmiyordu (script
 # "Tum sirlar .env dosyasinda" diyordu ama bu degisken sadece Keycloak

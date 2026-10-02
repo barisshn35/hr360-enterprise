@@ -251,9 +251,9 @@ dille yeniden yazma**, **performans özeti** ve bilgi bankasına dayalı **İK a
 
 ## Testler
 
-- **Birim testleri:** 47 .NET testi (xUnit), arayüzde bordro hesabı ve Excel/CSV okuma (Vitest) ve ML
+- **Birim testleri:** 50 .NET testi (xUnit), arayüzde bordro hesabı ve Excel/CSV okuma (Vitest) ve ML
   servisi (pytest). Her push'ta CI'da çalışır.
-- **API entegrasyon testleri:** Slack, Teams, takvim/toplantı ve LLM için. Sahte
+- **API entegrasyon testleri:** Slack, Teams, takvim/toplantı, LLM ve Redis önbelleği için. Sahte
   sağlayıcı sunucusuyla gerçek hesap gerektirmez.
 - **Tarayıcı testleri (Playwright):** Dört rolle tüm ekranları ve izin onay akışını
   baştan sona dener.
@@ -275,7 +275,10 @@ dille yeniden yazma**, **performans özeti** ve bilgi bankasına dayalı **İK a
   altyapısıyla izole şekilde paylaşır; Keycloak (`keycloak`) ve MLflow
   (`hr360_mlflow`) için aynı PostgreSQL'de ayrı veritabanları
 - **Depolama:** MinIO (S3 uyumlu nesne depolama — logo ve ML artefact'ları)
-- **Redis:** Compose'da çalışır, ancak servisler şu an kullanmıyor (önbellek için ayrılmış)
+- **Önbellek:** Valkey (Redis uyumlu). Çalışan dizini, ofis doluluğu, ekip sağlığı
+  ve analitik özet 30 sn–2 dk tutulur; açık API'nin dakikalık sınır sayacı da buradadır.
+  Kalıcı veri tutmaz; erişilemezse servisler doğrudan veritabanından okur
+  ([yük testi raporu](docs/performans/yuk-testi.md))
 - **E-posta:** `install.sh` kurulumda SMTP sunucusunu sorar; boş
   bırakılırsa Mailpit (yerel SMTP yakalayıcı, demo/dev için — e-postalar
   gerçekten gönderilmez) kullanılır. Girilen ayar hem bildirim servisine

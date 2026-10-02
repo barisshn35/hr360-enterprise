@@ -1,5 +1,6 @@
-# Temel alarm kurallari. Bildirim icin Alertmanager eklenmedi; alarmlar
-# Prometheus (/alerts) ve Grafana "HR360 — Servis sagligi" panosunda gorunur.
+# Temel alarm kurallari. Alarmlar Prometheus (/alerts) ve Grafana "HR360 — Servis
+# sagligi" panosunda gorunur; Alertmanager tanimli kanallara (e-posta, Slack,
+# Microsoft Teams) iletir (scripts/monitoring.sh alerts ...).
 groups:
   - name: hr360
     rules:
@@ -26,6 +27,13 @@ groups:
         labels: { severity: warning }
         annotations:
           summary: "{{ $labels.service }} p95 yanit suresi 2 sn'nin uzerinde (SSE akislari haric)"
+
+      - alert: OnbellekKullanilamiyor
+        expr: sum by (service) (rate(hr360_cache_requests_total{result=~"bypass|error"}[5m])) > 0
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.service }} Redis onbellegine ulasamiyor; istekler dogrudan veritabanina gidiyor (redis konteynerini kontrol edin)"
 
       - alert: BellekSiniraYakin
         expr: process_working_set_bytes{job="hr360-services"} > 340 * 1024 * 1024

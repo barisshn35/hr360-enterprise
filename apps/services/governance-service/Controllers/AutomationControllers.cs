@@ -324,7 +324,9 @@ public class PublicApiController : ControllerBase
 {
     private static readonly ConcurrentDictionary<string, (int Count, DateTime Window)> Rate = new();
     private readonly Sql _sql;
-    public PublicApiController(Sql sql) => _sql = sql;
+    private readonly AppCache _cache;
+    private readonly PeopleDirectory _people;
+    public PublicApiController(Sql sql, AppCache cache, PeopleDirectory people) { _sql = sql; _cache = cache; _people = people; }
 
     private async Task<(string? Tenant, IActionResult? Error)> AuthorizeAsync(string scope, CancellationToken ct)
     {
@@ -338,14 +340,16 @@ public class PublicApiController : ControllerBase
             """, r => (Id: r.GetGuid(0), Tenant: r.GetString(1), Scopes: r.GetFieldValue<string[]>(2), Plan: r.GetString(3), Status: r.GetString(4)), ct, hash)).FirstOrDefault();
         if (row.Tenant is null) return (null, Unauthorized(new { message = "Geçersiz veya iptal edilmiş anahtar." }));
         if (row.Status != "Active") return (null, StatusCode(403, new { message = "Şirket hesabı aktif değil." }));
-        if (RequiresPlanAttribute.Rank(row.Plan) < 3) return (null, StatusCode(402, new { message = "Açık API Enterprise planında kullanılabilir." }));
+        if (FeatureFlags.PlanEnforcement && RequiresPlanAttribute.Rank(row.Plan) < 3) return (null, StatusCode(402, new { message = "Açık API Enterprise planında kullanılabilir." }));
         if (!row.Scopes.Contains(scope)) return (null, StatusCode(403, new { message = $"Anahtarın '{scope}' yetkisi yok." }));
 
+        // Dakikalık sınır: Redis varsa tüm servis kopyaları ortak sayar, yoksa bu kopyanın belleği.
         var now = DateTime.UtcNow;
-        var cur = Rate.AddOrUpdate(hash, _ => (1, now), (_, v) => now - v.Window > TimeSpan.FromMinutes(1) ? (1, now) : (v.Count + 1, v.Window));
+        var count = await _cache.CountInWindowAsync("public-api-rate", hash, TimeSpan.FromMinutes(1))
+            ?? Rate.AddOrUpdate(hash, _ => (1, now), (_, v) => now - v.Window > TimeSpan.FromMinutes(1) ? (1, now) : (v.Count + 1, v.Window)).Count;
         Response.Headers["X-RateLimit-Limit"] = "120";
-        Response.Headers["X-RateLimit-Remaining"] = Math.Max(0, 120 - cur.Count).ToString();
-        if (cur.Count > 120) return (null, StatusCode(429, new { message = "Dakikalık istek sınırı aşıldı." }));
+        Response.Headers["X-RateLimit-Remaining"] = Math.Max(0, 120 - count).ToString();
+        if (count > 120) return (null, StatusCode(429, new { message = "Dakikalık istek sınırı aşıldı." }));
         await _sql.ExecuteAsync("UPDATE governance_api_keys SET \"LastUsedAt\" = now() WHERE \"Id\" = $1", ct, row.Id);
         return (row.Tenant, null);
     }
@@ -355,7 +359,7 @@ public class PublicApiController : ControllerBase
     {
         var (tenant, err) = await AuthorizeAsync("employees:read", ct);
         if (err is not null) return err;
-        var people = await new PeopleDirectory(_sql).ListAsync(tenant!, ct, includeTerminated: status == "all");
+        var people = await _people.ListAsync(tenant!, ct, includeTerminated: status == "all");
         return Ok(new { data = people.Select(p => new { id = p.Id, name = p.Name, email = p.Email, position = p.Position, departmentId = p.DepartmentId, department = p.Department, hireDate = p.HireDate, status = p.Status }) });
     }
 

@@ -11,7 +11,7 @@ yapılması gerekenler en sondaki kontrol listesindedir.
 | Kimlik | Keycloak (OIDC, PKCE), isteğe bağlı TOTP zorunluluğu, kaba kuvvet koruması, Google/Microsoft SSO | `deploy/keycloak/realm-export.template.json` |
 | Yetki | Rol ve izin denetimi her serviste (`[Authorize]` + izin politikaları); arayüz yalnızca görünürlük için aynı kuralları kullanır | `apps/services/*/Program.cs` |
 | Kiracı yalıtımı | EF Core genel sorgu filtresi (`ITenantOwned`), ham SQL'de `tenant_id` koşulu | servislerin `DbContext`'leri |
-| Ağ | Dışarıya yalnızca gateway açık; veritabanı, MinIO, Keycloak (8080), MLflow yalnızca `127.0.0.1` | `docker-compose.yml` |
+| Ağ | Dışarıya yalnızca gateway açık; veritabanı, MinIO, Keycloak (8080), MLflow yalnızca `127.0.0.1`; Redis (Valkey) hiç yayımlanmaz ve parola ister (`REDIS_PASSWORD`) | `docker-compose.yml` |
 | Gateway | Hız sınırı, güvenlik başlıkları, iç uçların kapatılması | `deploy/nginx/nginx.conf` |
 | Arayüz | Katı içerik güvenliği politikası (CSP), satır içi betik yok | `apps/web/docker/security-headers.conf` |
 | Giriş ekranı | Keycloak CSP'si sıkılaştırıldı | `scripts/keycloak-theme.sh` |

@@ -142,12 +142,25 @@ public class WorkplaceController : AppController
 
     /* ------------------------------------------------------- kim nerede */
 
+    /// <summary>
+    /// Kiracının tamamı için aynı olan "kim nerede" tablosu; 30 sn önbellekte tutulur,
+    /// biri yerini güncelleyince kiracının önbelleği eskitilir (sürüm artışı).
+    /// </summary>
     [HttpGet("presence")]
     public async Task<IActionResult> Presence([FromQuery] DateOnly? from, [FromQuery] DateOnly? to, CancellationToken ct)
     {
         var start = from ?? StartOfWeek(DateOnly.FromDateTime(DateTime.UtcNow.AddHours(3)));
         var end = to ?? start.AddDays(4);
         if (end.DayNumber - start.DayNumber > 31) end = start.AddDays(31);
+        var cache = HttpContext.RequestServices.GetRequiredService<AppCache>();
+        var ver = await cache.VersionAsync("presence", Tenant);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(3));
+        return await cache.JsonAsync(HttpContext, "presence", Tenant, $"{ver}:{start:yyyyMMdd}:{end:yyyyMMdd}:{today:yyyyMMdd}",
+            TimeSpan.FromSeconds(30), c => BuildPresenceAsync(start, end, c), ct);
+    }
+
+    private async Task<object> BuildPresenceAsync(DateOnly start, DateOnly end, CancellationToken ct)
+    {
 
         var people = await People.ListAsync(Tenant, ct);
         var entries = await _db.Presence.AsNoTracking().Where(p => p.Date >= start && p.Date <= end).ToListAsync(ct);
@@ -174,7 +187,7 @@ public class WorkplaceController : AppController
         var todayKey = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(3));
         var summary = Modes.Append("Leave").Append("Unknown").ToDictionary(m => m,
             m => rows.Count(r => r.days.FirstOrDefault(d => d.date == todayKey)?.mode == m));
-        return Ok(new { from = start, to = end, days, people = rows, today = summary });
+        return new { from = start, to = end, days, people = rows, today = summary };
     }
 
     public record PresenceInput(DateOnly Date, string Mode, string? Note);
@@ -193,6 +206,7 @@ public class WorkplaceController : AppController
         e.Mode = body.Mode;
         e.Note = body.Note?.Trim();
         await _db.SaveChangesAsync(ct);
+        await HttpContext.RequestServices.GetRequiredService<AppCache>().BumpAsync("presence", Tenant);
         return Ok(new { e.Date, e.Mode, e.Note });
     }
 

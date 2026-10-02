@@ -26,6 +26,7 @@ builder.Services.AddDbContext<GovernanceDbContext>(options =>
     options.UseNpgsql(dataSource)
         .AddInterceptors(new GovernanceService.Auditing.AuditInterceptor("governance-service")));
 builder.Services.AddSingleton<GovernanceService.Infrastructure.Sql>();
+builder.Services.AddSingleton<GovernanceService.Infrastructure.AppCache>();
 builder.Services.AddSingleton<GovernanceService.Infrastructure.PeopleDirectory>();
 builder.Services.AddSingleton<GovernanceService.Infrastructure.Notifier>();
 builder.Services.AddHttpClient();

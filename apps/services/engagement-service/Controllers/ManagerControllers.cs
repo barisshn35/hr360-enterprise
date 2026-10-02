@@ -281,8 +281,16 @@ public class TeamHealthController : AppController
     private readonly EngagementDbContext _db;
     public TeamHealthController(EngagementDbContext db) => _db = db;
 
+    /// <summary>
+    /// Sonuç 60 sn önbellekte tutulur (Redis varsa). Anahtar kiracı + kullanıcı +
+    /// departman filtresidir: her yönetici yalnızca kendi ekibinin önbelleğini görür.
+    /// </summary>
     [HttpGet]
-    public async Task<IActionResult> Get([FromQuery] Guid? departmentId, CancellationToken ct)
+    public Task<IActionResult> Get([FromQuery] Guid? departmentId, CancellationToken ct)
+        => HttpContext.RequestServices.GetRequiredService<AppCache>().JsonAsync(HttpContext, "team-health", Tenant,
+            $"{Me.UserId}:{(Me.IsHr ? "hr" : "m")}:{departmentId}", TimeSpan.FromSeconds(60), c => BuildAsync(departmentId, c), ct);
+
+    private async Task<object> BuildAsync(Guid? departmentId, CancellationToken ct)
     {
         var me = await MyPersonAsync(ct);
         List<Person> team;
@@ -294,7 +302,7 @@ public class TeamHealthController : AppController
             if (team.Count == 0 && Me.IsHr) team = (await People.ListAsync(Tenant, ct)).Where(p => p.Id != me?.Id).ToList();
         }
         var ids = team.Select(p => p.Id).ToArray();
-        if (ids.Length == 0) return Ok(new { members = Array.Empty<object>(), summary = new { size = 0 } });
+        if (ids.Length == 0) return new { members = Array.Empty<object>(), summary = new { size = 0 } };
 
         var today = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(3));
         var lastLeave = (await Db.QueryAsync(
@@ -349,7 +357,7 @@ public class TeamHealthController : AppController
             };
         }).OrderByDescending(m => m.flags.Count).ToList();
 
-        return Ok(new
+        return new
         {
             members,
             summary = new
@@ -362,7 +370,7 @@ public class TeamHealthController : AppController
                 kudos90 = members.Sum(m => m.kudos90),
                 oneOnOneCoverage = members.Count == 0 ? 0 : (int)Math.Round(100.0 * members.Count(m => m.lastOneOnOne != null && (DateTime.UtcNow - m.lastOneOnOne.Value).TotalDays <= 45) / members.Count),
             },
-        });
+        };
     }
 }
 
