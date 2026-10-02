@@ -421,27 +421,18 @@ public class OffboardingController : AppController
             WHERE "TenantSlug" = $1 AND "EmployeeId" = $2 AND "Type" = 'Annual' AND "Year" = $3
             """, ct, Tenant, emp.Id, c.LastWorkingDay.Year) as decimal? ?? 0;
 
-        var days = c.LastWorkingDay.DayNumber - emp.HireDate.DayNumber;
-        var years = days / 365.25m;
-        var noticeWeeks = years < 0.5m ? 2 : years < 1.5m ? 4 : years < 3 ? 6 : 8;
-        var severanceEligible = years >= 1 && c.Reason is "Termination" or "Retirement" or "ContractEnd";
-        var basis = gross is null ? 0 : Math.Min(gross.Value, SeveranceCeiling);
-        var severance = severanceEligible ? Math.Round(basis * years, 2) : 0;
-        var daily = gross is null ? 0 : gross.Value / 30m;
-        var notice = c.Reason == "Termination" ? Math.Round(daily * noticeWeeks * 7, 2) : 0;
-        var leavePay = Math.Round(daily * Math.Max(0, remainingLeave), 2);
-        const decimal stamp = 0.00759m;
+        var r = Infrastructure.SettlementCalculator.Compute(emp.HireDate, c.LastWorkingDay, c.Reason, gross, remainingLeave, SeveranceCeiling);
 
         return Ok(new
         {
             employee = emp.Name, hireDate = emp.HireDate, c.LastWorkingDay, c.Reason,
-            tenureYears = Math.Round(years, 2), grossMonthly = gross, severanceCeiling = SeveranceCeiling,
-            severance = new { eligible = severanceEligible, gross = severance, stampTax = Math.Round(severance * stamp, 2), net = Math.Round(severance * (1 - stamp), 2),
+            tenureYears = r.TenureYears, grossMonthly = gross, severanceCeiling = SeveranceCeiling,
+            severance = new { eligible = r.SeveranceEligible, gross = r.Severance, stampTax = r.SeveranceStampTax, net = r.SeveranceNet,
                 basis = "4857 s. Kanun geçici 6 / 1475 s. Kanun m.14 — her tam yıl için 30 günlük brüt ücret (tavanla sınırlı); gelir vergisinden istisna, yalnızca damga vergisi." },
-            notice = new { weeks = noticeWeeks, applies = c.Reason == "Termination", gross = notice,
+            notice = new { weeks = r.NoticeWeeks, applies = r.NoticeApplies, gross = r.Notice,
                 basis = "4857 s. İş Kanunu m.17 — işveren bildirimsiz feshederse ihbar süresine ait ücret; gelir ve damga vergisine tabidir." },
-            unusedLeave = new { days = remainingLeave, gross = leavePay, basis = "4857 s. İş Kanunu m.59 — kullanılmayan yıllık izin ücreti." },
-            totalGross = severance + notice + leavePay,
+            unusedLeave = new { days = remainingLeave, gross = r.LeavePay, basis = "4857 s. İş Kanunu m.59 — kullanılmayan yıllık izin ücreti." },
+            totalGross = r.TotalGross,
             disclaimer = "Tahmini hesaptır; kesin tutar bordro ve hukuk birimince ek ödemeler, yan haklar ve vergi dilimleri dikkate alınarak belirlenir.",
             hasSalary = gross is not null,
         });

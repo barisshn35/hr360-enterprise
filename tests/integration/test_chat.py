@@ -3,7 +3,7 @@
 Ön koşullar:
   * HR360 çalışıyor; governance-service deploy/testing/chat-mock.yml ile başlatıldı
   * chatmock konteyneri hr360-net'te (bkz. chatmock.py)
-  * /tmp/tok_{admin,ayse,mehmet}.txt geçerli erişim jetonları
+  * tests/credentials.json ya da HR360_TEST_USERS (jetonlar tarayıcıyla otomatik alınır)
 Çalıştırma: python3 tests/integration/test_chat.py
 """
 

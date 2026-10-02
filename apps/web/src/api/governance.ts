@@ -395,6 +395,8 @@ export interface AiSettingsInfo {
   tenantEnabled: boolean
   allowPersonalData: boolean
   hourlyLimit: number
+  usedThisWindow: number
+  windowMinutes: number
   usage: { task: string; calls: number; failed: number; inputTokens: number; outputTokens: number }[] | null
 }
 

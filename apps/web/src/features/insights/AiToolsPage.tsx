@@ -51,7 +51,7 @@ function LlmCard() {
           <p className="font-semibold">Dil modeli: {s.provider} · <span className="font-mono text-[12px]">{s.model}</span> {s.local ? <StatusBadge tone="success">Yerel — veri dışarı çıkmaz</StatusBadge> : <StatusBadge tone="warning">Harici hizmet</StatusBadge>}</p>
           <p className="text-muted-foreground">
             {s.enabled ? 'Açık: ilan taslağı, kapsayıcı yeniden yazım, İK asistanı' + (s.allowPersonalData ? ' ve performans özeti (ad takma adla gönderilir).' : '. Kişisel veri içeren görevler kapalı.') : 'Kapalı: hiçbir veri modele gönderilmez; araçlar kural tabanlı çalışır.'}
-            {' '}İstek içerikleri kaydedilmez; yalnızca görev ve jeton sayısı tutulur. Saatlik kota {s.hourlyLimit}.
+            {' '}İstek içerikleri kaydedilmez; yalnızca görev ve jeton sayısı tutulur. Kota: {s.windowMinutes} dakikada {s.hourlyLimit} istek (şu an {s.usedThisWindow}).
           </p>
           {admin && s.usage && s.usage.length > 0 && (
             <p className="text-[12px] text-muted-foreground">Son 30 gün: {s.usage.map((u) => `${TASK_LABEL[u.task] ?? u.task} ${u.calls}`).join(' · ')}</p>

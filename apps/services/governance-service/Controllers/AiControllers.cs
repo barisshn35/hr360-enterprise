@@ -50,7 +50,7 @@ public class AiController : AppController
         {
             configured = _llm.Configured, configError = _llm.ConfigError, provider = _llm.Provider, model = _llm.Model, local = _llm.IsLocal,
             enabled = _llm.Configured && (s?.Enabled ?? false), tenantEnabled = s?.Enabled ?? false, allowPersonalData = s?.AllowPersonalData ?? false,
-            hourlyLimit = HourlyLimit, usage,
+            hourlyLimit = HourlyLimit, usedThisWindow = await _ai.UsedInWindowAsync(ct), windowMinutes = AiGateway.WindowMinutes, usage,
         });
     }
 

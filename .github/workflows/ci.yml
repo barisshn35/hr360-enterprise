@@ -33,6 +33,8 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - name: Tip denetimi
         run: npm run lint
+      - name: Birim testleri (Vitest)
+        run: npm test
       - name: Uretim derlemesi
         env:
           VITE_KEYCLOAK_URL: /auth
@@ -80,6 +82,23 @@ jobs:
       - name: Derle
         working-directory: apps/services/${{ matrix.service }}
         run: dotnet build -c Release -nologo
+
+  dotnet-tests:
+    name: .NET birim testleri
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-tests-${{ hashFiles('tests/dotnet/**/*.csproj', 'apps/services/governance-service/*.csproj', 'apps/services/engagement-service/*.csproj') }}
+          restore-keys: nuget-
+      - name: xUnit
+        run: |
+          for p in tests/dotnet/*/; do dotnet test "$p" --nologo --logger "trx;LogFileName=results.trx"; done
 
   ml:
     name: ML servisi (pytest)
@@ -151,7 +170,7 @@ jobs:
   images:
     name: Docker imajlari
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [web, dotnet, ml, deploy-config]
+    needs: [web, dotnet, dotnet-tests, ml, deploy-config]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

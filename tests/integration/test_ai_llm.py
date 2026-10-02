@@ -2,7 +2,7 @@
 kullanım kaydı ve İK asistanı (sahte Anthropic API ile).
 
 Ön koşul: governance-service deploy/testing/chat-mock.yml ile (LLM_PROVIDER=anthropic,
-LLM_BASE_URL=http://chatmock:8000/anthropic, LLM_HOURLY_LIMIT=50) çalışıyor.
+LLM_BASE_URL=http://chatmock:8000/anthropic, kota 1 dakikada 20 çağrı) çalışıyor.
 """
 
 import json
@@ -16,6 +16,12 @@ A = "/api/governance/ai"
 FAIL.clear()
 mock("/_reset", "POST")
 
+# Önceki çalıştırmanın kota penceresi boşalsın (testte pencere 1 dakika).
+for _ in range(70):
+    code, s = api("admin", "GET", f"{A}/settings")
+    if s.get("usedThisWindow", 0) == 0:
+        break
+    time.sleep(1)
 code, s = api("ayse", "GET", f"{A}/settings")
 check("Ayarlar: sağlayıcı yapılandırılmış, kullanım bilgisi çalışana gösterilmez", code == 200 and s["configured"] and s["provider"] == "anthropic" and s["usage"] is None, s)
 code, _ = api("ayse", "PUT", f"{A}/settings", {"enabled": True, "allowPersonalData": True})
@@ -74,10 +80,9 @@ tasks = {u["task"]: u for u in s["usage"] or []}
 check("Kullanım kaydı: görev bazında çağrı ve jeton (içerik yok)", {"job-draft", "perf-summary", "assistant", "inclusive-rewrite"} <= set(tasks)
       and tasks["job-draft"]["outputTokens"] > 0, s["usage"])
 
-# kota (LLM_HOURLY_LIMIT=50 testte)
-used = sum(u["calls"] for u in s["usage"])
+# kota (testte 1 dakikada 20 çağrı)
 hit = None
-for _ in range(60 - used):
+for _ in range(s["hourlyLimit"] + 2):
     code, r = api("mehmet", "POST", f"{A}/inclusive-rewrite", {"text": "metin"})
     if code == 429:
         hit = r

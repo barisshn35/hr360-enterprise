@@ -93,6 +93,7 @@ kayıt ekranından açılır. Demo şirketini `platform.admin` hesabıyla askıy
 | Yeni sürüme güncelleme | `git pull && ./install.sh` ("sırları yeniden üretelim mi?" sorusuna **Hayır**; veritabanı göçleri otomatik uygulanır) |
 | İzleme (Prometheus + Grafana + Loki + Alertmanager) | `scripts/monitoring.sh enable / status / password / disable / purge` |
 | Alarm kanalları (e-posta, Slack, Teams) | `scripts/monitoring.sh alerts status / email … / slack … / teams … / test` |
+| Testler | `scripts/test.sh unit / integration / e2e / all` (ayrıntı: [tests/README.md](tests/README.md)) |
 | Yedek al | `scripts/backup.sh [--keep 14] [--with-env] [--no-minio] [--out DİZİN]` |
 | Yedekten dön | `scripts/restore.sh backups/hr360-….tar.gz [--with-env] [--only-db] [--yes]` |
 
@@ -245,6 +246,16 @@ dille yeniden yazma**, **performans özeti** ve bilgi bankasına dayalı **İK a
 | Teams/Slack kanal bildirimi | Gelen webhook adresi (Teams'te Workflows şablonu) Entegrasyonlar › Kanal bildirimleri'nden girilir. |
 | SSO | Google veya Microsoft (Azure AD) OAuth istemci kimliği ve sırrı Güvenlik ekranından girilir; e-posta alan adı organizasyona bağlanır. |
 | E-posta | Bildirimler için SMTP (`scripts/smtp.sh set`). |
+
+## Testler
+
+- **Birim testleri:** 47 .NET testi (xUnit), arayüzde bordro hesabı (Vitest) ve ML
+  servisi (pytest). Her push'ta CI'da çalışır.
+- **API entegrasyon testleri:** Slack, Teams, takvim/toplantı ve LLM için. Sahte
+  sağlayıcı sunucusuyla gerçek hesap gerektirmez.
+- **Tarayıcı testleri (Playwright):** Dört rolle tüm ekranları ve izin onay akışını
+  baştan sona dener.
+- Hepsi `scripts/test.sh` ile çalışır; ayrıntılar [tests/README.md](tests/README.md)'de.
 
 ## Mimari
 

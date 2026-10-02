@@ -41,3 +41,5 @@ deploy/nginx/acme/*
 !deploy/nginx/acme/README.md
 backups/
 .env.before-restore-*
+tests/credentials.json
+.pytest_cache/

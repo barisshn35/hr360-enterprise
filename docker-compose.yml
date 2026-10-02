@@ -370,6 +370,7 @@ services:
       LLM_BASE_URL: "${LLM_BASE_URL:-}"
       LLM_LOCAL: "${LLM_LOCAL:-false}"
       LLM_HOURLY_LIMIT: "${LLM_HOURLY_LIMIT:-200}"
+      LLM_QUOTA_WINDOW_MINUTES: "${LLM_QUOTA_WINDOW_MINUTES:-60}"
       # Acik kaynak varsayilani: plan kisiti ve faturalandirma kapali.
       PLAN_ENFORCEMENT: "${PLAN_ENFORCEMENT:-false}"
       BILLING_ENABLED: "${BILLING_ENABLED:-false}"

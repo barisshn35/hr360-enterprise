@@ -5,15 +5,20 @@ import subprocess
 import time
 import urllib.parse
 import urllib.request
+import os
+import sys
 
-BASE = "http://localhost"
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "support"))
+import hr360_login as _login  # noqa: E402
+
+BASE = _login.BASE_URL
 G = "/api/governance"
 FAIL = []
 AYSE = "8c7dd608-46e2-4bee-900f-6a175b21d3b2"
 
 
 def tok(w):
-    return open(f"/tmp/tok_{w}.txt").read().strip()
+    return _login.token(w)
 
 
 def http(method, path, body=None, headers=None, form=None, raw_body=None):

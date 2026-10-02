@@ -121,6 +121,14 @@ public sealed class LlmClient
 public sealed class AiGateway(Data.GovernanceDbContext db, LlmClient llm)
 {
     public static readonly int HourlyLimit = int.TryParse(EnvVar.Or("LLM_HOURLY_LIMIT", "200"), out var l) ? l : 200;
+    /// <summary>Kota penceresi (dakika). Varsayılan 60; testlerde kısaltılır.</summary>
+    public static readonly int WindowMinutes = int.TryParse(EnvVar.Or("LLM_QUOTA_WINDOW_MINUTES", "60"), out var w) && w > 0 ? w : 60;
+
+    public Task<int> UsedInWindowAsync(CancellationToken ct)
+    {
+        var since = DateTime.UtcNow.AddMinutes(-WindowMinutes);
+        return Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.CountAsync(db.AiUsage, u => u.At >= since, ct);
+    }
     public sealed record Failure(int Status, string Code, string Message);
 
     public async Task<bool> EnabledAsync(CancellationToken ct) =>
@@ -132,8 +140,7 @@ public sealed class AiGateway(Data.GovernanceDbContext db, LlmClient llm)
         var s = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.FirstOrDefaultAsync(db.AiSettings, ct);
         if (s?.Enabled != true) return (null, new(403, "llm_disabled", "Yapay zekâ bu şirkette kapalı; İK yöneticisi AI araçları ekranından açabilir."));
         if (personal && !s.AllowPersonalData) return (null, new(403, "llm_personal_data", "Kişisel veri içeren yapay zekâ isteklerine izin verilmemiş."));
-        var hourAgo = DateTime.UtcNow.AddHours(-1);
-        if (await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.CountAsync(db.AiUsage, u => u.At >= hourAgo, ct) >= HourlyLimit)
+        if (await UsedInWindowAsync(ct) >= HourlyLimit)
             return (null, new(429, "llm_rate_limited", $"Saatlik yapay zekâ kotası ({HourlyLimit}) doldu."));
         var usage = new Models.AiUsage { UserId = userId, Task = task, Provider = llm.Provider, Model = llm.Model };
         db.AiUsage.Add(usage);
