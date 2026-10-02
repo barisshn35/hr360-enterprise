@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
-import { LogOut, Menu, Moon, Search, Sun, UserCog } from 'lucide-react'
+import { ChevronRight, LogOut, Menu, Moon, Search, Sun, UserCog } from 'lucide-react'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import {
@@ -16,23 +16,25 @@ import { primaryRole, roleLabels } from '@/auth/roles'
 import { useTheme } from '@/lib/theme'
 import { navGroups } from './SidebarNav'
 
-/** Adres çubuğundaki yolu modül başlığına çevirir — her sayfada tekrar yazmayalım. */
-export function titleForPath(pathname: string): string {
-  if (pathname === '/panel' || pathname === '/panel/') return 'Genel bakış'
+/** Üst çubuktaki kırıntı izi: bölüm › üst modül › sayfa. */
+export function crumbsForPath(pathname: string): string[] {
+  if (pathname === '/panel' || pathname === '/panel/') return ['Genel bakış']
+  if (pathname.startsWith('/panel/ayarlar')) return ['Ayarlar']
   let best = ''
-  let title = 'HR360'
+  let crumbs: string[] = ['HR360']
   for (const group of navGroups) {
     for (const item of group.items) {
       for (const node of [item, ...(item.children ?? [])]) {
         if (node.path && pathname.startsWith(node.path) && node.path.length > best.length) {
           best = node.path
-          title = node.title
+          crumbs = [group.heading, node === item ? undefined : item.title, node.title].filter(
+            (c): c is string => Boolean(c),
+          )
         }
       }
     }
   }
-  if (!best && pathname.startsWith('/panel/ayarlar')) return 'Ayarlar'
-  return title
+  return crumbs
 }
 
 export function Topbar({
@@ -45,9 +47,10 @@ export function Topbar({
   const { user, roles, logout, accountUrl } = useAuth()
   const { isDark, toggle } = useTheme()
   const location = useLocation()
+  const crumbs = crumbsForPath(location.pathname)
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background/85 px-3 backdrop-blur sm:px-5">
+    <header className="surface-glass sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b border-border/70 px-3 sm:px-6 lg:px-8">
       <Button
         variant="ghost"
         size="icon"
@@ -58,24 +61,32 @@ export function Topbar({
         <Menu className="size-5" strokeWidth={1.75} />
       </Button>
 
-      <h1 className="truncate text-[15px] font-semibold">{titleForPath(location.pathname)}</h1>
+      <nav aria-label="Konum" className="flex min-w-0 items-center gap-1.5 text-[13px]">
+        {crumbs.slice(0, -1).map((c) => (
+          <span key={c} className="hidden shrink-0 items-center gap-1.5 text-muted-foreground md:flex">
+            {c}
+            <ChevronRight aria-hidden="true" className="size-3.5 text-muted-foreground/50" />
+          </span>
+        ))}
+        <h1 className="truncate font-medium text-foreground">{crumbs[crumbs.length - 1]}</h1>
+      </nav>
 
       <div className="ml-auto flex items-center gap-0.5">
         <button
           type="button"
           onClick={onOpenCommandPalette}
-          className="hidden h-9 items-center gap-2 rounded-md border border-border bg-card px-2.5 text-[13px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground sm:flex"
+          className="mr-1 hidden h-9 w-64 cursor-pointer whitespace-nowrap items-center gap-2 rounded-lg border border-border bg-card/50 px-2.5 text-[13px] text-muted-foreground shadow-[inset_0_1px_0_0_hsl(var(--edge-light))] transition-colors hover:border-primary/30 hover:text-foreground md:flex"
         >
           <Search className="size-4" strokeWidth={1.5} />
-          <span>Ara</span>
-          <kbd className="ml-2 rounded border border-border bg-background px-1.5 py-0.5 font-mono text-[10px]">
+          <span className="flex-1 truncate text-left">Ara…</span>
+          <kbd className="rounded-md border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px]">
             ⌘K
           </kbd>
         </button>
         <Button
           variant="ghost"
           size="icon"
-          className="sm:hidden"
+          className="md:hidden"
           aria-label="Ara"
           onClick={onOpenCommandPalette}
         >
@@ -104,8 +115,8 @@ export function Topbar({
               aria-label="Hesap menüsü"
               className="ml-1 cursor-pointer rounded-full ring-offset-background transition-shadow focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
             >
-              <Avatar className="size-8">
-                <AvatarFallback className="bg-primary/10 text-[12px] font-semibold text-primary">
+              <Avatar className="size-8 ring-1 ring-primary/25">
+                <AvatarFallback className="bg-gradient-to-br from-primary/30 to-primary/5 text-[11.5px] font-semibold text-primary">
                   {user?.initials ?? 'HR'}
                 </AvatarFallback>
               </Avatar>

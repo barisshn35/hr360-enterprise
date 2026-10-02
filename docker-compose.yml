@@ -196,6 +196,8 @@ services:
       KC_DB_PASSWORD: "${HR360_DB_PASSWORD}"
     volumes:
       - ./deploy/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+      # HR360 giris ekrani temasi (Obsidyen Zumrut). Bkz. scripts/keycloak-theme.sh
+      - ./deploy/keycloak/themes/hr360:/opt/keycloak/themes/hr360:ro
     mem_limit: "768m"
     ports:
       - "127.0.0.1:8080:8080"

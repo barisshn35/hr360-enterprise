@@ -67,9 +67,11 @@ export function PricingPlans(props: SelectableProps | ShowcaseProps) {
           <PlanCard key={plan.id} index={index}>
             <Card
               className={cn(
-                'h-full rounded-2xl transition-colors',
-                plan.highlighted ? 'bg-primary/[0.06]' : 'bg-card',
-                active && 'ring-2 ring-primary',
+                'relative h-full overflow-hidden rounded-2xl transition-[border-color,box-shadow]',
+                plan.highlighted
+                  ? 'border-primary/35 bg-gradient-to-b from-primary/[0.11] via-card to-card before:absolute before:inset-x-8 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-primary before:to-transparent'
+                  : 'bg-card',
+                active && 'glow-primary border-primary/60',
                 selectable && 'cursor-pointer hover:border-primary/50',
               )}
               onClick={selectable ? () => props.onChange(plan.id) : undefined}

@@ -10,8 +10,8 @@
 
 import { TrendingDown, TrendingUp, Minus } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Sparkline } from '@/components/ui/sparkline'
 import { CountUp } from '@/motion/primitives'
 import { cn } from '@/lib/utils'
 
@@ -50,6 +50,11 @@ export interface StatCardProps {
   trendSense?: TrendSense
   /** Rozetin yanındaki açıklama, ör. "geçen aya göre". */
   compareLabel?: string
+  /** Gerçek bir zaman serisi varsa kartın altında küçük trend grafiği çizilir. */
+  series?: number[]
+  seriesLabels?: string[]
+  /** Dikkat isteyen metrik (ör. süresi geçen onay > 0): kenar ve ikon uyarı tonunda. */
+  attention?: boolean
   className?: string
 }
 
@@ -63,44 +68,72 @@ export function StatCard({
   trendDirection = 'flat',
   trendSense = 'positive',
   compareLabel,
+  series,
+  seriesLabels,
+  attention = false,
   className,
 }: StatCardProps) {
   const TrendIcon = TREND_ICON[trendDirection]
 
   return (
-    <Card
+    <div
       className={cn(
-        'relative w-full transition-shadow duration-300 hover:shadow-md hover:shadow-foreground/5',
+        'surface group relative isolate flex w-full flex-col overflow-hidden rounded-xl p-5',
+        'transition-[border-color,transform] duration-300 hover:-translate-y-0.5 hover:border-primary/30',
+        attention && 'border-[hsl(var(--warning))]/35',
         className,
       )}
     >
-      {Icon && (
-        <div className="absolute top-6 right-6">
-          <div className="flex size-9 items-center justify-center rounded-lg bg-muted">
-            <Icon className="size-4 text-muted-foreground" strokeWidth={1.75} />
-          </div>
-        </div>
-      )}
-      <CardHeader>
-        <CardDescription>{label}</CardDescription>
-        <CardTitle className="tabular text-2xl">
-          {count !== undefined ? (
-            <CountUp to={count} duration={1.1} format={format} />
-          ) : (
-            value
-          )}
-        </CardTitle>
-      </CardHeader>
+      {/* Üst kenarda ince zümrüt ışık; üzerine gelince belirginleşir. */}
+      <span
+        aria-hidden="true"
+        className={cn(
+          'pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent to-transparent opacity-60 transition-opacity duration-300 group-hover:opacity-100',
+          attention ? 'via-[hsl(var(--warning))]' : 'via-primary',
+        )}
+      />
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute -top-16 -right-16 -z-10 size-40 rounded-full bg-primary/10 opacity-0 blur-3xl transition-opacity duration-500 group-hover:opacity-100"
+      />
+
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-[13px] font-medium text-muted-foreground">{label}</p>
+        {Icon && (
+          <span
+            className={cn(
+              'flex size-8 shrink-0 items-center justify-center rounded-lg ring-1',
+              attention
+                ? 'bg-[hsl(var(--warning))]/10 text-[hsl(var(--warning))] ring-[hsl(var(--warning))]/25'
+                : 'bg-primary/10 text-primary ring-primary/20',
+            )}
+          >
+            <Icon className="size-4" strokeWidth={1.75} />
+          </span>
+        )}
+      </div>
+
+      <p className="tabular mt-2 text-[30px] leading-none font-semibold tracking-[-0.03em]">
+        {count !== undefined ? <CountUp to={count} duration={1.1} format={format} /> : value}
+      </p>
+
       {trend && (
-        <CardDescription className="flex flex-wrap items-center gap-2 px-6">
-          <Badge variant="secondary" className={cn('tabular', toneClass(trendDirection, trendSense))}>
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-[12.5px] text-muted-foreground">
+          <Badge
+            variant="secondary"
+            className={cn('tabular gap-1 bg-muted/70', toneClass(trendDirection, trendSense))}
+          >
             <TrendIcon className="size-3" />
             {trend}
           </Badge>
           {compareLabel}
-        </CardDescription>
+        </div>
       )}
-    </Card>
+
+      {series && series.length > 1 && (
+        <Sparkline data={series} labels={seriesLabels} height={40} className="mt-4 -mb-1" />
+      )}
+    </div>
   )
 }
 
@@ -113,7 +146,7 @@ export function StatCardsSkeleton({ count = 4 }: { count?: number }) {
     >
       <span className="sr-only">Yükleniyor</span>
       {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="flex flex-col gap-3 rounded-lg border border-border p-4">
+        <div key={i} className="surface flex flex-col gap-3 rounded-xl p-5">
           <div className="flex items-center justify-between">
             <Skeleton className="h-3 w-20" />
             <Skeleton className="size-7 rounded-md" />

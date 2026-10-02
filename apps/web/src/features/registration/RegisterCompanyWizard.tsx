@@ -226,8 +226,12 @@ export function RegisterCompanyWizard() {
   if (register.isSuccess) {
     const result = register.data
     return (
-      <main className="flex min-h-dvh items-center justify-center bg-background px-5 py-16">
-        <div className="w-full max-w-md text-center">
+      <main className="relative flex min-h-dvh items-center justify-center overflow-hidden bg-background px-5 py-16">
+      <div aria-hidden="true" className="pointer-events-none fixed inset-0">
+        <div className="absolute -top-40 left-1/2 h-[30rem] w-[60rem] -translate-x-1/2 rounded-full bg-primary/[0.09] blur-[110px]" />
+        <div className="hr-dots absolute inset-0 opacity-50" />
+      </div>
+        <div className="surface relative w-full max-w-md rounded-2xl p-8 text-center">
           <motion.span
             initial={reduced ? false : { scale: 0.5, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
@@ -245,7 +249,7 @@ export function RegisterCompanyWizard() {
             çalışma alanı hazırlanıyor. E-postanıza parola belirleme bağlantısı gönderildi.
           </p>
 
-          <dl className="mt-6 rounded-lg border border-border bg-card p-4 text-left text-[13px]">
+          <dl className="mt-6 rounded-xl border border-border bg-muted/40 p-4 text-left text-[13px]">
             <div className="flex items-baseline justify-between gap-4 py-1">
               <dt className="text-muted-foreground">Kısa ad</dt>
               <dd className="font-mono font-medium">{result.slug}</dd>
@@ -279,8 +283,12 @@ export function RegisterCompanyWizard() {
 
   /* --------------------------------- Sihirbaz --------------------------------- */
   return (
-    <main className="min-h-dvh bg-background px-5 py-10 sm:py-16">
-      <div className="mx-auto w-full max-w-3xl">
+    <main className="relative min-h-dvh overflow-hidden bg-background px-5 py-10 sm:py-16">
+      <div aria-hidden="true" className="pointer-events-none fixed inset-0">
+        <div className="absolute -top-40 left-1/2 h-[30rem] w-[60rem] -translate-x-1/2 rounded-full bg-primary/[0.09] blur-[110px]" />
+        <div className="hr-dots absolute inset-0 opacity-50" />
+      </div>
+      <div className="relative mx-auto w-full max-w-3xl">
         <Link
           to="/"
           className="mb-8 inline-flex items-center gap-2 text-[17px] font-semibold tracking-tight"
@@ -294,7 +302,9 @@ export function RegisterCompanyWizard() {
           HR360
         </Link>
 
-        <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Şirketinizi kaydedin</h1>
+        <h1 className="text-gradient text-[28px] leading-tight font-semibold tracking-[-0.03em] sm:text-[36px]">
+          Şirketinizi kaydedin
+        </h1>
         <p className="mt-2 max-w-xl text-[14px] leading-relaxed text-muted-foreground">
           Birkaç dakika sürer. Kaydı tamamladığınızda şirketiniz için ayrı bir çalışma alanı
           oluşturulur ve yönetici hesabınıza parola belirleme bağlantısı gönderilir.
@@ -309,10 +319,10 @@ export function RegisterCompanyWizard() {
                 className={cn(
                   'tabular flex size-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold',
                   index < step
-                    ? 'bg-primary text-primary-foreground'
+                    ? 'bg-primary text-primary-foreground shadow-[0_0_14px_-2px_hsl(var(--primary)/0.8)]'
                     : index === step
                       ? 'bg-primary/15 text-primary ring-2 ring-primary/40'
-                      : 'bg-muted text-muted-foreground',
+                      : 'bg-muted text-muted-foreground ring-1 ring-border',
                 )}
               >
                 {index < step ? <Check className="size-3.5" strokeWidth={3} /> : index + 1}
@@ -339,7 +349,7 @@ export function RegisterCompanyWizard() {
           ))}
         </ol>
 
-        <div className="rounded-xl border border-border bg-card p-5 sm:p-7">
+        <div className="surface rounded-2xl p-5 sm:p-8">
           {/*
             Adımlar arası geçiş. İleri giderken içerik sağdan, geri dönerken
             soldan geliyor — kullanıcı hangi yöne hareket ettiğini görüyor.

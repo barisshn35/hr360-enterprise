@@ -1,6 +1,11 @@
 {
   "realm": "hr360",
   "enabled": true,
+  "displayName": "HR360",
+  "loginTheme": "hr360",
+  "internationalizationEnabled": true,
+  "supportedLocales": ["tr", "en"],
+  "defaultLocale": "tr",
   "sslRequired": "none",
   "registrationAllowed": false,
   "loginWithEmailAllowed": true,

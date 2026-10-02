@@ -89,6 +89,7 @@ kayıt ekranından açılır. Demo şirketini `platform.admin` hesabıyla askıy
 | TLS'i öndeki bir yük dengeleyici sonlandırıyorsa | `scripts/tls.sh external --host hr.sirket.com` |
 | Keycloak paneli erişimi | `scripts/keycloak-admin-access.sh open / ip <IP,...> / port [IP,...] / status` |
 | E-posta (SMTP) sunucusu | `scripts/smtp.sh set` (soru sorar), `scripts/smtp.sh test adres@sirket.com`, `scripts/smtp.sh status`, `scripts/smtp.sh mailpit` |
+| Keycloak giriş ekranı teması (HR360 görünümü + Türkçe) | Kurulum ve güncelleme (`./install.sh`) sırasında otomatik uygulanır. Elle: `scripts/keycloak-theme.sh`; Keycloak'ın kendi temasına dönmek için `scripts/keycloak-theme.sh default` |
 | Yeni sürüme güncelleme | `git pull && ./install.sh` ("sırları yeniden üretelim mi?" sorusuna **Hayır**; veritabanı göçleri otomatik uygulanır) |
 
 Yedeklenmesi gerekenler:
@@ -156,18 +157,18 @@ data/
 deploy/
   nginx/                 Tek-sunucu gateway yapılandırması (tls/, acme/, keycloak-admin/ betiklerle doldurulur)
   postgres/              Ek veritabanlarının (keycloak, mlflow) init script'i
-  keycloak/              Realm şablonu (sırlar kurulumda dolduruluyor)
+  keycloak/              Realm şablonu (sırlar kurulumda dolduruluyor) ve themes/hr360 giriş ekranı teması
   letsencrypt/           Let's Encrypt sertifikaları (git'e girmez)
 scripts/
   tls.sh                 HTTPS aç/kapat (Let's Encrypt, kendi sertifika, kendinden imzalı)
   keycloak-admin-access.sh  Keycloak yönetim paneli erişimi (açık / IP kısıtı / ayrı port)
   smtp.sh                E-posta (SMTP) sunucusunu sonradan ayarlama/deneme
+  keycloak-theme.sh      Keycloak giriş ekranını HR360 temasına ve Türkçeye alma
   sql/                   Mevcut kurulumlar için veritabanı göçleri (güncellemede otomatik)
 platform/
   ansible/               Orijinal 7-VM dağıtımının Ansible playbook'ları (referans)
   monitoring/             Orijinal Prometheus scrape target tanımları (referans)
   nginx/                  Orijinal gateway nginx snippet'i (referans)
-  keycloak-themes/        Keycloak giriş teması (tek sunucu kurulumu şu an yüklemiyor)
 docs/
   architecture/           Mimari dokümanlar
   kurulum/                İşletim sistemlerine göre kurulum adımları
@@ -254,9 +255,9 @@ ve 5 dakika önbellekte tutar. Değişiklikler e-postalara en geç 5 dakikada ya
   yapmadığı için hangi şirkete ait olduğu bilinmez; bu ekranlar platform markasıyla
   (HR360) kalır.
 - **Platformun kendi markası** (HR360 adı, varsayılan logo ve renk) ayarlardan
-  değiştirilemez; bunun için kod değişikliği gerekir. `platform/keycloak-themes/hr360`
-  klasöründe Keycloak giriş sayfası için hazırlanmış bir tema var, ama tek sunucu
-  kurulumu bu temayı şu an yüklemiyor.
+  değiştirilemez; bunun için kod değişikliği gerekir: panel renkleri
+  `apps/web/src/styles/index.css`, Keycloak giriş sayfası
+  `deploy/keycloak/themes/hr360` klasöründedir.
 
 ## Güvenlik notu
 

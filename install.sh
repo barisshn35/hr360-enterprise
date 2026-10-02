@@ -686,6 +686,11 @@ else
     || warn "Panel erisimi ayarlanamadi; sonra scripts/keycloak-admin-access.sh ile deneyin."
 fi
 
+# Realm ilk kurulumda temayla birlikte olusur; Keycloak veritabani onceki bir
+# kurulumdan kaldiysa (realm iceri alinmadan atlanir) tema burada uygulanir.
+scripts/keycloak-theme.sh >/dev/null 2>&1 \
+  || warn "Giris ekrani temasi uygulanamadi; sonra scripts/keycloak-theme.sh ile deneyin."
+
 if [ "$TLS_MODE" != none ]; then
   info "HTTPS aciliyor (${TLS_MODE})..."
   case "$TLS_MODE" in

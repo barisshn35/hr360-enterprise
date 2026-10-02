@@ -3,19 +3,25 @@
  *
  * Kaynak: 21st.dev "Sidebar Dashboard Skeleton" (cnippet-dev, id 19009).
  * Demo sabit 320px'lik bir kutuydu; HR360'ın gerçek kabuğuna ölçeklendi
- * (260px sidebar, 56px üst bant) ki içerik gelince sayfa yerinden oynamasın.
+ * (kullanıcının seçtiği kenar çubuğu genişliği, 56px üst bant) ki içerik
+ * gelince sayfa yerinden oynamasın.
  * Bileşenin kendi shimmer keyframe'i `index.css`'e yazılmak istiyordu;
  * token dosyasına dokunmamak için standart `Skeleton` kullanıldı.
  */
 
 import { Skeleton } from '@/components/ui/skeleton'
+import { SIDEBAR_COLLAPSED_WIDTH, SIDEBAR_WIDTH, useSidebarCollapsed } from '@/lib/sidebar'
 
 export function AppShellSkeleton({ label = 'Yükleniyor' }: { label?: string }) {
+  const { collapsed } = useSidebarCollapsed()
   return (
     <div aria-busy="true" className="flex min-h-dvh bg-background">
       <span className="sr-only">{label}</span>
 
-      <div className="hidden w-[260px] shrink-0 flex-col gap-1 border-r border-sidebar-border bg-sidebar p-3 lg:flex">
+      <div
+        className="hidden shrink-0 flex-col gap-1 overflow-hidden border-r border-sidebar-border bg-sidebar p-3 lg:flex"
+        style={{ width: collapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_WIDTH }}
+      >
         <div className="mb-4 flex items-center gap-3 px-2 py-2">
           <Skeleton className="size-8 rounded-md" />
           <div className="space-y-1.5">

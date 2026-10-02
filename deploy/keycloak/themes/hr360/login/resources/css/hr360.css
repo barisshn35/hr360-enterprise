@@ -1,0 +1,485 @@
+/* ==========================================================================
+   HR360 — Keycloak giriş teması ("Obsidyen Zümrüt")
+
+   Keycloak'in "keycloak" teması (PatternFly 4 + login.css) üzerine yazılır.
+   Renkler web uygulamasındaki apps/web/src/styles/index.css koyu temasıyla
+   aynıdır; kullanıcı panelden kimlik ekranına geçerken görünüm kopmaz.
+   ========================================================================== */
+
+@font-face {
+  font-family: 'Geist Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url(../fonts/geist-latin-ext-wght-normal.woff2) format('woff2-variations');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Geist Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url(../fonts/geist-latin-wght-normal.woff2) format('woff2-variations');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+:root {
+  --hr-bg: hsl(160 30% 3%);
+  --hr-card: hsl(160 22% 5.5%);
+  --hr-input: hsl(160 18% 7.5%);
+  --hr-border: hsl(160 14% 13%);
+  --hr-border-strong: hsl(160 14% 18%);
+  --hr-fg: hsl(150 20% 95%);
+  --hr-muted: hsl(152 7% 62%);
+  --hr-primary: hsl(158 80% 41%);
+  --hr-primary-fg: hsl(160 50% 4%);
+  --hr-danger: hsl(0 72% 60%);
+  --hr-warning: hsl(38 92% 60%);
+  --hr-success: hsl(152 65% 52%);
+  --hr-radius: 12px;
+  --pf-global--FontFamily--sans-serif: 'Geist Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --pf-global--FontFamily--heading--sans-serif: var(--pf-global--FontFamily--sans-serif);
+  color-scheme: dark;
+}
+
+/* ------------------------------- Zemin ------------------------------- */
+
+html,
+.login-pf,
+.login-pf body {
+  background: var(--hr-bg) !important;
+  font-family: var(--pf-global--FontFamily--sans-serif);
+  color: var(--hr-fg);
+  -webkit-font-smoothing: antialiased;
+}
+
+.login-pf body {
+  min-height: 100vh;
+  background:
+    radial-gradient(52rem 30rem at 50% -10rem, hsl(158 80% 41% / 0.16), transparent 70%),
+    radial-gradient(36rem 24rem at 100% 110%, hsl(158 80% 41% / 0.07), transparent 70%),
+    var(--hr-bg) !important;
+}
+
+/* Noktalı ızgara dokusu, kenarlara doğru sönümlenir */
+.login-pf body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image: radial-gradient(hsl(150 20% 95% / 0.09) 1px, transparent 1px);
+  background-size: 22px 22px;
+  -webkit-mask-image: radial-gradient(ellipse 60% 55% at 50% 35%, black, transparent);
+  mask-image: radial-gradient(ellipse 60% 55% at 50% 35%, black, transparent);
+}
+
+.login-pf-page {
+  position: relative;
+  padding-top: 9vh;
+  padding-bottom: 6vh;
+}
+
+/* ------------------------------- Başlık ------------------------------- */
+
+.login-pf-page .login-pf-page-header {
+  margin-bottom: 28px;
+}
+
+#kc-header-wrapper {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  text-transform: none;
+  color: var(--hr-fg);
+  white-space: nowrap;
+}
+
+#kc-header-wrapper::before {
+  content: '';
+  width: 30px;
+  height: 30px;
+  background: url(../img/logo.svg) center / contain no-repeat;
+}
+
+/* ------------------------------- Kart ------------------------------- */
+
+.login-pf-page .card-pf {
+  max-width: 440px;
+  margin: 0 auto;
+  padding: 36px 40px 32px;
+  border: 1px solid var(--hr-border);
+  border-top: 1px solid var(--hr-border);
+  border-radius: 20px;
+  color: var(--hr-fg);
+  background: linear-gradient(180deg, hsl(160 22% 7%) 0%, var(--hr-card) 100%);
+  box-shadow:
+    inset 0 1px 0 0 hsl(0 0% 100% / 0.05),
+    0 24px 64px -24px rgb(0 0 0 / 0.85),
+    0 0 0 1px hsl(158 80% 41% / 0.04);
+}
+
+/* Kartın üst kenarındaki zümrüt ışık */
+.login-pf-page .card-pf::before {
+  content: '';
+  display: block;
+  height: 1px;
+  margin: -37px 32px 36px;
+  background: linear-gradient(90deg, transparent, var(--hr-primary), transparent);
+  opacity: 0.8;
+}
+
+.login-pf-page .login-pf-header {
+  margin-bottom: 26px;
+}
+
+#kc-page-title {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  text-align: left;
+  color: var(--hr-fg);
+}
+
+.login-pf-page .login-pf-header h1 {
+  text-align: left;
+}
+
+#kc-content-wrapper,
+#kc-form-wrapper,
+#kc-info-message,
+.instruction {
+  color: var(--hr-muted);
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
+/* ------------------------------- Form ------------------------------- */
+
+.login-pf-page .form-group {
+  margin-bottom: 18px;
+}
+
+.pf-c-form__label,
+.pf-c-form__label-text,
+.login-pf-page label,
+.control-label {
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  color: var(--hr-fg) !important;
+  margin-bottom: 6px;
+}
+
+.pf-c-form-control,
+.login-pf-page input[type='text'],
+.login-pf-page input[type='email'],
+.login-pf-page input[type='password'],
+.login-pf-page .form-control {
+  height: 44px !important;
+  padding: 0 14px !important;
+  font-size: 14px !important;
+  color: var(--hr-fg) !important;
+  background: var(--hr-input) !important;
+  border: 1px solid var(--hr-border-strong) !important;
+  border-radius: 10px !important;
+  box-shadow: inset 0 1px 0 0 hsl(0 0% 100% / 0.02) !important;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.pf-c-form-control::placeholder {
+  color: hsl(152 7% 45%);
+}
+
+.pf-c-form-control:hover {
+  border-color: hsl(160 14% 24%) !important;
+}
+
+.pf-c-form-control:focus,
+.login-pf-page input:focus {
+  outline: none !important;
+  border-color: hsl(158 80% 41% / 0.7) !important;
+  box-shadow: 0 0 0 3px hsl(158 80% 41% / 0.2) !important;
+}
+
+.pf-c-form-control[aria-invalid='true'] {
+  border-color: hsl(0 72% 60% / 0.7) !important;
+}
+
+/* PatternFly'ın alt çizgi efektini kapat */
+.pf-c-form-control::after,
+.pf-c-form-control:focus::after {
+  display: none !important;
+}
+
+.pf-c-input-group {
+  gap: 8px;
+  background: transparent !important;
+  border-radius: 10px;
+}
+
+.pf-c-input-group > * + * {
+  margin-left: 0 !important;
+}
+
+.pf-c-button.pf-m-control {
+  height: 44px;
+  min-width: 44px;
+  color: var(--hr-muted);
+  background: var(--hr-input);
+  border: 1px solid var(--hr-border-strong);
+  border-radius: 10px;
+}
+
+.pf-c-button.pf-m-control::after {
+  display: none;
+}
+
+.pf-c-button.pf-m-control:hover {
+  color: var(--hr-fg);
+}
+
+/* Girilen kullanıcı adının gösterildiği şerit (ikinci adım) */
+#kc-username,
+.kc-username {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--hr-border);
+  border-radius: 10px;
+  background: hsl(158 80% 41% / 0.06);
+}
+
+#kc-attempted-username {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--hr-fg);
+}
+
+#reset-login {
+  color: var(--hr-primary);
+}
+
+/* ------------------------------- Düğmeler ------------------------------- */
+
+.pf-c-button.pf-m-primary,
+.login-pf-page .btn-primary,
+#kc-login {
+  height: 46px;
+  font-size: 14.5px !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.005em;
+  color: var(--hr-primary-fg) !important;
+  background: var(--hr-primary) !important;
+  border: 0 !important;
+  border-radius: 10px !important;
+  box-shadow:
+    inset 0 1px 0 0 rgb(255 255 255 / 0.25),
+    0 1px 2px 0 rgb(0 0 0 / 0.3),
+    0 8px 24px -8px hsl(158 80% 41% / 0.7) !important;
+  transition:
+    filter 0.15s ease,
+    transform 0.1s ease,
+    box-shadow 0.2s ease;
+  text-shadow: none !important;
+}
+
+.pf-c-button.pf-m-primary:hover,
+#kc-login:hover {
+  filter: brightness(1.08);
+  box-shadow:
+    inset 0 1px 0 0 rgb(255 255 255 / 0.28),
+    0 1px 2px 0 rgb(0 0 0 / 0.3),
+    0 12px 32px -8px hsl(158 80% 41% / 0.85) !important;
+}
+
+.pf-c-button.pf-m-primary:active,
+#kc-login:active {
+  transform: scale(0.985);
+}
+
+.pf-c-button.pf-m-primary::after,
+.pf-c-button.pf-m-secondary::after {
+  display: none;
+}
+
+.pf-c-button.pf-m-secondary,
+.login-pf-page .btn-default {
+  height: 44px;
+  color: var(--hr-fg) !important;
+  background: hsl(160 18% 8%) !important;
+  border: 1px solid var(--hr-border-strong) !important;
+  border-radius: 10px !important;
+}
+
+#kc-form-buttons {
+  margin-top: 22px;
+}
+
+/* ------------------------------- Bağlantılar ------------------------------- */
+
+.login-pf-page a,
+.login-pf a {
+  color: var(--hr-primary);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.login-pf-page a:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.login-pf-settings {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+}
+
+#kc-form-options .checkbox label {
+  color: var(--hr-muted) !important;
+  font-weight: 400 !important;
+}
+
+#kc-registration,
+#kc-info {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--hr-border);
+  color: var(--hr-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+#kc-info-wrapper {
+  padding: 0;
+  background: transparent;
+  color: var(--hr-muted);
+}
+
+/* ------------------------------- Uyarılar ------------------------------- */
+
+.pf-c-alert,
+.alert {
+  margin-bottom: 20px !important;
+  padding: 12px 14px !important;
+  border: 1px solid var(--hr-border) !important;
+  border-radius: 10px !important;
+  background: hsl(160 18% 8%) !important;
+  color: var(--hr-fg) !important;
+  box-shadow: none !important;
+  font-size: 13px;
+}
+
+.pf-c-alert.pf-m-danger,
+.alert-error {
+  border-color: hsl(0 72% 60% / 0.35) !important;
+  background: hsl(0 72% 60% / 0.08) !important;
+}
+
+.pf-c-alert.pf-m-warning,
+.alert-warning {
+  border-color: hsl(38 92% 60% / 0.35) !important;
+  background: hsl(38 92% 60% / 0.08) !important;
+}
+
+.pf-c-alert.pf-m-success,
+.alert-success {
+  border-color: hsl(152 65% 52% / 0.35) !important;
+  background: hsl(152 65% 52% / 0.08) !important;
+}
+
+.pf-c-alert.pf-m-info,
+.alert-info {
+  border-color: hsl(158 80% 41% / 0.3) !important;
+  background: hsl(158 80% 41% / 0.07) !important;
+}
+
+.pf-c-alert__title,
+.kc-feedback-text {
+  color: var(--hr-fg) !important;
+  font-weight: 500 !important;
+}
+
+.pf-c-alert.pf-m-danger .pf-c-alert__icon,
+.alert-error .pficon {
+  color: var(--hr-danger);
+}
+
+.pf-c-form__helper-text,
+#input-error,
+#input-error-username,
+#input-error-password,
+.kc-feedback-text {
+  font-size: 12.5px;
+}
+
+.pf-c-form__helper-text.pf-m-error,
+span[id^='input-error'] {
+  color: var(--hr-danger) !important;
+}
+
+/* ------------------------------- Dil seçimi ------------------------------- */
+
+#kc-locale {
+  position: absolute;
+  top: 20px;
+  right: 24px;
+}
+
+#kc-locale-dropdown a,
+#kc-locale-dropdown button {
+  color: var(--hr-muted) !important;
+  font-size: 13px;
+  background: transparent;
+  border: 0;
+}
+
+#kc-locale ul {
+  background: hsl(160 20% 7%);
+  border: 1px solid var(--hr-border);
+  border-radius: 10px;
+  box-shadow: 0 18px 48px -12px rgb(0 0 0 / 0.75);
+}
+
+#kc-locale ul a {
+  color: var(--hr-fg) !important;
+}
+
+.kc-dropdown-item:hover,
+#kc-locale ul li a:hover {
+  background: hsl(160 18% 11%);
+}
+
+/* ------------------------------- Mobil ------------------------------- */
+
+@media (max-width: 767px) {
+  .login-pf-page {
+    padding: 32px 16px;
+  }
+
+  .login-pf-page .card-pf {
+    padding: 28px 22px 24px;
+  }
+
+  .login-pf-page .card-pf::before {
+    margin: -29px 22px 28px;
+  }
+
+  #kc-locale {
+    position: static;
+    margin-bottom: 12px;
+    text-align: right;
+  }
+}

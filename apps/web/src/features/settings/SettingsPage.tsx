@@ -222,16 +222,25 @@ export function SettingsPage() {
             )}
           </div>
 
-          <ul className="flex flex-wrap gap-1.5 border-t border-border pt-4">
-            {permissions.map((p) => (
-              <li
-                key={p}
-                className="rounded border border-border px-2 py-0.5 font-mono text-[11px] text-muted-foreground"
-              >
-                {p}
-              </li>
-            ))}
-          </ul>
+          {/* Teknik izin anahtarları günlük kullanımda gürültü; destek için katlanmış durur. */}
+          <details className="group border-t border-border pt-4">
+            <summary className="cursor-pointer list-none text-[13px] font-medium text-muted-foreground transition-colors select-none hover:text-foreground [&::-webkit-details-marker]:hidden">
+              <span className="inline-flex items-center gap-1.5">
+                <span className="inline-block transition-transform group-open:rotate-90">›</span>
+                Teknik izin listesi
+              </span>
+            </summary>
+            <ul className="mt-3 flex flex-wrap gap-1.5">
+              {permissions.map((p) => (
+                <li
+                  key={p}
+                  className="rounded-md border border-border bg-muted/40 px-2 py-0.5 font-mono text-[11px] text-muted-foreground"
+                >
+                  {p}
+                </li>
+              ))}
+            </ul>
+          </details>
 
           <p className="text-[12px] leading-relaxed text-muted-foreground">
             Bu liste yalnızca arayüzün neyi gösterdiğini açıklar. Gerçek yetkilendirme her istekte

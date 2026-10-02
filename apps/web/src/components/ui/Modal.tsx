@@ -41,7 +41,7 @@ export function Modal({
           size === 'xl' ? 'sm:max-w-4xl' : size === 'lg' ? 'sm:max-w-2xl' : 'sm:max-w-lg',
         )}
       >
-        <DialogHeader className="border-b border-border px-5 py-4 text-left">
+        <DialogHeader className="border-b border-border bg-gradient-to-b from-primary/[0.05] to-transparent px-5 py-4 text-left">
           <DialogTitle className="text-[16px]">{title}</DialogTitle>
           {note ? (
             <DialogDescription className="text-[13px] leading-relaxed">{note}</DialogDescription>
@@ -53,7 +53,7 @@ export function Modal({
         <div className="max-h-[70dvh] overflow-y-auto px-5 py-5">{children}</div>
 
         {footer && (
-          <DialogFooter className="gap-2 border-t border-border px-5 py-4">{footer}</DialogFooter>
+          <DialogFooter className="gap-2 border-t border-border bg-muted/30 px-5 py-4">{footer}</DialogFooter>
         )}
       </DialogContent>
     </Dialog>

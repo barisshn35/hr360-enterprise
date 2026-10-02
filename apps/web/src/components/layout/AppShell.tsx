@@ -6,6 +6,7 @@ import { useMyEmployeeId, useUnreadCount } from '@/api/queries'
 import { useDirectory } from '@/api/directory'
 import { useAuth } from '@/auth/useAuth'
 import { PageTransition } from '@/motion/primitives'
+import { SIDEBAR_COLLAPSED_WIDTH, SIDEBAR_WIDTH, useSidebarCollapsed } from '@/lib/sidebar'
 import { SidebarNav } from './SidebarNav'
 import { Topbar } from './Topbar'
 import { CommandPalette } from './CommandPalette'
@@ -13,14 +14,17 @@ import { CommandPalette } from './CommandPalette'
 /**
  * Panelin dış kabuğu.
  *
- * SidebarNav (21st.dev shell uyarlaması) sabit 260px genişlikte ve mobil
- * davranışı yok — küçük ekranda çekmeceye o yüzden burada alınıyor.
+ * Masaüstünde kenar çubuğu sabit; genişliği (tam / ikon rayı) kullanıcı
+ * tercihine göre değişir ve içerik boşluğu aynı değerden hesaplanır.
+ * Küçük ekranda menü çekmeceye alınır.
  */
 export function AppShell() {
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const location = useLocation()
   const { can, status, tenantSlug, roles } = useAuth()
+  const { collapsed } = useSidebarCollapsed()
+  const sidebarWidth = collapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_WIDTH
 
   // NOT: `user.id` Keycloak `sub` claim'i, bildirimlerin yazıldığı Employee.Id
   // DEĞİL - kenar çubuğundaki bildirim rozeti bu yüzden gerçek çalışanlar için
@@ -45,29 +49,29 @@ export function AppShell() {
     status === 'authenticated' && !tenantSlug && !roles.includes('platform-admin')
 
   return (
-    <div className="flex min-h-dvh bg-background">
-      <aside className="fixed inset-y-0 left-0 hidden w-[260px] lg:block">
+    <div
+      className="relative flex min-h-dvh bg-background"
+      style={{ ['--sidebar-w' as string]: `${sidebarWidth}px` }}
+    >
+      <div aria-hidden="true" className="app-backdrop lg:left-(--sidebar-w)" />
+      <aside className="fixed inset-y-0 left-0 z-40 hidden lg:block">
         <SidebarNav
-          onOpenCommandPalette={() => setPaletteOpen(true)}
           unreadCount={unread.data?.unreadCount ?? 0}
         />
       </aside>
 
       <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
-        <SheetContent side="left" className="w-[260px] p-0 lg:hidden">
+        <SheetContent side="left" className="w-[280px] gap-0 p-0 lg:hidden" showCloseButton={false}>
           <SheetTitle className="sr-only">Modül menüsü</SheetTitle>
           <SidebarNav
-            className="w-full border-r-0"
-            onOpenCommandPalette={() => {
-              setMobileNavOpen(false)
-              setPaletteOpen(true)
-            }}
+            mobile
+            className="border-r-0"
             unreadCount={unread.data?.unreadCount ?? 0}
           />
         </SheetContent>
       </Sheet>
 
-      <div className="flex min-w-0 flex-1 flex-col lg:pl-[260px]">
+      <div className="relative z-10 flex min-w-0 flex-1 flex-col transition-[padding] duration-[240ms] ease-[cubic-bezier(0.23,1,0.32,1)] lg:pl-(--sidebar-w)">
         <Topbar
           onOpenMobileNav={() => setMobileNavOpen(true)}
           onOpenCommandPalette={() => setPaletteOpen(true)}
@@ -91,7 +95,7 @@ export function AppShell() {
           </div>
         )}
 
-        <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8">
+        <main className="mx-auto w-full max-w-[1480px] min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
           {/* Rota değişiminde içerik yerine otururken kısa bir yükselme. */}
           <PageTransition routeKey={location.pathname}>
             <Outlet />

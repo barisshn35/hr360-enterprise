@@ -1,32 +1,56 @@
 /**
  * Giriş sayfası.
  *
- * Kaynak: 21st.dev "Auth Section 2" (solaceui, id 20036) — iki sütunlu düzen
- * (solda tanıtım paneli, sağda giriş) korundu.
+ * Kaynak: 21st.dev "Split Login" (mohammadshehadeh / Hirael login-03, id 28369)
+ * — iki sütunlu düzen: solda akan çizgili marka paneli, sağda tek eylemli
+ * giriş. Önceki sürümün rol açıklamaları sol panelde kısa kartlar olarak
+ * korundu.
  *
  * Uyarlamalar:
- *  - Sosyal giriş butonları ve e-posta/parola alanları KALDIRILDI. HR360'ta
- *    kimlik doğrulama yalnızca Keycloak üzerinden (Authorization Code + PKCE);
- *    parola bu uygulamaya hiç girilmez, Keycloak'ın kendi ekranında alınır.
- *  - Sol paneldeki galeri yerine rol açıklamaları (önceki sürümde beğenilmişti).
- *  - Sabit siyah/beyaz palet token'lara çevrildi.
+ *  - GitHub düğmesi yerine Keycloak (Authorization Code + PKCE). Parola bu
+ *    uygulamaya hiç girilmez, kimlik sunucusunun kendi ekranında alınır.
+ *  - Alıntı bloğu yerine rol kartları ve güvenlik notları.
+ *  - Renkler tasarım token'larından; kiracı rengi burada da geçerli.
  */
 
 import { Link, Navigate, useSearchParams } from 'react-router-dom'
 import { motion, useReducedMotion } from 'motion/react'
-import { ArrowRight, KeyRound, ShieldCheck, TriangleAlert } from 'lucide-react'
+import {
+  ArrowRight,
+  Building2,
+  KeyRound,
+  LockKeyhole,
+  ShieldCheck,
+  TriangleAlert,
+  UserRound,
+  UsersRound,
+  Briefcase,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { AppShellSkeleton } from '@/components/ui/AppShellSkeleton'
+import { FloatingPaths } from '@/components/ui/floating-paths'
 import { useAuth } from '@/auth/useAuth'
 import { roleLabels } from '@/auth/roles'
-import { EASE, Magnetic, Stagger, StaggerItem } from '@/motion/primitives'
+import { EASE, Stagger, StaggerItem } from '@/motion/primitives'
 
-const ROLE_NOTES: Array<{ role: keyof typeof roleLabels; detail: string }> = [
-  { role: 'employee', detail: 'Kendi izin, masraf ve eğitim kayıtlarını görür; talep açar.' },
-  { role: 'manager', detail: 'Ekibinin taleplerini karara bağlar, puantaj ve performansı yönetir.' },
-  { role: 'hr-admin', detail: 'Organizasyon, çalışan kayıtları, ücret bantları ve dokümanlar.' },
-  { role: 'platform-admin', detail: 'Kiracıları yönetir: plan, kota, askıya alma ve kurulum kayıtları.' },
+const ROLE_NOTES: Array<{ role: keyof typeof roleLabels; icon: React.ElementType; detail: string }> = [
+  { role: 'employee', icon: UserRound, detail: 'İzin, masraf ve eğitim kayıtları; talep açar.' },
+  { role: 'manager', icon: UsersRound, detail: 'Ekibin taleplerini onaylar, puantaj ve performansı yönetir.' },
+  { role: 'hr-admin', icon: Briefcase, detail: 'Organizasyon, çalışan kayıtları, ücret ve dokümanlar.' },
+  { role: 'platform-admin', icon: Building2, detail: 'Kiracılar: plan, kota, askıya alma, kurulum kayıtları.' },
 ]
+
+const TRUST = [
+  { icon: LockKeyhole, text: 'Parola bu uygulamaya girilmez' },
+  { icon: ShieldCheck, text: 'Her istek sunucuda yeniden denetlenir' },
+  { icon: Building2, text: 'Her şirketin verisi ayrı tutulur' },
+]
+
+const ENTER = { opacity: 0, y: 14 }
+
+function BrandMark({ className = 'size-7' }: { className?: string }) {
+  return <img src="/icon-emerald.svg" alt="" aria-hidden="true" className={`${className} shrink-0`} />
+}
 
 export function SignInPage() {
   const reduced = useReducedMotion()
@@ -37,128 +61,158 @@ export function SignInPage() {
   if (status === 'loading') return <AppShellSkeleton label="Oturum doğrulanıyor" />
   if (status === 'authenticated') return <Navigate to={next} replace />
 
+  const enter = (i: number) =>
+    reduced
+      ? {}
+      : {
+          initial: ENTER,
+          animate: { opacity: 1, y: 0 },
+          transition: { duration: 0.55, delay: i * 0.07, ease: EASE },
+        }
+
   return (
-    <section className="min-h-dvh bg-background p-3 text-foreground antialiased">
-      <div className="grid min-h-[calc(100dvh-1.5rem)] gap-6 lg:grid-cols-[0.94fr_1.06fr]">
-        {/* --------------------------- Tanıtım / roller --------------------------- */}
-        <motion.div
-          initial={reduced ? false : { opacity: 0, x: -24 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.7, ease: EASE }}
-          className="relative flex justify-center overflow-hidden rounded-xl bg-gradient-to-b from-primary/12 via-card to-card px-7 py-12 sm:px-10 lg:py-20"
-        >
-          <div
-            aria-hidden="true"
-            className="hr-aurora pointer-events-none absolute -top-32 -left-24 size-[26rem] rounded-full bg-primary/12 blur-[110px]"
-          />
-          <div className="relative flex w-full max-w-[480px] flex-col">
-            <Link to="/" className="flex items-center gap-3 text-lg font-semibold">
-              <img
-                src="/icon-emerald.svg"
-                alt=""
-                aria-hidden="true"
-                className="size-7 shrink-0"
-              />
-              HR360 Enterprise
-            </Link>
+    <section className="relative min-h-dvh overflow-hidden bg-background text-foreground lg:grid lg:grid-cols-[1.05fr_1fr]">
+      {/* ------------------------------ Marka paneli ------------------------------ */}
+      <aside className="relative hidden h-full flex-col overflow-hidden border-e border-border bg-card p-10 lg:flex xl:p-14">
+        <FloatingPaths />
+        <div
+          aria-hidden="true"
+          className="absolute inset-0 bg-gradient-to-b from-transparent via-card/40 to-background"
+        />
+        <div
+          aria-hidden="true"
+          className="hr-aurora absolute -top-40 -left-32 size-[32rem] rounded-full bg-primary/15 blur-[120px]"
+        />
 
-            <p className="mt-8 text-2xl leading-tight font-medium">
-              Gördüğünüz ekran rolünüze göre şekillenir.
-            </p>
-            <p className="mt-2.5 text-[13px] leading-relaxed text-muted-foreground">
-              Aynı panel, herkese kendi işini gösterir. Yetkiniz olmayan modüller menüde bile
-              görünmez.
-            </p>
-
-            <Stagger as="ul" className="mt-8 flex flex-col gap-3" delay={0.25} step={0.09}>
-              {ROLE_NOTES.map((item) => (
-                <StaggerItem
-                  key={item.role}
-                  as="li"
-                  from="left"
-                  className="rounded-lg border border-border bg-card/70 p-4 transition-colors hover:border-primary/40"
-                >
-                  <p className="text-[13px] font-semibold">{roleLabels[item.role]}</p>
-                  <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
-                    {item.detail}
-                  </p>
-                </StaggerItem>
-              ))}
-            </Stagger>
-
-            <p className="mt-auto flex items-start gap-2 pt-8 text-[12px] leading-relaxed text-muted-foreground">
-              <ShieldCheck aria-hidden="true" className="mt-px size-4 shrink-0" strokeWidth={1.5} />
-              Yetkilendirme arayüzde gizlenen menülerden ibaret değil; her istek sunucu tarafında
-              yeniden denetlenir.
-            </p>
-          </div>
+        <motion.div {...enter(0)} className="relative z-10">
+          <Link to="/" className="inline-flex items-center gap-2.5 text-[17px] font-semibold tracking-tight">
+            <BrandMark />
+            HR360 <span className="font-normal text-muted-foreground">Enterprise</span>
+          </Link>
         </motion.div>
 
-        {/* -------------------------------- Giriş -------------------------------- */}
-        <motion.div
-          initial={reduced ? false : { opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7, delay: 0.12, ease: EASE }}
-          className="flex items-center justify-center px-6 py-12 sm:px-10 lg:px-14 xl:px-20"
-        >
-          <div className="w-full max-w-md">
-            <h1 className="text-3xl font-semibold tracking-tight">Giriş yapın</h1>
-            <p className="mt-2.5 text-[14px] leading-relaxed text-muted-foreground">
-              HR360, kurumsal kimlik sunucusu üzerinden doğrulama yapar. Devam ettiğinizde
-              şirketinizin oturum açma ekranına yönlendirilirsiniz.
-            </p>
+        <div className="relative z-10 mt-auto max-w-xl">
+          <motion.p
+            {...enter(1)}
+            className="text-gradient text-[34px] leading-[1.12] font-semibold tracking-[-0.03em] xl:text-[40px]"
+          >
+            İnsan kaynaklarınız, tek ve güvenli bir panelde.
+          </motion.p>
+          <motion.p {...enter(2)} className="mt-4 max-w-md text-[14px] leading-relaxed text-muted-foreground">
+            Gördüğünüz ekran rolünüze göre şekillenir; yetkiniz olmayan modüller menüde bile
+            görünmez.
+          </motion.p>
 
-            {error && (
-              <div
-                role="alert"
-                className="mt-6 flex items-start gap-2.5 rounded-lg border border-destructive/30 bg-destructive/5 p-3.5 text-[13px] leading-relaxed"
+          <Stagger as="ul" className="mt-8 grid grid-cols-2 gap-2.5" delay={0.3} step={0.07}>
+            {ROLE_NOTES.map(({ role, icon: Icon, detail }) => (
+              <StaggerItem
+                key={role}
+                as="li"
+                className="surface rounded-xl bg-card/70 p-3.5 backdrop-blur-sm transition-colors hover:border-primary/35"
               >
-                <TriangleAlert
-                  aria-hidden="true"
-                  className="mt-0.5 size-4 shrink-0 text-destructive"
-                />
-                <span>
-                  Kimlik sağlayıcıya ulaşılamadı. {error}
-                </span>
-              </div>
-            )}
+                <p className="flex items-center gap-2 text-[13px] font-semibold">
+                  <Icon aria-hidden="true" className="size-4 text-primary" strokeWidth={1.75} />
+                  {roleLabels[role]}
+                </p>
+                <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">{detail}</p>
+              </StaggerItem>
+            ))}
+          </Stagger>
 
-            <Magnetic strength={0.14} className="mt-8 w-full">
-              <Button
-                size="lg"
-                className="hr-sheen h-12 w-full cursor-pointer text-base"
-                onClick={() => login(next)}
-              >
-                <KeyRound className="size-4.5" strokeWidth={1.75} />
-                Kurumsal hesabımla giriş yap
-              </Button>
-            </Magnetic>
+          <motion.ul
+            {...enter(6)}
+            className="mt-8 flex flex-wrap gap-x-5 gap-y-2 text-[12px] text-muted-foreground"
+          >
+            {TRUST.map(({ icon: Icon, text }) => (
+              <li key={text} className="flex items-center gap-1.5">
+                <Icon aria-hidden="true" className="size-3.5 text-primary/80" strokeWidth={1.75} />
+                {text}
+              </li>
+            ))}
+          </motion.ul>
+        </div>
+      </aside>
 
-            <div className="my-8 flex items-center gap-4 text-sm text-muted-foreground">
-              <div className="h-px flex-1 bg-border" />
-              <span>şirketiniz henüz kayıtlı değil mi?</span>
-              <div className="h-px flex-1 bg-border" />
+      {/* --------------------------------- Giriş --------------------------------- */}
+      <div className="relative flex min-h-dvh flex-col justify-center px-6 py-12 sm:px-10 lg:min-h-0">
+        <div aria-hidden="true" className="pointer-events-none absolute inset-0">
+          <div className="absolute -top-48 right-0 h-[36rem] w-[36rem] rounded-full bg-primary/[0.07] blur-[100px]" />
+          <div className="hr-dots absolute inset-0 opacity-60" />
+        </div>
+
+        <div className="relative z-10 mx-auto w-full max-w-sm">
+          <motion.div {...enter(0)} className="mb-10 flex items-center gap-2.5 lg:hidden">
+            <BrandMark />
+            <span className="text-[17px] font-semibold tracking-tight">HR360 Enterprise</span>
+          </motion.div>
+
+          <motion.span
+            {...enter(1)}
+            className="inline-flex items-center gap-1.5 rounded-full border border-primary/25 bg-primary/10 px-2.5 py-1 text-[11.5px] font-medium text-primary"
+          >
+            <span className="size-1.5 rounded-full bg-primary shadow-[0_0_8px_hsl(var(--primary))]" />
+            Kurumsal oturum
+          </motion.span>
+          <motion.h1
+            {...enter(2)}
+            className="mt-4 text-[34px] leading-tight font-semibold tracking-[-0.03em] sm:text-[40px]"
+          >
+            Giriş yapın
+          </motion.h1>
+          <motion.p {...enter(3)} className="mt-3 text-[14px] leading-relaxed text-muted-foreground">
+            HR360 kimliğinizi kurumsal kimlik sunucusunda doğrular. Devam ettiğinizde şirketinizin
+            oturum açma ekranına yönlendirilirsiniz.
+          </motion.p>
+
+          {error && (
+            <div
+              role="alert"
+              className="mt-6 flex items-start gap-2.5 rounded-xl border border-destructive/30 bg-destructive/[0.06] p-3.5 text-[13px] leading-relaxed"
+            >
+              <TriangleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-destructive" />
+              <span>Kimlik sağlayıcıya ulaşılamadı. {error}</span>
             </div>
+          )}
 
-            <Button variant="outline" size="lg" className="h-12 w-full cursor-pointer" asChild>
+          <motion.div {...enter(4)} className="mt-8">
+            <Button size="lg" className="hr-sheen h-12 w-full text-[15px]" onClick={() => login(next)}>
+              <KeyRound className="size-4.5" strokeWidth={1.75} />
+              Kurumsal hesabımla giriş yap
+            </Button>
+          </motion.div>
+
+          <motion.div
+            {...enter(5)}
+            className="my-7 flex items-center gap-4 text-[12.5px] text-muted-foreground"
+          >
+            <div className="h-px flex-1 bg-border" />
+            <span>şirketiniz kayıtlı değil mi?</span>
+            <div className="h-px flex-1 bg-border" />
+          </motion.div>
+
+          <motion.div {...enter(6)}>
+            <Button variant="outline" size="lg" className="group h-12 w-full" asChild>
               <Link to="/kayit">
                 Şirketinizi kaydedin
-                <ArrowRight className="size-4" />
+                <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
               </Link>
             </Button>
+          </motion.div>
 
-            <div className="mt-9 space-y-3 text-xs leading-relaxed text-muted-foreground">
-              <p>
-                Parolanızı unuttuysanız oturum açma ekranındaki "Parolamı unuttum" bağlantısını
-                kullanın — parola bu uygulamaya hiçbir zaman girilmez.
-              </p>
-              <p>
-                Hesabınız olduğu hâlde giriş yapamıyorsanız şirketinizin İK yöneticisi hesabınızı
-                askıya almış olabilir.
-              </p>
-            </div>
-          </div>
-        </motion.div>
+          <motion.div
+            {...enter(7)}
+            className="mt-10 space-y-2.5 border-t border-border pt-6 text-[12px] leading-relaxed text-muted-foreground"
+          >
+            <p>
+              Parolanızı unuttuysanız oturum açma ekranındaki “Parolamı unuttum” bağlantısını
+              kullanın.
+            </p>
+            <p>
+              Hesabınız olduğu hâlde giriş yapamıyorsanız şirketinizin İK yöneticisi hesabınızı
+              askıya almış olabilir.
+            </p>
+          </motion.div>
+        </div>
       </div>
     </section>
   )

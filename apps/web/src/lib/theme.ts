@@ -4,12 +4,15 @@ export type Theme = 'light' | 'dark' | 'system'
 
 const KEY = 'hr360.theme'
 
+/** Ürünün imza görünümü koyu "Obsidyen Zümrüt"; kullanıcı Ayarlar'dan değiştirebilir. */
+export const DEFAULT_THEME: Theme = 'dark'
+
 function read(): Theme {
   try {
     const v = window.localStorage.getItem(KEY)
-    return v === 'light' || v === 'dark' || v === 'system' ? v : 'system'
+    return v === 'light' || v === 'dark' || v === 'system' ? v : DEFAULT_THEME
   } catch {
-    return 'system'
+    return DEFAULT_THEME
   }
 }
 

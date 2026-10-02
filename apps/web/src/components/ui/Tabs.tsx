@@ -1,4 +1,6 @@
+import { useId } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import { motion, useReducedMotion } from 'motion/react'
 import { cn } from '@/lib/utils'
 
 export interface TabDef<T extends string> {
@@ -25,6 +27,10 @@ export function Tabs<T extends string>({
   onChange: (next: T) => void
   label: string
 }) {
+  // Etkin sekmenin alt çizgisi sekmeler arasında kayar (21st.dev "animated
+  // tabs" deseni); aynı sayfada iki şerit olabileceği için kimlik benzersiz.
+  const indicatorId = useId()
+  const reduced = useReducedMotion()
   return (
     <div
       role="tablist"
@@ -39,16 +45,31 @@ export function Tabs<T extends string>({
           aria-selected={value === tab.key}
           onClick={() => onChange(tab.key)}
           className={cn(
-            'relative -mb-px flex min-h-11 shrink-0 cursor-pointer items-center gap-2 border-b-2 pb-2',
-            'text-[14px] whitespace-nowrap transition-colors',
+            'relative flex min-h-11 shrink-0 cursor-pointer items-center gap-2 pb-2',
+            'text-[13.5px] whitespace-nowrap transition-colors',
             value === tab.key
-              ? 'border-primary font-semibold text-foreground'
-              : 'border-transparent text-muted-foreground hover:text-foreground',
+              ? 'font-medium text-foreground'
+              : 'text-muted-foreground hover:text-foreground',
           )}
         >
           {tab.label}
           {tab.count !== undefined && tab.count > 0 && (
-            <span className="tabular text-[11px] text-muted-foreground">{tab.count}</span>
+            <span
+              className={cn(
+                'tabular rounded-full px-1.5 py-px text-[10.5px] font-medium',
+                value === tab.key ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground',
+              )}
+            >
+              {tab.count}
+            </span>
+          )}
+          {value === tab.key && (
+            <motion.span
+              aria-hidden="true"
+              layoutId={reduced ? undefined : `tab-${indicatorId}`}
+              transition={{ type: 'spring', stiffness: 500, damping: 40 }}
+              className="absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-primary shadow-[0_0_12px_hsl(var(--primary)/0.7)]"
+            />
           )}
         </button>
       ))}

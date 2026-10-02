@@ -38,22 +38,39 @@ function hexToHsl(hex: string): { h: number; s: number; l: number } {
 
 const HEX_PATTERN = /^#[0-9a-fA-F]{6}$/
 
+const VARS = [
+  '--tenant-primary',
+  '--tenant-primary-foreground',
+  '--tenant-primary-dark',
+  '--tenant-primary-dark-foreground',
+] as const
+
+/** Orta parlaklıktan koyusu beyaz metin ister, açık renkler koyu metin. */
+function foregroundFor(l: number) {
+  return l > 60 ? '160 50% 4%' : '0 0% 100%'
+}
+
 /**
- * `primaryColorHex` verilmişse --primary / --primary-foreground'ı override
- * eder; null/undefined ya da geçersiz formatsa önceki override'ı temizler
- * (varsayılan zümrüt rengine döner).
+ * `primaryColorHex` verilmişse şirketin rengini uygular; null/undefined ya da
+ * geçersiz formatsa önceki ayarı temizler (varsayılan zümrüde döner).
+ *
+ * index.css --primary'yi bu değişkenlerden okur. Açık ve koyu tema için ayrı
+ * değer yazılır: koyu temada çok koyu bir marka rengi (ör. lacivert) obsidyen
+ * zeminde kaybolacağı için parlaklığı en az %45'e çekilir; ton (hue) ve
+ * doygunluk aynı kalır, şirket rengini tanır.
  */
 export function applyTenantBrandColor(primaryColorHex: string | null | undefined) {
   const root = document.documentElement
 
   if (!primaryColorHex || !HEX_PATTERN.test(primaryColorHex)) {
-    root.style.removeProperty('--primary')
-    root.style.removeProperty('--primary-foreground')
+    for (const v of VARS) root.style.removeProperty(v)
     return
   }
 
   const { h, s, l } = hexToHsl(primaryColorHex)
-  root.style.setProperty('--primary', `${h} ${s}% ${l}%`)
-  // Orta parlaklıktan koyusu beyaz metin ister, açık renkler koyu metin.
-  root.style.setProperty('--primary-foreground', l > 60 ? '240 10% 4%' : '0 0% 100%')
+  const darkL = Math.min(Math.max(l, 45), 70)
+  root.style.setProperty('--tenant-primary', `${h} ${s}% ${l}%`)
+  root.style.setProperty('--tenant-primary-foreground', foregroundFor(l))
+  root.style.setProperty('--tenant-primary-dark', `${h} ${s}% ${darkL}%`)
+  root.style.setProperty('--tenant-primary-dark-foreground', foregroundFor(darkL))
 }

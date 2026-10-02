@@ -110,7 +110,7 @@ export interface DataTableProps<T> {
   notice?: ReactNode
 }
 
-const HEAD_CLASS = 'p-4 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase'
+const HEAD_CLASS = 'h-11 px-4 py-0 text-[11px] font-medium tracking-[0.08em] text-muted-foreground uppercase'
 
 const HIDE_CLASS: Record<NonNullable<Column<unknown>['hideBelow']>, string> = {
   sm: 'hidden sm:table-cell',
@@ -299,7 +299,7 @@ export function DataTable<T>({
           </div>
 
           {selectable && selected.length > 0 && (
-            <div className="flex flex-wrap items-center gap-3 rounded-md bg-muted px-3 py-2">
+            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-primary/20 bg-primary/[0.06] px-3 py-2">
               <Badge variant="secondary" className="tabular">
                 {selected.length} satır seçili
               </Badge>
@@ -331,7 +331,7 @@ export function DataTable<T>({
             <div className="w-full overflow-x-auto">
               <Table>
                 <TableHeader>
-                  <TableRow className="bg-muted/50 hover:bg-muted/50">
+                  <TableRow className="bg-muted/40 hover:bg-muted/40">
                     {selectable && (
                       <TableHead className="w-12 p-4">
                         <Checkbox
@@ -404,7 +404,7 @@ export function DataTable<T>({
                         }}
                         onClick={onRowClick ? () => onRowClick(row) : undefined}
                         className={cn(
-                          'border-b transition-colors hover:bg-muted/30',
+                          'border-b border-border/70 transition-colors hover:bg-primary/[0.035]',
                           onRowClick && 'cursor-pointer',
                           rowClassName?.(row),
                         )}
