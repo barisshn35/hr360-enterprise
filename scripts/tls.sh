@@ -49,7 +49,7 @@ die() {
   echo "HATA: $*" >&2
   if [ -n "$ROLLBACK" ]; then
     echo "Degisiklikler geri aliniyor..." >&2
-    rm -f "$DIR/listen.conf" "$DIR/redirect.conf"
+    rm -f "$DIR/listen.conf" "$DIR/redirect.conf" "$DIR/fullchain.pem" "$DIR/privkey.pem"
     [ -d "$ROLLBACK/tls" ] && cp -a "$ROLLBACK/tls/." "$DIR/" 2>/dev/null
     [ -f "$ROLLBACK/env" ] && cp "$ROLLBACK/env" "$ENV_FILE"
     ROLLBACK=""
