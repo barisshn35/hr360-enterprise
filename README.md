@@ -88,6 +88,7 @@ kayıt ekranından açılır. Demo şirketini `platform.admin` hesabıyla askıy
 | HTTPS'i aç/kapat, sertifika değiştir | `scripts/tls.sh enable ... / disable / status` |
 | TLS'i öndeki bir yük dengeleyici sonlandırıyorsa | `scripts/tls.sh external --host hr.sirket.com` |
 | Keycloak paneli erişimi | `scripts/keycloak-admin-access.sh open / ip <IP,...> / port [IP,...] / status` |
+| E-posta (SMTP) sunucusu | `scripts/smtp.sh set` (soru sorar), `scripts/smtp.sh test adres@sirket.com`, `scripts/smtp.sh status`, `scripts/smtp.sh mailpit` |
 | Yeni sürüme güncelleme | `git pull && ./install.sh` ("sırları yeniden üretelim mi?" sorusuna **Hayır**; veritabanı göçleri otomatik uygulanır) |
 
 Yedeklenmesi gerekenler:
@@ -114,8 +115,8 @@ Yedeklenmesi gerekenler:
   bırakılırsa Mailpit (yerel SMTP yakalayıcı, demo/dev için — e-postalar
   gerçekten gönderilmez) kullanılır. Girilen ayar hem bildirim servisine
   (`.env` → `SMTP_*`) hem Keycloak'a (davet/şifre sıfırlama e-postaları,
-  realm'in "Email" ayarı) yazılır. Kurulumdan sonra değiştirmek için ikisini
-  birlikte güncelleyin.
+  realm'in "Email" ayarı) yazılır. Kurulumda boş bırakıldıysa ya da sonradan
+  değişecekse `scripts/smtp.sh set` ikisini birlikte günceller.
 - **ML:** MLflow tracking + Registry, FastAPI tabanlı inference servisi
   (işten ayrılma riski tahmini), Postgres backend store + MinIO artifact
   store
@@ -160,6 +161,7 @@ deploy/
 scripts/
   tls.sh                 HTTPS aç/kapat (Let's Encrypt, kendi sertifika, kendinden imzalı)
   keycloak-admin-access.sh  Keycloak yönetim paneli erişimi (açık / IP kısıtı / ayrı port)
+  smtp.sh                E-posta (SMTP) sunucusunu sonradan ayarlama/deneme
   sql/                   Mevcut kurulumlar için veritabanı göçleri (güncellemede otomatik)
 platform/
   ansible/               Orijinal 7-VM dağıtımının Ansible playbook'ları (referans)

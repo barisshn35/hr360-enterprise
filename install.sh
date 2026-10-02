@@ -532,6 +532,7 @@ if [ -z "${SMTP_HOST}" ] || [ "${SMTP_HOST}" = "mailpit" ]; then
   SMTP_FROM_ADDRESS=noreply@hr360.local; SMTP_FROM_NAME=HR360
   SMTP_AUTH=false; SMTP_SSL=false; SMTP_STARTTLS=false
   warn "Mailpit secildi: kullanicilara e-posta ulasmayacak (test modu)."
+  warn "Gercek SMTP sunucusunu sonradan eklemek icin: scripts/smtp.sh set"
 else
   read -r -p "SMTP portu (587 = STARTTLS, 465 = SSL) [587]: " SMTP_PORT || true
   SMTP_PORT=${SMTP_PORT:-587}
