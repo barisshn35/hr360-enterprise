@@ -39,3 +39,5 @@ deploy/letsencrypt/*
 !deploy/letsencrypt/README.md
 deploy/nginx/acme/*
 !deploy/nginx/acme/README.md
+backups/
+.env.before-restore-*

@@ -103,14 +103,24 @@ def extract_text(filename: str, data: bytes) -> str:
             from pypdf import PdfReader
         except ImportError as exc:  # pragma: no cover
             raise HTTPException(500, "PDF okuyucu (pypdf) kurulu değil") from exc
-        reader = PdfReader(io.BytesIO(data))
-        return "\n".join((p.extract_text() or "") for p in reader.pages[:15])
+        try:
+            reader = PdfReader(io.BytesIO(data))
+            return "\n".join((p.extract_text() or "") for p in reader.pages[:15])
+        except Exception as exc:  # pypdf bozuk/sifreli dosyada farkli hatalar atar
+            raise HTTPException(400, "PDF okunamadı (bozuk ya da şifreli olabilir)") from exc
     if name.endswith(".docx"):
-        with zipfile.ZipFile(io.BytesIO(data)) as z:
-            xml = z.read("word/document.xml").decode("utf-8", "ignore")
+        try:
+            with zipfile.ZipFile(io.BytesIO(data)) as z:
+                xml = z.read("word/document.xml").decode("utf-8", "ignore")
+        except (zipfile.BadZipFile, KeyError) as exc:
+            raise HTTPException(400, "Geçerli bir .docx dosyası değil") from exc
         xml = re.sub(r"</w:p>", "\n", xml)
         return re.sub(r"<[^>]+>", "", xml)
-    return data.decode("utf-8", "ignore")
+    if name.endswith((".txt", ".md", ".text")) or not name:
+        if b"\x00" in data[:4096]:
+            raise HTTPException(415, "Metin dosyası ikili veri içeriyor")
+        return data.decode("utf-8", "ignore")
+    raise HTTPException(415, "Desteklenen biçimler: PDF, DOCX, TXT")
 
 
 class CvResult(BaseModel):
