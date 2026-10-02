@@ -1,6 +1,15 @@
 ---
 # HR360 Enterprise - Servis deployment playbook'u
 #
+# REFERANS: 7 sanal sunuculu hedef ortam icindir. Tek sunucu kurulumuyla
+# (kok docker-compose.yml) dogrudan calismaz; bilinen farklar:
+#   - apps/services/<servis>/docker-compose.yml dosyalari bu repoda yok
+#     (tek sunucuda tum servisler kok docker-compose.yml'de).
+#   - Health check portlari (5001-5013) yerine servisler container icinde 8080
+#     dinler ve disari port acmaz.
+#   - Aktarilan ortam degiskenleri guncel compose ile ayni degil (SMTP_*,
+#     PUBLIC_ORIGIN, MINIO_ROOT_* eksik).
+#
 # Kullanim: ansible-playbook -i inventory.yml deploy-service.yml \
 #             -e "service_name=notification-service" \
 #             -e "target_host=hr360-prd-ml-01" \

@@ -261,7 +261,8 @@ export function RolesPage() {
       r.hasLoginAccess ? (
         <Checkbox
           checked={r.roles.includes(role)}
-          disabled={pending || !r.keycloakUserId}
+          // Şirket yöneticisi rolünü yalnızca şirket/platform yöneticisi verip alabilir.
+          disabled={pending || !r.keycloakUserId || (role === 'tenant-admin' && !canGrantExtraPermissions)}
           onCheckedChange={(checked) => toggleRole(r, role, checked === true)}
           aria-label={`${r.firstName} ${r.lastName} için ${roleLabels[role]} rolü`}
         />

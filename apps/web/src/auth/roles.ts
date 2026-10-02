@@ -125,12 +125,25 @@ function expand(role: Role, seen = new Set<Role>()): Permission[] {
  * görülen her "ext-*" rolü, atanma anında geçerli bir Permission'a karşılık
  * gelmiş demektir.
  */
+/**
+ * Ek izinle verilen bir yetkinin çalışması için gereken görüntüleme izni.
+ * Örn. "ilan yayınlama" ek izni alan biri İşe alım sayfasını açabilmeli;
+ * aksi halde izin verilir ama sayfa hiç görünmez.
+ */
+const IMPLIED_BY_EXTRA: Partial<Record<Permission, Permission[]>> = {
+  'recruitment:publish': ['recruitment:view'],
+  'recruitment:candidates': ['recruitment:view'],
+  'employee:create': ['employee:viewAll'],
+  'employee:manage': ['employee:viewAll'],
+};
+
 export function permissionsFor(roles: string[]): Set<Permission> {
   const valid = roles.filter((r): r is Role => (ROLES as readonly string[]).includes(r));
   const extra = roles
     .filter((r) => r.startsWith('ext-'))
     .map((r) => r.slice('ext-'.length).replace('-', ':') as Permission);
-  return new Set([...valid.flatMap((r) => expand(r)), ...extra]);
+  const implied = extra.flatMap((p) => IMPLIED_BY_EXTRA[p] ?? []);
+  return new Set([...valid.flatMap((r) => expand(r)), ...extra, ...implied]);
 }
 
 export function hasPermission(roles: string[], permission: Permission): boolean {
@@ -153,6 +166,37 @@ export function hasPermission(roles: string[], permission: Permission): boolean 
  */
 export function hasStandardRole(userRoles: string[], allowed: Role[]): boolean {
   return userRoles.some((r) => (allowed as readonly string[]).includes(r));
+}
+
+/** İK rolleri: backend'deki RequireHrAdmin politikalarının standart rol kısmı. */
+export const HR_ROLES: Role[] = ['hr-admin', 'tenant-admin', 'platform-admin'];
+
+/**
+ * Kullanıcı İK mı? Bazı işlemler (dönem açma/kapama, rol atama, ödeme vb.)
+ * backend'de yöneticiye değil yalnızca İK'ya açık; `extraRole` verilirse o ek
+ * izin rolü (ör. "ext-performance-manage") de kabul edilir.
+ */
+export function isHr(userRoles: string[], extraRole?: string): boolean {
+  return hasStandardRole(userRoles, HR_ROLES) || (extraRole ? userRoles.includes(extraRole) : false);
+}
+
+/**
+ * Tüm çalışan listesini okuyabilir mi? employee-service'teki IsManagerOrAbove
+ * kuralının aynısı: yönetici, İK, muhasebe ve listeye ihtiyaç duyan ek izinler
+ * (ext-*-manage, ext-employee-viewAll, ext-compensation-view, ext-expense-markPaid).
+ */
+export function canListEmployees(userRoles: string[]): boolean {
+  return (
+    hasStandardRole(userRoles, ['manager', 'accounting', ...HR_ROLES]) ||
+    userRoles.some(
+      (r) =>
+        r === 'ext-employee-viewAll' ||
+        r === 'ext-employee-create' ||
+        r === 'ext-compensation-view' ||
+        r === 'ext-expense-markPaid' ||
+        (r.startsWith('ext-') && r.endsWith('-manage')),
+    )
+  );
 }
 
 /** Arayüzde gösterilecek Türkçe rol etiketleri. */

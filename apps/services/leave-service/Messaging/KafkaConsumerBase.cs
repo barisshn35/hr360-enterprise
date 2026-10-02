@@ -26,7 +26,7 @@ public abstract class KafkaConsumerBase : BackgroundService
         _groupId = groupId;
         _topics = topics;
         _bootstrapServers = Environment.GetEnvironmentVariable("KAFKA_BOOTSTRAP_SERVERS")
-            ?? "172.33.55.5:9092";
+            ?? "kafka:9092";
     }
 
     /// <summary>Bu tuketicinin adi - idempotency kaydinda kullanilir.</summary>

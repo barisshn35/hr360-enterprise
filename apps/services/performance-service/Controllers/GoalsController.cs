@@ -98,12 +98,14 @@ public class GoalsController : ControllerBase
         var cycle = await _db.Cycles.FirstOrDefaultAsync(c => c.Id == goal.CycleId);
         if (cycle?.Status == CycleStatus.Closed)
             return BadRequest(new { message = "Kapanmış dönemin hedefleri güncellenemez" });
-        if (request.CurrentValue < 0)
+        if (request.CurrentValue is < 0)
             return BadRequest(new { message = "Gerçekleşen değer negatif olamaz" });
         if (request.Status.HasValue && !Enum.IsDefined(request.Status.Value))
             return BadRequest(new { message = "Geçerli bir durum seçin" });
 
-        goal.CurrentValue = request.CurrentValue;
+        // Yalnizca durum degistiren istekte deger gonderilmez; mevcut deger korunur
+        // (onceden eksik alan 0 sayilip gerceklesen deger sifirlaniyordu).
+        if (request.CurrentValue.HasValue) goal.CurrentValue = request.CurrentValue.Value;
         if (request.Status.HasValue) goal.Status = request.Status.Value;
         await _db.SaveChangesAsync();
         return Ok(goal);
@@ -113,4 +115,4 @@ public class GoalsController : ControllerBase
 public record CreateGoalRequest(
     Guid CycleId, Guid EmployeeId, string Title, string? Description,
     int Weight, decimal? TargetValue, string? Unit);
-public record UpdateProgressRequest(decimal CurrentValue, GoalStatus? Status);
+public record UpdateProgressRequest(decimal? CurrentValue, GoalStatus? Status);

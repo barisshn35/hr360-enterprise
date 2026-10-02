@@ -25,6 +25,14 @@ import {
 } from '@/api/types'
 import { formatDate, formatMoney, formatNumber, fullName, normalizeSearch } from '@/lib/format'
 import { useEmployeeName } from '@/lib/useEmployeeName'
+import { useAuth } from '@/auth/useAuth'
+import { isHr } from '@/auth/roles'
+
+/** Bant ve ücret kaydı yazmak yalnızca İK'ya açık; "ücret görüntüleme" ek izni salt okumadır. */
+function useCanWriteCompensation() {
+  const { roles } = useAuth()
+  return isHr(roles)
+}
 import { cn } from '@/lib/utils'
 
 type TabKey = 'bantlar' | 'gecmis' | 'simulasyon'
@@ -209,6 +217,7 @@ function BandSpan({
 }
 
 function BandsTab({ year, onYearChange }: { year: number; onYearChange: (y: number) => void }) {
+  const canWrite = useCanWriteCompensation()
   const [modalOpen, setModalOpen] = useState(false)
   const bands = useCompensationBands(year)
 
@@ -285,10 +294,12 @@ function BandsTab({ year, onYearChange }: { year: number; onYearChange: (y: numb
           value={year}
           onChange={(e) => onYearChange(Number(e.target.value))}
         />
-        <Button className="cursor-pointer" onClick={() => setModalOpen(true)}>
-          <Plus className="size-4" />
-          Yeni bant
-        </Button>
+        {canWrite && (
+          <Button className="cursor-pointer" onClick={() => setModalOpen(true)}>
+            <Plus className="size-4" />
+            Yeni bant
+          </Button>
+        )}
       </div>
 
       <DataTable
@@ -304,9 +315,11 @@ function BandsTab({ year, onYearChange }: { year: number; onYearChange: (y: numb
         emptyTitle="Bu yıl için bant yok"
         emptyDetail="Bantlar tanımlanmadan zam simülasyonu bant dışı satırları işaretleyemez."
         emptyAction={
-          <Button size="sm" className="cursor-pointer" onClick={() => setModalOpen(true)}>
-            Yeni bant
-          </Button>
+          canWrite ? (
+            <Button size="sm" className="cursor-pointer" onClick={() => setModalOpen(true)}>
+              Yeni bant
+            </Button>
+          ) : undefined
         }
       />
 
@@ -448,6 +461,7 @@ function NewRecordModal({
 }
 
 function HistoryTab() {
+  const canWrite = useCanWriteCompensation()
   const [employeeId, setEmployeeId] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const records = useCompensationRecords(employeeId || undefined, Boolean(employeeId))
@@ -469,7 +483,7 @@ function HistoryTab() {
             hint="Ücret geçmişini görmek için çalışan seçin."
           />
         </div>
-        {employeeId && (
+        {employeeId && canWrite && (
           <Button className="cursor-pointer" onClick={() => setModalOpen(true)}>
             <Plus className="size-4" />
             Ücret kaydı ekle

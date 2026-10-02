@@ -27,7 +27,8 @@ Açınca:
   güncellenir. Açık oturumlar yeniden giriş ister (eski jetonlar farklı issuer taşır).
 - Realm'de "SSL gerekli: dış istekler" (`sslRequired=external`) açılır.
 - Yönetim paneli ayrı porttaysa (`keycloak-admin-access.sh port`) adresi yeni kökene göre yenilenir.
-  Not: ayrı yönetim portu (8090) HTTP kalır; onu yalnızca yönetim ağına açın.
+  Not: ayrı yönetim portu (8090) düz HTTP kalır ve yönetim girişi orada HTTPS istemez;
+  bu portu firewall ile yalnızca yönetim IP'lerine ya da VPN'e açın.
 
 ## Let's Encrypt
 
@@ -60,6 +61,17 @@ Uygulama HTTP ile açılır ve ekrana tekrar deneme komutu basılır.
 Sertifika yenilendiğinde aynı `enable --cert ... --key ...` komutunu yeni dosyalarla tekrar
 çalıştırın.
 
-**Gateway'in önünde TLS'i sonlandıran bir yük dengeleyici varsa** bu betiği kullanmayın
-(HTTP→HTTPS yönlendirmesi döngüye girer). Onun yerine `.env`'de `PUBLIC_ORIGIN=https://<host>`
-yapıp `docker compose up -d` çalıştırın ve realm'de `sslRequired`'ı `external` yapın.
+HTTPS'i 443 dışında bir portta açmak için `--port 8443` ekleyin; HTTP istekleri o porta
+yönlendirilir.
+
+## Önde TLS'i sonlandıran bir yük dengeleyici varsa
+
+`enable` kullanmayın (HTTP→HTTPS yönlendirmesi döngüye girer). Onun yerine:
+
+```bash
+scripts/tls.sh external --host hr.sirket.com
+```
+
+Gateway HTTP'de kalır. Uygulama adresi, Keycloak istemcisinin yönlendirme adresleri ve
+`sslRequired` ise `https://hr.sirket.com` için ayarlanır. Dengeleyici gateway'e
+`X-Forwarded-Proto: https` başlığını göndermelidir.

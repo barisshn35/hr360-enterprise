@@ -98,10 +98,13 @@ export function FeedbackPage() {
         title="Geri bildirim"
         description="Dönem boyunca sürekli geri bildirim. Anonim değildir: alıcı kimin yazdığını görür. Yapıcı eleştiri somut bir gerekçe ister."
         actions={
-          <Button onClick={() => setComposing(true)} disabled={!me.employeeId}>
-            <MessageSquarePlus aria-hidden />
-            Geri bildirim yaz
-          </Button>
+          // Geri bildirim yazmak backend'de yöneticiye ve üstüne açık (RequireManagerOrAbove).
+          manager ? (
+            <Button onClick={() => setComposing(true)} disabled={!me.employeeId}>
+              <MessageSquarePlus aria-hidden />
+              Geri bildirim yaz
+            </Button>
+          ) : undefined
         }
       >
         <div className="grid gap-5 md:grid-cols-[auto_minmax(0,1fr)] md:items-center">
@@ -190,9 +193,15 @@ export function FeedbackPage() {
           <EmptyState
             icon={tab === 'giden' ? SendHorizontal : Inbox}
             title={tab === 'giden' ? 'Henüz geri bildirim göndermediniz' : 'Bu filtrede geri bildirim yok'}
-            detail={tab === 'giden' ? 'Bir ekip arkadaşınızın iyi yaptığı bir şeyi fark ettiyseniz söylemenin tam zamanı.' : 'Filtreleri genişletmeyi deneyin.'}
+            detail={
+              tab !== 'giden'
+                ? 'Filtreleri genişletmeyi deneyin.'
+                : manager
+                  ? 'Bir ekip arkadaşınızın iyi yaptığı bir şeyi fark ettiyseniz söylemenin tam zamanı.'
+                  : 'Geri bildirimi yöneticiler ve İK yazar; size gelenler "Gelen" sekmesinde görünür.'
+            }
             action={
-              tab === 'giden' ? (
+              tab === 'giden' && manager ? (
                 <Button onClick={() => setComposing(true)}>
                   <MessageSquarePlus aria-hidden />
                   Geri bildirim yaz

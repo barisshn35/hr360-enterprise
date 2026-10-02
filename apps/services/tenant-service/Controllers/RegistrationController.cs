@@ -81,7 +81,7 @@ public partial class RegistrationController : ControllerBase
 
         return tenant is null
             ? NotFound(new { message = $"'{slug}' icin tenant kaydi bulunamadi" })
-            : Ok(tenant);
+            : Ok(new { tenant.Name, LogoUrl = LogoStorageService.ToPublicUrl(tenant.LogoUrl), tenant.PrimaryColorHex });
     }
 
     /// <summary>

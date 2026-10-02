@@ -1,3 +1,8 @@
+> **Tarihsel not:** Bu manifest arayüz kurulurken kullanıldı. Sonradan kaldırılan
+> açılış sayfası (`features/landing`) gibi bölümleri ve o dönemki renk tercihlerini
+> içerir; güncel tasarım tokenları `src/styles/index.css` içindedir (ana renk zümrüt
+> `#0b8f63`).
+
 # HR360 v2 — 21st.dev Bileşen Manifesti
 
 Tüm arayüz 21st.dev kataloğundan seçilmiş bileşenler üzerine kuruluyor.

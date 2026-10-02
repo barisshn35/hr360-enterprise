@@ -44,9 +44,9 @@ public class DirectoryClient
         _ctx = ctx;
         _logger = logger;
         _orgBase = (Environment.GetEnvironmentVariable("ORGANIZATION_SERVICE_URL")
-            ?? "http://172.33.55.2:5001").TrimEnd('/');
+            ?? "http://organization-service:8080").TrimEnd('/');
         _employeeBase = (Environment.GetEnvironmentVariable("EMPLOYEE_SERVICE_URL")
-            ?? "http://172.33.55.2:5002").TrimEnd('/');
+            ?? "http://employee-service:8080").TrimEnd('/');
     }
 
     /// <summary>Gelen istegin token'ini hedef servise aynen tasir.</summary>
@@ -172,10 +172,6 @@ public class DirectoryClient
         return result;
     }
 
-    /// <summary>
-    /// E-postadan calisan bulur. Token'daki kullaniciyi calisan kaydiyla
-    /// eslestirmek icin - "kendi verimi gorme" yetkisi buna dayaniyor.
-    /// </summary>
     /// <summary>
     /// Token sahibinin calisan kaydi - employee-service /api/employees/me (KeycloakUserId
     /// eslesmesi). Istek basina onbelleklenir.

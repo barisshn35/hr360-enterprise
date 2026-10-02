@@ -31,10 +31,10 @@ public class EmployeesController : ControllerBase
         // eslesen) sorgulayabilir - boylece "benim iznim/masrafim" gibi
         // ekranlarda EmployeePicker kendi kaydini cozebilir, ama tum
         // calisan listesine erisemez.
-        var isManagerOrAbove = User.IsInRole("manager") || User.IsInRole("hr-admin")
-            || User.IsInRole("tenant-admin") || User.IsInRole("platform-admin");
-
-        if (!isManagerOrAbove)
+        // Tum listeyi gorebilenler: yonetici+ ve calisan listesine ihtiyac duyan ek
+        // izinler (bkz. IsManagerOrAbove). Onceden burada ayri, ek izinleri tanimayan
+        // bir rol listesi vardi; ek izin verilen kisiler formlarda calisan secemiyordu.
+        if (!IsManagerOrAbove)
         {
             // MapInboundClaims (varsayılan true) "email" claim'ini .NET'in
             // kendi URI formatına donusturuyor - hem ham hem donusturulmus
@@ -64,8 +64,8 @@ public class EmployeesController : ControllerBase
     ///
     /// GUVENLIK: GetAll'daki email eslemesi (JWT email == employee.Email)
     /// gecerli bir varsayim degil - bir kullanicinin Keycloak giris e-postasi
-    /// (orn. "baris.sahin@teletek.net.tr") ile employee kaydindaki e-postasi
-    /// (orn. sirketi kaydederken girilen kisisel "barisshn888@gmail.com")
+    /// (orn. "ad.soyad@sirket.com") ile employee kaydindaki e-postasi
+    /// (orn. sirketi kaydederken girilen kisisel "ad.soyad@example.com")
     /// farkli olabilir; bu durumda GetAll?email=<jwt-email> hicbir sonuc
     /// donmuyordu. workflow/leave/expense-service'teki self-approval
     /// kontrolleri bu ucu kullaniyor (bkz. FindMyEmployeeIdAsync) - email
@@ -123,7 +123,10 @@ public class EmployeesController : ControllerBase
     /// </summary>
     private bool IsManagerOrAbove => User.IsInRole("manager") || User.IsInRole("hr-admin")
         || User.IsInRole("tenant-admin") || User.IsInRole("platform-admin")
-        || User.IsInRole("ext-employee-viewAll")
+        || User.IsInRole("ext-employee-viewAll") || User.IsInRole("ext-employee-create")
+        || User.IsInRole("ext-compensation-view")
+        // Muhasebe, odenecek masraf beyanlarinin kime ait oldugunu gorebilmeli.
+        || User.IsInRole("accounting") || User.IsInRole("ext-expense-markPaid")
         || User.Claims.Any(c => c.Type == System.Security.Claims.ClaimTypes.Role
             && c.Value.StartsWith("ext-", StringComparison.Ordinal)
             && c.Value.EndsWith("-manage", StringComparison.Ordinal));
@@ -204,6 +207,24 @@ public class EmployeesController : ControllerBase
         // bir kiracidaki ayni adres engel degildir (bkz. kiraci bazli benzersiz indeks).
         if (await _db.Employees.AnyAsync(e => e.Email.ToLower() == normalizedEmail))
             return Conflict(new { message = "Bu e-posta ile kayıtlı bir çalışan zaten var" });
+
+        // Plan kotasi: kiracinin calisan siniri (platform_tenants.MaxEmployees, plan
+        // degisikliginde platform yoneticisi belirler) paylasilan veritabanindan okunur.
+        // Onceden kayit ekrani "kotayi astiginizda yukseltme gerekir" diyordu ama
+        // hicbir servis siniri uygulamiyordu.
+        var tenantSlug = _db.CurrentTenantSlug;
+        if (!string.IsNullOrEmpty(tenantSlug))
+        {
+            var maxEmployees = await _db.Database
+                .SqlQuery<int>($@"SELECT ""MaxEmployees"" AS ""Value"" FROM platform_tenants WHERE ""Slug"" = {tenantSlug}")
+                .FirstOrDefaultAsync();
+            if (maxEmployees > 0 && await _db.Employees.CountAsync() >= maxEmployees)
+                return Conflict(new
+                {
+                    message = $"Çalışan kotanız dolu ({maxEmployees}). Daha fazla çalışan eklemek için " +
+                              "planınızın yükseltilmesi gerekir.",
+                });
+        }
 
         var employee = new Employee
         {

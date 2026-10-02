@@ -23,7 +23,7 @@ public class OutboxPublisher : BackgroundService
         _services = services;
         _logger = logger;
         _bootstrapServers = Environment.GetEnvironmentVariable("KAFKA_BOOTSTRAP_SERVERS")
-            ?? "172.33.55.5:9092";
+            ?? "kafka:9092";
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)

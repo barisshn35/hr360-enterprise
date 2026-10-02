@@ -39,11 +39,11 @@ public class ApprovalWorkflowClient
         _http = http;
         _httpContextAccessor = httpContextAccessor;
         _employeeServiceUrl = (Environment.GetEnvironmentVariable("EMPLOYEE_SERVICE_URL")
-            ?? "http://172.33.55.2:5002").TrimEnd('/');
+            ?? "http://employee-service:8080").TrimEnd('/');
         _organizationServiceUrl = (Environment.GetEnvironmentVariable("ORGANIZATION_SERVICE_URL")
-            ?? "http://172.33.55.2:5001").TrimEnd('/');
+            ?? "http://organization-service:8080").TrimEnd('/');
         _workflowServiceUrl = (Environment.GetEnvironmentVariable("WORKFLOW_SERVICE_URL")
-            ?? "http://172.33.55.3:5003").TrimEnd('/');
+            ?? "http://workflow-service:8080").TrimEnd('/');
     }
 
     private HttpRequestMessage Build(HttpMethod method, string baseUrl, string path, object? body = null)
@@ -115,22 +115,6 @@ public class ApprovalWorkflowClient
     }
 
     /// <summary>
-    /// Istegi yapan kullanicinin kendi calisan kaydinin ID'sini bulur -
-    /// "kendi actigi talebi kendi sonuclandiramaz" (self-approval engeli)
-    /// ve "employee rolu yalnizca kendi kaydini sorgulayabilir" (GetAll
-    /// IDOR duzeltmesi) kontrollerinde kullanilir.
-    ///
-    /// employee-service'teki /api/employees/me ucunu kullanir (JWT'nin
-    /// KeycloakUserId'siyle eslesen kaydi doner). Onceki surum JWT email'ini
-    /// employee.Email ile eslestiriyordu - ama bir kullanicinin Keycloak
-    /// giris e-postasi ile employee kaydindaki e-postasi FARKLI olabiliyor
-    /// (orn. sirket kaydi kisisel e-postayla acilmis, Keycloak girisi
-    /// kurumsal e-postayla); bu durumda email sorgusu sessizce bos donuyor,
-    /// self-approval kontrolu de sessizce atlaniyordu (bugun canli ortamda
-    /// dogrulandi). /me, KeycloakUserId uzerinden eslestigi icin bu sorunu
-    /// tasimiyor.
-    /// </summary>
-    /// <summary>
     /// Talep sahibinin iptal ettigi kaydin onay akisini kapatir (cagiranin jetonuyla).
     /// Basarisiz olursa false - kayit yine iptal edilir; akisin karari zaten
     /// yok sayilir (tuketici yalnizca Submitted kayitlara uygular).
@@ -146,6 +130,22 @@ public class ApprovalWorkflowClient
         catch (Exception) { return false; }
     }
 
+    /// <summary>
+    /// Istegi yapan kullanicinin kendi calisan kaydinin ID'sini bulur -
+    /// "kendi actigi talebi kendi sonuclandiramaz" (self-approval engeli)
+    /// ve "employee rolu yalnizca kendi kaydini sorgulayabilir" (GetAll
+    /// IDOR duzeltmesi) kontrollerinde kullanilir.
+    ///
+    /// employee-service'teki /api/employees/me ucunu kullanir (JWT'nin
+    /// KeycloakUserId'siyle eslesen kaydi doner). Onceki surum JWT email'ini
+    /// employee.Email ile eslestiriyordu - ama bir kullanicinin Keycloak
+    /// giris e-postasi ile employee kaydindaki e-postasi FARKLI olabiliyor
+    /// (orn. sirket kaydi kisisel e-postayla acilmis, Keycloak girisi
+    /// kurumsal e-postayla); bu durumda email sorgusu sessizce bos donuyor,
+    /// self-approval kontrolu de sessizce atlaniyordu (bugun canli ortamda
+    /// dogrulandi). /me, KeycloakUserId uzerinden eslestigi icin bu sorunu
+    /// tasimiyor.
+    /// </summary>
     public async Task<Guid?> FindMyEmployeeIdAsync(CancellationToken ct)
     {
         try

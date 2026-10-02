@@ -3,7 +3,7 @@
 #
 # Kullanim:
 #   scripts/keycloak-admin-access.sh open
-#       Varsayilan. Panel ana adreste herkese acik (PUBLIC_URL/auth/admin).
+#       Varsayilan. Panel ana adreste herkese acik (PUBLIC_ORIGIN/auth/admin).
 #
 #   scripts/keycloak-admin-access.sh ip 203.0.113.10,10.20.0.0/16
 #       Panel ana adreste yalnizca verilen IP/CIDR'lere acik (nginx allow/deny).
@@ -11,7 +11,7 @@
 #
 #   scripts/keycloak-admin-access.sh port [IP/CIDR,...]
 #       Panel ana adreste TAMAMEN kapali; yalnizca ayri porttan
-#       (KEYCLOAK_ADMIN_PORT, varsayilan 8090) yayinlanir. Bu portu firewall ile
+#       (KEYCLOAK_ADMIN_PORT, varsayilan 8090, duz HTTP) yayinlanir. Bu portu firewall ile
 #       yonetim IP'lerine acin (ornekler: docs/runbooks/keycloak-yonetim-paneli-erisimi.md).
 #       IP listesi verilirse nginx ayrica o portta da kisitlar (iki katman).
 #
@@ -39,6 +39,11 @@ PORT_FILE="$DIR/port-access.conf"
 
 die() { echo "HATA: $*" >&2; exit 1; }
 [ -f "$ENV_FILE" ] || die ".env bulunamadi; once install.sh calistirin."
+
+# Docker grup yetkisi bu oturumda henuz aktif degilse sudo ile devam edilir.
+if ! declare -F docker >/dev/null && ! docker info >/dev/null 2>&1 && sudo docker info >/dev/null 2>&1; then
+  docker() { command sudo docker "$@"; }
+fi
 mkdir -p "$DIR"
 
 set_env() { # set_env KEY VALUE
@@ -79,7 +84,8 @@ public_origin() {
 
 apply() {
   echo "Gateway ve Keycloak guncelleniyor..."
-  docker compose up -d keycloak gateway >/dev/null 2>&1
+  docker compose up -d keycloak gateway >/dev/null 2>"${TMPDIR:-/tmp}/hr360-compose.err" \
+    || die "docker compose up basarisiz: $(tail -3 "${TMPDIR:-/tmp}/hr360-compose.err")"
   # Kural dosyasi degistiginde gateway konteyneri yeniden olusmayabilir; nginx'e
   # yeni kurali okutmak icin once dogrula, sonra yeniden yukle.
   docker compose exec -T gateway nginx -t >/dev/null 2>&1 || die "nginx kurali gecersiz; degisiklik uygulanmadi"
@@ -92,19 +98,24 @@ apply() {
 # gider ve orasi kapali oldugu icin giris ekrani hic acilmaz. Bos = ana adres.
 set_master_frontend() {
   local url="$1"
+  # Yonetim girisi (master realm) icin SSL kurali: ayri port (8090) duz HTTP
+  # oldugundan port modunda "none" (erisim firewall/IP listesiyle kisitli olmali);
+  # diger modlarda ana adresin durumuna uyar (HTTPS aciksa "external").
+  local ssl=none
+  if [ -z "$url" ] && [ -f deploy/nginx/tls/listen.conf ]; then ssl=external; fi
   echo "Keycloak hazir olana kadar bekleniyor..."
   for _ in $(seq 1 60); do
     docker compose exec -T keycloak sh -c 'exec 3<>/dev/tcp/127.0.0.1/8080' >/dev/null 2>&1 && break
     sleep 3
   done
-  docker compose exec -T -e URL="$url" keycloak sh -c '
+  docker compose exec -T -e URL="$url" -e SSL="$ssl" keycloak sh -c '
     K=/opt/keycloak/bin/kcadm.sh; C=/tmp/kcadm-access.config
     for i in $(seq 1 30); do
       $K config credentials --config $C --server http://127.0.0.1:8080/auth --realm master \
         --user "$KEYCLOAK_ADMIN" --password "$KEYCLOAK_ADMIN_PASSWORD" >/dev/null 2>&1 && break
       sleep 3
     done
-    $K update realms/master --config $C -s "attributes.frontendUrl=$URL" && rm -f $C
+    $K update realms/master --config $C -s "attributes.frontendUrl=$URL" -s "sslRequired=$SSL" && rm -f $C
   ' || die "master realm adresi guncellenemedi"
 }
 
@@ -145,8 +156,11 @@ case "$mode" in
     fi
     port="$(get_env KEYCLOAK_ADMIN_PORT)"; [ -n "$port" ] || port=8090
     origin="$(public_origin)"
-    # Yonetim konsolunun adresi: ana kokenin port'suz hali + yonetim portu.
-    admin_origin="$(echo "$origin" | sed -E 's#^(https?://[^/:]+)(:[0-9]+)?.*$#\1#'):${port}"
+    # Yonetim konsolunun adresi: ana adresin host'u + yonetim portu. Bu port nginx'te
+    # duz HTTP dinler (TLS yok); ana adres HTTPS olsa bile sema http'dir. Onceden
+    # semayi ana adresten aldigi icin HTTPS acikken https://host:8090 uretiyordu ve
+    # yonetim konsolu hic acilmiyordu.
+    admin_origin="http://$(echo "$origin" | sed -E 's#^https?://([^/:]+).*$#\1#'):${port}"
     set_env KEYCLOAK_ADMIN_MODE port
     set_env KEYCLOAK_ADMIN_ALLOWED_IPS "$ips"
     set_env KEYCLOAK_ADMIN_PORT "$port"

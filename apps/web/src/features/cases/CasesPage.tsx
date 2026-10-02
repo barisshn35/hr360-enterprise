@@ -83,7 +83,7 @@ function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => void })
       open={open}
       onClose={onClose}
       title="Yeni İK vakası"
-      note="Vaka açıldığında İK ekibine düşer; sorumluyu sonra atayabilirsiniz."
+      note="Vaka açıldığında İK ekibine düşer; İK bir sorumlu atar."
       size="lg"
       footer={
         <>

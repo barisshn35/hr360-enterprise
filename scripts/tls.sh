@@ -22,11 +22,15 @@
 #   scripts/tls.sh disable
 #       HTTPS'i kapatir, adres http://<host>[:GATEWAY_PORT] olur.
 #
+#   scripts/tls.sh external --host hr.sirket.com [--port 443]
+#       TLS'i gateway'in ONUNDEKI bir yuk dengeleyici / ters vekil sonlandiriyorsa:
+#       gateway HTTP kalir, ama uygulama adresi ve Keycloak ayarlari https://<host>
+#       olarak guncellenir. Dengeleyici X-Forwarded-Proto: https gondermelidir.
+#
 #   scripts/tls.sh status
 #
-# NOT: Gateway'in onunde TLS'i zaten sonlandiran bir yuk dengeleyici varsa bu betigi
-# KULLANMAYIN (HTTP->HTTPS yonlendirmesi donguye girer); bunun yerine .env'de
-# PUBLIC_ORIGIN'i https://... yapip "docker compose up -d" calistirin.
+# NOT: Gateway'in onunde TLS'i zaten sonlandiran bir yuk dengeleyici varsa "enable"
+# KULLANMAYIN (HTTP->HTTPS yonlendirmesi donguye girer); "external" kullanin.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 # Docker Compose kabuktaki degiskenleri .env'e tercih eder; kabukta eski degerler
@@ -37,8 +41,38 @@ ENV_FILE=.env
 DIR=deploy/nginx/tls
 LE_DIR=deploy/letsencrypt
 ACME_DIR=deploy/nginx/acme
-die() { echo "HATA: $*" >&2; exit 1; }
+# "enable" degisiklik yaparken hata olursa yarim kalan ayarlar geri alinir
+# (onceden nginx'e TLS ayari yazilip sonraki adim basarisiz olunca site
+# tamamen erisilemez ya da giris bozuk kalabiliyordu).
+ROLLBACK=""
+die() {
+  echo "HATA: $*" >&2
+  if [ -n "$ROLLBACK" ]; then
+    echo "Degisiklikler geri aliniyor..." >&2
+    rm -f "$DIR/listen.conf" "$DIR/redirect.conf"
+    [ -d "$ROLLBACK/tls" ] && cp -a "$ROLLBACK/tls/." "$DIR/" 2>/dev/null
+    [ -f "$ROLLBACK/env" ] && cp "$ROLLBACK/env" "$ENV_FILE"
+    ROLLBACK=""
+    docker compose up -d >/dev/null 2>&1 || true
+    docker compose exec -T gateway nginx -s reload >/dev/null 2>&1 || true
+  fi
+  exit 1
+}
 [ -f "$ENV_FILE" ] || die ".env bulunamadi; once install.sh calistirin."
+
+# Docker grup yetkisi bu oturumda henuz aktif degilse (yeni kurulumdan hemen sonra)
+# sudo ile devam edilir. install.sh kendi sarmalayicisini zaten disari aktarir.
+if ! declare -F docker >/dev/null && ! docker info >/dev/null 2>&1 && sudo docker info >/dev/null 2>&1; then
+  docker() { command sudo docker "$@"; }
+fi
+
+begin_change() {
+  ROLLBACK="$(mktemp -d)"
+  cp "$ENV_FILE" "$ROLLBACK/env"
+  mkdir -p "$ROLLBACK/tls"
+  cp -a "$DIR/." "$ROLLBACK/tls/" 2>/dev/null || true
+}
+end_change() { [ -n "$ROLLBACK" ] && rm -rf "$ROLLBACK"; ROLLBACK=""; }
 mkdir -p "$DIR" "$LE_DIR" "$ACME_DIR"
 
 set_env() {
@@ -69,15 +103,19 @@ configure_keycloak() {
     CID=$($K get clients -r hr360 -q clientId=hr360-web --fields id --format csv --noquotes --config $C)
     $K update clients/$CID -r hr360 --config $C \
       -s "redirectUris=[\"$ORIGIN/*\"]" -s "webOrigins=[\"$ORIGIN\"]" \
-      -s "attributes.\"post.logout.redirect.uris\"=$ORIGIN/*"
-    $K update realms/hr360 --config $C -s "sslRequired=$SSL"
+      -s "attributes.\"post.logout.redirect.uris\"=$ORIGIN/*" || exit 1
+    $K update realms/hr360 --config $C -s "sslRequired=$SSL" || exit 1
+    # Yonetim realm i (yonetici girisi) de ayni kurala uyar; aksi halde HTTPS
+    # yokken genel IP den yonetim paneli "HTTPS required" der.
+    $K update realms/master --config $C -s "sslRequired=$SSL" || exit 1
     rm -f $C
   ' || die "Keycloak ayarlari guncellenemedi"
 }
 
 apply_all() {
   echo "Servisler yeni adresle guncelleniyor..."
-  docker compose up -d >/dev/null 2>&1
+  docker compose up -d >/dev/null 2>"${TMPDIR:-/tmp}/hr360-compose.err" \
+    || die "docker compose up basarisiz: $(tail -3 "${TMPDIR:-/tmp}/hr360-compose.err")"
   docker compose exec -T gateway nginx -t >/dev/null 2>&1 || die "nginx yapilandirmasi gecersiz"
   docker compose exec -T gateway nginx -s reload >/dev/null 2>&1
   wait_keycloak
@@ -94,13 +132,16 @@ refresh_admin_access() {
 # Duz HTTP istekleri HTTPS'e yonlendirilir; Let's Encrypt dogrulama yolu haric
 # (yenileme sirasinda da HTTP'den sunulabilsin).
 write_redirect() {
-  cat > "$DIR/redirect.conf" <<'EOF'
+  # HTTPS 443 disinda bir porttaysa yonlendirme o porta yapilir.
+  local target='https://$host$request_uri'
+  [ "${1:-443}" = 443 ] || target="https://\$host:${1}\$request_uri"
+  cat > "$DIR/redirect.conf" <<EOF
 # scripts/tls.sh tarafindan uretildi: duz HTTP istekleri HTTPS'e yonlendirilir.
-set $hr360_to_https "";
-if ($scheme = http) { set $hr360_to_https 1; }
-if ($uri ~ ^/\.well-known/acme-challenge/) { set $hr360_to_https ""; }
-if ($hr360_to_https = 1) {
-    return 301 https://$host$request_uri;
+set \$hr360_to_https "";
+if (\$scheme = http) { set \$hr360_to_https 1; }
+if (\$uri ~ ^/\\.well-known/acme-challenge/) { set \$hr360_to_https ""; }
+if (\$hr360_to_https = 1) {
+    return 301 ${target};
 }
 EOF
 }
@@ -169,14 +210,16 @@ case "$cmd" in
     if [ -n "$email" ] && [[ ! "$email" =~ ^[^@[:space:]]+@[^@[:space:]]+[.][^@[:space:]]+$ ]]; then
       die "gecersiz e-posta: $email"
     fi
+    begin_change
     if [ "$le" = 1 ]; then
       letsencrypt_issue "$host" "$email" "$staging"
       certfile="/etc/letsencrypt/live/$host/fullchain.pem"; keyfile="/etc/letsencrypt/live/$host/privkey.pem"
       # Kendi/kendinden imzali sertifikadan kalan dosyalar kullanilmaz.
       rm -f "$DIR/fullchain.pem" "$DIR/privkey.pem"
     elif [ "$self" = 1 ]; then
+      san="DNS:$host"; [[ "$host" =~ ^[0-9.]+$ ]] && san="IP:$host"
       openssl req -x509 -newkey rsa:2048 -nodes -days 365 -subj "/CN=$host" \
-        -addext "subjectAltName=DNS:$host" \
+        -addext "subjectAltName=$san" \
         -keyout "$DIR/privkey.pem" -out "$DIR/fullchain.pem" >/dev/null 2>&1 \
         || die "sertifika uretilemedi"
       echo "Kendinden imzali sertifika uretildi ($host, 365 gun)."
@@ -187,6 +230,10 @@ case "$cmd" in
     if [ "$le" != 1 ]; then
       chmod 600 "$DIR/privkey.pem"
       openssl x509 -in "$DIR/fullchain.pem" -noout >/dev/null 2>&1 || die "sertifika okunamadi"
+      # Anahtar sertifikaya ait degilse nginx hic acilmaz ve site tamamen kapanir.
+      cert_pub="$(openssl x509 -in "$DIR/fullchain.pem" -noout -pubkey 2>/dev/null | openssl sha256)"
+      key_pub="$(openssl pkey -in "$DIR/privkey.pem" -pubout 2>/dev/null | openssl sha256)"
+      [ -n "$cert_pub" ] && [ "$cert_pub" = "$key_pub" ] || die "ozel anahtar bu sertifikaya ait degil"
       certfile=/etc/nginx/tls/fullchain.pem; keyfile=/etc/nginx/tls/privkey.pem
     fi
 
@@ -198,7 +245,7 @@ ssl_certificate_key ${keyfile};
 ssl_protocols       TLSv1.2 TLSv1.3;
 ssl_session_cache   shared:tls:10m;
 EOF
-    write_redirect
+    write_redirect "$port"
     if [ "$port" = "443" ]; then origin="https://$host"; else origin="https://$host:$port"; fi
     set_env GATEWAY_TLS_BIND 0.0.0.0
     set_env GATEWAY_TLS_PORT "$port"
@@ -215,8 +262,36 @@ EOF
     fi
     apply_all
     configure_keycloak "$origin" external
+    end_change
     refresh_admin_access
     echo "HTTPS acik: $origin"
+    ;;
+  external)
+    host=""; port=443
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --host) host="$2"; shift 2 ;;
+        --port) port="$2"; shift 2 ;;
+        *) die "bilinmeyen secenek: $1" ;;
+      esac
+    done
+    [ -n "$host" ] || die "--host zorunlu (tarayicida kullanilacak alan adi)"
+    [[ "$host" =~ ^[A-Za-z0-9.-]+$ ]] || die "gecersiz alan adi: $host"
+    [[ "$port" =~ ^[0-9]+$ ]] || die "gecersiz port: $port"
+    begin_change
+    rm -f "$DIR/listen.conf" "$DIR/redirect.conf"
+    if [ "$port" = "443" ]; then origin="https://$host"; else origin="https://$host:$port"; fi
+    set_env GATEWAY_TLS_BIND 127.0.0.1
+    set_env PUBLIC_URL "https://$host"
+    set_env PUBLIC_ORIGIN "$origin"
+    set_env COMPOSE_PROFILES ""
+    set_env TLS_MODE external
+    docker compose --profile letsencrypt rm -sf certbot >/dev/null 2>&1 || true
+    apply_all
+    configure_keycloak "$origin" external
+    end_change
+    refresh_admin_access
+    echo "Adres $origin olarak ayarlandi (TLS dengeleyicide sonlaniyor; gateway HTTP)."
     ;;
   disable)
     rm -f "$DIR/listen.conf" "$DIR/redirect.conf"
@@ -237,7 +312,9 @@ EOF
     echo "HTTPS kapali: $origin"
     ;;
   status)
-    if [ -f "$DIR/listen.conf" ]; then
+    if [ "$(get_env TLS_MODE)" = external ]; then
+      echo "HTTPS: dengeleyicide ($(get_env PUBLIC_ORIGIN)) - external"
+    elif [ -f "$DIR/listen.conf" ]; then
       echo "HTTPS: acik ($(get_env PUBLIC_ORIGIN)) - $(get_env TLS_MODE)"
       crt="$DIR/fullchain.pem"
       if [ "$(get_env TLS_MODE)" = letsencrypt ]; then
@@ -254,5 +331,5 @@ EOF
       echo "HTTPS: kapali ($(get_env PUBLIC_ORIGIN))"
     fi
     ;;
-  *) die "kullanim: $0 enable|disable|status" ;;
+  *) die "kullanim: $0 enable|external|disable|status" ;;
 esac

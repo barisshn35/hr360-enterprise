@@ -10,8 +10,9 @@ import { WorkflowStatusBadge } from '@/components/ui/ModuleBadges'
 import { CenteredSpinner, ErrorState } from '@/components/ui/States'
 import { useToast } from '@/components/ui/Toast'
 import { useAuth } from '@/auth/useAuth'
+import { isHr } from '@/auth/roles'
 import { workflowApi } from '@/api/workflows'
-import { qk, useEmployees, useWorkflow } from '@/api/queries'
+import { qk, useEmployees, useWorkflow, useMyEmployeeId } from '@/api/queries'
 import { workflowTypeLabels, type ApprovalStep } from '@/api/types'
 import { formatDateTime, formatRelativeToNow, fullName } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -21,7 +22,8 @@ import { DelegateModal } from './DelegateModal'
 
 export function WorkflowDetailPage() {
   const { workflowId } = useParams<{ workflowId: string }>()
-  const { can } = useAuth()
+  const { can, roles } = useAuth()
+  const { employeeId: myEmployeeId } = useMyEmployeeId()
   const toast = useToast()
   const queryClient = useQueryClient()
 
@@ -101,6 +103,17 @@ export function WorkflowDetailPage() {
   const late = data.slaDueAt ? new Date(data.slaDueAt).getTime() < Date.now() : false
   const isOpen = data.status === 'Pending'
   const currentStep = steps.find((s) => s.id === activeStepId(steps))
+  // Backend kuralları: talep sahibi kendi talebine karar veremez; İK dışındakiler
+  // yalnızca kendilerine (ya da vekil olarak kendilerine devredilmiş) adıma karar
+  // verir ve yalnızca kendi adımlarını devredebilir.
+  const hr = isHr(roles)
+  const isRequester = Boolean(myEmployeeId) && data.requesterEmployeeId === myEmployeeId
+  const myStep =
+    Boolean(myEmployeeId) &&
+    (currentStep?.approverEmployeeId === myEmployeeId || currentStep?.delegatedToEmployeeId === myEmployeeId)
+  const canDecide = can('workflow:decide') && isOpen && Boolean(myEmployeeId) && !isRequester && (hr || myStep)
+  const canDelegate =
+    can('workflow:decide') && isOpen && (hr || (Boolean(myEmployeeId) && currentStep?.approverEmployeeId === myEmployeeId))
   const title = data.subject || workflowTypeLabels[data.type]
 
   return (
@@ -156,8 +169,8 @@ export function WorkflowDetailPage() {
             <ApprovalChain
               steps={steps}
               nameOf={nameOf}
-              canDecide={can('workflow:decide') && isOpen}
-              canDelegate={can('workflow:decide') && isOpen}
+              canDecide={canDecide}
+              canDelegate={canDelegate}
               onDecide={(step, approve) => setDecision({ step, approve })}
               onDelegate={setDelegateStep}
               busyStepId={decide.isPending ? decision?.step.id : null}
@@ -236,6 +249,7 @@ export function WorkflowDetailPage() {
 
       <DelegateModal
         step={delegateStep}
+        requesterEmployeeId={data.requesterEmployeeId}
         onClose={() => setDelegateStep(null)}
         pending={delegate.isPending}
         onConfirm={(delegateToEmployeeId, comment) => {

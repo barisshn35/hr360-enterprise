@@ -29,7 +29,7 @@ public class EmployeeDirectoryClient
         _http = http;
         _httpContextAccessor = httpContextAccessor;
         _baseUrl = (Environment.GetEnvironmentVariable("EMPLOYEE_SERVICE_URL")
-            ?? "http://172.33.55.2:5002").TrimEnd('/');
+            ?? "http://employee-service:8080").TrimEnd('/');
     }
 
     private HttpRequestMessage Build(HttpMethod method, string path, object? body = null)

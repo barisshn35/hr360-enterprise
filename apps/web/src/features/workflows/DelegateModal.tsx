@@ -12,11 +12,13 @@ export function DelegateModal({
   onClose,
   onConfirm,
   pending,
+  requesterEmployeeId,
 }: {
   step: ApprovalStep | null
   onClose: () => void
   onConfirm: (delegateToEmployeeId: string, comment?: string) => void
   pending: boolean
+  requesterEmployeeId?: string
 }) {
   const employees = useEmployees()
   const [target, setTarget] = useState('')
@@ -31,13 +33,14 @@ export function DelegateModal({
     }
   }, [step])
 
-  // Adımın mevcut onaycısı devir hedefi olarak seçilemez.
+  // Adımın mevcut onaycısı ve talep sahibi devir hedefi olarak seçilemez (backend reddeder).
+  // Not: hedefin karar verebilmesi için Yönetici rolü olması gerekir.
   const candidates = useMemo(
     () =>
       (employees.data ?? [])
-        .filter((e) => e.id !== step?.approverEmployeeId)
+        .filter((e) => e.id !== step?.approverEmployeeId && e.id !== requesterEmployeeId)
         .map((e) => ({ value: e.id, label: `${fullName(e)} — ${e.email}` })),
-    [employees.data, step],
+    [employees.data, step, requesterEmployeeId],
   )
 
   if (!step) return null

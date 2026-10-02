@@ -15,24 +15,32 @@ npm run dev
 ```
 
 `http://localhost:5173` açılır. Vite dev sunucusu `/api`, `/ml`, `/auth` ve `/gateway`
-isteklerini `https://hr360.local` adresine proxy'ler — **VPN gerekmez**.
+isteklerini çalışan bir HR360 kurulumuna proxy'ler. Varsayılan hedef aynı makinedeki
+`install.sh` kurulumudur (`http://localhost`); başka bir kurulum için
+`VITE_DEV_PROXY_TARGET` değişkenini ayarlayın.
+
+Backend olmadan çalışmak için `npm run dev:mock` kullanın: API ve giriş tarayıcıda
+taklit edilir (MSW).
 
 > **Önkoşul:** Keycloak `hr360` realm'indeki `hr360-web` client'ının *Valid redirect URIs*
-> listesinde `http://localhost:5173/*` bulunmalı; aksi hâlde sessiz SSO isteği `400` döner
-> ve uygulama giriş ekranında kalır (konsola uyarı basılır).
+> listesinde `http://localhost:5173/*` bulunmalı. Kurulum yalnızca kendi adresini ekler;
+> bu adresi Keycloak yönetim panelinden elle ekleyin. Aksi hâlde sessiz SSO isteği `400`
+> döner ve uygulama giriş ekranında kalır (konsola uyarı basılır).
 
 ## Komutlar
 
 | Komut | Açıklama |
 |-------|----------|
 | `npm run dev` | Geliştirme sunucusu (proxy'li) |
+| `npm run dev:mock` | Backend'siz geliştirme (taklit API ve giriş) |
 | `npm run build` | Tip kontrolü + prod build → `dist/` |
+| `npm run build:mock` | Taklit API'li demo build |
 | `npm run preview` | Build çıktısını yerelde servis eder |
 | `npm run lint` | Yalnızca tip kontrolü |
 
 ## Ortam değişkenleri
 
-`.env.example` dosyasını `.env` olarak kopyalayın.
+Gerekirse `apps/web/.env.local` dosyasında tanımlayın (dosya git'e girmez).
 
 | Değişken | Varsayılan | Açıklama |
 |----------|-----------|----------|
@@ -40,7 +48,8 @@ isteklerini `https://hr360.local` adresine proxy'ler — **VPN gerekmez**.
 | `VITE_KEYCLOAK_REALM` | `hr360` | Realm adı |
 | `VITE_KEYCLOAK_CLIENT_ID` | `hr360-web` | Public client (PKCE S256) |
 | `VITE_API_BASE` | *(boş)* | Boşsa aynı origin kullanılır |
-| `VITE_DEV_PROXY_TARGET` | `https://hr360.local` | Yalnızca `npm run dev` |
+| `VITE_DEV_PROXY_TARGET` | `http://localhost` | Yalnızca `npm run dev` |
+| `VITE_MOCK_API` / `VITE_MOCK_AUTH` | `false` | `true` ise API / giriş taklit edilir (`--mode mock`) |
 
 ## Çok kiracılılık
 
@@ -90,7 +99,7 @@ src/
                 Field, Modal, Tabs, Progress, StatusBadge, ModuleBadges, States)
     layout/     AppShell, SidebarNav, Topbar, PageHeader, CommandPalette
   motion/       Hareket sözlüğü (Reveal, Stagger, CountUp, Magnetic, useRevealed…)
-  features/     Ekran modülleri: landing, auth, registration, pricing, dashboard,
+  features/     Ekran modülleri: auth, registration, pricing, dashboard,
                 organization, employees, workflows, leave, recruitment, onboarding,
                 timeshift, performance, learning, compensation, expense, cases,
                 documents, notification, settings, platform
@@ -98,18 +107,12 @@ src/
   styles/       Tasarım tokenları (Tailwind v4 @theme) + koyu tema
 ```
 
-### Değiştirilmeyen dosyalar
+### Tasarım tokenları
 
-Devir paketiyle gelen üç dosya **bit bit korunmuştur**:
-
-- `src/styles/index.css` — tasarım tokenları
-- `src/components/layout/SidebarNav.tsx` — navigasyon + TenantSwitcher
-- `src/auth/roles.ts` — izin matrisi
-
-21st.dev bileşenleri kurulurken `shadcn` CLI her seferinde `index.css`'e kendi
-değişkenlerini yazmaya çalıştı; her kurulumdan sonra dosya snapshot'la karşılaştırılıp
-geri alındı. Bileşenlerin ihtiyaç duyduğu ek renkler token dosyasına eklenmek yerine
-bileşen tarafında mevcut token'lara çevrildi.
+Renkler ve boyutlar `src/styles/index.css` içinde tek yerde tanımlıdır (varsayılan ana
+renk zümrüt `#0b8f63`; Enterprise kiracılar kendi ana rengini çalışma zamanında uygular,
+bkz. `src/lib/tenant-brand.ts`). 21st.dev bileşenlerinin ihtiyaç duyduğu ek renkler token
+dosyasına eklenmek yerine bileşen tarafında mevcut token'lara çevrildi.
 
 ### Hareket katmanı
 
@@ -117,8 +120,7 @@ bileşen tarafında mevcut token'lara çevrildi.
 (aurora, şerit, ışıltı, dönen kenarlık) CSS'te; giriş/çıkış ve scroll'a bağlı
 hareketler `motion/react` tarafında.
 
-**`index.css` dokunulmadığı için keyframe'ler ayrı bir dosyada** ve `main.tsx`
-üzerinden yükleniyor; o dosya yalnızca hareket tanımlar, hiçbir renk token'ı
+Keyframe'ler ayrı bir dosyada ve `main.tsx` üzerinden yükleniyor; o dosya yalnızca hareket tanımlar, hiçbir renk token'ı
 tanımlamaz — hepsini `index.css`'ten okur.
 
 Primitifler: `Reveal`, `Stagger`/`StaggerItem`, `WordReveal`, `CountUp`,
@@ -136,36 +138,27 @@ boyutlandırma dinleyicileri, ilk saniyede kare yoklaması ve görünene kadar
 
 ### Liste deseni
 
-On üç ekran tek `DataTable` bileşenini kullanır: arama (Türkçe karakter duyarlı),
+Liste ekranlarının tamamı tek `DataTable` bileşenini kullanır: arama (Türkçe karakter duyarlı),
 sütun bazlı sıralama, açılır filtreler, sayfalama, satır seçimi, satır aksiyon menüsü,
 CSV dışa aktarma (BOM + noktalı virgül — Excel Türkçe yerelinde bozulmaz) ve
 **yükleme / boş / hata** durumlarının üçü de gömülü.
 
 ## Bilinen sınırlar
 
-- **Oturum → çalışan eşlemesi yok.** Backend'de `/me` benzeri bir uç bulunmadığı için
-  Keycloak `sub` değeri `employeeId` ile eşleşmiyor. "Benim iznim / benim puantajım"
-  gibi ekranlarda çalışan açıkça seçilir (`EmployeePicker`). Backend böyle bir uç
-  eklerse seçici varsayılan değerle doldurulup gizlenebilir.
+- **Oturum → çalışan eşlemesi** `GET /api/employee/employees/me` ile yapılır
+  (`useMyEmployeeId`). Çalışan kaydına bağlı olmayan hesaplarda (ör. şirket yöneticisi
+  hesabı) "benim" ekranları "kayıt yok" durumunu gösterir.
 - **Doküman modülü dosya tutmaz** — yükleme ucu backend'de yok; ekran yalnızca hangi
   çalışanda hangi belgenin bulunduğunu kayda geçirir.
 - **Devir riski modeli** (`hr360-attrition-risk`) özellik şeması belgelenmediği için
   değerler elle giriliyor; yalnızca kıdem alanı kayıttan doldurulabiliyor.
 - **Plan fiyatları tanımlı değil.** Kartların başlık rakamı çalışan kotası. Fiyat
   netleşince `src/features/pricing/plans.ts` içindeki `priceLabel` alanı doldurulur.
-- `tenant:manage` izni matriste tanımlı ama henüz bir ekrana bağlı değil (şirket kendi
-  ayarlarını düzenleyemiyor; yalnızca platform yöneticisi düzenliyor).
+- **Plan bazlı modül kısıtı yok.** Fiyat kartları bazı modülleri Standard ve üstüne
+  ayırır; arayüz ve backend bunu henüz uygulamaz (yalnızca marka/SMTP Enterprise'a ve
+  çalışan kotası plana bağlıdır).
 
 ## Deployment
 
-```bash
-# app-01 ve app-02'de
-cd /opt/hr360/web
-rm -rf ./* && unzip -o /tmp/<zip> -d .
-docker build -t hr360-web .
-docker stop hr360-web && docker rm hr360-web
-docker run -d --name hr360-web --restart unless-stopped -p 8081:8080 hr360-web
-```
-
-Gateway route'ları tanımlı; `/api/tenant/*` yönlendirmesinin de çalıştığı canlıda
-doğrulandı (`slug-available` ucu `200` dönüyor).
+Web arayüzü kök dizindeki `docker-compose.yml` içinde `web` servisi olarak build edilir
+ve gateway'in arkasında çalışır; ayrı bir kurulum adımı yoktur (`./install.sh`).

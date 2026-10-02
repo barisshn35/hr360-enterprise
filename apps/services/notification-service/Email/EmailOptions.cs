@@ -1,7 +1,8 @@
 namespace NotificationService.Email;
 
 /// <summary>
-/// Brevo SMTP yapilandirmasi. Ortam degiskenlerinden okunur, hicbiri
+/// Platformun varsayilan SMTP yapilandirmasi (install.sh kurulumda sorar; bos
+/// birakilirsa paketteki Mailpit). Kiracinin kendi SMTP'si varsa o kullanilir. Ortam degiskenlerinden okunur, hicbiri
 /// koda gomulmez (bkz. Program.cs).
 /// </summary>
 public class EmailOptions

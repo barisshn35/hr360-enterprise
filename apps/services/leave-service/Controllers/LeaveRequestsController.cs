@@ -22,20 +22,6 @@ public class LeaveRequestsController : ControllerBase
         _approvals = approvals;
     }
 
-    /// <summary>
-    /// Izin taleplerini listeler.
-    ///
-    /// GUVENLIK: bu uc AUTH_ONLY'ydi ve employeeId filtresi disaridan
-    /// serbestce verilebiliyordu - "employee" rolundeki bir kullanici
-    /// employeeId'yi degistirerek BASKA HERHANGI BIR calisanin izin
-    /// taleplerini (tarih, gerekce dahil) gorebiliyordu, hic vermeden de
-    /// TUM sirketin taleplerini cekebiliyordu. performance-service/
-    /// GoalsController'daki ayni desenle simdi:
-    ///   - Yonetici ve ustu: istedigi employeeId'yi (ya da hicbirini)
-    ///     sorgulayabilir.
-    ///   - Calisan: yalnizca KENDI employeeId'sini sorgulayabilir; farkli
-    ///     bir ID verirse ya da hic vermezse 403 doner.
-    /// </summary>
     private bool IsHr => User.IsInRole("hr-admin") || User.IsInRole("tenant-admin")
         || User.IsInRole("platform-admin");
     private bool IsManagerOrAbove => IsHr || User.IsInRole("manager");
@@ -57,6 +43,15 @@ public class LeaveRequestsController : ControllerBase
         return count;
     }
 
+    /// <summary>
+    /// Izin taleplerini listeler.
+    ///
+    /// GUVENLIK: Onceden employeeId filtresi serbestti; bir calisan baskasinin
+    /// taleplerini, filtresiz cagirarak da tum sirketinkileri gorebiliyordu. Simdi:
+    ///   - Yonetici ve ustu: istedigi employeeId'yi (ya da hicbirini) sorgulayabilir.
+    ///   - Calisan: yalnizca kendi taleplerini gorur; employeeId vermezse kendisine
+    ///     sabitlenir, baska birininkini verirse 403 doner.
+    /// </summary>
     [HttpGet]
     public async Task<IActionResult> GetAll(
         [FromQuery] Guid? employeeId, [FromQuery] LeaveRequestStatus? status, CancellationToken ct)
@@ -198,9 +193,13 @@ public class LeaveRequestsController : ControllerBase
         return CreatedAtAction(nameof(GetById), new { id = leave.Id }, leave);
     }
 
-    /// <summary>Workflow karari sonrasi talebi sonuclandirir ve bakiyeyi kesinlestirir.</summary>
+    /// <summary>
+    /// Onay akisi OLMAYAN bir talebi (orn. departman basinin kendi izni, basi atanmamis
+    /// departman) IK'nin elle sonuclandirmasi ve bakiyeyi kesinlestirmesi. Akisi olan
+    /// talepler workflow-service'teki karar uzerinden sonuclanir (409).
+    /// </summary>
     [HttpPost("{id}/resolve")]
-    [Authorize(Policy = "RequireManagerOrAbove")]
+    [Authorize(Policy = "RequireHrAdmin")]
     public async Task<IActionResult> Resolve(Guid id, [FromBody] ResolveLeaveRequest request, CancellationToken ct)
     {
         var leave = await _db.LeaveRequests.FirstOrDefaultAsync(x => x.Id == id);

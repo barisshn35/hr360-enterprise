@@ -174,7 +174,8 @@ export interface FeatureContribution {
 }
 
 export interface ExplainResponse {
-  feature_contributions: FeatureContribution[] | Record<string, number>
+  /** ml-inference giriş sırasına göre `number[]` döner. */
+  feature_contributions: number[] | FeatureContribution[] | Record<string, number>
   base_value: number
 }
 

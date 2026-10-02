@@ -34,7 +34,7 @@ public class KeycloakAdminClient
         _http = http;
         _logger = logger;
         _baseUrl = (Environment.GetEnvironmentVariable("KEYCLOAK_BASE_URL")
-            ?? "http://172.33.55.2:8080").TrimEnd('/');
+            ?? "http://keycloak:8080/auth").TrimEnd('/');
         _realm = Environment.GetEnvironmentVariable("KEYCLOAK_REALM") ?? "hr360";
         _adminUser = Environment.GetEnvironmentVariable("KEYCLOAK_ADMIN_USER")
             ?? throw new InvalidOperationException("KEYCLOAK_ADMIN_USER tanımlı olmalı");

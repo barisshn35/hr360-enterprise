@@ -54,7 +54,7 @@ public class PerformanceMlClient
         _http = http;
         _logger = logger;
         _baseUrl = (Environment.GetEnvironmentVariable("ML_INFERENCE_URL")
-            ?? "http://172.33.55.7:8000").TrimEnd('/');
+            ?? "http://ml-inference:8000").TrimEnd('/');
         _http.Timeout = TimeSpan.FromSeconds(8);
     }
 

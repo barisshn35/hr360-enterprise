@@ -136,10 +136,6 @@ public class ReviewsController : ControllerBase
     }
 
     /// <summary>
-    /// Degerlendirmeyi metrik puanlariyla gonderir.
-    /// Zorunlu metriklerin hepsi puanlanmis olmali.
-    /// </summary>
-    /// <summary>
     /// Degerlendirmeyi TASLAK olarak kaydeder - gondermez.
     ///
     /// Onceki surumde taslak yalnizca tarayicida (localStorage) tutuluyordu;
@@ -200,6 +196,10 @@ public class ReviewsController : ControllerBase
         return Ok(new { review.Id, saved = true, isDraft = true });
     }
 
+    /// <summary>
+    /// Degerlendirmeyi metrik puanlariyla gonderir ve kilitler. Calisanin departmanina
+    /// uygulanan zorunlu metriklerin hepsi puanlanmis olmali; kapali donemde reddedilir.
+    /// </summary>
     [HttpPost("{id}/submit")]
     public async Task<IActionResult> Submit(Guid id, [FromBody] SubmitReviewRequest request, CancellationToken ct)
     {

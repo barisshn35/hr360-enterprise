@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from 'react'
 import { useEmployees } from '@/api/queries'
 import { useAuth } from '@/auth/useAuth'
-import type { Role } from '@/auth/roles'
+import { canListEmployees } from '@/auth/roles'
 import { SelectField } from './Field'
 import { fullName } from '@/lib/format'
 
@@ -31,10 +31,8 @@ export function EmployeePicker({
   includeAllOption?: boolean
 }) {
   const { user, roles } = useAuth()
-  const isManagerOrAbove = roles.some((r) =>
-    (['manager', 'hr-admin', 'tenant-admin', 'platform-admin'] as Role[]).includes(r),
-  )
-  const restrictToSelf = !isManagerOrAbove && !!user?.email
+  // Backend tüm listeyi kimlere veriyorsa onlar herkesi seçebilir; diğerleri yalnızca kendini.
+  const restrictToSelf = !canListEmployees(roles) && !!user?.email
 
   const employees = useEmployees(restrictToSelf ? { email: user!.email! } : undefined)
 

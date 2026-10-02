@@ -77,7 +77,7 @@ export function NewBalanceModal({
       open={open}
       onClose={onClose}
       title="İzin bakiyesi tanımla"
-      note="Aynı çalışan, yıl ve tür için bakiye zaten varsa servis hata döner."
+      note="Aynı çalışan, yıl ve tür için bakiye zaten varsa mevcut bakiye güncellenir."
       footer={
         <>
           <Button

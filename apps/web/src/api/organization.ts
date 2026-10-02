@@ -21,10 +21,11 @@ export const organizationApi = {
   createDepartment: (input: CreateDepartmentInput) =>
     apiFetch<Department>(`${BASE}/departments`, { method: 'POST', body: input }),
 
-  updateDepartment: (id: string, name: string, headEmployeeId?: string | null) =>
+  /** PUT tam kayit: `headEmployeeId` her zaman gonderilmeli (null = basi kaldir). */
+  updateDepartment: (id: string, name: string, headEmployeeId: string | null) =>
     apiFetch<Department>(`${BASE}/departments/${id}`, {
       method: 'PUT',
-      body: { name, headEmployeeId: headEmployeeId ?? null },
+      body: { name, headEmployeeId },
     }),
 
   /**

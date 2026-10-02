@@ -167,8 +167,10 @@ export function toTeam(v: unknown): Team {
   const members = Array.isArray(r.members) ? r.members.map(toTeamMember) : undefined
   const lead = pick(r, 'leadEmployeeId', 'leadId')
   return {
-    id: str0(r.id),
-    name: str0(r.name),
+    // teams/by-employee üyelik kaydı döner ({teamId, teamName, isLead...}); ekip
+    // nesnesi gibi okunabilsin diye bu adlar da kabul edilir.
+    id: str0(pick(r, 'id', 'teamId')),
+    name: str0(pick(r, 'name', 'teamName')),
     description: str(r.description),
     departmentId: str0(r.departmentId),
     leadEmployeeId: str(lead) ?? (isObj(r.lead) ? str(pick(r.lead, 'employeeId', 'id')) : null),

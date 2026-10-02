@@ -20,7 +20,7 @@ builder.Services.AddDbContext<OnboardingDbContext>(options =>
     options.UseNpgsql(connectionString));
 
 var keycloakAuthority = Environment.GetEnvironmentVariable("KEYCLOAK_AUTHORITY")
-    ?? "http://172.33.55.2:8080/realms/hr360";
+    ?? "http://keycloak:8080/auth/realms/hr360";
 
 // GUVENLIK (CTO denetimi): Onceden issuer ve istemci dogrulanmiyordu - realm'deki
 // HERHANGI bir istemcinin (orn. admin-cli, servis hesaplari) jetonu kabul ediliyordu.

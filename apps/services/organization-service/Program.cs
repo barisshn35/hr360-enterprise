@@ -21,7 +21,7 @@ builder.Services.AddDbContext<OrganizationDbContext>(options =>
     options.UseNpgsql(connectionString));
 
 var keycloakAuthority = Environment.GetEnvironmentVariable("KEYCLOAK_AUTHORITY")
-    ?? "http://172.33.55.2:8080/realms/hr360";
+    ?? "http://keycloak:8080/auth/realms/hr360";
 
 // GUVENLIK (CTO denetimi): Onceden issuer ve istemci dogrulanmiyordu - realm'deki
 // HERHANGI bir istemcinin (orn. admin-cli, servis hesaplari) jetonu kabul ediliyordu.
@@ -43,15 +43,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateAudience = false,
-            // NOT: ValidIssuer = keycloakAuthority (ic Docker hostname) burada YANLISTI -
-            // Keycloak token'in "iss" claim'ini istegin Host header'indan uretir, yani
-            // gercek tarayici girisinde alinan tokenlerin iss'i HER ZAMAN disariya acik
-            // adres ("http://localhost/auth/realms/hr360") olur, ic servis adi DEGIL.
-            // Sonuc: bu servis (employee-service'de ayni hata vardi) gercek girisle
-            // alinan HICBIR token'i kabul etmiyordu - /api/organization/companies HER
-            // ZAMAN 401 donuyordu (hardcore test sirasinda, canli JWT'nin iss alaniyla
-            // dogrulandi). Authority+JWKS imza dogrulamasi zaten yeterli - diger 11
-            // mikroservisin tamami ZATEN ValidateIssuer=false kullaniyor.
+            // Issuer, ic adres (keycloakAuthority) degil tarayicinin gordugu genel
+            // adrestir (KC_HOSTNAME); izinli degerler KEYCLOAK_VALID_ISSUERS'tan gelir.
             ValidateIssuer = jwtValidIssuers.Length > 0,
             ValidIssuers = jwtValidIssuers,
         };

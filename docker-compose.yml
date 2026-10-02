@@ -361,7 +361,7 @@ services:
       # istemci koddaki kullanilamaz varsayilan adrese (172.33.55.2) dusuyor
       # ve GERCEK network'te yaniti hicbir zaman almadigi icin cagri
       # dakikalarca askida kaliyor (POST /api/notifications zaman asimina
-      # ugruyordu). Diger tum servisler bu degiskeni zaten tanimliyor.
+      # ugruyordu). Bu adresi kullanan diger servisler de degiskeni tanimliyor.
       EMPLOYEE_SERVICE_URL: "http://employee-service:8080"
       TENANT_SECRET_KEY: ${TENANT_SECRET_KEY}
       ASPNETCORE_ENVIRONMENT: "Production"
@@ -390,13 +390,18 @@ services:
       MINIO_ENDPOINT_URL: "http://minio:9000"
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
-      LOGO_PUBLIC_BASE_URL: "${PUBLIC_URL}/logos"
+      # Port ve sema (https) PUBLIC_ORIGIN'de; PUBLIC_URL'de port yok.
+      LOGO_PUBLIC_BASE_URL: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/logos"
       ASPNETCORE_ENVIRONMENT: "Production"
     depends_on:
       postgres:
         condition: service_healthy
       minio-init:
         condition: service_completed_successfully
+      # Ortak sablondaki depends_on burada yeniden tanimlandigi icin Keycloak
+      # ayrica yazilmali (demo kiracisini Keycloak'ta olusturur).
+      keycloak:
+        condition: service_started
     mem_limit: "256m"
 
   # --------------------------------------------------------------------- #

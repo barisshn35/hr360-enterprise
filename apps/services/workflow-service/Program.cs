@@ -24,7 +24,7 @@ builder.Services.AddDbContext<WorkflowDbContext>(options =>
     options.UseNpgsql(connectionString));
 
 var keycloakAuthority = Environment.GetEnvironmentVariable("KEYCLOAK_AUTHORITY")
-    ?? "http://172.33.55.3:8080/realms/hr360";
+    ?? "http://keycloak:8080/auth/realms/hr360";
 
 // GUVENLIK (CTO denetimi): Onceden issuer ve istemci dogrulanmiyordu - realm'deki
 // HERHANGI bir istemcinin (orn. admin-cli, servis hesaplari) jetonu kabul ediliyordu.
@@ -92,13 +92,14 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy("RequireHrAdmin", policy =>
-        policy.RequireRole("hr-admin", "tenant-admin"));
+        policy.RequireRole("hr-admin", "tenant-admin", "platform-admin"));
     // Bu serviste RequireManagerOrAbove sadece Decide ve Delegate'i koruyor -
     // roles.ts'te tek bir ize karsilik geliyorlar (workflow:decide).
     options.AddPolicy("RequireManagerOrAbove", policy =>
         policy.RequireAssertion(ctx =>
             ctx.User.IsInRole("manager") || ctx.User.IsInRole("hr-admin") ||
-            ctx.User.IsInRole("tenant-admin") || ctx.User.IsInRole("ext-workflow-decide")));
+            ctx.User.IsInRole("tenant-admin") || ctx.User.IsInRole("platform-admin") ||
+            ctx.User.IsInRole("ext-workflow-decide")));
 });
 
 builder.Services.AddControllers()

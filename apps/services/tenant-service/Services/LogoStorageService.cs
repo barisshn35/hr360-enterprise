@@ -52,13 +52,13 @@ public class LogoStorageService
     public LogoStorageService()
     {
         var endpoint = Environment.GetEnvironmentVariable("MINIO_ENDPOINT_URL")
-            ?? "http://172.33.55.5:9000";
+            ?? "http://minio:9000";
         var accessKey = Environment.GetEnvironmentVariable("MINIO_ACCESS_KEY")
             ?? throw new InvalidOperationException("MINIO_ACCESS_KEY tanimli olmali");
         var secretKey = Environment.GetEnvironmentVariable("MINIO_SECRET_KEY")
             ?? throw new InvalidOperationException("MINIO_SECRET_KEY tanimli olmali");
         _publicBaseUrl = (Environment.GetEnvironmentVariable("LOGO_PUBLIC_BASE_URL")
-            ?? "https://hr360.local/logos").TrimEnd('/');
+            ?? "http://localhost/logos").TrimEnd('/');
 
         _client = new AmazonS3Client(
             new BasicAWSCredentials(accessKey, secretKey),
@@ -71,6 +71,22 @@ public class LogoStorageService
     }
 
     public record UploadResult(bool Success, string? Url, string? Error);
+
+    /// <summary>
+    /// Veritabaninda saklanan logo adresini GUNCEL genel adrese cevirir. Adres yukleme
+    /// aninda mutlak olarak saklaniyor; sonradan HTTPS acilinca ya da alan adi/port
+    /// degisince eski kayitlar http://eski-adres/... olarak kaliyor ve tarayicida
+    /// (karisik icerik) ya da e-postada kiriliyordu. Dosya adi (+?v= surumu) korunur,
+    /// on ek her okumada LOGO_PUBLIC_BASE_URL'den uretilir.
+    /// </summary>
+    public static string? ToPublicUrl(string? stored)
+    {
+        if (string.IsNullOrEmpty(stored)) return stored;
+        var baseUrl = Environment.GetEnvironmentVariable("LOGO_PUBLIC_BASE_URL")?.TrimEnd('/');
+        if (string.IsNullOrEmpty(baseUrl)) return stored;
+        var i = stored.LastIndexOf('/');
+        return i < 0 ? stored : baseUrl + stored[i..];
+    }
 
     public async Task<UploadResult> UploadAsync(
         Guid tenantId, string contentType, Stream fileStream, long fileSizeBytes, CancellationToken ct)

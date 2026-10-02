@@ -84,8 +84,13 @@ export function NewLeaveRequestModal({
   const holidaySet = useMemo(() => new Set((holidays.data ?? []).map((h) => h.date.slice(0, 10))), [holidays.data])
   const days = useMemo(() => daysBetween(startDate, endDate, holidaySet), [startDate, endDate, holidaySet])
   const balance = balances.data?.find((b) => b.type === type)
-  /** Yetersiz bakiye engel değil uyarıdır — son kararı backend verir. */
+  /**
+   * Backend kuralıyla aynı: bakiye yetersizse talep reddedilir; yıllık izin için
+   * bakiye tanımı zorunludur (diğer türler bakiyesiz açılabilir).
+   */
   const shortfall = balance ? days - balance.remainingDays : 0
+  const blockedByBalance =
+    Boolean(employeeId) && !balances.isPending && ((balance && shortfall > 0) || (!balance && type === 'Annual'))
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -167,7 +172,7 @@ export function NewLeaveRequestModal({
             type="submit"
             form="new-leave-form"
             className="cursor-pointer"
-            disabled={mutation.isPending}
+            disabled={mutation.isPending || blockedByBalance}
           >
             {mutation.isPending && <LoaderCircle className="size-4 animate-spin" />}
             Talebi gönder
@@ -238,7 +243,10 @@ export function NewLeaveRequestModal({
                 className="border-l-2 border-[hsl(var(--warning))] pl-3 text-[13px] leading-relaxed"
               >
                 {year} yılı için {leaveTypeLabels[type].toLocaleLowerCase('tr-TR')} bakiyesi tanımlı
-                değil. Talep yine de gönderilebilir; onaycı bakiyesiz durumu görür.
+                değil.{' '}
+                {type === 'Annual'
+                  ? 'Yıllık izin bakiye tanımı olmadan talep edilemez; İK ile iletişime geçin.'
+                  : 'Bu izin türü bakiyesiz de talep edilebilir.'}
               </p>
             ) : (
               <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-[13px]">
@@ -264,8 +272,8 @@ export function NewLeaveRequestModal({
                 role="alert"
                 className="mt-2 border-l-2 border-[hsl(var(--warning))] pl-3 text-[12px] leading-relaxed"
               >
-                Bakiyeniz {shortfall} gün yetersiz. Talebi yine de gönderebilirsiniz; kararı onay
-                zinciri verir.
+                Bakiyeniz {shortfall} gün yetersiz; bu talep gönderilemez. Tarihleri kısaltın ya da
+                İK ile iletişime geçin.
               </p>
             )}
           </div>

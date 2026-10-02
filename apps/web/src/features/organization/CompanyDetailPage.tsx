@@ -37,8 +37,10 @@ export function CompanyDetailPage() {
   const canCreate = canManage
 
   const renameMutation = useMutation({
-    mutationFn: ({ id, name }: { id: string; name: string }) =>
-      organizationApi.updateDepartment(id, name),
+    // Backend PUT, departman basini da istekten alir; ad degistirirken mevcut bas
+    // gonderilmezse bas silinir ve izin/masraf onaylari onaycisiz kalir.
+    mutationFn: ({ id, name, headEmployeeId }: { id: string; name: string; headEmployeeId: string | null }) =>
+      organizationApi.updateDepartment(id, name, headEmployeeId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: qk.company(companyId ?? '') })
     },
@@ -153,7 +155,8 @@ export function CompanyDetailPage() {
             onSelect={setSelected}
             onRename={
               canManage
-                ? (department, name) => renameMutation.mutate({ id: department.id, name })
+                ? (department, name) =>
+                    renameMutation.mutate({ id: department.id, name, headEmployeeId: department.headEmployeeId ?? null })
                 : undefined
             }
             onDelete={canManage ? handleDelete : undefined}

@@ -30,11 +30,11 @@ from performance_ml import router as performance_router
 app.include_router(performance_router)
 Instrumentator().instrument(app).expose(app)
 
-KEYCLOAK_URL = os.getenv("KEYCLOAK_URL", "http://172.33.55.2:8080")
+KEYCLOAK_URL = os.getenv("KEYCLOAK_URL", "http://keycloak:8080/auth")
 REALM = os.getenv("KEYCLOAK_REALM", "hr360")
 CLIENT_ID = os.getenv("KEYCLOAK_CLIENT_ID", "hr360-ml-inference")
 CLIENT_SECRET = os.getenv("KEYCLOAK_CLIENT_SECRET", "")
-MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://172.33.55.7:5000")
+MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000")
 MODEL_NAME = os.getenv("MODEL_NAME", "hr360-attrition-risk")
 MODEL_STAGE = os.getenv("MODEL_STAGE", "1")  # version 1
 

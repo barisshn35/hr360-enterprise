@@ -54,16 +54,28 @@ public class TenantsController : ControllerBase
         // da) platform-admin API yanitina sizdiriyordu. MyTenantController
         // ZATEN bu alanlari gizleyip sadece HasCustomSmtp donuyordu - ayni
         // guvenli deseni burada da uyguluyoruz.
-        return Ok(tenants.Select(t => new
+        return Ok(tenants.Select(t => Safe(t, counts.GetValueOrDefault(t.Slug, 0))));
+    }
+
+    /// <summary>
+    /// Platform paneline donen guvenli kiraci sekli: SMTP parolasi/kullanicisi,
+    /// Keycloak kimlikleri ve askiya alma kaydi gibi ic alanlar disari cikmaz.
+    /// Tum uclar (liste, detay, askiya alma, plan degisikligi) bunu kullanir.
+    /// </summary>
+    private static Dictionary<string, object?> Safe(Tenant t, int? employeeCount = null)
+    {
+        var d = new Dictionary<string, object?>
         {
-            t.Id, t.Name, t.Slug, t.Status, t.Plan, t.MaxEmployees, t.CreatedAt,
-            t.EmailDomain, t.TaxNumber, t.AdminEmail, t.LogoUrl, t.PrimaryColorHex,
-            t.SuspendedAt,
-            SuspensionReason = t.SuspendReason,
-            HasCustomSmtp = t.SmtpHost != null,
-            t.SmtpFromAddress, t.SmtpFromName,
-            EmployeeCount = counts.GetValueOrDefault(t.Slug, 0),
-        }));
+            ["id"] = t.Id, ["name"] = t.Name, ["slug"] = t.Slug, ["status"] = t.Status,
+            ["plan"] = t.Plan, ["maxEmployees"] = t.MaxEmployees, ["createdAt"] = t.CreatedAt,
+            ["emailDomain"] = t.EmailDomain, ["taxNumber"] = t.TaxNumber, ["adminEmail"] = t.AdminEmail,
+            ["logoUrl"] = LogoStorageService.ToPublicUrl(t.LogoUrl), ["primaryColorHex"] = t.PrimaryColorHex,
+            ["suspendedAt"] = t.SuspendedAt, ["suspensionReason"] = t.SuspendReason,
+            ["hasCustomSmtp"] = t.SmtpHost != null,
+            ["smtpFromAddress"] = t.SmtpFromAddress, ["smtpFromName"] = t.SmtpFromName,
+        };
+        if (employeeCount.HasValue) d["employeeCount"] = employeeCount.Value;
+        return d;
     }
 
     [HttpGet("{id}")]
@@ -93,22 +105,24 @@ public class TenantsController : ControllerBase
         // askiya alma bilgisi...) undefined/bos gorunuyordu (hardcore test
         // sirasinda bulundu, 2. tur). GetAll ile ayni guvenli/duz sekle
         // (SmtpPasswordEncrypted gibi ic alanlar olmadan) getiriliyor.
-        return Ok(new
+        var result = Safe(tenant, employeeCount);
+        // Zaman cizelgesi web istemcisinin bekledigi sekilde (step/status/message/startedAt).
+        // Onceden ham kayit (success/detail/occurredAt) donuyordu; panelde her adim
+        // mesajsiz ve "bekliyor" olarak gorunuyordu.
+        result["provisioningLog"] = logs.Select(l => new
         {
-            tenant.Id, tenant.Name, tenant.Slug, tenant.Status, tenant.Plan, tenant.MaxEmployees,
-            tenant.CreatedAt, tenant.EmailDomain, tenant.TaxNumber, tenant.AdminEmail,
-            tenant.LogoUrl, tenant.PrimaryColorHex, tenant.SuspendedAt,
-            SuspensionReason = tenant.SuspendReason,
-            HasCustomSmtp = tenant.SmtpHost != null,
-            tenant.SmtpFromAddress, tenant.SmtpFromName,
-            EmployeeCount = employeeCount,
-            ProvisioningLog = logs,
-        });
+            l.Id,
+            Step = l.Step.ToString(),
+            Status = l.Success ? "Succeeded" : "Failed",
+            Message = l.Detail,
+            StartedAt = l.OccurredAt,
+            CompletedAt = (DateTimeOffset?)null,
+        }).ToList();
+        return Ok(result);
     }
 
     private record TenantEmployeeCount(string Slug, int Count);
 
-    /// <summary>Tenant'i askiya alir; yonetici hesabi da devre disi birakilir.</summary>
     /// <summary>Kiracinin Keycloak organizasyonundaki tum uyeler (+ kayitli yonetici).</summary>
     private async Task<(int Affected, int Failed)> ForEachTenantUserAsync(
         Tenant tenant, Func<string, Task<bool>> action, CancellationToken ct)
@@ -130,6 +144,10 @@ public class TenantsController : ControllerBase
         return (affected, failed);
     }
 
+    /// <summary>
+    /// Kiraciyi askiya alir: organizasyonun tum uyelerinin hesaplari kapatilir ve
+    /// oturumlari sonlandirilir; servisler askidaki kiracinin isteklerini 403 ile reddeder.
+    /// </summary>
     [HttpPost("{id}/suspend")]
     public async Task<IActionResult> Suspend(
         Guid id, [FromBody] SuspendRequest request, CancellationToken ct)
@@ -158,7 +176,7 @@ public class TenantsController : ControllerBase
         tenant.SuspendedUserIdsJson = System.Text.Json.JsonSerializer.Serialize(disabled);
 
         await _db.SaveChangesAsync(ct);
-        return Ok(new { tenant, usersDisabled = affected, usersFailed = failed });
+        return Ok(new { tenant = Safe(tenant), usersDisabled = affected, usersFailed = failed });
     }
 
     [HttpPost("{id}/reactivate")]
@@ -194,7 +212,7 @@ public class TenantsController : ControllerBase
         tenant.SuspendedUserIdsJson = remaining.Count == 0 ? null : System.Text.Json.JsonSerializer.Serialize(remaining);
 
         await _db.SaveChangesAsync(ct);
-        return Ok(new { tenant, usersEnabled = affected, usersFailed = failed });
+        return Ok(new { tenant = Safe(tenant), usersEnabled = affected, usersFailed = failed });
     }
 
     [HttpPost("{id}/plan")]
@@ -215,7 +233,7 @@ public class TenantsController : ControllerBase
             };
 
         await _db.SaveChangesAsync();
-        return Ok(tenant);
+        return Ok(Safe(tenant));
     }
 }
 

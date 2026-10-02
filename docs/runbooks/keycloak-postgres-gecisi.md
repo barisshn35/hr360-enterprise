@@ -74,7 +74,7 @@ gövdede ilgili execution ile `"requirement":"DISABLED"`.)
 
 - Mevcut kullanıcılar eski parolalarıyla giriş yapabiliyor; jetonda `organization` doğru.
 - `docker compose up -d --force-recreate keycloak` sonrası kullanıcılar hâlâ duruyor.
-- Bir çalışanı davet etmek e-posta gönderiyor (Mailpit'te "Update Your Account").
+- Bir çalışanı davet etmek e-posta gönderiyor ("Update Your Account"; SMTP ayarlanmadıysa Mailpit'te, ayarlandıysa gerçek posta kutusunda).
 
 ## Geri dönüş
 

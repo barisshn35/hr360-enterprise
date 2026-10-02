@@ -18,8 +18,8 @@ namespace TenantService.Controllers;
 ///     govdeden KeycloakUserId olarak aliyor - bu uclar icin hedefin
 ///     cagiranin Keycloak organizasyonunun uyesi oldugu ayrica dogrulanir
 ///     (bkz. EnsureTargetInMyTenantAsync).
-///   - Atanabilir roller: SADECE employee/manager/hr-admin/tenant-admin.
-///     system-admin ve platform-admin PLATFORM seviyesinde, bu uctan
+///   - Atanabilir roller: SADECE employee/manager/accounting/hr-admin/tenant-admin.
+///     platform-admin PLATFORM seviyesinde, bu uctan
 ///     ASLA atanamaz/kaldirilamaz (Keycloak admin konsolundan elle yapilir).
 ///   - Son yonetici kilidi: bir tenant'taki SON tenant-admin'in rolu
 ///     kaldirilamaz - tenant yoneticisiz kalmasin.
@@ -243,11 +243,10 @@ public class TeamMembersController : ControllerBase
     ///
     /// Not: Bu ucun izin verdigi Keycloak rolu (ext-&lt;permission&gt;)
     /// sadece TENANT-SERVICE tarafinda gecerlilik kontrolunden geciyor;
-    /// hangi backend servisinin bu ek rolu GERCEKTEN tanidigi (yetkilendirme
-    /// policy'sine dahil ettigi) ayrica o serviste yapilmis olmali - bu
-    /// ilk surumde sadece compensation-service (compensation:view)
-    /// destekliyor, digerleri roles.ts standart rol matrisine gore
-    /// calismaya devam ediyor.
+    /// ilgili backend servisinin bu ek rolu ayrica tanimasi (yetkilendirme
+    /// policy'sine dahil etmesi) gerekir. Hangi izinlerin uctan uca
+    /// desteklendigi web istemcisindeki PERMISSIONS_WITH_BACKEND_SUPPORT
+    /// listesinde tutulur; Roller sayfasi yalnizca bunlari sunar.
     /// </summary>
     [HttpPost("permissions")]
     [Authorize(Policy = "RequireTenantAdminOnly")]

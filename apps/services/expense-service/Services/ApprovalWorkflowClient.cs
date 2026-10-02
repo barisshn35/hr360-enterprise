@@ -36,11 +36,11 @@ public class ApprovalWorkflowClient
         _http = http;
         _httpContextAccessor = httpContextAccessor;
         _employeeServiceUrl = (Environment.GetEnvironmentVariable("EMPLOYEE_SERVICE_URL")
-            ?? "http://172.33.55.2:5002").TrimEnd('/');
+            ?? "http://employee-service:8080").TrimEnd('/');
         _organizationServiceUrl = (Environment.GetEnvironmentVariable("ORGANIZATION_SERVICE_URL")
-            ?? "http://172.33.55.2:5001").TrimEnd('/');
+            ?? "http://organization-service:8080").TrimEnd('/');
         _workflowServiceUrl = (Environment.GetEnvironmentVariable("WORKFLOW_SERVICE_URL")
-            ?? "http://172.33.55.3:5003").TrimEnd('/');
+            ?? "http://workflow-service:8080").TrimEnd('/');
     }
 
     private HttpRequestMessage Build(HttpMethod method, string baseUrl, string path, object? body = null)

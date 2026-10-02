@@ -10,15 +10,17 @@ import { ClaimStatusBadge } from '@/components/ui/ModuleBadges'
 import { CenteredSpinner, EmptyState, ErrorState, InfoNote } from '@/components/ui/States'
 import { useToast } from '@/components/ui/Toast'
 import { useAuth } from '@/auth/useAuth'
+import { isHr } from '@/auth/roles'
 import { expenseApi } from '@/api/expense'
-import { useExpenseClaim } from '@/api/queries'
+import { useExpenseClaim, useMyEmployeeId } from '@/api/queries'
 import { expenseCategoryLabels } from '@/api/types'
 import { formatDate, formatDateTime, formatMoney, formatNumber } from '@/lib/format'
 import { useEmployeeName } from '@/lib/useEmployeeName'
 
 export function ExpenseClaimPage() {
   const { claimId } = useParams<{ claimId: string }>()
-  const { can } = useAuth()
+  const { can, roles } = useAuth()
+  const { employeeId: myEmployeeId } = useMyEmployeeId()
   const toast = useToast()
   const queryClient = useQueryClient()
   const reduced = useReducedMotion()
@@ -84,7 +86,8 @@ export function ExpenseClaimPage() {
         actions={
           <>
             <ClaimStatusBadge status={c.status} />
-            {c.status === 'Draft' && can('expense:create') && (
+            {/* Onaya gönderme backend'de yalnızca beyan sahibine ve İK'ya açık. */}
+            {c.status === 'Draft' && can('expense:create') && (isHr(roles) || c.employeeId === myEmployeeId) && (
               <Button
                 className="cursor-pointer"
                 disabled={submit.isPending}

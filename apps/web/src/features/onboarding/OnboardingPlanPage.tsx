@@ -14,7 +14,7 @@ import { SelectField, TextField } from '@/components/ui/Field'
 import { useToast } from '@/components/ui/Toast'
 import { useAuth } from '@/auth/useAuth'
 import { onboardingApi } from '@/api/onboarding'
-import { useEmployees, useOnboardingPlan } from '@/api/queries'
+import { useEmployees, useMyEmployeeId, useOnboardingPlan } from '@/api/queries'
 import {
   taskCategoryLabels,
   type OnboardingTask,
@@ -228,6 +228,7 @@ function TaskRow({
 export function OnboardingPlanPage() {
   const { planId } = useParams<{ planId: string }>()
   const { can } = useAuth()
+  const { employeeId: myEmployeeId } = useMyEmployeeId()
   const plan = useOnboardingPlan(planId)
   const employees = useEmployees({ enabled: can('employee:viewAll') })
   const [taskModal, setTaskModal] = useState(false)
@@ -267,6 +268,12 @@ export function OnboardingPlanPage() {
   const employee = employees.data?.find((e) => e.id === data.employeeId)
   const who = employee ? fullName(employee) : `${data.employeeId.slice(0, 8)}…`
   const canEdit = can('onboarding:manage')
+  // Backend kuralı: yönetenler her görevi; görevin atandığı kişi kendi görevini;
+  // planın sahibi (yeni çalışan) hukuki olmayan görevlerini günceller.
+  const canEditTask = (t: { assigneeEmployeeId: string | null; category: string }) =>
+    canEdit ||
+    (Boolean(myEmployeeId) &&
+      (t.assigneeEmployeeId === myEmployeeId || (data.employeeId === myEmployeeId && t.category !== 'Legal')))
 
   return (
     <div className="space-y-5">
@@ -344,7 +351,7 @@ export function OnboardingPlanPage() {
                 <PanelBody>
                   <ul className="divide-y divide-border">
                     {group.items.map((t) => (
-                      <TaskRow key={t.id} task={t} planId={data.id} canEdit={canEdit} />
+                      <TaskRow key={t.id} task={t} planId={data.id} canEdit={canEditTask(t)} />
                     ))}
                   </ul>
                 </PanelBody>

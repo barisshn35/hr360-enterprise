@@ -51,7 +51,7 @@ export const shellHandlers = [
     })
   }),
 
-  http.get('/api/notification/notifications/unread-count', () => ok({ count: 2 })),
+  http.get('/api/notification/notifications/unread-count', () => ok({ recipientId: 'mock', unreadCount: 2 })),
   http.get('/api/notification/notifications', () => ok([])),
 
   /* Mock modunda tanımlanmamış her şey: listeler boş, yazma işlemleri açık bir hatayla. */

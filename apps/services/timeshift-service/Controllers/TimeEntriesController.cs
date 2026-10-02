@@ -27,11 +27,6 @@ public class TimeEntriesController : ControllerBase
         || User.IsInRole("ext-timeshift-manage");
 
     /// <summary>
-    /// Is gunu, UTC tarihine gore degil isletmenin saat dilimine gore belirlenir
-    /// (HR360_TIMEZONE, varsayilan Europe/Istanbul). Onceden 00:00-03:00 arasi
-    /// yapilan giris bir onceki gune yaziliyordu.
-    /// </summary>
-    /// <summary>
     /// Bir vardiyanin azami suresi. Daha eski acik kayit "unutulmus cikis" sayilir:
     /// calisan onu kapatamaz (23 saatlik sahte mesai olusmasin), yeniden giris
     /// yapabilir; eski kaydi yonetici/IK duzeltir. Arayuz (TimesheetPage) ayni siniri
@@ -39,6 +34,11 @@ public class TimeEntriesController : ControllerBase
     /// </summary>
     private const int MaxShiftHours = 16;
 
+    /// <summary>
+    /// Is gunu, UTC tarihine gore degil isletmenin saat dilimine gore belirlenir
+    /// (HR360_TIMEZONE, varsayilan Europe/Istanbul). Onceden 00:00-03:00 arasi
+    /// yapilan giris bir onceki gune yaziliyordu.
+    /// </summary>
     private static readonly TimeZoneInfo BusinessZone = ResolveZone();
     private static TimeZoneInfo ResolveZone()
     {

@@ -28,7 +28,7 @@ public class OrganizationDirectoryClient
         _http = http;
         _httpContextAccessor = httpContextAccessor;
         _baseUrl = (Environment.GetEnvironmentVariable("ORGANIZATION_SERVICE_URL")
-            ?? "http://172.33.55.2:5001").TrimEnd('/');
+            ?? "http://organization-service:8080").TrimEnd('/');
     }
 
     private HttpRequestMessage Build(HttpMethod method, string path, object? body = null)

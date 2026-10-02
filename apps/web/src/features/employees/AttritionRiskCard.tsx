@@ -31,8 +31,14 @@ function defaultFeatures(employee: Employee): number[] {
 
 function toContributions(explain: ExplainResponse) {
   const raw = explain.feature_contributions
+  // ml-inference /explain katkıları giriş sırasına göre düz sayı dizisi olarak döner;
+  // ad, giriş alanıyla aynı ("Özellik N") verilir. Nesne biçimi de desteklenir.
   const list = Array.isArray(raw)
-    ? raw.map((c) => ({ feature: c.feature, contribution: c.contribution }))
+    ? raw.map((c, i) =>
+        typeof c === 'number'
+          ? { feature: `Özellik ${i + 1}`, contribution: c }
+          : { feature: c.feature, contribution: c.contribution },
+      )
     : Object.entries(raw ?? {}).map(([feature, contribution]) => ({ feature, contribution }))
   return list.sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution))
 }

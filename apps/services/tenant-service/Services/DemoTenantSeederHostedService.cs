@@ -45,8 +45,11 @@ public class DemoTenantSeederHostedService : BackgroundService
         // Keycloak realm-import'u ve bu servisin kendi DB semasi (postgres init
         // sirasinda tek seferde olusturuluyor) tenant-service ayaga kalktiginda
         // henuz hazir olmayabilir (docker-compose "service_started" ile bekliyor,
-        // "service_healthy" ile degil) - bu yuzden birkac deneme + geri cekilme.
-        const int maxAttempts = 12;
+        // "service_healthy" ile degil). Uretim modundaki Keycloak'in ilk acilisi
+        // (veritabani kurulumu + realm import) kucuk sunucularda birkac dakika
+        // surebilir; 12 x 5 sn'de vazgecilince demo sirketi hic olusmuyordu.
+        // 10 dakika boyunca denenir.
+        const int maxAttempts = 120;
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
             if (stoppingToken.IsCancellationRequested) return;
@@ -119,8 +122,8 @@ public class DemoTenantSeederHostedService : BackgroundService
         var orgId = await keycloak.CreateOrganizationAsync(DemoName, DemoSlug, null, ct);
         tenant.KeycloakOrgId = orgId;
         await keycloak.AddOrganizationMemberAsync(orgId, userId, ct);
-        // tenant-admin ve platform-admin rolleri demo.admin'e zaten realm-export.json
-        // uzerinden atanmis durumda - burada tekrar atamaya gerek yok.
+        // tenant-admin rolu demo.admin'e zaten realm sablonunda atanmis durumda -
+        // burada tekrar atamaya gerek yok.
         tenant.AdminUserId = userId;
 
         var companyId = Guid.NewGuid();

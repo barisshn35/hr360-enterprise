@@ -4,12 +4,18 @@
 # Ne yapar:
 #   1. Docker / Docker Compose var mi kontrol eder; yoksa (apt/dnf/yum
 #      tabanli sistemlerde) sizden onay alarak otomatik kurar
-#   2. Sirlari (parola, anahtar) sizden sorar — bos birakirsaniz guvenli,
-#      rastgele bir deger uretir
-#   3. .env dosyasini yazar
-#   4. Keycloak realm sablonunu bu sirlarla doldurur
+#   2. Adresi, Keycloak yonetim paneli erisimini, HTTPS yontemini ve SMTP
+#      sunucusunu sorar
+#   3. Sirlari (parola, anahtar) sorar — bos birakirsaniz guvenli, rastgele
+#      bir deger uretir
+#   4. .env dosyasini yazar, Keycloak realm sablonunu doldurur
 #   5. Tum servisleri build edip ayaga kaldirir
-#   6. Erisim adreslerini ve demo giris bilgilerini ekrana basar
+#   6. Yonetim paneli erisimini ve HTTPS'i (scripts/tls.sh) ayarlar
+#   7. Erisim adreslerini ve demo giris bilgilerini ekrana basar
+#
+# Mevcut bir kurulumda (.env varsa) tekrar calistirildiginda varsayilan yol
+# GUNCELLEMEDIR: sirlar korunur, veritabani gocleri uygulanir, imajlar yeniden
+# build edilir.
 #
 # Kullanim: ./install.sh
 set -euo pipefail
@@ -41,30 +47,49 @@ random_aes_key() {
     || head -c 32 /dev/urandom | base64
 }
 
+# Gecerli bir AES-256 anahtari mi: base64, cozulunce tam 32 byte.
+is_aes_key() {
+  [ "$(printf '%s' "$1" | base64 -d 2>/dev/null | wc -c)" = "32" ]
+}
+
 ask_secret_aes_key() {
   # ask_secret ile ayni akis, ama otomatik uretimde random_aes_key() kullanir
-  # (tam 32 ham byte garantisi icin). Kullanici kendi degerini girerse,
-  # gecerliligini kontrol etmek kullanicinin sorumlulugundadir (ayni ask_secret
-  # gibi serbest metin kabul eder).
+  # (tam 32 ham byte garantisi icin). Elle girilen deger de dogrulanir: servisler
+  # gecersiz anahtarla (SmtpCredentialProtector) acilista hata veriyordu.
   local var_name="$1"; local prompt="$2"
   local input=""
-  read -r -p "$prompt [bos birakin, otomatik guclu bir deger uretilsin]: " input || true
-  if [ -z "$input" ]; then
-    input="$(random_aes_key)"
-    echo "   -> otomatik uretildi: $input"
-  fi
+  while :; do
+    input=""
+    read -r -p "$prompt [bos birakin, otomatik guclu bir deger uretilsin]: " input || true
+    if [ -z "$input" ]; then
+      input="$(random_aes_key)"
+      echo "   -> otomatik uretildi: $input"
+      break
+    fi
+    is_aes_key "$input" && break
+    warn "Gecersiz anahtar: base64 kodlu tam 32 byte olmali (ornek: openssl rand -base64 32)."
+  done
   printf -v "$var_name" '%s' "$input"
 }
 
 ask_secret() {
-  # ask_secret <degisken_adi> <soru_metni> <varsayilan_kullanici_adi_mi(bos ise rastgele uretilir)>
+  # ask_secret <degisken_adi> <soru_metni>
+  # Elle girilen sirlar .env'e tirnaksiz yazilir ve baglanti dizelerinde/URI'lerde
+  # kullanilir ($, ;, @, /, :, bosluk, # gibi karakterler bunlari bozar). Bu yuzden
+  # yalnizca guvenli karakterlere izin verilir.
   local var_name="$1"; local prompt="$2"
   local input=""
-  read -r -p "$prompt [bos birakin, otomatik guclu bir deger uretilsin]: " input || true
-  if [ -z "$input" ]; then
-    input="$(random_secret)"
-    echo "   -> otomatik uretildi: $input"
-  fi
+  while :; do
+    input=""
+    read -r -p "$prompt [bos birakin, otomatik guclu bir deger uretilsin]: " input || true
+    if [ -z "$input" ]; then
+      input="$(random_secret)"
+      echo "   -> otomatik uretildi: $input"
+      break
+    fi
+    [[ "$input" =~ ^[A-Za-z0-9._~+=-]{8,}$ ]] && break
+    warn "En az 8 karakter; yalnizca harf, rakam ve . _ ~ + = - kullanin."
+  done
   printf -v "$var_name" '%s' "$input"
 }
 
@@ -137,6 +162,10 @@ docker() {
     command docker "$@"
   fi
 }
+# Yardimci betikler (scripts/tls.sh, scripts/keycloak-admin-access.sh) ayri
+# surec olarak calisir; sarmalayici onlara da gecsin diye disari aktarilir.
+export USE_SUDO_DOCKER
+export -f docker
 
 if ! docker compose version >/dev/null 2>&1; then
   echo "Docker Compose (v2 plugin) bulunamadi. 'docker compose' calisir hale getirin."
@@ -146,9 +175,31 @@ fi
 if [ -f .env ]; then
   warn ".env dosyasi zaten var."
   read -r -p "Uzerine yazip sirlari yeniden mi uretelim? [e/H]: " overwrite || true
-  if [[ ! "$overwrite" =~ ^[eEyY]$ ]]; then
+  if [[ "$overwrite" =~ ^[eEyY]$ ]]; then
+    # Mevcut veriler (volume'ler) eski sirlarla olusturuldu: Postgres eski parolayi,
+    # Keycloak eski realm ve yonetici parolasini, kiracilarin sifreli SMTP parolalari
+    # eski anahtari kullanir. Yeni sirlarla bu verilere erisilemez; yeniden uretmek
+    # ancak TUM verileri silerek mumkundur.
+    project="$(docker compose config 2>/dev/null | sed -n 's/^name: //p' | head -1)"
+    if [ -n "$project" ] && docker volume ls -q --filter "label=com.docker.compose.project=${project}" | grep -q .; then
+      warn "Bu kurulumun verileri var (veritabani, Keycloak kullanicilari, logolar)."
+      warn "Sirlari yeniden uretmek icin BUTUN veriler silinecek; bu geri alinamaz."
+      read -r -p "Tum verileri silip sifirdan kurmak icin SIL yazin (vazgecmek icin Enter): " wipe || true
+      if [ "$wipe" != "SIL" ]; then
+        echo "Vazgecildi. Guncelleme icin scripti tekrar calistirip bu soruya 'H' deyin."
+        exit 1
+      fi
+      docker compose --profile letsencrypt down -v --remove-orphans
+      rm -f deploy/nginx/tls/*.conf deploy/nginx/tls/*.pem
+    fi
+  else
     info "Mevcut .env korunuyor (guncelleme): once veritabani goclerini uyguluyorum."
     set -a; . ./.env; set +a
+    if ! is_aes_key "${TENANT_SECRET_KEY:-}"; then
+      warn "TENANT_SECRET_KEY gecerli bir AES-256 anahtari degil (base64, 32 byte olmali)."
+      warn "Kiracilarin SMTP parolalari bu anahtarla sifrelendigi icin otomatik degistirilmiyor;"
+      warn "ozel SMTP kullanan kiraci yoksa .env'de 'openssl rand -base64 32' ile yenileyin."
+    fi
 
     # Keycloak artik sabit genel adresle (KC_HOSTNAME) calisiyor; eski .env'lerde
     # PUBLIC_ORIGIN yok - PUBLIC_URL ve GATEWAY_PORT'tan uretilir.
@@ -167,10 +218,12 @@ if [ -f .env ]; then
     # scripts/sql altindaki goc betikleri hic uygulanmiyordu (yeni kolon eksik
     # kalinca ilgili servis tum sorgularda 500 veriyordu).
     docker compose up -d postgres
+    pg_ok=0
     for _ in $(seq 1 60); do
-      docker compose exec -T postgres pg_isready -U hr360admin >/dev/null 2>&1 && break
+      docker compose exec -T postgres pg_isready -U hr360admin >/dev/null 2>&1 && { pg_ok=1; break; }
       sleep 2
     done
+    [ "$pg_ok" = 1 ] || { echo "PostgreSQL 2 dakikada hazir olmadi; 'docker compose logs postgres' ile kontrol edin."; exit 1; }
     for f in scripts/sql/*.sql; do
       [ -f "$f" ] || continue
       info "Goc uygulaniyor: $f"
@@ -193,7 +246,8 @@ if [ -f .env ]; then
     fi
 
     docker compose up -d --build
-    info "Tamamlandi. Asagidaki 'Erisim' bolumune bakin (adresler .env icindeki PUBLIC_URL/GATEWAY_PORT'a gore degisir)."
+    info "Guncelleme tamamlandi: $(grep '^PUBLIC_ORIGIN=' .env | tail -1 | cut -d= -f2-)"
+    info "HTTPS: $(scripts/tls.sh status | head -1 | sed 's/^HTTPS: //')"
     exit 0
   fi
 fi
@@ -204,8 +258,16 @@ echo "Asagidaki sirlar icin Enter'a basarsaniz guclu, rastgele degerler"
 echo "otomatik uretilir — cogu kullanim icin bu yeterli ve onerilir."
 echo ""
 
-read -r -p "Public URL (gatewayin disaridan erisilecegi adres) [http://localhost]: " PUBLIC_URL || true
-PUBLIC_URL=${PUBLIC_URL:-http://localhost}
+while :; do
+  PUBLIC_URL=""
+  read -r -p "Public URL (gatewayin disaridan erisilecegi adres) [http://localhost]: " PUBLIC_URL || true
+  PUBLIC_URL=${PUBLIC_URL:-http://localhost}
+  PUBLIC_URL="${PUBLIC_URL%/}"
+  # Sema yazilmadiysa http varsayilir (Keycloak adresi ve jeton ureticisi sema ister).
+  [[ "$PUBLIC_URL" =~ ^https?:// ]] || PUBLIC_URL="http://${PUBLIC_URL}"
+  [[ "$PUBLIC_URL" =~ ^https?://[A-Za-z0-9.-]+(:[0-9]+)?$ ]] && break
+  warn "Gecersiz adres: ${PUBLIC_URL} (ornek: https://hr.sirket.com ya da http://10.0.0.5 - yol icermemeli)"
+done
 
 read -r -p "Gateway'in disariya acacagi port [80]: " GATEWAY_PORT || true
 GATEWAY_PORT=${GATEWAY_PORT:-80}
@@ -405,7 +467,13 @@ info "Imajlar build ediliyor ve servisler baslatiliyor (ilk calistirmada birkac 
 docker compose up -d --build
 
 info "PostgreSQL'in hazir olmasi bekleniyor..."
+pg_tries=0
 until docker compose exec -T postgres pg_isready -U hr360admin -d hr360_operational >/dev/null 2>&1; do
+  pg_tries=$((pg_tries+1))
+  if [ "$pg_tries" -gt 90 ]; then
+    echo "PostgreSQL 3 dakikada hazir olmadi; 'docker compose logs postgres' ile kontrol edin."
+    exit 1
+  fi
   sleep 2
 done
 
@@ -437,18 +505,21 @@ if [ "$TLS_MODE" != none ]; then
     certificate) tls_args=(--cert "$TLS_CERT" --key "$TLS_KEY" --host "$PUBLIC_HOST") ;;
     self-signed) tls_args=(--self-signed --host "$PUBLIC_HOST") ;;
   esac
-  if scripts/tls.sh enable "${tls_args[@]}"; then
-    PUBLIC_ORIGIN="$(grep '^PUBLIC_ORIGIN=' .env | tail -1 | cut -d= -f2-)"
-  else
-    warn "HTTPS acilamadi; uygulama simdilik HTTP ile calisiyor."
-    # Adres https olarak yazildiysa girisler bozulmasin diye http'ye cekilir.
-    if [[ "${PUBLIC_ORIGIN}" == https://* ]]; then
-      scripts/tls.sh disable >/dev/null 2>&1 || true
-      PUBLIC_ORIGIN="$(grep '^PUBLIC_ORIGIN=' .env | tail -1 | cut -d= -f2-)"
-    fi
+  if ! scripts/tls.sh enable "${tls_args[@]}"; then
+    warn "HTTPS acilamadi; uygulama HTTP ile calisacak sekilde ayarlaniyor."
+    # tls.sh kendi degisikliklerini geri alir; yine de durum tutarli olsun diye
+    # adres ve Keycloak ayarlari acikca HTTP'ye cekilir.
+    scripts/tls.sh disable >/dev/null 2>&1 || warn "HTTP'ye donus de basarisiz; 'scripts/tls.sh status' ile kontrol edin."
     warn "Sorunu giderdikten sonra tekrar deneyin: scripts/tls.sh enable ${tls_args[*]}"
   fi
+else
+  # HTTPS yok: onceki bir kurulumdan kalmis TLS ayarlari temizlenir ve Keycloak'in
+  # yonetim realm'i de duz HTTP'ye izin verecek sekilde ayarlanir (aksi halde
+  # genel IP'den yonetim paneli "HTTPS required" der).
+  info "HTTPS kapali; adres ve Keycloak ayarlari HTTP icin duzenleniyor..."
+  scripts/tls.sh disable >/dev/null 2>&1 || warn "Ayar yapilamadi; 'scripts/tls.sh disable' ile tekrar deneyin."
 fi
+PUBLIC_ORIGIN="$(grep '^PUBLIC_ORIGIN=' .env | tail -1 | cut -d= -f2-)"
 
 echo ""
 echo "${GREEN}${BOLD}Kurulum tamamlandi.${RESET}"

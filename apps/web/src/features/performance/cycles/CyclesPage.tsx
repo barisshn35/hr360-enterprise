@@ -37,11 +37,20 @@ import { CreateCycleDialog } from './CreateCycleDialog'
 import { CycleTimeline } from './CycleTimeline'
 import { timeProgress } from './cycleDefaults'
 import { cycleStatusGroup } from '@/api/performance/labels'
+import { useAuth } from '@/auth/useAuth'
+import { isHr } from '@/auth/roles'
+
+/** Dönem oluşturma/açma/kapama backend'de yalnızca İK'ya açık (RequireHrAdmin). */
+function useCanAdminCycles() {
+  const { roles } = useAuth()
+  return isHr(roles, 'ext-performance-manage')
+}
 
 type Filter = 'all' | 'Open' | 'Planned' | 'Closed'
 
 export function CyclesPage() {
   const cycles = useCycles()
+  const canAdmin = useCanAdminCycles()
   const [creating, setCreating] = useState(false)
   const [closing, setClosing] = useState<ReviewCycle | null>(null)
   const [opening, setOpening] = useState<ReviewCycle | null>(null)
@@ -70,10 +79,12 @@ export function CyclesPage() {
         title="Dönemler"
         description="Hedefler, değerlendirmeler ve dönemsel sonuçlar döneme bağlıdır. Dönem taslak olarak oluşturulur, açılır ve özel bir akışla kapatılır; kapanan dönem yeniden açılamaz."
         actions={
-          <Button onClick={() => setCreating(true)} disabled={cycles.isPending}>
-            <CalendarPlus aria-hidden />
-            Yeni dönem
-          </Button>
+          canAdmin ? (
+            <Button onClick={() => setCreating(true)} disabled={cycles.isPending}>
+              <CalendarPlus aria-hidden />
+              Yeni dönem
+            </Button>
+          ) : undefined
         }
       >
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
@@ -113,13 +124,19 @@ export function CyclesPage() {
         <Panel>
           <EmptyState
             icon={CalendarRange}
-            title="Henüz dönem yok — ilk dönemi oluşturun"
-            detail="Hedefler ve değerlendirmeler bir döneme bağlanmadan başlatılamaz. Çoğu şirket çeyreklik dönemle başlar."
+            title={canAdmin ? 'Henüz dönem yok — ilk dönemi oluşturun' : 'Henüz dönem yok'}
+            detail={
+              canAdmin
+                ? 'Hedefler ve değerlendirmeler bir döneme bağlanmadan başlatılamaz. Çoğu şirket çeyreklik dönemle başlar.'
+                : 'Dönemleri İK oluşturur ve açar. Açık bir dönem olduğunda hedef ve değerlendirmeler başlatılabilir.'
+            }
             action={
-              <Button onClick={() => setCreating(true)}>
-                <CalendarPlus aria-hidden />
-                Yeni dönem
-              </Button>
+              canAdmin ? (
+                <Button onClick={() => setCreating(true)}>
+                  <CalendarPlus aria-hidden />
+                  Yeni dönem
+                </Button>
+              ) : undefined
             }
           />
         </Panel>
@@ -201,6 +218,7 @@ export function CyclesPage() {
 /* ---------------------------------- açık dönem ---------------------------------- */
 
 function ActiveCycleCard({ cycle, onClose }: { cycle: ReviewCycle; onClose: () => void }) {
+  const canAdmin = useCanAdminCycles()
   const readiness = useCycleReadiness(cycle.id)
   const t = timeProgress(cycle)
   const r = readiness.data
@@ -252,10 +270,12 @@ function ActiveCycleCard({ cycle, onClose }: { cycle: ReviewCycle; onClose: () =
           </div>
 
           <div className="mt-5 flex flex-wrap gap-2">
-            <Button variant="destructive" onClick={onClose}>
-              <Lock aria-hidden />
-              Dönemi kapat
-            </Button>
+            {canAdmin && (
+              <Button variant="destructive" onClick={onClose}>
+                <Lock aria-hidden />
+                Dönemi kapat
+              </Button>
+            )}
             <Button asChild variant="outline">
               <Link to="/panel/performans/degerlendirme">Değerlendirmeler</Link>
             </Button>
@@ -342,6 +362,7 @@ function ReadyRing({ pct }: { pct: number }) {
 
 function NoActiveCycle({ drafts, onOpen, onCreate }: { drafts: ReviewCycle[]; onOpen: (c: ReviewCycle) => void; onCreate: () => void }) {
   const next = [...drafts].sort((a, b) => a.startDate.localeCompare(b.startDate))[0]
+  const canAdmin = useCanAdminCycles()
   return (
     <Panel className="border-dashed p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -356,7 +377,7 @@ function NoActiveCycle({ drafts, onOpen, onCreate }: { drafts: ReviewCycle[]; on
             </p>
           </div>
         </div>
-        {next ? (
+        {!canAdmin ? null : next ? (
           <Button onClick={() => onOpen(next)}>
             <PlayCircle aria-hidden />
             {next.name} dönemini aç
@@ -388,6 +409,7 @@ function CycleCard({
   onClose: () => void
 }) {
   const t = timeProgress(cycle)
+  const canAdmin = useCanAdminCycles()
   return (
     <motion.article
       id={`cycle-${cycle.id}`}
@@ -433,13 +455,13 @@ function CycleCard({
       )}
 
       <div className="mt-auto flex flex-wrap gap-2">
-        {cycle.status === 'Planned' && (
+        {canAdmin && cycle.status === 'Planned' && (
           <Button size="sm" onClick={onOpen}>
             <PlayCircle aria-hidden />
             Dönemi aç
           </Button>
         )}
-        {cycle.status === 'Open' && (
+        {canAdmin && cycle.status === 'Open' && (
           <Button size="sm" variant="destructive" onClick={onClose}>
             <Lock aria-hidden />
             Dönemi kapat

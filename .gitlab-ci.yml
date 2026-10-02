@@ -4,8 +4,15 @@
 # 1 vCPU / 1.5 GB. Bu yuzden butun servisleri her commit'te yeniden build
 # ETMEYIZ - "rules: changes:" ile SADECE degisen servisin job'u calisir.
 #
-# Asama 1 (bu surum): test + build + registry push.
-# Asama 2 (sonraki surum): Ansible ile rolling deploy, health check, rollback.
+# Asamalar: test + build + registry push, ardindan Ansible ile node bazli deploy,
+# health check ve basarisizlikta rollback (platform/ansible/).
+#
+# REFERANS DOSYASI: Bu pipeline 7 sanal sunuculu hedef ortam (172.33.55.0/24,
+# servis basina ayri compose dosyasi ve 5001-5013 portlari) icin yazildi. Bu
+# repodaki tek sunucu kurulumu (docker-compose.yml + install.sh) ile dogrudan
+# calismaz: deploy job'larinin kopyaladigi servis bazli compose dosyalari ve
+# health check portlari bu repoda yoktur. Pipeline'i calistirmadan once
+# platform/ansible/deploy-service.yml'deki notlara bakin.
 
 stages:
   - test

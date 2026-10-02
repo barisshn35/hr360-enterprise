@@ -256,7 +256,7 @@ export function RegisterCompanyWizard() {
             </div>
             <div className="flex items-baseline justify-between gap-4 py-1">
               <dt className="text-muted-foreground">Plan</dt>
-              <dd className="font-medium">{tenantPlanLabels[values.plan]}</dd>
+              <dd className="font-medium">{tenantPlanLabels[result.plan ?? 'Trial']}</dd>
             </div>
           </dl>
 
@@ -490,8 +490,8 @@ export function RegisterCompanyWizard() {
           {step === 2 && (
             <div className="flex flex-col gap-5">
               <p className="text-[13px] leading-relaxed text-muted-foreground">
-                Planı sonradan değiştirebilirsiniz. Çalışan sayınız kotayı aştığında yükseltme
-                gerekir.
+                Her hesap Deneme planıyla açılır; seçtiğiniz plan talebiniz platform yöneticisi
+                tarafından onaylandığında etkinleşir.
               </p>
               <div role="radiogroup" aria-label="Plan seçimi">
                 <PricingPlans

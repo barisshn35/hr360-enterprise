@@ -89,6 +89,8 @@ export interface TenantRegistrationResult {
   slug: string
   companyName: string
   status: TenantStatus
+  /** Her yeni kayıt Deneme planıyla başlar; ücretli plana geçişi platform yöneticisi yapar. */
+  plan?: TenantPlan
   message?: string | null
 }
 

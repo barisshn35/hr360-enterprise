@@ -40,7 +40,7 @@ public class EmployeeDirectoryClient
         _ctx = ctx;
         _logger = logger;
         _employeeBase = (Environment.GetEnvironmentVariable("EMPLOYEE_SERVICE_URL")
-            ?? "http://172.33.55.2:5002").TrimEnd('/');
+            ?? "http://employee-service:8080").TrimEnd('/');
     }
 
     public async Task<string?> GetEmailAsync(Guid employeeId, CancellationToken ct)

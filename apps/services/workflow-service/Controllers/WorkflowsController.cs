@@ -275,8 +275,8 @@ public class WorkflowsController : ControllerBase
     }
 
     /// <summary>
-    /// Bekleyen akisi iptal eder - talep sahibi (kaydini iptal ettiginde leave/expense
-    /// servisi onun jetonuyla cagirir) ya da IK. Onceden iptal ucu yoktu: iptal edilen
+    /// Bekleyen akisi iptal eder - talep sahibi (izin talebini iptal ettiginde
+    /// leave-service onun jetonuyla cagirir) ya da IK. Onceden iptal ucu yoktu: iptal edilen
     /// iznin akisi onaycinin kutusunda acik kaliyordu.
     /// </summary>
     [HttpPost("{id}/cancel")]

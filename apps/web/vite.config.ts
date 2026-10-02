@@ -4,12 +4,12 @@ import { defineConfig, loadEnv, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
-// Dev sırasında backend'e (Cloudflare üzerinden public olan gateway) proxy'lenir.
-// VPN gerekmez: https://hr360.local hem /auth hem /api/* hem /ml/* servis ediyor.
+// Dev sırasında /auth, /api/* ve /ml/* istekleri çalışan bir HR360 kurulumunun
+// gateway'ine proxy'lenir (varsayılan: aynı makinedeki install.sh kurulumu).
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
-  const target = env.VITE_DEV_PROXY_TARGET || 'https://hr360.local'
-  const proxy = { target, changeOrigin: true, secure: true }
+  const target = env.VITE_DEV_PROXY_TARGET || 'http://localhost'
+  const proxy = { target, changeOrigin: true, secure: target.startsWith('https://') }
 
   // Mock anahtarları derleme anında sabite dönüşür. Kapalıyken (varsayılan)
   // `if (__MOCK_API__)` dalları ve içindeki dinamik import'lar paketten tamamen düşer.

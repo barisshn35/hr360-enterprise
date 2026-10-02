@@ -20,7 +20,7 @@ builder.Services.AddDbContext<CompensationDbContext>(options =>
     options.UseNpgsql(connectionString));
 
 var keycloakAuthority = Environment.GetEnvironmentVariable("KEYCLOAK_AUTHORITY")
-    ?? "http://172.33.55.2:8080/realms/hr360";
+    ?? "http://keycloak:8080/auth/realms/hr360";
 
 // GUVENLIK (CTO denetimi): Onceden issuer ve istemci dogrulanmiyordu - realm'deki
 // HERHANGI bir istemcinin (orn. admin-cli, servis hesaplari) jetonu kabul ediliyordu.
@@ -100,6 +100,12 @@ builder.Services.AddAuthorization(options =>
         policy.RequireAssertion(ctx =>
             ctx.User.IsInRole("hr-admin") || ctx.User.IsInRole("tenant-admin") ||
             ctx.User.IsInRole("platform-admin") || ctx.User.IsInRole("ext-compensation-view")));
+    // Yazma uclari (ucret bandi ve ucret kaydi olusturma) yalnizca IK'ya acik.
+    // "compensation:view" ek izni ADINDAN da anlasilacagi gibi yalnizca okuma
+    // verir; onceden RequireHrAdmin'e dahil oldugu icin bu kisiler ucret
+    // kaydi da yazabiliyordu.
+    options.AddPolicy("RequireCompensationWrite", policy =>
+        policy.RequireRole("hr-admin", "tenant-admin", "platform-admin"));
     options.AddPolicy("RequireManagerOrAbove", policy =>
         policy.RequireRole("manager", "hr-admin", "tenant-admin", "platform-admin"));
 });

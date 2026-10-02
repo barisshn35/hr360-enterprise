@@ -1,3 +1,8 @@
+> **Tarihsel not:** Bu dosya, frontend'in ilk sürümü yazılırken hazırlanan devir notudur
+> ve o zamanki ortamı (7 sunuculu kurulum, `hr360.local`, eski rol zinciri) anlatır.
+> Güncel mimari, roller ve kurulum için kök `README.md`, `apps/web/README.md` ve
+> `apps/web/src/auth/roles.ts` esas alınmalıdır.
+
 # HR360 v2 Frontend — Claude Code Devir Notu
 
 Bu dosyayı + `21ST-MANIFEST.md`'yi Claude Code oturumunda ilk mesaj olarak paylaş.
@@ -170,14 +175,9 @@ ekranda açıklayıcı bir not da vardı — koru.)
 
 ## Test kullanıcıları
 
-```
-test.admin    / w95fIs8ZI4bWZcOc     (hr-admin)
-test.employee / EbQ5Hbe0xUY8yWbR     (employee)
-```
-
-İkisi de `hr360-enterprise` kiracısına bağlı. `platform-admin` rolü tanımlı ama
-henüz kimseye atanmamış — platform panelini test etmek için bir kullanıcıya
-atanması gerekir.
+Bu repodaki kurulumda giriş hesapları `install.sh` tarafından üretilir: `demo.admin`
+(demo şirketinin yöneticisi) ve `platform.admin` (platform yöneticisi); parolaları
+`.env` dosyasındadır.
 
 ---
 

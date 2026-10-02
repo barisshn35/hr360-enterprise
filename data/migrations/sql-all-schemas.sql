@@ -1,6 +1,14 @@
--- HR360 kalan backend modulleri - birlesik sema
--- Kullanim (db-01'de):
---   docker exec -i db-postgres-1 psql -U hr360admin -d hr360_operational < sql-all-schemas.sql
+-- HR360 - tum servislerin birlesik semasi (hr360_operational veritabani).
+-- Kullanim: elle calistirilmaz. docker-compose.yml bu dosyayi Postgres'in
+-- docker-entrypoint-initdb.d klasorune baglar; veritabani ILK KEZ olusurken
+-- otomatik uygulanir. Mevcut kurulumlarin semasi scripts/sql/*.sql gocleriyle
+-- guncellenir (install.sh guncelleme yolu bunlari otomatik calistirir).
+--
+-- ONEMLI: Dosyanin buyuk kismi EF Core modellerinden uretildi, ancak sondaki
+-- "CTO denetimi" bolumu ve bazi indeksler (lower("Email") ile kiraci bazli
+-- e-posta tekilligi, kismi/filtreli indeksler) ELLE yazildi. Dosya EF'ten
+-- yeniden uretilirse bu satirlar korunmali. Servislerin eski sql/schema.sql
+-- dosyalari kaldirildi; tek kaynak bu dosyadir.
 
 -- NOT (hardcore test bulgusu, 2. tur): asagidaki 9 servisin TAMAMININ tablolari
 -- EF Core modelleriyle senkron DEGILDI - bazilarinda TenantSlug sutunu hic

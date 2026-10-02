@@ -13,8 +13,9 @@ import { EmptyState, ErrorState, InfoNote, RowsSkeleton } from '@/components/ui/
 import type { StatusTone } from '@/components/ui/StatusBadge'
 import { useToast } from '@/components/ui/Toast'
 import { useAuth } from '@/auth/useAuth'
+import { isHr } from '@/auth/roles'
 import { leaveApi } from '@/api/leave'
-import { useLeaveBalances, useLeaveRequests } from '@/api/queries'
+import { useLeaveBalances, useLeaveRequests, useMyEmployeeId } from '@/api/queries'
 import {
   leaveStatusLabels,
   leaveTypeLabels,
@@ -86,7 +87,10 @@ function BalanceCard({ balance }: { balance: LeaveBalance }) {
 }
 
 export function LeavePage() {
-  const { can } = useAuth()
+  const { can, roles } = useAuth()
+  const { employeeId: myEmployeeId } = useMyEmployeeId()
+  // İptal backend'de yalnızca talep sahibine ve İK'ya açık.
+  const canCancel = (r: { employeeId: string }) => isHr(roles) || r.employeeId === myEmployeeId
   const toast = useToast()
   const queryClient = useQueryClient()
   const [tab, setTab] = useTabParam<TabKey>('durum', 'Submitted')
@@ -257,7 +261,8 @@ export function LeavePage() {
           {
             label: 'Talebi iptal et',
             destructive: true,
-            hidden: (r) => !(r.status === 'Submitted' || r.status === 'Draft') || cancel.isPending,
+            hidden: (r) =>
+              !(r.status === 'Submitted' || r.status === 'Draft') || cancel.isPending || !canCancel(r),
             onSelect: (r) => cancel.mutate(r.id),
           },
         ]}

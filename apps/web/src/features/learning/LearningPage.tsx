@@ -401,20 +401,24 @@ export function LearningPage() {
   const [enrollFor, setEnrollFor] = useState<{ id: string; title: string } | null>(null)
 
   const canManage = can('learning:manage')
+  // Süresi dolan sertifikalar listesi backend'de yöneticiye ve üstüne açık.
+  const canSeeExpiring = can('employee:viewAll')
 
   const courses = useCourses({
     category: category === ALL ? undefined : (category as CourseCategory),
     mandatoryOnly: mandatoryOnly || undefined,
   })
   const certifications = useCertifications()
-  const expiring = useExpiringCertifications(90, tab === 'suresi-dolan')
+  const expiring = useExpiringCertifications(90, tab === 'suresi-dolan' && canSeeExpiring)
   const compliance = useCompliance(tab === 'uyum' && canManage)
   const nameOf = useEmployeeName()
 
   const tabs: Array<TabDef<TabKey>> = [
     { key: 'katalog', label: 'Katalog' },
     { key: 'sertifikalar', label: 'Sertifikalar' },
-    { key: 'suresi-dolan', label: 'Süresi dolanlar', count: expiring.data?.length },
+    ...(canSeeExpiring
+      ? [{ key: 'suresi-dolan' as TabKey, label: 'Süresi dolanlar', count: expiring.data?.length }]
+      : []),
     ...(canManage ? [{ key: 'uyum' as TabKey, label: 'Zorunlu eğitim uyumu' }] : []),
   ]
 

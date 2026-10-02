@@ -38,7 +38,7 @@ public class TenantBrandingClient
         _protector = protector;
         _logger = logger;
         _baseUrl = (Environment.GetEnvironmentVariable("TENANT_SERVICE_URL")
-            ?? "http://172.33.55.2:5013").TrimEnd('/');
+            ?? "http://tenant-service:8080").TrimEnd('/');
     }
 
     public record TenantBranding(string Name, string? LogoUrl, string? PrimaryColorHex);

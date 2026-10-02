@@ -20,36 +20,32 @@ public class ExpenseClaimsController : ControllerBase
         _approvals = approvals;
     }
 
-    /// <summary>
-    /// Masraf beyanlarini listeler.
-    ///
-    /// GUVENLIK: bu uc AUTH_ONLY'ydi ve employeeId filtresi disaridan
-    /// serbestce verilebiliyordu - "employee" rolundeki bir kullanici
-    /// employeeId'yi degistirerek BASKA HERHANGI BIR calisanin masraf
-    /// beyanlarini (tutar, kalem detayi dahil) gorebiliyordu, hic vermeden
-    /// de TUM sirketin beyanlarini cekebiliyordu. performance-service/
-    /// GoalsController'daki ayni desenle simdi:
-    ///   - Yonetici ve ustu (ve Muhasebe - odeme isaretlemek icin tum
-    ///     beyanlari gormesi gerekiyor): istedigi employeeId'yi (ya da
-    ///     hicbirini) sorgulayabilir.
-    ///   - Calisan: yalnizca KENDI employeeId'sini sorgulayabilir; farkli
-    ///     bir ID verirse ya da hic vermezse 403 doner.
-    /// </summary>
     private bool IsHr => User.IsInRole("hr-admin") || User.IsInRole("tenant-admin")
         || User.IsInRole("platform-admin");
 
-    /// <summary>Tum beyanlari okuyabilen roller (GetAll'daki mevcut kuralla ayni).</summary>
-    private bool CanReadAll => IsHr || User.IsInRole("manager") || User.IsInRole("accounting");
+    /// <summary>
+    /// Tum beyanlari okuyabilen roller. Odendi isaretleyen (muhasebe veya "odeme
+    /// isaretleme" ek izni olan) kisi, isaretleyecegi beyanlari gorebilmeli.
+    /// </summary>
+    private bool CanReadAll => IsHr || User.IsInRole("manager") || User.IsInRole("accounting")
+        || User.IsInRole("ext-expense-markPaid") || User.IsInRole("ext-expense-manage");
 
+    /// <summary>
+    /// Masraf beyanlarini listeler.
+    ///
+    /// GUVENLIK: Onceden employeeId filtresi serbestti; bir calisan baskasinin
+    /// beyanlarini (tutar, kalemler), filtresiz cagirarak da tum sirketinkileri
+    /// gorebiliyordu. Simdi:
+    ///   - Yonetici, IK, muhasebe ve ilgili ek izinler: istedigi employeeId'yi
+    ///     (ya da hicbirini) sorgulayabilir.
+    ///   - Calisan: yalnizca kendi beyanlarini gorur; employeeId vermezse kendisine
+    ///     sabitlenir, baska birininkini verirse 403 doner.
+    /// </summary>
     [HttpGet]
     public async Task<IActionResult> GetAll(
         [FromQuery] Guid? employeeId, [FromQuery] ClaimStatus? status, CancellationToken ct)
     {
-        var isPrivileged = User.IsInRole("manager") || User.IsInRole("hr-admin")
-            || User.IsInRole("tenant-admin") || User.IsInRole("platform-admin")
-            || User.IsInRole("accounting");
-
-        if (!isPrivileged)
+        if (!CanReadAll)
         {
             var myEmployeeId = await _approvals.FindMyEmployeeIdAsync(ct);
             if (myEmployeeId is null) return Forbid();
@@ -82,9 +78,8 @@ public class ExpenseClaimsController : ControllerBase
     public async Task<IActionResult> Create([FromBody] CreateClaimRequest request, CancellationToken ct)
     {
         // GUVENLIK: EmployeeId istek govdesinden geliyordu - herkes baskasi adina
-        // beyan acabiliyordu. IK disindakiler yalnizca kendi adina. (Muhasebe de
-        // baskasi adina acamaz: gonderme adimi IK'ya ozel oldugundan olusturdugu beyan
-        // hic onaya gonderilemiyordu.)
+        // beyan acabiliyordu. IK disindakiler (muhasebe dahil) yalnizca kendi adina
+        // acabilir; baskasi adina acilan taslagi onaya yalnizca sahibi ya da IK gonderebilir.
         if (!IsHr)
         {
             var me = await _approvals.FindMyEmployeeIdAsync(ct);
@@ -150,11 +145,10 @@ public class ExpenseClaimsController : ControllerBase
         claim.Status = ClaimStatus.Submitted;
         claim.SubmittedAt = DateTimeOffset.UtcNow;
 
-        // Frontend bir WorkflowRequestId verdiyse onu kullan; vermediyse
-        // (bugune kadar hep boyle oldu) departman basina otomatik bir onay
-        // workflow'u ac - bu olmadan "Onay kutusu" sayfasi bu beyani hicbir
-        // zaman gostermiyordu.
-        // GUVENLIK: Istemcinin verdigi WorkflowRequestId ARTIK KULLANILMIYOR. Onceden
+        // Departman basina otomatik bir onay akisi acilir; bu olmadan "Onay kutusu"
+        // sayfasi beyani hic gostermiyordu.
+        // GUVENLIK: Istemcinin verdigi WorkflowRequestId KULLANILMAZ (alan yalnizca
+        // eski istemcilerle uyumluluk icin kabul edilir). Onceden
         // bir yonetici kendi actigi sahte bir akisi (onayci = kendisi) kendi beyanina
         // baglayip onaylayarak KENDI beyanini onaylatabiliyordu (canli dogrulandi).
         // Onay akisini yalnizca sunucu, departman basina yonlendirerek baslatir.
@@ -175,8 +169,8 @@ public class ExpenseClaimsController : ControllerBase
             return BadRequest("Yalnızca onay bekleyen beyan sonuçlandırılabilir");
 
         // GUVENLIK: bu uc, workflow-service'teki asil onay akisi basarisiz
-        // olursa diye birakilan elle-sonuclandirma yolu - ama
-        // RequireManagerOrAbove tek basina "sen bu beyanin sahibi misin"
+        // olursa diye birakilan elle-sonuclandirma yolu - ama politika
+        // (RequireExpenseManage) tek basina "sen bu beyanin sahibi misin"
         // sorusunu cevaplamiyordu. En azindan en bariz acigi (kendi
         // beyanini kendi onaylama/reddetme) kapatiyoruz.
         var myEmployeeId = await _approvals.FindMyEmployeeIdAsync(ct);

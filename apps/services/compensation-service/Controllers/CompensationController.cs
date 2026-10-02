@@ -7,7 +7,9 @@ using CompensationService.Models;
 namespace CompensationService.Controllers;
 
 /// <summary>
-/// Ucret verisi hassastir: tum uc noktalar hr-admin/system-admin gerektirir.
+/// Ucret verisi hassastir: tum uc noktalar IK yetkisi gerektirir
+/// (RequireHrAdmin: hr-admin, tenant-admin, platform-admin; okuma uclari ayrica
+/// compensation:view ek iznini kabul eder - bkz. Program.cs).
 /// </summary>
 [ApiController]
 [Route("api/compensation")]
@@ -28,6 +30,7 @@ public class CompensationController : ControllerBase
     }
 
     [HttpPost("bands")]
+    [Authorize(Policy = "RequireCompensationWrite")]
     public async Task<IActionResult> CreateBand([FromBody] CreateBandRequest request)
     {
         if (request.MinAmount > request.MidAmount || request.MidAmount > request.MaxAmount)
@@ -63,6 +66,7 @@ public class CompensationController : ControllerBase
 
     /// <summary>Yeni ucret kaydi; onceki acik kaydi otomatik kapatir.</summary>
     [HttpPost("records")]
+    [Authorize(Policy = "RequireCompensationWrite")]
     public async Task<IActionResult> CreateRecord([FromBody] CreateRecordRequest request)
     {
         if (request.BaseSalary <= 0) return BadRequest("Ucret sifirdan buyuk olmali");

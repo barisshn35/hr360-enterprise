@@ -81,8 +81,9 @@ public class FeedbackController : ControllerBase
         }));
     }
 
-    /// <summary>Bir kisinin yazdigi geri bildirimler.</summary>
     /// <summary>
+    /// Bir kisinin yazdigi geri bildirimler.
+    ///
     /// GUVENLIK: Onceden yalnizca [Authorize] - her calisan, bir yoneticinin
     /// YAZDIGI tum notlari, calisana GOSTERILMEYEN (VisibleToEmployee=false) gizli
     /// yonetici notlari dahil okuyabiliyordu (canli dogrulandi: Ayse, Mehmet'in
@@ -170,11 +171,9 @@ public class FeedbackController : ControllerBase
     }
 
     /// <summary>
-    /// Ekip geri bildirim ozeti: hangi sebeple ne kadar geri bildirim
-    /// veriliyor, ton dagilimi nasil. Yoneticiye ekibin geri bildirim
-    /// kulturu hakkinda fikir verir.
-    /// </summary>
-    /// <summary>
+    /// Geri bildirim ozeti: hangi sebeple ne kadar geri bildirim veriliyor, ton
+    /// dagilimi nasil. Yoneticiye ekibin geri bildirim kulturu hakkinda fikir verir.
+    ///
     /// NOT: Onceden yalnizca yonetici+ - ama "Geri bildirim" ekrani calisana KENDI
     /// ozetini gosteriyor ve 403 aliyordu. Calisan kendi ozetini gorebilir (gizli
     /// notlar sayilmaz); tum kiraci/baskasinin ozeti yonetici+'ya ozel.

@@ -42,6 +42,8 @@ const P = '/api/performance'
 /* ----------------------------------- yardımcılar -------------------------------- */
 
 const isManager = () => readMockRole() !== 'employee'
+/** Dönem oluşturma/açma/kapama gerçek backend'de yalnızca İK'ya açık. */
+const isHrMock = () => ['hr-admin', 'tenant-admin', 'platform-admin'].includes(readMockRole())
 
 function me() {
   return employeeByEmail(mockUser().email)
@@ -419,7 +421,7 @@ export const performanceHandlers = [
 
   http.post(`${P}/review-cycles`, async ({ request }) => {
     await latency()
-    if (!isManager()) return forbidden()
+    if (!isHrMock()) return forbidden()
     const b = await readJson(request)
     const name = str(b.name)
     const year = num(b.year)
@@ -454,7 +456,7 @@ export const performanceHandlers = [
 
   http.post(`${P}/review-cycles/:id/status`, async ({ request, params }) => {
     await latency()
-    if (!isManager()) return forbidden()
+    if (!isHrMock()) return forbidden()
     const db = getDb()
     const cycle = db.cycles.find((c) => c.id === params.id)
     if (!cycle) return notFound('Dönem bulunamadı.')
@@ -847,6 +849,8 @@ export const performanceHandlers = [
 
   http.post(`${P}/feedback`, async ({ request }) => {
     await latency()
+    // Gerçek backend: geri bildirim yazmak yöneticiye ve üstüne açık.
+    if (!isManager()) return forbidden()
     const emp = me()
     if (!emp) return notFound(NO_RECORD)
     const b = await readJson(request)

@@ -10,7 +10,7 @@ Erişim tek komutla değiştirilir; ayar `.env`'e yazılır ve kalıcıdır:
 | --- | --- | --- |
 | open (varsayılan) | `scripts/keycloak-admin-access.sh open` | Panel `https://<adres>/auth/admin/` üzerinden herkese açık |
 | ip | `scripts/keycloak-admin-access.sh ip 203.0.113.10,10.20.0.0/16` | Panel aynı adreste, yalnızca listedeki IP/CIDR'lere açık; diğerleri 403 alır |
-| port | `scripts/keycloak-admin-access.sh port` | Panel ana adreste tamamen kapalı; yalnızca `https://<adres>:8090/auth/admin/` üzerinden. Portu firewall ile kısıtlarsınız |
+| port | `scripts/keycloak-admin-access.sh port` | Panel ana adreste tamamen kapalı; yalnızca `http://<adres>:8090/auth/admin/` üzerinden (bu port düz HTTP'dir; ana adres HTTPS olsa da). Portu firewall ile yalnızca yönetim IP'lerine ya da VPN'e açın |
 | port + ip | `scripts/keycloak-admin-access.sh port 203.0.113.10` | Port modu + nginx ayrıca o portta IP kısıtı (iki katman) |
 
 Geçerli ayarı görmek için: `scripts/keycloak-admin-access.sh status`.

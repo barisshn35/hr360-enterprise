@@ -10,7 +10,8 @@ demo ve portföy amaçlı.
 
 ## Hızlı başlangıç
 
-Gereksinimler: Docker Engine + Docker Compose v2 plugin.
+Gereksinimler: Docker Engine + Docker Compose v2 plugin (yoksa `install.sh` kurmayı
+teklif eder), `curl` ve `openssl`.
 
 ```bash
 git clone <bu-repo>
@@ -24,8 +25,9 @@ bilgilerini ekrana basar. Repo içinde **hiçbir gerçek şifre veya anahtar
 bulunmaz**; hepsi kurulum sırasında sizin makinenizde üretilir ve yalnızca
 yerel `.env` dosyanızda (git'e dahil değil) saklanır.
 
-İlk çalıştırma birkaç dakika sürebilir (13 .NET servisi + Keycloak + MLflow
-vb. build edilir). Durdurmak için `docker compose down`, logları izlemek
+İlk çalıştırma birkaç dakika sürebilir (13 .NET servisi, web arayüzü, MLflow ve
+ML inference imajları build edilir; Keycloak, Kafka, PostgreSQL gibi bileşenler hazır
+imajlardan çekilir). Durdurmak için `docker compose down`, logları izlemek
 için `docker compose logs -f`.
 
 Kendi bilgisayarınızda denemek için bütün soruları boş geçmeniz yeterli:
@@ -84,11 +86,16 @@ kayıt ekranından açılır. Demo şirketini `platform.admin` hesabıyla askıy
 | İş | Komut |
 |---|---|
 | HTTPS'i aç/kapat, sertifika değiştir | `scripts/tls.sh enable ... / disable / status` |
+| TLS'i öndeki bir yük dengeleyici sonlandırıyorsa | `scripts/tls.sh external --host hr.sirket.com` |
 | Keycloak paneli erişimi | `scripts/keycloak-admin-access.sh open / ip <IP,...> / port [IP,...] / status` |
 | Yeni sürüme güncelleme | `git pull && ./install.sh` ("sırları yeniden üretelim mi?" sorusuna **Hayır**; veritabanı göçleri otomatik uygulanır) |
 
-Yedeklenmesi gerekenler: PostgreSQL (`hr360_operational` ve `keycloak` veritabanları),
-MinIO verisi (logolar), `.env` ve `deploy/letsencrypt/`.
+Yedeklenmesi gerekenler:
+- PostgreSQL: `hr360_operational`, `keycloak` ve `hr360_mlflow` veritabanları
+- MinIO verisi: logolar ve ML model dosyaları
+- `.env` (bütün parolalar ve anahtarlar)
+- `deploy/keycloak/realm-export.json`
+- Sertifikalar: `deploy/letsencrypt/` ve kendi sertifikanızı kullanıyorsanız `deploy/nginx/tls/`
 
 ## Mimari
 
@@ -102,6 +109,7 @@ MinIO verisi (logolar), `.env` ve `deploy/letsencrypt/`.
   altyapısıyla izole şekilde paylaşır; Keycloak (`keycloak`) ve MLflow
   (`hr360_mlflow`) için aynı PostgreSQL'de ayrı veritabanları
 - **Depolama:** MinIO (S3 uyumlu nesne depolama — logo ve ML artefact'ları)
+- **Redis:** Compose'da çalışır, ancak servisler şu an kullanmıyor (önbellek için ayrılmış)
 - **E-posta:** `install.sh` kurulumda SMTP sunucusunu sorar; boş
   bırakılırsa Mailpit (yerel SMTP yakalayıcı, demo/dev için — e-postalar
   gerçekten gönderilmez) kullanılır. Girilen ayar hem bildirim servisine
@@ -118,7 +126,8 @@ MinIO verisi (logolar), `.env` ve `deploy/letsencrypt/`.
   çalışır; yük dengeleme yoktur.
 
 Servisler birbirini Docker'ın dahili servis-adı DNS'i üzerinden bulur
-(örn. `http://employee-service:8080`) — IP adresi hardcode edilmemiştir.
+(örn. `http://employee-service:8080`). Adresler `docker-compose.yml` içindeki ortam
+değişkenlerinden gelir; koddaki varsayılanlar da aynı servis adlarıdır.
 
 ## Repo yapısı
 
@@ -176,6 +185,11 @@ ve bu repodaki tek-sunucu kurulumu için **gerekli değildir** — sadece
 orijinal DevOps tasarımını göstermek amacıyla saklanmaktadır. `.gitlab-ci.yml`
 de aynı şekilde orijinal CI/CD pipeline'ının bir referansıdır.
 
+Bu referans dosyalar olduğu gibi çalıştırılamaz: servis bazlı compose dosyaları ve
+5001–5013 portları bu repoda yoktur, izleme ve gateway parçaları 13 servisin yalnızca
+9'unu kapsar ve bazı servis–sunucu yerleşimleri birbirini tutmaz. Ayrıntılar dosyaların
+başındaki notlarda.
+
 Tek-sunucu sürümü, aynı servislerin tamamını Docker Compose ile tek
 makinede, servis adı üzerinden birbirini bulacak şekilde çalıştırır. Uygulama
 ve iş mantığı aynıdır; 7-VM tasarımındaki altyapı katmanları ise bu sürümde
@@ -197,7 +211,7 @@ Ancak her şirket için **plan** ile açılır.
 | Koşul | Ayrıntı |
 |---|---|
 | Şirketin planı **Enterprise** olmalı | Uygulamadan kayıt olan her yeni şirket **Deneme (Trial)** planıyla başlar. Ödeme akışı olmadığı için planı platform yöneticisi yükseltir: `platform.admin` → **Kiracılar** → şirket → **Planı değiştir**. Kurulumla gelen **demo** şirketi Enterprise'dır. |
-| Ayarı yapan kişi şirket yöneticisi olmalı | `tenant-admin` rolü ya da **Roller** sayfasından "şirket ayarlarını yönetme" (`tenant:manage`) ek izni verilmiş biri. `platform-admin` da yapabilir. |
+| Ayarı yapan kişi şirket yöneticisi olmalı | `tenant-admin` rolü ya da **Roller** sayfasından "şirket ayarlarını yönetme" (`tenant:manage`) ek izni verilmiş biri. Platform yöneticisi (`platform.admin`) bir şirkete üye olmadığı için bu ayarları yapamaz; planı değiştirir. |
 
 Plan Enterprise değilse marka ayarları **Ayarlar** sayfasında hiç görünmez, API de reddeder.
 Şirket adı ise bütün planlarda değiştirilebilir.
@@ -245,8 +259,9 @@ ve 5 dakika önbellekte tutar. Değişiklikler e-postalara en geç 5 dakikada ya
 
 - Repo'da hiçbir gerçek sır (parola, API anahtarı, sertifika) bulunmaz.
   Tüm sırlar `install.sh` tarafından kurulum anında üretilir/sorulur ve
-  yalnızca `.gitignore`'da hariç tutulan `.env` ve
-  `deploy/keycloak/realm-export.json` dosyalarında saklanır.
+  yalnızca `.gitignore`'da hariç tutulan dosyalarda saklanır: `.env`,
+  `deploy/keycloak/realm-export.json` ve TLS özel anahtarları
+  (`deploy/nginx/tls/`, `deploy/letsencrypt/`).
 - Varsayılan olarak tüm veri servisi portları (`postgres`, `minio` konsolu,
   `keycloak` (8080), `mlflow`, `mailpit`) yalnızca `127.0.0.1`'e bağlanır;
   dışarıya yalnızca gateway açılır: 80 (`GATEWAY_PORT`), HTTPS açıkken 443 ve

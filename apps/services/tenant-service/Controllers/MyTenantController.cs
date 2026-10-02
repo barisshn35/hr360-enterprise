@@ -74,7 +74,8 @@ public class MyTenantController : ControllerBase
         return Ok(new
         {
             tenant.Id, tenant.Name, tenant.Slug, tenant.Status, tenant.Plan,
-            tenant.MaxEmployees, tenant.CreatedAt, tenant.LogoUrl, tenant.PrimaryColorHex,
+            tenant.MaxEmployees, tenant.CreatedAt,
+            LogoUrl = LogoStorageService.ToPublicUrl(tenant.LogoUrl), tenant.PrimaryColorHex,
             tenant.HasCustomSmtp, tenant.SmtpFromAddress, tenant.SmtpFromName,
             EmployeeCount = employeeCount,
         });
@@ -255,7 +256,7 @@ public class MyTenantController : ControllerBase
 
         tenant.LogoUrl = result.Url;
         await _db.SaveChangesAsync();
-        return Ok(new { message = "Logo yüklendi", logoUrl = tenant.LogoUrl });
+        return Ok(new { message = "Logo yüklendi", logoUrl = LogoStorageService.ToPublicUrl(tenant.LogoUrl) });
     }
 
     [HttpDelete("logo")]

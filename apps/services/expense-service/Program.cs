@@ -26,7 +26,7 @@ builder.Services.AddDbContext<ExpenseDbContext>(options =>
     options.UseNpgsql(connectionString));
 
 var keycloakAuthority = Environment.GetEnvironmentVariable("KEYCLOAK_AUTHORITY")
-    ?? "http://172.33.55.2:8080/realms/hr360";
+    ?? "http://keycloak:8080/auth/realms/hr360";
 
 // GUVENLIK (CTO denetimi): Onceden issuer ve istemci dogrulanmiyordu - realm'deki
 // HERHANGI bir istemcinin (orn. admin-cli, servis hesaplari) jetonu kabul ediliyordu.
@@ -101,11 +101,12 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("RequireAccountingOrAbove", policy =>
         policy.RequireRole("accounting", "hr-admin", "tenant-admin", "platform-admin"));
     // DocumentsController (document:manage), ExpenseClaimsController.Resolve
-    // (expense:manage), MarkPaid (expense:markPaid) ve HrCasesController -
-    // hem Assign (RequireHrAdmin) hem Resolve (RequireManagerOrAbove) -
-    // (case:manage, manager seviyesinde tanimli) roles.ts'te farkli izinlere
-    // karsilik geliyor; RequireHrAdmin/RequireManagerOrAbove'u dogrudan
-    // genisletmek yanlis olur (baska iznin uclarina da acar).
+    // (expense:manage), MarkPaid (expense:markPaid) ve HrCasesController.Assign
+    // (case:manage) roles.ts'te ayri izinlere karsilik gelir; her biri kendi
+    // ext-* ek izniyle genisletilir. RequireHrAdmin/RequireManagerOrAbove'u
+    // dogrudan genisletmek yanlis olur (baska iznin uclarina da acar).
+    // Not: HrCases.Assign ayrica kod icinde IK'ya (veya ext-case-manage'e)
+    // daraltilir; vaka kapatma (Resolve) atanan kisiye/IK'ya aciktir.
     options.AddPolicy("RequireDocumentManage", policy =>
         policy.RequireAssertion(ctx =>
             ctx.User.IsInRole("hr-admin") || ctx.User.IsInRole("tenant-admin") ||

@@ -126,11 +126,8 @@ public class MetricsController : ControllerBase
     }
 
     /// <summary>
-    /// Hazir metrik setleri. Sirketler sifirdan baslamak zorunda kalmasin;
+    /// Hazir metrik seti uygular. Sirketler sifirdan baslamak zorunda kalmasin;
     /// sablonu yukleyip uzerinde degisiklik yapabilsinler.
-    /// </summary>
-    /// <summary>
-    /// Hazir metrik seti uygular.
     ///
     /// UPSERT MANTIGI - onemli:
     ///   - Ayni kodda ARSIVLENMIS bir metrik varsa: YENIDEN AKTIFLESTIRIR
