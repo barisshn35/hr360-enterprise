@@ -7,7 +7,15 @@ import { cn } from '@/lib/utils'
  * bandı ve gövde ekler — 20 ekranda aynı üç parça tekrar tekrar kurulmasın.
  */
 export function Panel({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <Card className={cn('gap-0 overflow-hidden py-0', className)} {...props} />
+  return (
+    <Card
+      className={cn(
+        'gap-0 overflow-hidden py-0 animate-in fade-in slide-in-from-bottom-3 duration-500 fill-mode-both',
+        className,
+      )}
+      {...props}
+    />
+  )
 }
 
 export function PanelHead({

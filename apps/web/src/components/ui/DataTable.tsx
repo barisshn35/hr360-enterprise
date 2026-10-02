@@ -404,7 +404,7 @@ export function DataTable<T>({
                         }}
                         onClick={onRowClick ? () => onRowClick(row) : undefined}
                         className={cn(
-                          'border-b border-border/70 transition-colors hover:bg-primary/[0.035]',
+                          'border-b border-border/70 transition-[background-color,box-shadow] duration-200 hover:bg-primary/[0.05] hover:shadow-[inset_3px_0_0_hsl(var(--primary))]',
                           onRowClick && 'cursor-pointer',
                           rowClassName?.(row),
                         )}

@@ -15,6 +15,11 @@
  * açmadan çalışır, istek Authorization başlığı taşımaz (bkz. tenantApi.register).
  */
 
+import { AmbientBackground } from '@/components/fx/ambient-background'
+import { Lamp } from '@/components/fx/lamp'
+import { BorderBeam } from '@/components/fx/border-beam'
+import { TextReveal } from '@/components/fx/text-reveal'
+import { GradientText } from '@/components/fx/shiny-text'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
@@ -227,11 +232,10 @@ export function RegisterCompanyWizard() {
     const result = register.data
     return (
       <main className="relative flex min-h-dvh items-center justify-center overflow-hidden bg-background px-5 py-16">
-      <div aria-hidden="true" className="pointer-events-none fixed inset-0">
-        <div className="absolute -top-40 left-1/2 h-[30rem] w-[60rem] -translate-x-1/2 rounded-full bg-primary/[0.09] blur-[110px]" />
-        <div className="hr-dots absolute inset-0 opacity-50" />
-      </div>
+      <AmbientBackground />
+      <Lamp className="opacity-70" />
         <div className="surface relative w-full max-w-md rounded-2xl p-8 text-center">
+          <BorderBeam size={200} duration={8} />
           <motion.span
             initial={reduced ? false : { scale: 0.5, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
@@ -284,10 +288,8 @@ export function RegisterCompanyWizard() {
   /* --------------------------------- Sihirbaz --------------------------------- */
   return (
     <main className="relative min-h-dvh overflow-hidden bg-background px-5 py-10 sm:py-16">
-      <div aria-hidden="true" className="pointer-events-none fixed inset-0">
-        <div className="absolute -top-40 left-1/2 h-[30rem] w-[60rem] -translate-x-1/2 rounded-full bg-primary/[0.09] blur-[110px]" />
-        <div className="hr-dots absolute inset-0 opacity-50" />
-      </div>
+      <AmbientBackground />
+      <Lamp className="opacity-70" />
       <div className="relative mx-auto w-full max-w-3xl">
         <Link
           to="/"
@@ -302,8 +304,8 @@ export function RegisterCompanyWizard() {
           HR360
         </Link>
 
-        <h1 className="text-gradient text-[28px] leading-tight font-semibold tracking-[-0.03em] sm:text-[36px]">
-          Şirketinizi kaydedin
+        <h1 className="text-[30px] leading-tight font-semibold tracking-[-0.04em] sm:text-[42px]">
+          <TextReveal text="Şirketinizi" /> <GradientText>kaydedin</GradientText>
         </h1>
         <p className="mt-2 max-w-xl text-[14px] leading-relaxed text-muted-foreground">
           Birkaç dakika sürer. Kaydı tamamladığınızda şirketiniz için ayrı bir çalışma alanı
@@ -349,7 +351,8 @@ export function RegisterCompanyWizard() {
           ))}
         </ol>
 
-        <div className="surface rounded-2xl p-5 sm:p-8">
+        <div className="surface relative rounded-2xl p-5 sm:p-8">
+          <BorderBeam size={240} duration={14} />
           {/*
             Adımlar arası geçiş. İleri giderken içerik sağdan, geri dönerken
             soldan geliyor — kullanıcı hangi yöne hareket ettiğini görüyor.

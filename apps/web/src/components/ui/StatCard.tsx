@@ -12,6 +12,9 @@ import { TrendingDown, TrendingUp, Minus } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Sparkline } from '@/components/ui/sparkline'
+import { GlowingEffect } from '@/components/fx/glowing-effect'
+import { Spotlight } from '@/components/fx/spotlight'
+import { BorderBeam } from '@/components/fx/border-beam'
 import { CountUp } from '@/motion/primitives'
 import { cn } from '@/lib/utils'
 
@@ -78,12 +81,15 @@ export function StatCard({
   return (
     <div
       className={cn(
-        'surface group relative isolate flex w-full flex-col overflow-hidden rounded-xl p-5',
+        'surface group relative isolate flex w-full flex-col overflow-hidden rounded-2xl p-5',
         'transition-[border-color,transform] duration-300 hover:-translate-y-0.5 hover:border-primary/30',
         attention && 'border-[hsl(var(--warning))]/35',
         className,
       )}
     >
+      <GlowingEffect />
+      <Spotlight />
+      {attention && <BorderBeam colorFrom="hsl(var(--warning))" colorTo="hsl(20 95% 60%)" duration={8} />}
       {/* Üst kenarda ince zümrüt ışık; üzerine gelince belirginleşir. */}
       <span
         aria-hidden="true"
@@ -102,7 +108,7 @@ export function StatCard({
         {Icon && (
           <span
             className={cn(
-              'flex size-8 shrink-0 items-center justify-center rounded-lg ring-1',
+              'flex size-9 shrink-0 items-center justify-center rounded-xl ring-1 transition-transform duration-500 group-hover:scale-110 group-hover:rotate-[-8deg]',
               attention
                 ? 'bg-[hsl(var(--warning))]/10 text-[hsl(var(--warning))] ring-[hsl(var(--warning))]/25'
                 : 'bg-primary/10 text-primary ring-primary/20',
@@ -113,8 +119,17 @@ export function StatCard({
         )}
       </div>
 
-      <p className="tabular mt-2 text-[30px] leading-none font-semibold tracking-[-0.03em]">
-        {count !== undefined ? <CountUp to={count} duration={1.1} format={format} /> : value}
+      <p className="tabular mt-2 text-[34px] leading-none font-semibold tracking-[-0.04em]">
+        {count !== undefined ? (
+          <CountUp
+            to={count}
+            duration={1.1}
+            // Ara karelerde kesirli değer basılmasın ("11,467" gibi); tam sayı metrikler yuvarlanır.
+            format={(v) => (format ?? String)(Number.isInteger(count) ? Math.round(v) : v)}
+          />
+        ) : (
+          value
+        )}
       </p>
 
       {trend && (

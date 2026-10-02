@@ -45,9 +45,14 @@ export function NotificationBell() {
         <button
           type="button"
           aria-label={count > 0 ? `Bildirimler, ${count} okunmamış` : 'Bildirimler'}
-          className="relative flex size-9 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          className="group relative flex size-9 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
         >
-          <Bell aria-hidden="true" className="size-[18px]" strokeWidth={1.75} />
+          <Bell
+            aria-hidden="true"
+            className={cn('size-[18px] origin-top', count > 0 && 'group-hover:animate-[wiggle_0.6s_ease-in-out]')}
+            strokeWidth={1.75}
+          />
+          {count > 0 && <span className="absolute top-1 right-1 size-3 animate-ping rounded-full bg-primary/50" />}
           {count > 0 && (
             <span className="tabular absolute top-1 right-0.5 flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-primary px-1 text-[10px] leading-none font-bold text-primary-foreground">
               {count > 99 ? '99+' : count}

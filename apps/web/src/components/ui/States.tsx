@@ -3,6 +3,7 @@ import { Inbox, LoaderCircle, TriangleAlert } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from './button'
 import { Skeleton } from './skeleton'
+import { OrbitingCircles } from '@/components/fx/orbiting-circles'
 
 /**
  * Her listenin üç hâli tek yerden gelir: yükleniyor / boş / hata.
@@ -16,7 +17,11 @@ export function CenteredSpinner({ label = 'Yükleniyor' }: { label?: string }) {
       aria-busy="true"
       className="flex min-h-40 items-center justify-center gap-2 py-16 text-sm text-muted-foreground"
     >
-      <LoaderCircle aria-hidden="true" className="size-4 animate-spin text-primary" />
+      <span aria-hidden="true" className="relative flex size-8 items-center justify-center">
+        <span className="size-2 rounded-full bg-primary shadow-[0_0_10px_hsl(var(--primary))]" />
+        <OrbitingCircles radius={13} duration={1.6} path={false} className="size-1.5 bg-primary" />
+        <OrbitingCircles radius={13} duration={1.6} angle={180} path={false} className="size-1 bg-primary/50" />
+      </span>
       {label}
     </div>
   )
@@ -62,10 +67,9 @@ export function RowsSkeleton({ rows = 6, columns = 4 }: { rows?: number; columns
 /**
  * Boş ekran bir davettir: ne olduğunu söyler ve bir sonraki adımı verir.
  *
- * Görsel: 21st.dev "Empty State" (serafimcloud, id 1435) — kesik çizgili
- * çerçeve ve üzerine gelince yelpaze gibi açılan ikon kartları. HR360
- * uyarlaması: tek ikon da üçlü yelpaze olarak çizilir (yan kartlar sönük),
- * ikonlar zümrüt tonda, çerçeve panelin içinde taşmadan durur.
+ * Görsel: merkezdeki ikonun etrafında dönen küçük ikonlar (21st.dev "Orbiting
+ * Circles", Magic UI) ve kesik çizgili çerçeve (21st.dev "Empty State",
+ * serafimcloud). Yan ikonlar verilmezse yörüngede zümrüt noktalar döner.
  */
 export function EmptyState({
   title,
@@ -79,50 +83,34 @@ export function EmptyState({
   detail?: string
   action?: ReactNode
   icon?: React.ElementType
-  /** Yelpazedeki üç ikon (ortadaki ana ikon). Verilmezse `icon` kullanılır. */
+  /** Yörüngedeki iki ikon ve ortadaki ana ikon: [sol, orta, sağ]. */
   icons?: [React.ElementType, React.ElementType, React.ElementType]
   className?: string
 }) {
   const [Left, Center, Right] = icons ?? [null, Icon, null]
-  const tile =
-    'grid size-11 place-items-center rounded-xl bg-card shadow-lg ring-1 ring-border transition duration-500 group-hover:duration-200'
+  const satellite = 'size-8 rounded-xl border border-border bg-card text-muted-foreground shadow-lg'
   return (
     <div className={cn('px-4 py-10', className)}>
-      <div className="group mx-auto flex max-w-md flex-col items-center rounded-2xl border border-dashed border-border bg-dot-grid px-6 py-10 text-center transition-colors duration-500 hover:border-primary/30 hover:duration-200">
-        <div className="isolate flex justify-center">
-          <div
-            className={cn(
-              tile,
-              'relative top-1.5 left-2.5 -rotate-6 opacity-70 group-hover:-translate-x-4 group-hover:-translate-y-0.5 group-hover:-rotate-12',
-            )}
-          >
-            {Left ? (
-              <Left aria-hidden="true" className="size-5 text-muted-foreground" strokeWidth={1.5} />
-            ) : (
-              <span className="h-1.5 w-5 rounded-full bg-muted" />
-            )}
-          </div>
-          <div className={cn(tile, 'relative z-10 group-hover:-translate-y-1')}>
-            <Center aria-hidden="true" className="size-5 text-primary" strokeWidth={1.5} />
-          </div>
-          <div
-            className={cn(
-              tile,
-              'relative top-1.5 right-2.5 rotate-6 opacity-70 group-hover:translate-x-4 group-hover:-translate-y-0.5 group-hover:rotate-12',
-            )}
-          >
-            {Right ? (
-              <Right aria-hidden="true" className="size-5 text-muted-foreground" strokeWidth={1.5} />
-            ) : (
-              <span className="h-1.5 w-5 rounded-full bg-muted" />
-            )}
-          </div>
+      <div className="relative mx-auto flex max-w-md flex-col items-center overflow-hidden rounded-3xl border border-dashed border-border px-6 pt-4 pb-9 text-center">
+        <div aria-hidden="true" className="hr-dots absolute inset-0 opacity-60" />
+        <div className="relative flex size-44 items-center justify-center">
+          <span className="absolute size-16 rounded-full bg-primary/20 blur-2xl" />
+          <span className="relative grid size-14 place-items-center rounded-2xl border border-primary/30 bg-card text-primary shadow-[0_0_30px_-8px_hsl(var(--primary))]">
+            <Center aria-hidden="true" className="size-6" strokeWidth={1.5} />
+          </span>
+          <OrbitingCircles radius={54} duration={18} className={satellite}>
+            {Left ? <Left className="size-4" strokeWidth={1.5} /> : <span className="size-1.5 rounded-full bg-primary" />}
+          </OrbitingCircles>
+          <OrbitingCircles radius={54} duration={18} angle={180} path={false} className={satellite}>
+            {Right ? <Right className="size-4" strokeWidth={1.5} /> : <span className="size-1.5 rounded-full bg-primary/60" />}
+          </OrbitingCircles>
+          <OrbitingCircles radius={80} duration={26} reverse className="size-2 bg-primary/70 shadow-[0_0_10px_hsl(var(--primary))]" />
         </div>
-        <p className="mt-6 text-[15px] font-semibold">{title}</p>
+        <p className="relative text-[15.5px] font-semibold">{title}</p>
         {detail && (
-          <p className="mt-1 max-w-sm text-[13px] leading-relaxed text-muted-foreground">{detail}</p>
+          <p className="relative mt-1.5 max-w-sm text-[13px] leading-relaxed text-muted-foreground">{detail}</p>
         )}
-        {action && <div className="mt-5">{action}</div>}
+        {action && <div className="relative mt-5">{action}</div>}
       </div>
     </div>
   )

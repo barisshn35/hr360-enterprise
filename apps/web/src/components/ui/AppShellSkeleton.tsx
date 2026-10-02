@@ -1,90 +1,38 @@
 /**
- * İlk açılış iskeleti — oturum doğrulanırken tam sayfa.
+ * İlk açılış ekranı — oturum doğrulanırken tam sayfa.
  *
- * Kaynak: 21st.dev "Sidebar Dashboard Skeleton" (cnippet-dev, id 19009).
- * Demo sabit 320px'lik bir kutuydu; HR360'ın gerçek kabuğuna ölçeklendi
- * (kullanıcının seçtiği kenar çubuğu genişliği, 56px üst bant) ki içerik
- * gelince sayfa yerinden oynamasın.
- * Bileşenin kendi shimmer keyframe'i `index.css`'e yazılmak istiyordu;
- * token dosyasına dokunmamak için standart `Skeleton` kullanıldı.
+ * Önceki sürümdeki kabuk iskeleti (21st.dev "Sidebar Dashboard Skeleton")
+ * yeni üst menülü düzende anlamını yitirdi; yerine marka işaretinin etrafında
+ * dönen yörüngeler (21st.dev "Orbiting Circles", id 1411) geldi.
  */
-
-import { Skeleton } from '@/components/ui/skeleton'
-import { SIDEBAR_COLLAPSED_WIDTH, SIDEBAR_WIDTH, useSidebarCollapsed } from '@/lib/sidebar'
+import { motion, useReducedMotion } from 'motion/react'
+import { OrbitingCircles } from '@/components/fx/orbiting-circles'
+import { AmbientBackground } from '@/components/fx/ambient-background'
 
 export function AppShellSkeleton({ label = 'Yükleniyor' }: { label?: string }) {
-  const { collapsed } = useSidebarCollapsed()
+  const reduced = useReducedMotion()
   return (
-    <div aria-busy="true" className="flex min-h-dvh bg-background">
-      <span className="sr-only">{label}</span>
-
-      <div
-        className="hidden shrink-0 flex-col gap-1 overflow-hidden border-r border-sidebar-border bg-sidebar p-3 lg:flex"
-        style={{ width: collapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_WIDTH }}
+    <div aria-busy="true" className="relative flex min-h-dvh flex-col items-center justify-center bg-background">
+      <AmbientBackground meteors={false} />
+      <div className="relative flex size-56 items-center justify-center">
+        <span className="absolute size-24 rounded-full bg-primary/20 blur-2xl" />
+        <span className="relative flex size-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-[hsl(170_80%_32%)] shadow-[0_0_40px_-6px_hsl(var(--primary))]">
+          <img src="/icon-white.svg" alt="" aria-hidden="true" className="size-8" />
+        </span>
+        <OrbitingCircles radius={62} duration={8} className="size-2.5 bg-primary shadow-[0_0_12px_hsl(var(--primary))]" />
+        <OrbitingCircles radius={62} duration={8} angle={180} path={false} className="size-1.5 bg-primary/60" />
+        <OrbitingCircles radius={98} duration={14} reverse className="size-2 bg-[hsl(170_85%_60%)]" />
+        <OrbitingCircles radius={98} duration={14} angle={120} reverse path={false} className="size-1.5 bg-[hsl(170_85%_60%)]/60" />
+      </div>
+      <motion.p
+        initial={reduced ? false : { opacity: 0, y: 6 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.2 }}
+        className="relative mt-2 text-[13px] tracking-wide text-muted-foreground"
       >
-        <div className="mb-4 flex items-center gap-3 px-2 py-2">
-          <Skeleton className="size-8 rounded-md" />
-          <div className="space-y-1.5">
-            <Skeleton className="h-3 w-24" />
-            <Skeleton className="h-2.5 w-14" />
-          </div>
-        </div>
-
-        {[68, 52, 60, 44, 56, 48].map((width, i) => (
-          <div key={i} className="flex items-center gap-2.5 rounded-md px-2.5 py-[7px]">
-            <Skeleton className="size-4 rounded-sm" />
-            <Skeleton className="h-3.5" style={{ width: `${width}%` }} />
-          </div>
-        ))}
-
-        <div className="mt-auto space-y-1 border-t border-sidebar-border pt-4">
-          {[50, 62].map((width, i) => (
-            <div key={i} className="flex items-center gap-2.5 rounded-md px-2.5 py-[7px]">
-              <Skeleton className="size-4 rounded-sm" />
-              <Skeleton className="h-3.5" style={{ width: `${width}%` }} />
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="flex min-w-0 flex-1 flex-col">
-        <div className="flex h-14 items-center justify-between border-b border-border px-4 sm:px-5">
-          <Skeleton className="h-5 w-32" />
-          <div className="flex items-center gap-2">
-            <Skeleton className="h-9 w-24 rounded-md" />
-            <Skeleton className="size-9 rounded-md" />
-            <Skeleton className="size-8 rounded-full" />
-          </div>
-        </div>
-
-        <div className="flex-1 space-y-5 px-4 py-6 sm:px-6 lg:px-8">
-          <div className="space-y-2">
-            <Skeleton className="h-6 w-44" />
-            <Skeleton className="h-3.5 w-72" />
-          </div>
-
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="space-y-3 rounded-lg border border-border p-4">
-                <Skeleton className="h-3 w-20" />
-                <Skeleton className="h-7 w-24" />
-                <Skeleton className="h-3 w-16" />
-              </div>
-            ))}
-          </div>
-
-          <div className="space-y-3 rounded-lg border border-border p-4">
-            <Skeleton className="h-8 w-full max-w-xs rounded-md" />
-            {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="flex items-center gap-4 py-1">
-                <Skeleton className="h-4 w-[28%]" />
-                <Skeleton className="h-4 flex-1" />
-                <Skeleton className="h-4 w-20" />
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
+        {label}
+        <span className="hr-caret ml-0.5">_</span>
+      </motion.p>
     </div>
   )
 }

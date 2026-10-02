@@ -483,3 +483,121 @@ span[id^='input-error'] {
     text-align: right;
   }
 }
+
+/* ------------------------------- Hareket ------------------------------- */
+/* Panelle aynı dil: süzülen aurora, kenarında dolaşan ışık (21st.dev
+   "Border Beam" deseninin saf CSS karşılığı), hafifçe yüzen logo. */
+
+@property --hr-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@keyframes hr-beam {
+  to {
+    --hr-angle: 360deg;
+  }
+}
+
+@keyframes hr-aurora {
+  0% {
+    transform: translate3d(-8%, -4%, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(6%, 4%, 0) scale(1.15);
+  }
+  100% {
+    transform: translate3d(-4%, 8%, 0) scale(0.95);
+  }
+}
+
+@keyframes hr-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+@keyframes hr-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
+.login-pf body::after {
+  content: '';
+  position: fixed;
+  top: -20%;
+  left: 15%;
+  width: 70vw;
+  height: 70vh;
+  pointer-events: none;
+  border-radius: 9999px;
+  background: radial-gradient(closest-side, hsl(158 80% 41% / 0.18), transparent);
+  filter: blur(40px);
+  animation: hr-aurora 18s ease-in-out infinite alternate;
+  z-index: 0;
+}
+
+.login-pf-page {
+  z-index: 1;
+}
+
+#kc-header-wrapper::before {
+  animation: hr-float 5s ease-in-out infinite;
+}
+
+.login-pf-page .card-pf {
+  position: relative;
+  animation: hr-rise 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.login-pf-page .card-pf::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  padding: 1.5px;
+  border-radius: inherit;
+  pointer-events: none;
+  background: conic-gradient(
+    from var(--hr-angle),
+    transparent 0deg,
+    transparent 250deg,
+    hsl(158 80% 41%) 310deg,
+    hsl(165 90% 75%) 340deg,
+    transparent 360deg
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
+  animation: hr-beam 6s linear infinite;
+}
+
+#kc-header {
+  animation: hr-rise 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-pf body::after,
+  #kc-header-wrapper::before,
+  .login-pf-page .card-pf,
+  .login-pf-page .card-pf::after,
+  #kc-header {
+    animation: none !important;
+  }
+}

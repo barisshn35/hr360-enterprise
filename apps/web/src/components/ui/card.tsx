@@ -1,16 +1,29 @@
 import * as React from "react"
 import { cn } from "@/lib/utils"
+import { GlowingEffect } from "@/components/fx/glowing-effect"
 
-function Card({ className, ...props }: React.ComponentProps<"div">) {
+/**
+ * Cam yüzeyli kart. Kenarında imlece doğru dönen zümrüt parıltı var
+ * (21st.dev "Glowing Effect", aceternity); `glow={false}` ile kapatılır.
+ */
+function Card({
+  className,
+  children,
+  glow = true,
+  ...props
+}: React.ComponentProps<"div"> & { glow?: boolean }) {
   return (
     <div
       data-slot="card"
       className={cn(
-        "surface flex flex-col gap-6 rounded-xl py-6 text-card-foreground",
+        "surface relative flex flex-col gap-6 rounded-2xl py-6 text-card-foreground",
         className
       )}
       {...props}
-    />
+    >
+      {glow && <GlowingEffect />}
+      {children}
+    </div>
   )
 }
 

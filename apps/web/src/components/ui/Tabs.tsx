@@ -27,52 +27,54 @@ export function Tabs<T extends string>({
   onChange: (next: T) => void
   label: string
 }) {
-  // Etkin sekmenin alt çizgisi sekmeler arasında kayar (21st.dev "animated
-  // tabs" deseni); aynı sayfada iki şerit olabileceği için kimlik benzersiz.
+  // Etkin sekmenin zemini sekmeler arasında yaylanarak kayar
+  // (21st.dev "Pill Morph Tabs", ruixen.ui, id 7878); aynı sayfada iki şerit
+  // olabileceği için kimlik benzersiz.
   const indicatorId = useId()
   const reduced = useReducedMotion()
   return (
     <div
       role="tablist"
       aria-label={label}
-      className="no-scrollbar flex gap-6 overflow-x-auto border-b border-border"
+      className="no-scrollbar inline-flex max-w-full gap-1 overflow-x-auto rounded-2xl border border-border/80 bg-card/50 p-1 shadow-[inset_0_1px_0_0_hsl(var(--edge-light))] backdrop-blur-xl"
     >
-      {tabs.map((tab) => (
-        <button
-          key={tab.key}
-          role="tab"
-          type="button"
-          aria-selected={value === tab.key}
-          onClick={() => onChange(tab.key)}
-          className={cn(
-            'relative flex min-h-11 shrink-0 cursor-pointer items-center gap-2 pb-2',
-            'text-[13.5px] whitespace-nowrap transition-colors',
-            value === tab.key
-              ? 'font-medium text-foreground'
-              : 'text-muted-foreground hover:text-foreground',
-          )}
-        >
-          {tab.label}
-          {tab.count !== undefined && tab.count > 0 && (
-            <span
-              className={cn(
-                'tabular rounded-full px-1.5 py-px text-[10.5px] font-medium',
-                value === tab.key ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground',
-              )}
-            >
-              {tab.count}
-            </span>
-          )}
-          {value === tab.key && (
-            <motion.span
-              aria-hidden="true"
-              layoutId={reduced ? undefined : `tab-${indicatorId}`}
-              transition={{ type: 'spring', stiffness: 500, damping: 40 }}
-              className="absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-primary shadow-[0_0_12px_hsl(var(--primary)/0.7)]"
-            />
-          )}
-        </button>
-      ))}
+      {tabs.map((tab) => {
+        const active = value === tab.key
+        return (
+          <button
+            key={tab.key}
+            role="tab"
+            type="button"
+            aria-selected={active}
+            onClick={() => onChange(tab.key)}
+            className={cn(
+              'relative flex h-9 shrink-0 cursor-pointer items-center gap-2 rounded-xl px-3.5',
+              'text-[13px] whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
+              active ? 'font-medium text-primary-foreground' : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            {active && (
+              <motion.span
+                aria-hidden="true"
+                layoutId={reduced ? undefined : `tab-${indicatorId}`}
+                transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+                className="absolute inset-0 -z-0 rounded-xl bg-primary shadow-[0_6px_20px_-6px_hsl(var(--primary)/0.9),inset_0_1px_0_0_rgb(255_255_255/0.25)]"
+              />
+            )}
+            <span className="relative z-10">{tab.label}</span>
+            {tab.count !== undefined && tab.count > 0 && (
+              <span
+                className={cn(
+                  'tabular relative z-10 rounded-full px-1.5 py-px text-[10.5px] font-semibold',
+                  active ? 'bg-black/15 text-primary-foreground' : 'bg-muted text-muted-foreground',
+                )}
+              >
+                {tab.count}
+              </span>
+            )}
+          </button>
+        )
+      })}
     </div>
   )
 }

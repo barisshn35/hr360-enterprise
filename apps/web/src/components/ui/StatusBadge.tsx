@@ -27,7 +27,15 @@ export function StatusBadge({
   className?: string
 }) {
   return (
-    <Badge variant="outline" className={cn('font-medium', TONE[tone], className)}>
+    <Badge variant="outline" className={cn('gap-1.5 font-medium', TONE[tone], className)}>
+      {tone !== 'neutral' && (
+        <span aria-hidden="true" className="relative flex size-1.5 shrink-0">
+          {(tone === 'warning' || tone === 'danger') && (
+            <span className="absolute inline-flex size-full animate-ping rounded-full bg-current opacity-60" />
+          )}
+          <span className="relative inline-flex size-1.5 rounded-full bg-current" />
+        </span>
+      )}
       {children}
     </Badge>
   )

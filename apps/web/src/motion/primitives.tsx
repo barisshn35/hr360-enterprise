@@ -350,7 +350,8 @@ export function CountUp({
       duration,
       delay,
       ease: EASE_SOFT,
-      onUpdate: (v) => setText(format(v)),
+      // Tam sayıdan tam sayıya sayarken ara kareler de tam sayı olsun.
+      onUpdate: (v) => setText(format(Number.isInteger(to) && Number.isInteger(from) ? Math.round(v) : v)),
     })
     return () => controls.stop()
     // `format` her render'da yeni referans olabilir; bağımlılığa almıyoruz.
