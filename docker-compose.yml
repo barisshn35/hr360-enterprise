@@ -26,6 +26,9 @@ volumes:
   postgres-data:
   minio-data:
   kafka-data:
+  prometheus-data:
+  grafana-data:
+  loki-data:
 
 services:
   # --------------------------------------------------------------------- #
@@ -502,6 +505,103 @@ services:
     mem_limit: "128m"
 
   # Let's Encrypt sertifikasini 12 saatte bir yeniler (suresi 30 gunden az kalinca).
+  # --------------------------------------------------------------------- #
+  # Izleme (istege bagli): scripts/monitoring.sh enable
+  # Prometheus (metrikler) + Grafana (panolar) + Loki/Promtail (loglar).
+  # Grafana: PUBLIC_ORIGIN/grafana/ (gateway) ve 127.0.0.1:3000/grafana/.
+  # --------------------------------------------------------------------- #
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-15d}
+      - --web.enable-lifecycle
+    volumes:
+      - ./deploy/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
+    mem_limit: "512m"
+
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.16.0
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_URI: postgres:5432/hr360_operational?sslmode=disable
+      DATA_SOURCE_USER: hr360admin
+      DATA_SOURCE_PASS: ${HR360_DB_PASSWORD}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    mem_limit: "64m"
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/rootfs
+      - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run|var/lib/docker/.+)($$|/)
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    mem_limit: "64m"
+
+  loki:
+    image: grafana/loki:3.3.2
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    command: ["-config.file=/etc/loki/loki.yml"]
+    volumes:
+      - ./deploy/monitoring/loki.yml:/etc/loki/loki.yml:ro
+      - loki-data:/loki
+    mem_limit: "384m"
+
+  promtail:
+    image: grafana/promtail:3.3.2
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    command: ["-config.file=/etc/promtail/promtail.yml"]
+    volumes:
+      - ./deploy/monitoring/promtail.yml:/etc/promtail/promtail.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - loki
+    mem_limit: "128m"
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-}
+      GF_SERVER_ROOT_URL: ${PUBLIC_ORIGIN:-http://localhost}/grafana/
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/hr360-overview.json
+    volumes:
+      - ./deploy/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
+    depends_on:
+      - prometheus
+      - loki
+    mem_limit: "256m"
+
   # Yalnizca "letsencrypt" profili acikken calisir: scripts/tls.sh enable --letsencrypt
   # .env'e COMPOSE_PROFILES=letsencrypt yazar.
   certbot:

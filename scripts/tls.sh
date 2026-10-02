@@ -82,6 +82,15 @@ set_env() {
   else printf '%s=%s\n' "$1" "$2" >> "$ENV_FILE"; fi
 }
 get_env() { grep "^$1=" "$ENV_FILE" | tail -1 | cut -d= -f2- || true; }
+# COMPOSE_PROFILES virgullu bir listedir (orn. "letsencrypt,monitoring"); yalnizca
+# kendi profilimizi ekleyip cikaririz ki scripts/monitoring.sh'in ayari silinmesin.
+profile_set() { # profile_set NAME on|off
+  local cur out=""
+  cur="$(get_env COMPOSE_PROFILES)"
+  for p in ${cur//,/ }; do [ "$p" = "$1" ] || out="${out:+$out,}$p"; done
+  [ "$2" = on ] && out="${out:+$out,}$1"
+  set_env COMPOSE_PROFILES "$out"
+}
 
 wait_keycloak() {
   echo "Keycloak hazir olana kadar bekleniyor..."
@@ -255,10 +264,10 @@ EOF
     set_env PUBLIC_ORIGIN "$origin"
     if [ "$le" = 1 ]; then
       # Otomatik yenileme servisi (certbot) "docker compose up -d" ile birlikte kalkar.
-      set_env COMPOSE_PROFILES letsencrypt
+      profile_set letsencrypt on
       set_env TLS_MODE letsencrypt
     else
-      set_env COMPOSE_PROFILES ""
+      profile_set letsencrypt off
       set_env TLS_MODE "$([ "$self" = 1 ] && echo self-signed || echo certificate)"
       docker compose --profile letsencrypt rm -sf certbot >/dev/null 2>&1 || true
     fi
@@ -286,7 +295,7 @@ EOF
     set_env GATEWAY_TLS_BIND 127.0.0.1
     set_env PUBLIC_URL "https://$host"
     set_env PUBLIC_ORIGIN "$origin"
-    set_env COMPOSE_PROFILES ""
+    profile_set letsencrypt off
     set_env TLS_MODE external
     docker compose --profile letsencrypt rm -sf certbot >/dev/null 2>&1 || true
     apply_all
@@ -297,7 +306,7 @@ EOF
     ;;
   disable)
     rm -f "$DIR/listen.conf" "$DIR/redirect.conf"
-    set_env COMPOSE_PROFILES ""
+    profile_set letsencrypt off
     set_env TLS_MODE ""
     docker compose --profile letsencrypt rm -sf certbot >/dev/null 2>&1 || true
     host="$(get_env PUBLIC_URL | sed -E 's#^https?://([^/:]+).*#\1#')"; [ -n "$host" ] || host=localhost

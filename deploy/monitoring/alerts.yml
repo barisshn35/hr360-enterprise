@@ -1,0 +1,49 @@
+# Temel alarm kurallari. Bildirim icin Alertmanager eklenmedi; alarmlar
+# Prometheus (/alerts) ve Grafana "HR360 — Servis sagligi" panosunda gorunur.
+groups:
+  - name: hr360
+    rules:
+      - alert: ServisErisilemiyor
+        expr: up == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "{{ $labels.service }} 2 dakikadir yanit vermiyor"
+
+      - alert: Yuksek5xxOrani
+        expr: |
+          sum by (service) (rate(http_request_duration_seconds_count{code=~"5.."}[5m]))
+            / clamp_min(sum by (service) (rate(http_request_duration_seconds_count[5m])), 0.001) > 0.05
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.service }} isteklerinin %5'inden fazlasi 5xx donuyor"
+
+      - alert: YavasYanit
+        expr: |
+          histogram_quantile(0.95, sum by (service, le) (rate(http_request_duration_seconds_bucket{endpoint!~".*stream.*"}[5m]))) > 2
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.service }} p95 yanit suresi 2 sn'nin uzerinde (SSE akislari haric)"
+
+      - alert: BellekSiniraYakin
+        expr: process_working_set_bytes{job="hr360-services"} > 340 * 1024 * 1024
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.service }} bellek kullanimi konteyner sinirina yakin"
+
+      - alert: DiskDoluyor
+        expr: (node_filesystem_avail_bytes{mountpoint="/",fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{mountpoint="/",fstype!~"tmpfs|overlay"}) < 0.10
+        for: 15m
+        labels: { severity: critical }
+        annotations:
+          summary: "Sunucu diskinde %10'dan az bos alan kaldi"
+
+      - alert: PostgresBaglantiYuksek
+        expr: sum(pg_stat_database_numbackends) > 150
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "PostgreSQL acik baglanti sayisi yuksek"
