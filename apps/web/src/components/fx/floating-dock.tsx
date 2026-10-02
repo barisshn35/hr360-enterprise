@@ -78,7 +78,7 @@ function IconContainer({ mouseX, item }: { mouseX: MotionValue<number>; item: Ex
       className={cn(
         'relative flex aspect-square items-center justify-center rounded-2xl border transition-colors',
         item.active
-          ? 'border-primary/40 bg-primary/15 text-primary shadow-[0_0_24px_-6px_hsl(var(--primary)/0.8)]'
+          ? 'border-primary/35 bg-accent text-primary'
           : 'border-border/60 bg-card/80 text-muted-foreground hover:text-foreground',
       )}
     >

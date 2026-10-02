@@ -40,7 +40,7 @@ import { Beams } from '@/components/fx/beams'
 import { BorderBeam } from '@/components/fx/border-beam'
 import { OrbitingCircles } from '@/components/fx/orbiting-circles'
 import { TextReveal } from '@/components/fx/text-reveal'
-import { GradientText, ShinyText } from '@/components/fx/shiny-text'
+import { GradientText } from '@/components/fx/shiny-text'
 import { useAuth } from '@/auth/useAuth'
 import { EASE } from '@/motion/primitives'
 
@@ -79,7 +79,7 @@ export function SignInPage() {
     <main className="relative flex min-h-dvh flex-col items-center overflow-hidden bg-background px-5 text-foreground">
       <AmbientBackground />
       <Lamp />
-      <Beams className="top-[45%]" />
+      <Beams className="top-[45%] opacity-60" />
 
       <div className="relative z-10 flex w-full max-w-[460px] flex-1 flex-col items-center pt-[14vh] pb-10">
         {/* Marka işareti ve yörüngesi */}
@@ -93,10 +93,10 @@ export function SignInPage() {
 
         <motion.div
           {...up(0.1)}
-          className="mt-2 inline-flex items-center gap-2 rounded-full border border-primary/25 bg-primary/[0.08] px-3.5 py-1 text-[12px] font-medium backdrop-blur"
+          className="mt-2 inline-flex items-center gap-2 rounded-full border border-border bg-card/60 px-3.5 py-1 text-[12px] font-medium text-muted-foreground backdrop-blur"
         >
           <span className="size-1.5 animate-pulse rounded-full bg-primary" />
-          <ShinyText>HR360 Enterprise</ShinyText>
+          HR360 Enterprise
         </motion.div>
 
         <h1 className="mt-5 text-center text-[38px] leading-[1.05] font-semibold tracking-[-0.045em] sm:text-[52px]">
@@ -111,7 +111,6 @@ export function SignInPage() {
         <motion.div {...up(0.45)} className="mt-9 w-full">
           <Card className="gap-0 overflow-hidden p-6 sm:p-7">
             <BorderBeam size={200} duration={9} />
-            <BorderBeam size={200} duration={9} delay={4.5} colorFrom="hsl(170 85% 60%)" colorTo="transparent" />
 
             {error && (
               <div

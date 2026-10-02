@@ -32,13 +32,13 @@ export function AmbientBackground({ className, meteors = true }: { className?: s
   return (
     <div aria-hidden="true" className={cn('pointer-events-none fixed inset-0 z-0 overflow-hidden', className)}>
       {/* Aurora lekeleri */}
-      <div className="animate-blob absolute -top-[18%] left-[8%] size-[46rem] rounded-full bg-primary/[0.13] blur-[120px]" />
+      <div className="animate-blob absolute -top-[18%] left-[8%] size-[46rem] rounded-full bg-primary/[0.055] blur-[130px]" />
       <div
-        className="animate-blob absolute top-[20%] -right-[12%] size-[38rem] rounded-full bg-[hsl(185_85%_45%)]/[0.08] blur-[120px]"
+        className="animate-blob absolute top-[20%] -right-[12%] size-[38rem] rounded-full bg-white/[0.025] blur-[120px]"
         style={{ animationDelay: '-7s', animationDuration: '28s' }}
       />
       <div
-        className="animate-blob absolute -bottom-[25%] left-[30%] size-[42rem] rounded-full bg-[hsl(150_80%_40%)]/[0.09] blur-[130px]"
+        className="animate-blob absolute -bottom-[25%] left-[30%] size-[42rem] rounded-full bg-white/[0.02] blur-[130px]"
         style={{ animationDelay: '-14s', animationDuration: '34s' }}
       />
 
@@ -55,15 +55,15 @@ export function AmbientBackground({ className, meteors = true }: { className?: s
       />
 
       {meteors && !reduced && (
-        <div className="absolute inset-0 opacity-40">
-          <Meteors number={10} />
+        <div className="absolute inset-0 opacity-30">
+          <Meteors number={8} />
         </div>
       )}
 
       {/* İmleç ışığı */}
       {!reduced && (
         <motion.div
-          className="absolute size-[600px] rounded-full bg-[radial-gradient(circle,hsl(var(--primary)/0.10),transparent_60%)]"
+          className="absolute size-[600px] rounded-full bg-[radial-gradient(circle,hsl(var(--foreground)/0.035),transparent_60%)]"
           style={{ x, y }}
         />
       )}

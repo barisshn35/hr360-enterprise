@@ -50,7 +50,7 @@ export function Tabs<T extends string>({
             className={cn(
               'relative flex h-9 shrink-0 cursor-pointer items-center gap-2 rounded-xl px-3.5',
               'text-[13px] whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
-              active ? 'font-medium text-primary-foreground' : 'text-muted-foreground hover:text-foreground',
+              active ? 'font-medium text-foreground' : 'text-muted-foreground hover:text-foreground',
             )}
           >
             {active && (
@@ -58,7 +58,7 @@ export function Tabs<T extends string>({
                 aria-hidden="true"
                 layoutId={reduced ? undefined : `tab-${indicatorId}`}
                 transition={{ type: 'spring', stiffness: 420, damping: 32 }}
-                className="absolute inset-0 -z-0 rounded-xl bg-primary shadow-[0_6px_20px_-6px_hsl(var(--primary)/0.9),inset_0_1px_0_0_rgb(255_255_255/0.25)]"
+                className="absolute inset-0 -z-0 rounded-xl bg-accent shadow-[0_4px_14px_-6px_rgb(0_0_0/0.6),inset_0_1px_0_0_hsl(var(--edge-light))] ring-1 ring-border"
               />
             )}
             <span className="relative z-10">{tab.label}</span>
@@ -66,7 +66,7 @@ export function Tabs<T extends string>({
               <span
                 className={cn(
                   'tabular relative z-10 rounded-full px-1.5 py-px text-[10.5px] font-semibold',
-                  active ? 'bg-black/15 text-primary-foreground' : 'bg-muted text-muted-foreground',
+                  active ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground',
                 )}
               >
                 {tab.count}

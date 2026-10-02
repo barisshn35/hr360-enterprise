@@ -30,7 +30,7 @@ export function OrbitingCircles({
       {path && (
         <svg aria-hidden="true" className="pointer-events-none absolute inset-0 size-full">
           <circle
-            className="stroke-primary/15"
+            className="stroke-foreground/10"
             strokeDasharray="3 5"
             cx="50%"
             cy="50%"

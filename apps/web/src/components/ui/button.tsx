@@ -9,7 +9,7 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          "bg-primary text-primary-foreground before:pointer-events-none before:absolute before:inset-0 before:-z-10 before:-translate-x-full before:bg-[linear-gradient(110deg,transparent_25%,rgb(255_255_255/0.45)_50%,transparent_75%)] before:transition-transform before:duration-700 hover:before:translate-x-full shadow-[inset_0_1px_0_0_rgb(255_255_255/0.22),0_1px_2px_0_rgb(0_0_0/0.25),0_6px_20px_-8px_hsl(var(--primary)/0.65)] hover:bg-primary/90 hover:shadow-[inset_0_1px_0_0_rgb(255_255_255/0.25),0_1px_2px_0_rgb(0_0_0/0.25),0_10px_28px_-8px_hsl(var(--primary)/0.8)]",
+          "bg-primary text-primary-foreground before:pointer-events-none before:absolute before:inset-0 before:-z-10 before:-translate-x-full before:bg-[linear-gradient(110deg,transparent_25%,rgb(255_255_255/0.45)_50%,transparent_75%)] before:transition-transform before:duration-700 hover:before:translate-x-full shadow-[inset_0_1px_0_0_rgb(255_255_255/0.22),0_1px_2px_0_rgb(0_0_0/0.25),0_6px_18px_-10px_hsl(var(--primary)/0.4)] hover:bg-primary/90 hover:shadow-[inset_0_1px_0_0_rgb(255_255_255/0.25),0_1px_2px_0_rgb(0_0_0/0.25),0_10px_24px_-10px_hsl(var(--primary)/0.55)]",
         destructive:
           "bg-destructive text-destructive-foreground hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:bg-destructive/60 dark:focus-visible:ring-destructive/40",
         outline:

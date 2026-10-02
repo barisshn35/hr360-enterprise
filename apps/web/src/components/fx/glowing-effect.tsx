@@ -105,11 +105,11 @@ export const GlowingEffect = memo(function GlowingEffect({
           '--start': '0',
           '--active': '0',
           '--ge-border': `${borderWidth}px`,
-          '--gradient': `radial-gradient(circle, hsl(var(--primary)) 10%, transparent 20%),
-            radial-gradient(circle at 40% 40%, hsl(170 85% 60%) 5%, transparent 15%),
-            radial-gradient(circle at 60% 60%, hsl(150 80% 45%) 10%, transparent 20%),
-            radial-gradient(circle at 40% 60%, hsl(190 85% 55%) 10%, transparent 20%),
-            repeating-conic-gradient(from 236.84deg at 50% 50%, hsl(var(--primary)) 0%, hsl(170 85% 60%) 5%, hsl(150 80% 45%) 10%, hsl(190 85% 55%) 15%, hsl(var(--primary)) 20%)`,
+          // Çoğunlukla nötr beyaz ışık, içinde ince bir zümrüt damar.
+          '--gradient': `radial-gradient(circle, hsl(0 0% 100% / 0.7) 10%, transparent 20%),
+            radial-gradient(circle at 40% 40%, hsl(var(--primary)) 5%, transparent 15%),
+            radial-gradient(circle at 60% 60%, hsl(0 0% 85% / 0.6) 10%, transparent 20%),
+            repeating-conic-gradient(from 236.84deg at 50% 50%, hsl(0 0% 100% / 0.55) 0%, hsl(var(--primary) / 0.8) 6%, hsl(0 0% 70% / 0.5) 12%, hsl(0 0% 100% / 0.55) 20%)`,
         } as React.CSSProperties
       }
       className={cn('pointer-events-none absolute inset-0 rounded-[inherit]', blur > 0 && 'blur-[var(--blur)]', className)}

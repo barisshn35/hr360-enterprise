@@ -295,12 +295,12 @@ export function DashboardPage() {
 
             {/* Modül yörüngesi */}
             <div aria-hidden="true" className="relative hidden size-[300px] items-center justify-center self-center lg:flex">
-              <span className="absolute size-28 rounded-full bg-primary/25 blur-3xl" />
+              <span className="absolute size-28 rounded-full bg-primary/15 blur-3xl" />
               <span className="animate-float relative flex size-20 items-center justify-center rounded-3xl bg-gradient-to-br from-primary to-[hsl(170_80%_30%)] shadow-[0_0_50px_-6px_hsl(var(--primary))]">
                 <img src="/icon-white.svg" alt="" className="size-11" />
               </span>
               {orbit.slice(0, 3).map((m, i) => (
-                <OrbitingCircles key={m.id} radius={88} duration={22} angle={i * 120} path={i === 0} className="size-10 rounded-xl border border-border bg-card text-primary shadow-lg">
+                <OrbitingCircles key={m.id} radius={88} duration={22} angle={i * 120} path={i === 0} className="size-10 rounded-xl border border-border bg-card text-foreground/75 shadow-lg">
                   <m.icon className="size-[18px]" strokeWidth={1.6} />
                 </OrbitingCircles>
               ))}
@@ -327,7 +327,7 @@ export function DashboardPage() {
                     <CountUp to={pendingCount} format={(v) => formatNumber(Math.round(v))} />
                   </p>
                 </div>
-                <span className="flex size-11 items-center justify-center rounded-2xl bg-primary/15 text-primary ring-1 ring-primary/25 transition-transform duration-500 group-hover:rotate-12">
+                <span className="flex size-11 items-center justify-center rounded-2xl bg-muted text-primary ring-1 ring-border transition-transform duration-500 group-hover:rotate-12">
                   <Inbox className="size-5" strokeWidth={1.7} />
                 </span>
               </div>
@@ -454,12 +454,12 @@ export function DashboardPage() {
                       >
                         <Link
                           to={`/panel/onaylar/${w.id}`}
-                          className="group flex items-center gap-3 rounded-xl border border-border/70 bg-card/50 p-3 transition-all hover:-translate-y-0.5 hover:border-primary/35 hover:bg-primary/[0.05]"
+                          className="group flex items-center gap-3 rounded-xl border border-border/70 bg-card/50 p-3 transition-all hover:-translate-y-0.5 hover:border-foreground/20 hover:bg-accent"
                         >
                           <span
                             className={cn(
                               'flex size-9 shrink-0 items-center justify-center rounded-xl',
-                              late ? 'bg-destructive/15 text-destructive' : 'bg-primary/15 text-primary',
+                              late ? 'bg-destructive/15 text-destructive' : 'bg-muted text-foreground/70',
                             )}
                           >
                             {late ? <TriangleAlert className="size-4" /> : <Inbox className="size-4" />}
@@ -513,9 +513,9 @@ export function DashboardPage() {
                   <li key={c.id}>
                     <Link
                       to={`/panel/organizasyon/${c.id}`}
-                      className="group flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors hover:bg-primary/[0.06]"
+                      className="group flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors hover:bg-accent"
                     >
-                      <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary/30 to-primary/5 text-[13px] font-semibold text-primary ring-1 ring-primary/20 transition-transform group-hover:scale-110">
+                      <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted text-[13px] font-semibold text-foreground ring-1 ring-border transition-transform group-hover:scale-110">
                         {c.name.charAt(0).toUpperCase()}
                       </span>
                       <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium">{c.name}</span>
@@ -549,9 +549,9 @@ export function DashboardPage() {
               >
                 <Link
                   to={m.path!}
-                  className="group flex flex-col items-center gap-1.5 rounded-xl px-1 py-3 text-center transition-colors hover:bg-primary/[0.07]"
+                  className="group flex flex-col items-center gap-1.5 rounded-xl px-1 py-3 text-center transition-colors hover:bg-accent"
                 >
-                  <span className="flex size-10 items-center justify-center rounded-xl border border-border bg-card text-primary transition-all duration-300 group-hover:-translate-y-1 group-hover:border-primary/40 group-hover:shadow-[0_8px_20px_-8px_hsl(var(--primary))]">
+                  <span className="flex size-10 items-center justify-center rounded-xl border border-border bg-card text-foreground/70 transition-all duration-300 group-hover:-translate-y-1 group-hover:border-primary/40 group-hover:text-primary">
                     <m.icon className="size-[18px]" strokeWidth={1.6} />
                   </span>
                   <span className="line-clamp-1 text-[11.5px] text-muted-foreground group-hover:text-foreground">{m.title}</span>

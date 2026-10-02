@@ -94,17 +94,17 @@ export function EmptyState({
       <div className="relative mx-auto flex max-w-md flex-col items-center overflow-hidden rounded-3xl border border-dashed border-border px-6 pt-4 pb-9 text-center">
         <div aria-hidden="true" className="hr-dots absolute inset-0 opacity-60" />
         <div className="relative flex size-44 items-center justify-center">
-          <span className="absolute size-16 rounded-full bg-primary/20 blur-2xl" />
-          <span className="relative grid size-14 place-items-center rounded-2xl border border-primary/30 bg-card text-primary shadow-[0_0_30px_-8px_hsl(var(--primary))]">
+          <span className="absolute size-16 rounded-full bg-primary/10 blur-2xl" />
+          <span className="relative grid size-14 place-items-center rounded-2xl border border-border bg-card text-primary shadow-lg">
             <Center aria-hidden="true" className="size-6" strokeWidth={1.5} />
           </span>
           <OrbitingCircles radius={54} duration={18} className={satellite}>
             {Left ? <Left className="size-4" strokeWidth={1.5} /> : <span className="size-1.5 rounded-full bg-primary" />}
           </OrbitingCircles>
           <OrbitingCircles radius={54} duration={18} angle={180} path={false} className={satellite}>
-            {Right ? <Right className="size-4" strokeWidth={1.5} /> : <span className="size-1.5 rounded-full bg-primary/60" />}
+            {Right ? <Right className="size-4" strokeWidth={1.5} /> : <span className="size-1.5 rounded-full bg-foreground/40" />}
           </OrbitingCircles>
-          <OrbitingCircles radius={80} duration={26} reverse className="size-2 bg-primary/70 shadow-[0_0_10px_hsl(var(--primary))]" />
+          <OrbitingCircles radius={80} duration={26} reverse className="size-1.5 bg-foreground/40" />
         </div>
         <p className="relative text-[15.5px] font-semibold">{title}</p>
         {detail && (
@@ -151,7 +151,7 @@ export function ErrorState({
 /** Sayfa başlığı altındaki kısa bilgi şeridi (ör. Kafka otomasyonu notu). */
 export function InfoNote({ children }: { children: ReactNode }) {
   return (
-    <p className="rounded-xl border border-primary/15 bg-primary/[0.04] px-3.5 py-2.5 text-[13px] leading-relaxed text-muted-foreground">
+    <p className="rounded-xl border border-border bg-card/50 px-3.5 py-2.5 text-[13px] leading-relaxed text-muted-foreground backdrop-blur">
       {children}
     </p>
   )

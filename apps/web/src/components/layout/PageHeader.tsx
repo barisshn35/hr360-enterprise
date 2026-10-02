@@ -3,7 +3,6 @@ import { useLocation } from 'react-router-dom'
 import { motion, useReducedMotion } from 'motion/react'
 import { ChevronRight } from 'lucide-react'
 import { TextReveal } from '@/components/fx/text-reveal'
-import { ShinyText } from '@/components/fx/shiny-text'
 import { locate } from './nav-config'
 
 /**
@@ -44,7 +43,7 @@ export function PageHeader({
               initial={reduced ? false : { opacity: 0, y: -6 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4 }}
-              className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-primary/25 bg-primary/[0.07] px-3 py-1 text-[11.5px] font-medium"
+              className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-border bg-card/60 px-3 py-1 text-[11.5px] font-medium text-muted-foreground backdrop-blur"
             >
               <span className="relative flex size-1.5">
                 <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-60" />
@@ -52,8 +51,8 @@ export function PageHeader({
               </span>
               {trail.map((c, i) => (
                 <span key={c} className="flex items-center gap-1.5">
-                  {i > 0 && <ChevronRight className="size-3 text-primary/50" />}
-                  <ShinyText>{c}</ShinyText>
+                  {i > 0 && <ChevronRight className="size-3 opacity-50" />}
+                  {c}
                 </span>
               ))}
             </motion.div>
@@ -90,7 +89,7 @@ export function PageHeader({
         initial={reduced ? false : { scaleX: 0 }}
         animate={{ scaleX: 1 }}
         transition={{ duration: 1, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
-        className="mt-6 h-px origin-left bg-gradient-to-r from-primary/60 via-border to-transparent"
+        className="mt-6 h-px origin-left bg-gradient-to-r from-foreground/25 via-border to-transparent"
       />
     </div>
   )

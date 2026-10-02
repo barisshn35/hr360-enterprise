@@ -40,7 +40,7 @@ export function Spotlight({ className, size = 260 }: { className?: string; size?
     <div ref={layer} aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]">
       <motion.div
         className={cn(
-          'absolute rounded-full bg-[radial-gradient(circle_at_center,hsl(var(--primary)/0.22),transparent_70%)] blur-2xl transition-opacity duration-300',
+          'absolute rounded-full bg-[radial-gradient(circle_at_center,hsl(var(--foreground)/0.06),transparent_70%)] blur-2xl transition-opacity duration-300',
           hovered ? 'opacity-100' : 'opacity-0',
           className,
         )}

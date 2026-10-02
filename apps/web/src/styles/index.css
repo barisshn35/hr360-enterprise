@@ -10,10 +10,10 @@
 @import '@fontsource-variable/geist-mono';
 
 /* ==========================================================================
-   HR360 — Tasarım Sistemi: "Obsidyen Zümrüt"
+   HR360 — Tasarım Sistemi: "Grafit + Zümrüt"
 
-   Koyu, premium bir yüzey dili: yeşile çalan obsidyen zemin, katmanlı kart
-   yüzeyleri, ince ışık kenarları ve zümrüt vurgu. Açık tema aynı token
+   Koyu, premium bir yüzey dili: nötr grafit zemin ve katmanlı kart yüzeyleri;
+   zümrüt yalnızca vurgu (birincil düğme, etkin öğe, küçük ışıklar) olarak. Açık tema aynı token
    sözleşmesiyle çalışmaya devam eder (Ayarlar'dan ya da üst çubuktan seçilir).
 
    21st.dev bileşenleri shadcn/ui'nin CSS değişken sözleşmesini kullanıyor
@@ -31,27 +31,27 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --background: 150 20% 98%;
-  --foreground: 165 30% 6%;
+  --background: 0 0% 99%;
+  --foreground: 240 10% 6%;
 
   --card: 0 0% 100%;
-  --card-foreground: 165 30% 6%;
+  --card-foreground: 240 10% 6%;
 
   --popover: 0 0% 100%;
-  --popover-foreground: 165 30% 6%;
+  --popover-foreground: 240 10% 6%;
 
   /* marka rengi: #0b8f63 */
   --primary: var(--tenant-primary, 160 86% 30%);
   --primary-foreground: var(--tenant-primary-foreground, 0 0% 100%);
 
-  --secondary: 150 14% 95%;
-  --secondary-foreground: 165 25% 10%;
+  --secondary: 240 5% 96%;
+  --secondary-foreground: 240 6% 10%;
 
-  --muted: 150 14% 95%;
-  --muted-foreground: 160 6% 42%;
+  --muted: 240 5% 96%;
+  --muted-foreground: 240 4% 44%;
 
-  --accent: 155 25% 94%;
-  --accent-foreground: 165 25% 10%;
+  --accent: 240 5% 95%;
+  --accent-foreground: 240 6% 10%;
 
   --destructive: 0 72% 51%;
   --destructive-foreground: 0 0% 100%;
@@ -60,8 +60,8 @@
   --warning: 34 92% 44%;
   --info: 199 89% 42%;
 
-  --border: 150 12% 89%;
-  --input: 150 12% 86%;
+  --border: 240 6% 90%;
+  --input: 240 6% 87%;
   --ring: var(--tenant-primary, 160 86% 30%);
 
   --radius: 0.9rem;
@@ -72,46 +72,46 @@
   --chart-4: 38 92% 50%;
   --chart-5: 340 82% 52%;
 
-  --sidebar: 150 20% 97%;
-  --sidebar-foreground: 165 30% 6%;
+  --sidebar: 0 0% 98%;
+  --sidebar-foreground: 240 10% 6%;
   --sidebar-primary: var(--tenant-primary, 160 86% 30%);
   --sidebar-primary-foreground: var(--tenant-primary-foreground, 0 0% 100%);
-  --sidebar-accent: 155 22% 92%;
-  --sidebar-accent-foreground: 165 25% 10%;
-  --sidebar-border: 150 12% 89%;
+  --sidebar-accent: 240 5% 94%;
+  --sidebar-accent-foreground: 240 6% 10%;
+  --sidebar-border: 240 6% 90%;
   --sidebar-ring: var(--tenant-primary, 160 86% 30%);
 
   /* Yüzey derinliği: kartın üst kenarındaki ışık ve altındaki gölge */
   --edge-light: 0 0% 100% / 0.9;
-  --shadow-card: 0 1px 2px 0 rgb(16 40 32 / 0.04), 0 8px 24px -16px rgb(16 40 32 / 0.18);
-  --shadow-pop: 0 12px 40px -12px rgb(16 40 32 / 0.25);
+  --shadow-card: 0 1px 2px 0 rgb(10 10 15 / 0.04), 0 8px 24px -16px rgb(10 10 15 / 0.16);
+  --shadow-pop: 0 12px 40px -12px rgb(10 10 15 / 0.22);
   /* Zemin parıltısının gücü (koyu temada daha belirgin) */
-  --glow-strength: 0.07;
+  --glow-strength: 0.04;
 }
 
 .dark {
-  --background: 160 30% 3%; /* obsidyen: #050a08 */
-  --foreground: 150 20% 95%;
+  --background: 240 8% 3.5%; 
+  --foreground: 0 0% 96%;
 
-  --card: 160 22% 5.5%;
-  --card-foreground: 150 20% 95%;
+  --card: 240 6% 6.5%;
+  --card-foreground: 0 0% 96%;
 
-  --popover: 160 20% 7%;
-  --popover-foreground: 150 20% 95%;
+  --popover: 240 6% 8%;
+  --popover-foreground: 0 0% 96%;
 
   /* Koyu zeminde okunurluk için markanın bir ton aydınlığı; üstündeki
      metin koyu (zümrüt düğme + obsidyen yazı). */
   --primary: var(--tenant-primary-dark, 158 80% 41%);
   --primary-foreground: var(--tenant-primary-dark-foreground, 160 50% 4%);
 
-  --secondary: 160 14% 10%;
-  --secondary-foreground: 150 20% 95%;
+  --secondary: 240 5% 12%;
+  --secondary-foreground: 0 0% 96%;
 
-  --muted: 160 14% 9.5%;
-  --muted-foreground: 152 7% 62%;
+  --muted: 240 5% 11%;
+  --muted-foreground: 240 5% 64%;
 
-  --accent: 160 18% 11%;
-  --accent-foreground: 150 20% 95%;
+  --accent: 240 5% 13%;
+  --accent-foreground: 0 0% 96%;
 
   --destructive: 0 72% 60%;
   --destructive-foreground: 0 0% 100%;
@@ -120,8 +120,8 @@
   --warning: 38 92% 60%;
   --info: 199 89% 62%;
 
-  --border: 160 14% 12%;
-  --input: 160 14% 15%;
+  --border: 240 5% 14%;
+  --input: 240 5% 17%;
   --ring: var(--tenant-primary-dark, 158 80% 41%);
 
   --chart-1: var(--tenant-primary-dark, 158 80% 41%);
@@ -130,19 +130,19 @@
   --chart-4: 38 92% 60%;
   --chart-5: 340 82% 66%;
 
-  --sidebar: 160 30% 3.5%;
-  --sidebar-foreground: 150 20% 95%;
+  --sidebar: 240 8% 4%;
+  --sidebar-foreground: 0 0% 96%;
   --sidebar-primary: var(--tenant-primary-dark, 158 80% 41%);
   --sidebar-primary-foreground: var(--tenant-primary-dark-foreground, 160 50% 4%);
-  --sidebar-accent: 160 18% 8.5%;
-  --sidebar-accent-foreground: 150 20% 95%;
-  --sidebar-border: 160 14% 10%;
+  --sidebar-accent: 240 5% 10%;
+  --sidebar-accent-foreground: 0 0% 96%;
+  --sidebar-border: 240 5% 12%;
   --sidebar-ring: var(--tenant-primary-dark, 158 80% 41%);
 
   --edge-light: 0 0% 100% / 0.045;
   --shadow-card: 0 1px 0 0 rgb(0 0 0 / 0.4), 0 12px 32px -18px rgb(0 0 0 / 0.8);
   --shadow-pop: 0 18px 48px -12px rgb(0 0 0 / 0.75);
-  --glow-strength: 0.14;
+  --glow-strength: 0.07;
 }
 
 @theme inline {

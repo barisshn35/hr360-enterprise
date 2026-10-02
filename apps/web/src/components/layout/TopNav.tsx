@@ -80,7 +80,7 @@ function Brand() {
       )}
       <span className="hidden min-w-0 flex-col leading-none sm:flex">
         <span className="truncate text-[13.5px] font-semibold tracking-tight">{name}</span>
-        <span className="mt-1 text-[10.5px] font-medium tracking-[0.12em] text-primary uppercase">
+        <span className="mt-1 text-[10.5px] font-medium tracking-[0.12em] text-muted-foreground uppercase">
           {tenant?.plan ? planLabels[tenant.plan] : 'HR360'}
         </span>
       </span>
@@ -99,9 +99,9 @@ function MegaPanel({ group, onNavigate }: { group: NavGroupData; onNavigate: () 
   return (
     <div className="flex w-[min(760px,calc(100vw-2rem))] gap-4 p-3">
       {/* Tanıtım kutusu */}
-      <div className="relative hidden w-56 shrink-0 overflow-hidden rounded-xl border border-primary/20 bg-gradient-to-br from-primary/20 via-primary/5 to-transparent p-4 md:block">
-        <div className="absolute -right-10 -bottom-10 size-40 rounded-full border border-dashed border-primary/25" />
-        <div className="absolute -right-4 -bottom-4 size-24 rounded-full border border-primary/20" />
+      <div className="relative hidden w-56 shrink-0 overflow-hidden rounded-xl border border-border bg-gradient-to-br from-accent to-transparent p-4 md:block">
+        <div className="absolute -right-10 -bottom-10 size-40 rounded-full border border-dashed border-foreground/10" />
+        <div className="absolute -right-4 -bottom-4 size-24 rounded-full border border-foreground/10" />
         <span className="animate-float relative flex size-10 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-[0_0_24px_-4px_hsl(var(--primary))]">
           <Icon className="size-5" strokeWidth={1.75} />
         </span>
@@ -125,15 +125,15 @@ function MegaPanel({ group, onNavigate }: { group: NavGroupData; onNavigate: () 
                 onClick={onNavigate}
                 className={cn(
                   'group/item flex gap-3 rounded-xl p-2.5 transition-colors',
-                  active ? 'bg-primary/10' : 'hover:bg-accent',
+                  active ? 'bg-accent' : 'hover:bg-accent',
                 )}
               >
                 <span
                   className={cn(
                     'flex size-9 shrink-0 items-center justify-center rounded-lg border transition-all duration-300 group-hover/item:scale-110 group-hover/item:rotate-[-6deg]',
                     active
-                      ? 'border-primary/40 bg-primary text-primary-foreground'
-                      : 'border-border bg-card text-primary group-hover/item:border-primary/40',
+                      ? 'border-primary/40 bg-primary/15 text-primary'
+                      : 'border-border bg-card text-foreground/70 group-hover/item:border-primary/40 group-hover/item:text-primary',
                   )}
                 >
                   <item.icon className="size-[18px]" strokeWidth={1.7} />
@@ -219,7 +219,7 @@ function SectionTabs() {
             <motion.span
               layoutId="nav-lamp"
               transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-              className="absolute inset-0 -z-10 rounded-full bg-primary/10 ring-1 ring-primary/20"
+              className="absolute inset-0 -z-10 rounded-full bg-accent ring-1 ring-border"
             >
               <span className="absolute -top-[9px] left-1/2 h-[3px] w-8 -translate-x-1/2 rounded-b-full bg-primary">
                 <span className="absolute -top-2 -left-2 h-6 w-12 rounded-full bg-primary/30 blur-md" />
@@ -319,8 +319,8 @@ function AccountMenu() {
           aria-label="Hesap menüsü"
           className="group relative ml-0.5 flex cursor-pointer items-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
         >
-          <span className="absolute -inset-[3px] rounded-full bg-[conic-gradient(from_0deg,hsl(var(--primary)),transparent_40%,hsl(170_85%_60%),transparent_80%,hsl(var(--primary)))] opacity-70 transition-opacity group-hover:opacity-100 motion-safe:animate-[spin_6s_linear_infinite]" />
-          <span className="relative flex size-8 items-center justify-center rounded-full bg-card text-[11.5px] font-semibold text-primary ring-2 ring-background">
+          <span className="absolute -inset-[3px] rounded-full bg-[conic-gradient(from_0deg,hsl(var(--primary)),transparent_40%,hsl(170_85%_60%),transparent_80%,hsl(var(--primary)))] opacity-40 transition-opacity group-hover:opacity-90 motion-safe:animate-[spin_6s_linear_infinite]" />
+          <span className="relative flex size-8 items-center justify-center rounded-full bg-card text-[11.5px] font-semibold text-foreground ring-2 ring-background">
             {user?.initials ?? 'HR'}
           </span>
         </button>
@@ -430,7 +430,7 @@ function MobileMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.05 * gi, duration: 0.35 }}
                 >
-                  <p className="mb-2.5 text-[11px] font-medium tracking-[0.14em] text-primary uppercase">{group.heading}</p>
+                  <p className="mb-2.5 text-[11px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{group.heading}</p>
                   <div className="grid grid-cols-2 gap-2">
                     {group.items.map((item) => {
                       const active = here.item?.id === item.id || here.parent?.id === item.id
@@ -441,7 +441,7 @@ function MobileMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
                           onClick={() => go(item)}
                           className={cn(
                             'flex cursor-pointer items-center gap-2.5 rounded-xl border p-3 text-left text-[13.5px] transition-colors',
-                            active ? 'border-primary/40 bg-primary/10 text-foreground' : 'border-border bg-card/60',
+                            active ? 'border-primary/40 bg-accent text-foreground' : 'border-border bg-card/60',
                           )}
                         >
                           <item.icon className="size-[18px] shrink-0 text-primary" strokeWidth={1.7} />

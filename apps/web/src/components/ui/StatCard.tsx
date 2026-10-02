@@ -100,7 +100,7 @@ export function StatCard({
       />
       <span
         aria-hidden="true"
-        className="pointer-events-none absolute -top-16 -right-16 -z-10 size-40 rounded-full bg-primary/10 opacity-0 blur-3xl transition-opacity duration-500 group-hover:opacity-100"
+        className="pointer-events-none absolute -top-16 -right-16 -z-10 size-40 rounded-full bg-foreground/[0.04] opacity-0 blur-3xl transition-opacity duration-500 group-hover:opacity-100"
       />
 
       <div className="flex items-start justify-between gap-3">
@@ -111,7 +111,7 @@ export function StatCard({
               'flex size-9 shrink-0 items-center justify-center rounded-xl ring-1 transition-transform duration-500 group-hover:scale-110 group-hover:rotate-[-8deg]',
               attention
                 ? 'bg-[hsl(var(--warning))]/10 text-[hsl(var(--warning))] ring-[hsl(var(--warning))]/25'
-                : 'bg-primary/10 text-primary ring-primary/20',
+                : 'bg-muted text-foreground/75 ring-border group-hover:text-primary',
             )}
           >
             <Icon className="size-4" strokeWidth={1.75} />

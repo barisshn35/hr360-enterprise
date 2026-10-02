@@ -26,7 +26,7 @@ export function GradientText({ children, className }: { children: React.ReactNod
     <span
       className={cn(
         'animate-gradient-x bg-[length:200%_200%] bg-clip-text text-transparent',
-        'bg-[linear-gradient(90deg,hsl(var(--foreground)),hsl(var(--primary)),hsl(170_85%_60%),hsl(var(--foreground)))]',
+        'bg-[linear-gradient(90deg,hsl(var(--foreground))_0%,hsl(var(--foreground))_35%,hsl(var(--primary))_55%,hsl(var(--foreground))_75%,hsl(var(--foreground))_100%)]',
         className,
       )}
     >
