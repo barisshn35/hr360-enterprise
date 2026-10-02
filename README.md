@@ -24,18 +24,71 @@ bilgilerini ekrana basar. Repo içinde **hiçbir gerçek şifre veya anahtar
 bulunmaz**; hepsi kurulum sırasında sizin makinenizde üretilir ve yalnızca
 yerel `.env` dosyanızda (git'e dahil değil) saklanır.
 
-**HTTPS:** Adres olarak gerçek bir alan adı verirseniz (ör. `https://hr.sirket.com`)
-script HTTPS'i kurulumun sonunda kendisi açar. Varsayılan seçenek, Let's Encrypt'ten
-ücretsiz sertifika almak ve otomatik yenilemektir. Bunun için alan adının DNS kaydı
-sunucuyu göstermeli, 80 ve 443 portları internete açık olmalıdır. Kendi sertifikanızı
-ya da test için kendinden imzalı sertifikayı da seçebilirsiniz; ayrıntılar
-[docs/runbooks/https.md](docs/runbooks/https.md) dosyasında.
-
-Sunucuda en az 40 GB boş disk bırakın (imajlar ve derleme ~20 GB).
-
 İlk çalıştırma birkaç dakika sürebilir (13 .NET servisi + Keycloak + MLflow
 vb. build edilir). Durdurmak için `docker compose down`, logları izlemek
 için `docker compose logs -f`.
+
+Kendi bilgisayarınızda denemek için bütün soruları boş geçmeniz yeterli:
+uygulama `http://localhost` adresinde açılır, e-postalar Mailpit'e düşer.
+
+## Gerçek sunucuya kurulum
+
+### 1. Sunucuyu hazırlayın
+
+| | |
+|---|---|
+| İşletim sistemi | Ubuntu/Debian veya Rocky/RHEL/AlmaLinux. Docker yoksa `install.sh` kurmayı teklif eder. |
+| Disk | En az **40 GB** boş alan (imajlar ve derleme ~20 GB tutar). |
+| Bellek | En az **16 GB** RAM (container bellek limitlerinin toplamı ~10,5 GB). |
+| DNS | Alan adının (ör. `hr.sirket.com`) A kaydı sunucunun genel IP'sini göstermeli. |
+| Firewall | Dışarıya yalnızca **80** ve **443** açık. SSH (22) yalnızca yönetim IP'lerine. |
+
+Veritabanı, MinIO, Mailpit ve MLflow yalnızca sunucunun kendisine açılır
+(`127.0.0.1`); dışarıdan erişmek için SSH tüneli kullanın.
+
+### 2. Kurun
+
+```bash
+git clone <bu-repo> hr360-enterprise
+cd hr360-enterprise
+./install.sh
+```
+
+Kurulumun sorduğu sorular:
+
+| Soru | Gerçek sunucu için cevap |
+|---|---|
+| Public URL | `https://hr.sirket.com` (tarayıcıda kullanılacak adres, birebir) |
+| Gateway portu | `80` (varsayılan; Let's Encrypt bunu gerektirir) |
+| Keycloak yönetim paneli | Yönetim IP'niz sabitse `2` ve o IP; değilse `3` (ayrı port 8090'ı firewall'da kısıtlarsınız). Ayrıntı: [docs/runbooks/keycloak-yonetim-paneli-erisimi.md](docs/runbooks/keycloak-yonetim-paneli-erisimi.md) |
+| HTTPS | `1`: Let's Encrypt, ücretsiz sertifika ve otomatik yenileme. Kendi sertifikanız varsa `2`. Ayrıntı: [docs/runbooks/https.md](docs/runbooks/https.md) |
+| SMTP sunucusu | Gerçek e-posta sağlayıcınız (host, port, kullanıcı, parola, gönderen adres). Boş bırakılırsa Mailpit kullanılır ve **e-postalar kimseye ulaşmaz**. |
+| Parolalar ve anahtarlar | Boş bırakın; güçlü değerler otomatik üretilir. |
+
+Let's Encrypt başarısız olursa (DNS henüz yayılmadı, port kapalı) kurulum durmaz.
+Uygulama HTTP ile açılır ve tekrar deneme komutu ekrana basılır.
+
+### 3. Kontrol edin
+
+- `https://hr.sirket.com` açılıyor ve `demo.admin` ile giriş yapılabiliyor mu?
+- Kendinize bir çalışan kaydı açıp davet gönderin; e-posta geliyor mu?
+- `scripts/tls.sh status` sertifikanın bitiş tarihini ve
+  "Otomatik yenileme: calisiyor" satırını gösteriyor mu?
+- `.env` dosyasını güvenli bir yere yedekleyin. Bütün parolalar bu dosyada ve git'e girmiyor.
+
+Kurulum yalnızca örnek bir **demo** şirketiyle gelir. Gerçek şirketler uygulamadaki
+kayıt ekranından açılır. Demo şirketini `platform.admin` hesabıyla askıya alabilirsiniz.
+
+### Sonradan değiştirme ve güncelleme
+
+| İş | Komut |
+|---|---|
+| HTTPS'i aç/kapat, sertifika değiştir | `scripts/tls.sh enable ... / disable / status` |
+| Keycloak paneli erişimi | `scripts/keycloak-admin-access.sh open / ip <IP,...> / port [IP,...] / status` |
+| Yeni sürüme güncelleme | `git pull && ./install.sh` ("sırları yeniden üretelim mi?" sorusuna **Hayır**; veritabanı göçleri otomatik uygulanır) |
+
+Yedeklenmesi gerekenler: PostgreSQL (`hr360_operational` ve `keycloak` veritabanları),
+MinIO verisi (logolar), `.env` ve `deploy/letsencrypt/`.
 
 ## Mimari
 
