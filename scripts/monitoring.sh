@@ -8,6 +8,17 @@
 #   scripts/monitoring.sh password   Grafana yonetici sifresini gosterir.
 #   scripts/monitoring.sh purge      Durdurur ve metrik/log verilerini siler.
 #
+# Alarm kanallari (Alertmanager):
+#   scripts/monitoring.sh alerts status
+#   scripts/monitoring.sh alerts email ops@sirket.com,it@sirket.com   (SMTP_* ile; Microsoft 365 dahil)
+#   scripts/monitoring.sh alerts slack https://hooks.slack.com/services/...
+#   scripts/monitoring.sh alerts teams https://....logic.azure.com/workflows/...
+#   scripts/monitoring.sh alerts <email|slack|teams> off
+#   scripts/monitoring.sh alerts test    Tum kanallara deneme alarmi gonderir
+#
+# Teams: kanalda "Workflows" > "Post to a channel when a webhook request is received"
+# sablonuyla bir akis olusturun ve verdigi adresi kullanin (eski "Incoming Webhook"
+# baglayicilari Microsoft tarafindan kapatildi).
 # Erisim:
 #   Grafana     PUBLIC_ORIGIN/grafana/  (gateway uzerinden, Grafana girisi ister)
 #               ya da sunucunun kendisinden http://127.0.0.1:3000/grafana/
@@ -19,9 +30,9 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-unset COMPOSE_PROFILES GRAFANA_ADMIN_PASSWORD
+unset COMPOSE_PROFILES GRAFANA_ADMIN_PASSWORD ALERT_EMAIL_TO ALERT_SLACK_WEBHOOK_URL ALERT_TEAMS_WEBHOOK_URL
 ENV_FILE=.env
-SERVICES=(prometheus postgres-exporter node-exporter loki promtail grafana)
+SERVICES=(prometheus alertmanager postgres-exporter node-exporter loki promtail grafana)
 
 sed_i() { if sed --version >/dev/null 2>&1; then sed -i "$@"; else sed -i '' "$@"; fi; }
 die() { echo "HATA: $*" >&2; exit 1; }
@@ -63,6 +74,8 @@ case "$cmd" in
     fi
     profile_set monitoring on
     docker compose --profile monitoring up -d "${SERVICES[@]}"
+    # prometheus.yml / alerts.yml degismis olabilir; konteyner yeniden olusmadiysa da okusun.
+    docker compose exec -T prometheus wget -qO- --post-data '' http://127.0.0.1:9090/-/reload >/dev/null 2>&1 || true
     # Gateway'in /grafana/ yolu yeni konteyneri hemen bulsun.
     docker compose exec -T gateway nginx -s reload >/dev/null 2>&1 || true
     printf 'Grafana bekleniyor'
@@ -74,6 +87,51 @@ case "$cmd" in
     echo "Grafana:    $(origin)/grafana/   (kullanici: admin, sifre: scripts/monitoring.sh password)"
     echo "Prometheus: http://127.0.0.1:9090 (yalnizca sunucudan)"
     echo "Pano:       HR360 > HR360 — Servis sagligi"
+    echo "Alarmlar:   scripts/monitoring.sh alerts status"
+    ;;
+  alerts)
+    sub="${2:-status}"
+    mask() { local v="$1"; [ -n "$v" ] && echo "${v:0:32}…" || echo "(kapali)"; }
+    apply_alerts() {
+      if docker compose --profile monitoring ps --status running --services 2>/dev/null | grep -qx alertmanager; then
+        docker compose --profile monitoring up -d alertmanager >/dev/null 2>&1
+        echo "Alertmanager yeni ayarla yeniden baslatildi."
+      else
+        echo "Ayar kaydedildi; izleme acildiginda gecerli olur (scripts/monitoring.sh enable)."
+      fi
+    }
+    case "$sub" in
+      status)
+        echo "E-posta: $(get_env ALERT_EMAIL_TO | sed 's/^$/(kapali)/')   [SMTP: $(get_env SMTP_HOST | tr -d "'"):$(get_env SMTP_PORT)]"
+        echo "Slack:   $(mask "$(get_env ALERT_SLACK_WEBHOOK_URL)")"
+        echo "Teams:   $(mask "$(get_env ALERT_TEAMS_WEBHOOK_URL)")"
+        ;;
+      email)
+        v="${3:-}"; [ -n "$v" ] || die "kullanim: alerts email adres1,adres2 | off"
+        if [ "$v" = off ]; then v=""; else
+          for a in ${v//,/ }; do [[ "$a" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]] || die "gecersiz e-posta: $a"; done
+        fi
+        set_env ALERT_EMAIL_TO "$v"; apply_alerts ;;
+      slack|teams)
+        key=ALERT_SLACK_WEBHOOK_URL; [ "$sub" = teams ] && key=ALERT_TEAMS_WEBHOOK_URL
+        v="${3:-}"; [ -n "$v" ] || die "kullanim: alerts $sub <webhook-adresi> | off"
+        if [ "$v" = off ]; then v=""; else
+          [[ "$v" =~ ^https?://[^[:space:]\'\"#]+$ ]] || die "gecersiz adres: $v"
+        fi
+        set_env "$key" "$v"; apply_alerts ;;
+      test)
+        docker compose --profile monitoring ps --status running --services 2>/dev/null | grep -qx alertmanager \
+          || die "alertmanager calismiyor (scripts/monitoring.sh enable)"
+        now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        # 2 dk sonra kendiliginden "duzeldi" olur (GNU date; yoksa resolve_timeout = 5 dk).
+        ends="$(date -u -d '+2 minutes' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || true)"
+        body='[{"labels":{"alertname":"HR360DenemeAlarmi","service":"monitoring","severity":"warning"},"annotations":{"summary":"Bu bir deneme alarmidir; kanallar calisiyor."},"startsAt":"'"$now"'"'"${ends:+,\"endsAt\":\"$ends\"}"'}]'
+        docker compose exec -T alertmanager wget -qO- --header 'Content-Type: application/json' \
+          --post-data "$body" http://127.0.0.1:9093/api/v2/alerts >/dev/null
+        echo "Deneme alarmi gonderildi; ~30 sn icinde ayarli kanallara ulasir, birkac dakika sonra 'Duzeldi' mesaji gelir."
+        ;;
+      *) die "bilinmeyen: alerts $sub (status | email | slack | teams | test)" ;;
+    esac
     ;;
   disable)
     profile_set monitoring off
@@ -83,7 +141,7 @@ case "$cmd" in
     ;;
   purge)
     "$0" disable
-    for v in prometheus-data grafana-data loki-data; do
+    for v in prometheus-data grafana-data loki-data alertmanager-data; do
       docker volume rm "hr360_$v" >/dev/null 2>&1 && echo "silindi: hr360_$v" || true
     done
     ;;
@@ -117,6 +175,6 @@ for x in a: print("  -", x["labels"]["alertname"], x["labels"].get("service","")
     fi
     ;;
   *)
-    die "bilinmeyen komut: $cmd (enable | disable | status | password | purge)"
+    die "bilinmeyen komut: $cmd (enable | disable | status | password | purge | alerts)"
     ;;
 esac

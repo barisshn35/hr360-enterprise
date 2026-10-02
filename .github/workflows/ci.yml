@@ -127,6 +127,14 @@ jobs:
           docker run --rm --entrypoint promtool -v "$PWD/deploy/monitoring:/m:ro" prom/prometheus:v2.55.1 check rules /m/alerts.yml
           # prometheus.yml rule_files yolunu konteyner icinden cozer
           docker run --rm --entrypoint sh -v "$PWD/deploy/monitoring:/etc/prometheus:ro" prom/prometheus:v2.55.1 -c 'promtool check config /etc/prometheus/prometheus.yml'
+      - name: Alertmanager yapilandirmasi (tum kanallar acik)
+        run: |
+          docker run --rm --entrypoint /bin/sh \
+            -e ALERT_EMAIL_TO=a@example.com,b@example.com -e ALERT_SLACK_WEBHOOK_URL=https://hooks.slack.com/services/T/B/X \
+            -e ALERT_TEAMS_WEBHOOK_URL=https://example.logic.azure.com/workflows/x -e SMTP_HOST=smtp.office365.com -e SMTP_PORT=587 \
+            -e SMTP_USER=u -e "SMTP_PASSWORD=p'q" \
+            -v "$PWD/deploy/monitoring/alertmanager-entrypoint.sh:/e.sh:ro" -v "$PWD/deploy/monitoring/alertmanager.tmpl:/etc/alertmanager/templates/hr360.tmpl:ro" \
+            prom/alertmanager:v0.28.1 /e.sh check
       - name: Grafana panosu JSON
         run: python3 -m json.tool deploy/monitoring/grafana/dashboards/hr360-overview.json > /dev/null
       - name: Kabuk betikleri (bash -n + shellcheck)
