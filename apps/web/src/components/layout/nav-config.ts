@@ -13,7 +13,7 @@ import {
   Settings2, Globe2, HeartHandshake, PartyPopper, MapPin, Handshake, Megaphone,
   MessagesSquare, HeartPulse, GitBranch, LogOut, ScrollText, ShieldCheck, FileStack,
   Workflow, PlugZap, Receipt, Radar, History, BarChart3, Bot, Calculator, FileSpreadsheet,
-  Route, Telescope, Award, Search, Lock,
+  Route, Telescope, Award, Search, Lock, BookOpenText,
 } from 'lucide-react'
 import type { Permission, Role } from '@/auth/roles'
 import { hasStandardRole } from '@/auth/roles'
@@ -183,6 +183,7 @@ export const navGroups: NavGroupData[] = [
       { id: 'integrations', title: 'Entegrasyonlar', description: 'Webhook, API, Slack/Teams', icon: PlugZap, path: '/panel/entegrasyonlar', permission: 'employee:manage', feature: 'webhooks' },
       { id: 'security', title: 'Güvenlik', description: 'SSO ve iki adımlı doğrulama', icon: Lock, path: '/panel/guvenlik', permission: 'tenant:manage', requireRoles: ['tenant-admin', 'platform-admin'], feature: 'sso' },
       { id: 'import-export', title: 'İçe/dışa aktarım', description: 'Excel ile toplu veri', icon: FileSpreadsheet, path: '/panel/ice-disa-aktarim', permission: 'employee:manage', feature: 'import-export' },
+      { id: 'api-docs', title: 'API belgeleri', description: 'Tüm servislerin uçları, deneme', icon: BookOpenText, path: '/panel/api-belgeleri', permission: 'employee:manage' },
       { id: 'billing', title: 'Abonelik', description: 'Plan, koltuk ve faturalar', icon: Receipt, path: '/panel/abonelik', permission: 'tenant:manage', feature: 'billing' },
     ],
   },

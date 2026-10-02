@@ -101,6 +101,7 @@ const RulesPage = page(() => import('@/features/governance/RulesPage'), 'RulesPa
 const IntegrationsPage = page(() => import('@/features/governance/IntegrationsPage'), 'IntegrationsPage')
 const SecurityPage = page(() => import('@/features/governance/SecurityPage'), 'SecurityPage')
 const ImportExportPage = page(() => import('@/features/governance/ImportExportPage'), 'ImportExportPage')
+const ApiDocsPage = page(() => import('@/features/governance/ApiDocsPage'), 'ApiDocsPage')
 const BillingPage = page(() => import('@/features/governance/BillingPage'), 'BillingPage')
 const PlatformInvoicesPage = page(() => import('@/features/governance/BillingPage'), 'PlatformInvoicesPage')
 const OrgPresentationPage = page(() => import('@/features/organization/OrgPresentationPage'), 'OrgPresentationPage')
@@ -342,6 +343,7 @@ export function App() {
                     <Route path="entegrasyonlar" element={guarded('employee:manage', <PlanGate feature="webhooks"><IntegrationsPage /></PlanGate>)} />
                     <Route path="guvenlik" element={guarded('tenant:manage', <PlanGate feature="sso"><SecurityPage /></PlanGate>, ['tenant-admin', 'platform-admin'])} />
                     <Route path="ice-disa-aktarim" element={guarded('employee:manage', <PlanGate feature="import-export"><ImportExportPage /></PlanGate>)} />
+                    <Route path="api-belgeleri" element={guarded('employee:manage', <ApiDocsPage />)} />
                     <Route path="abonelik" element={guarded('tenant:manage', <PlanGate feature="billing"><BillingPage /></PlanGate>)} />
                     <Route path="platform/faturalar" element={guarded('platform:manage', <PlanGate feature="billing"><PlatformInvoicesPage /></PlanGate>)} />
 

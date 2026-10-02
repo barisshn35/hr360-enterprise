@@ -15,7 +15,7 @@ ROUTES = [
     "/panel/ardil-planlama", "/panel/org-senaryolari", "/panel/analitik", "/panel/rapor-asistani", "/panel/zaman-makinesi",
     "/panel/olay-radari", "/panel/ai-araclari", "/panel/denetim", "/panel/kvkk", "/panel/belge-sablonlari",
     "/panel/kural-motoru", "/panel/entegrasyonlar", "/panel/entegrasyonlar?sekme=takvim", "/panel/guvenlik",
-    "/panel/ice-disa-aktarim", "/panel/abonelik", "/panel/organizasyon/sunum",
+    "/panel/ice-disa-aktarim", "/panel/abonelik", "/panel/organizasyon/sunum", "/panel/api-belgeleri",
 ]
 
 

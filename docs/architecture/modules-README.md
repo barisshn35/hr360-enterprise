@@ -1,8 +1,9 @@
 # HR360 — Backend mikroservisleri
 
-13 .NET mikroservisi aynı kalıpla yazıldı: ASP.NET Core 9 + EF Core + Npgsql, Keycloak JWT
+15 .NET mikroservisi aynı kalıpla yazıldı: ASP.NET Core 9 + EF Core + Npgsql, Keycloak JWT
 doğrulaması, rol ve sahiplik bazlı yetkilendirme, `/health` ve `/metrics` uçları, Docker.
 
+> Sistemin bütünü (bağlam, olay akışı, diyagramlar) için bkz. [docs/mimari](../mimari/README.md).
 > Bu doküman tek sunucu (Docker Compose) kurulumunu anlatır. 7 sanal sunuculu hedef mimarinin
 > referans dosyaları `platform/` altındadır; bkz. kök `README.md`.
 
@@ -28,6 +29,8 @@ Her servis container içinde **8080** portunu dinler. Dışarıya açılmaz; gat
 | `recruitment-service` | `/api/recruitment/` | İlan, aday, başvuru, mülakat |
 | `onboarding-service` | `/api/onboarding/` | İşe başlangıç planı ve görevleri, zimmet |
 | `notification-service` | `/api/notification/` | Bildirim şablonu, kuyruk, e-posta gönderimi |
+| `engagement-service` | `/api/engagement/` | Takdir, kutlama, anket, 1:1, mentorluk, ofis/masa, iç ilan, ayrılış, ardıl planlama, ekip sağlığı |
+| `governance-service` | `/api/governance/` | Denetim, olay radarı, kural motoru, webhook ve açık API, Slack/Teams, takvim ve toplantı, AI araçları, KVKK, analitik |
 
 Ayrıca `ml-inference` (FastAPI, `/ml/`, port 8000) işten ayrılma riski tahmini yapar.
 

@@ -265,6 +265,9 @@ dille yeniden yazma**, **performans özeti** ve bilgi bankasına dayalı **İK a
 
 ## Mimari
 
+Ayrıntılı belge diyagramlarla [docs/mimari/README.md](docs/mimari/README.md) dosyasındadır: sistem bağlamı, konteynerler, Kafka olay kataloğu, izin onayı ve Slack/Teams onay akışları. Tüm servislerin canlı API belgesi uygulamada **Yönetim → API belgeleri** ekranındadır (`/panel/api-belgeleri`); "Try it out" istekleri oturumdaki yetkiyle gider.
+
+
 - **Kimlik doğrulama:** Keycloak (Organizations özelliği ile çok
   kiracılılık — her kiracı kendi Keycloak organizasyonuna karşılık gelir)
 - **Mesajlaşma:** Apache Kafka (KRaft, tek node), Outbox (yayınlayan

@@ -138,7 +138,9 @@ builder.Services.AddControllers(o => o.Filters.Add<GovernanceService.Infrastruct
             new System.Text.Json.Serialization.JsonStringEnumConverter());
     });
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+// Ayni adli ic ice kayitlar (ör. iki denetleyicide "CreateInput") sema kimliginde
+// cakismasin; tam ad kullanilir. Aksi halde OpenAPI tanimi 500 doner.
+builder.Services.AddSwaggerGen(c => c.CustomSchemaIds(t => (t.FullName ?? t.Name).Replace('+', '.')));
 
 builder.Services.AddHttpContextAccessor();
 
