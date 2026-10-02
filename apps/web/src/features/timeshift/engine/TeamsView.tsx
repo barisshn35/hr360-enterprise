@@ -42,11 +42,12 @@ import {
   todayIso,
   weekdayShort,
 } from './shared'
+import { tx, appLocale } from '@/lib/i18n'
 
 const NO_DEPT = '__none__'
 const ALL = '__all__'
 
-const TAG_SUGGESTIONS = ['Ekip Lideri', 'Vardiya Amiri', 'Kıdemli Operatör', 'Operatör', 'Stajyer']
+const TAG_SUGGESTIONS = [tx('Ekip Lideri'), tx('Vardiya Amiri'), tx('Kıdemli Operatör'), tx('Operatör'), tx('Stajyer')]
 
 /** Departman ve tüm alt departmanlarının kimlikleri. */
 function subtreeIds(list: DeptNode[], rootId: string): Set<string> {
@@ -100,12 +101,12 @@ function CreateTeamDialog({
 
   const errors = {
     name: !name.trim()
-      ? 'Ekibe bir ad verin.'
-      : teams.some((t) => t.name.toLocaleLowerCase('tr-TR') === name.trim().toLocaleLowerCase('tr-TR'))
-        ? 'Bu adla bir ekip zaten var.'
+      ? tx('Ekibe bir ad verin.')
+      : teams.some((t) => t.name.toLocaleLowerCase(appLocale) === name.trim().toLocaleLowerCase(appLocale))
+        ? tx('Bu adla bir ekip zaten var.')
         : undefined,
     pattern: !patternId ? 'Bir desen seçin.' : undefined,
-    start: !startDate ? 'Başlangıç tarihi gerekli.' : undefined,
+    start: !startDate ? tx('Başlangıç tarihi gerekli.') : undefined,
   }
   const valid = !errors.name && !errors.pattern && !errors.start
 
@@ -125,7 +126,7 @@ function CreateTeamDialog({
       },
       {
         onSuccess: (team) => {
-          toast.ok(`"${name.trim()}" oluşturuldu. Şimdi üye ekleyebilirsiniz.`)
+          toast.ok(tx('"{0}" oluşturuldu. Şimdi üye ekleyebilirsiniz.', [name.trim()]))
           if (team?.id) onCreated(team.id)
           onClose()
         },
@@ -138,41 +139,41 @@ function CreateTeamDialog({
       open
       onClose={onClose}
       size="lg"
-      title="Yeni vardiya ekibi"
-      note="Ekip bir desene bağlanır ve seçtiğiniz tarihten itibaren o döngüyü takip eder."
+      title={tx('Yeni vardiya ekibi')}
+      note={tx('Ekip bir desene bağlanır ve seçtiğiniz tarihten itibaren o döngüyü takip eder.')}
       footer={
         <>
           <Button variant="outline" onClick={onClose}>
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button onClick={submit} disabled={create.isPending || active.length === 0}>
             {create.isPending && <LoaderCircle className="size-4 animate-spin" />}
-            Ekibi oluştur
+            {tx('Ekibi oluştur')}
           </Button>
         </>
       }
     >
-      {create.isError && <ErrorLine>{errorText(create.error, 'Ekip oluşturulamadı.')}</ErrorLine>}
+      {create.isError && <ErrorLine>{errorText(create.error, tx('Ekip oluşturulamadı.'))}</ErrorLine>}
 
       {!patterns.isPending && active.length === 0 ? (
         <EmptyState
-          title="Önce bir desen tanımlayın"
-          detail="Ekip bir vardiya desenine bağlanmak zorunda. Desenler sekmesinden bir döngü oluşturun."
+          title={tx('Önce bir desen tanımlayın')}
+          detail={tx('Ekip bir vardiya desenine bağlanmak zorunda. Desenler sekmesinden bir döngü oluşturun.')}
         />
       ) : (
         <div className="space-y-4">
           <TextField
-            label="Ekip adı"
+            label={tx('Ekip adı')}
             required
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="ör. A Ekibi"
+            placeholder={tx('ör. A Ekibi')}
             error={submitted ? errors.name : undefined}
             maxLength={80}
           />
 
           <SelectField
-            label="Desen"
+            label={tx('Desen')}
             required
             value={patternId}
             onChange={(v) => {
@@ -180,15 +181,15 @@ function CreateTeamDialog({
               setStartIndex('0')
             }}
             options={active.map((p) => ({ value: p.id, label: p.name }))}
-            placeholder={patterns.isPending ? 'Desenler yükleniyor' : 'Desen seçin'}
+            placeholder={patterns.isPending ? tx('Desenler yükleniyor') : tx('Desen seçin')}
             disabled={patterns.isPending}
             error={submitted ? errors.pattern : undefined}
-            hint={pattern ? `${days.length} günlük döngü · ${describeDays(days)}` : undefined}
+            hint={pattern ? tx('{0} günlük döngü · {1}', [days.length, describeDays(days)]) : undefined}
           />
 
           <div className="grid gap-4 sm:grid-cols-2">
             <TextField
-              label="Başlangıç tarihi"
+              label={tx('Başlangıç tarihi')}
               type="date"
               required
               value={startDate}
@@ -196,34 +197,34 @@ function CreateTeamDialog({
               error={submitted ? errors.start : undefined}
             />
             <SelectField
-              label="Bu tarihte desenin hangi günü"
+              label={tx('Bu tarihte desenin hangi günü')}
               value={startIndex}
               onChange={setStartIndex}
               disabled={!pattern}
-              placeholder="Önce desen seçin"
+              placeholder={tx('Önce desen seçin')}
               options={days.map((d, i) => ({
                 value: String(i),
-                label: `${i + 1}. gün · ${DAY_STYLE[d.type].label}${d.startTime ? ` ${timeRange(d.startTime, d.endTime)}` : ''}`,
+                label: tx('{0}. gün · {1}{2}', [i + 1, DAY_STYLE[d.type].label, d.startTime ? ` ${timeRange(d.startTime, d.endTime)}` : '']),
               }))}
-              hint="7/24 kapsama için ekipleri aynı desenin farklı günlerinden başlatın."
+              hint={tx('7/24 kapsama için ekipleri aynı desenin farklı günlerinden başlatın.')}
             />
           </div>
 
           <SelectField
-            label="Departman"
+            label={tx('Departman')}
             value={departmentId}
             onChange={setDepartmentId}
             disabled={depts.isPending}
             options={[
-              { value: NO_DEPT, label: 'Kısıt yok — tüm çalışanlar eklenebilir' },
+              { value: NO_DEPT, label: tx('Kısıt yok — tüm çalışanlar eklenebilir') },
               ...depts.list.map((d) => ({ value: d.id, label: d.path })),
             ]}
-            hint="Seçerseniz üye eklerken yalnızca bu departmanın (ve alt departmanlarının) çalışanları listelenir."
+            hint={tx('Seçerseniz üye eklerken yalnızca bu departmanın (ve alt departmanlarının) çalışanları listelenir.')}
           />
 
           {pattern && (
             <div className="rounded-lg border border-border bg-muted/30 p-3">
-              <p className="mb-2 text-[12px] font-medium text-muted-foreground">İlk iki hafta</p>
+              <p className="mb-2 text-[12px] font-medium text-muted-foreground">{tx('İlk iki hafta')}</p>
               <div className="overflow-x-auto">
                 <table className="border-separate border-spacing-1 text-[11px]">
                   <thead>
@@ -239,7 +240,7 @@ function CreateTeamDialog({
                   </thead>
                   <tbody>
                     <tr>
-                      <th className="pr-2 text-left font-semibold whitespace-nowrap">{name.trim() || 'Yeni ekip'}</th>
+                      <th className="pr-2 text-left font-semibold whitespace-nowrap">{name.trim() || tx('Yeni ekip')}</th>
                       {preview.map((d) => (
                         <td key={d}>
                           <DayBlock type={days[patternIndexAt(anchorDate, d, days.length)].type} size="sm" />
@@ -261,8 +262,7 @@ function CreateTeamDialog({
               </div>
               {siblings.length > 0 && (
                 <p className="mt-2 text-[12px] text-muted-foreground">
-                  Soluk satırlar bu deseni kullanan diğer ekipler — aynı gün aynı vardiyada çakışmadığını buradan
-                  görebilirsiniz.
+                  {tx('Soluk satırlar bu deseni kullanan diğer ekipler — aynı gün aynı vardiyada çakışmadığını buradan görebilirsiniz.')}
                 </p>
               )}
             </div>
@@ -316,9 +316,9 @@ function AddMemberDialog({ team, teams, onClose }: { team: ShiftTeam; teams: Shi
   const rankNum = Number(rank)
   const rankHolder = members.find((m) => m.rank === rankNum)
   const errors = {
-    employee: !employeeId ? 'Bir çalışan seçin.' : undefined,
-    rank: !Number.isInteger(rankNum) || rankNum < 1 ? 'Sıra 1 ya da daha büyük bir tam sayı olmalı.' : undefined,
-    from: !effectiveFrom ? 'Başlangıç tarihi gerekli.' : undefined,
+    employee: !employeeId ? tx('Bir çalışan seçin.') : undefined,
+    rank: !Number.isInteger(rankNum) || rankNum < 1 ? tx('Sıra 1 ya da daha büyük bir tam sayı olmalı.') : undefined,
+    from: !effectiveFrom ? tx('Başlangıç tarihi gerekli.') : undefined,
   }
   const valid = !errors.employee && !errors.rank && !errors.from
 
@@ -335,7 +335,7 @@ function AddMemberDialog({ team, teams, onClose }: { team: ShiftTeam; teams: Shi
       { teamId: team.id, input: { employeeId, rank: rankNum, tag: tag.trim() || null, effectiveFrom } },
       {
         onSuccess: () => {
-          toast.ok(`${people.nameOf(employeeId)} artık ${team.name} üyesi.`)
+          toast.ok(tx('{0} artık {1} üyesi.', [people.nameOf(employeeId), team.name]))
           onClose()
         },
       },
@@ -349,35 +349,34 @@ function AddMemberDialog({ team, teams, onClose }: { team: ShiftTeam; teams: Shi
       open
       onClose={onClose}
       size="lg"
-      title={`${team.name} · üye ekle`}
+      title={tx('{0} · üye ekle', [team.name])}
       note={
         restricted
-          ? `Bu ekip ${depts.pathOf(team.departmentId)} departmanına bağlı; yalnızca o departmanın çalışanları listelenir.`
-          : 'Ekibe departman kısıtı konmamış; tüm çalışanlar eklenebilir.'
+          ? tx('Bu ekip {0} departmanına bağlı; yalnızca o departmanın çalışanları listelenir.', [depts.pathOf(team.departmentId)])
+          : tx('Ekibe departman kısıtı konmamış; tüm çalışanlar eklenebilir.')
       }
       footer={
         <>
           <Button variant="outline" onClick={onClose}>
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button onClick={submit} disabled={add.isPending || cannotFilter}>
             {add.isPending && <LoaderCircle className="size-4 animate-spin" />}
-            Ekibe ekle
+            {tx('Ekibe ekle')}
           </Button>
         </>
       }
     >
-      {add.isError && <ErrorLine>{errorText(add.error, 'Üye eklenemedi.')}</ErrorLine>}
+      {add.isError && <ErrorLine>{errorText(add.error, tx('Üye eklenemedi.'))}</ErrorLine>}
 
       <div className="space-y-4">
         {cannotFilter ? (
           <ErrorLine>
-            Departman kısıtını uygulamak için çalışanların departman bilgisi gerekiyor ama çalışan listesi alınamadı.
-            Sayfayı yenileyip tekrar deneyin.
+            {tx('Departman kısıtını uygulamak için çalışanların departman bilgisi gerekiyor ama çalışan listesi alınamadı. Sayfayı yenileyip tekrar deneyin.')}
           </ErrorLine>
         ) : (
           <div>
-            <p className="mb-1.5 text-[13px] font-medium">Çalışan</p>
+            <p className="mb-1.5 text-[13px] font-medium">{tx('Çalışan')}</p>
             <PersonPicker
               people={candidates}
               value={employeeId}
@@ -392,13 +391,12 @@ function AddMemberDialog({ team, teams, onClose }: { team: ShiftTeam; teams: Shi
               }}
             />
             {candidates.length === 0 && restricted && !people.isPending && (
-              <p className="mt-1.5 text-[12px] text-muted-foreground">Bu departmanda eklenebilecek çalışan yok.</p>
+              <p className="mt-1.5 text-[12px] text-muted-foreground">{tx('Bu departmanda eklenebilecek çalışan yok.')}</p>
             )}
             {submitted && errors.employee && <p className="mt-1.5 text-[12px] text-destructive">{errors.employee}</p>}
             {movingFrom && (
               <p className="mt-2 rounded-lg border border-[hsl(var(--warning))]/30 bg-[hsl(var(--warning))]/8 px-3 py-2 text-[12px]">
-                {people.nameOf(employeeId)} şu an <strong>{movingFrom}</strong> üyesi. Eklerseniz oradaki üyeliği
-                kendiliğinden sonlanır.
+                {tx('{0} şu an', [people.nameOf(employeeId)])}{' '}<strong>{movingFrom}</strong>{' '}{tx('üyesi. Eklerseniz oradaki üyeliği kendiliğinden sonlanır.')}
               </p>
             )}
           </div>
@@ -406,7 +404,7 @@ function AddMemberDialog({ team, teams, onClose }: { team: ShiftTeam; teams: Shi
 
         <div className="grid gap-4 sm:grid-cols-3">
           <TextField
-            label="Sıra (rank)"
+            label={tx('Sıra (rank)')}
             type="number"
             min={1}
             className="tabular"
@@ -415,18 +413,18 @@ function AddMemberDialog({ team, teams, onClose }: { team: ShiftTeam; teams: Shi
             error={submitted ? errors.rank : undefined}
             hint={
               rankHolder
-                ? `Bu sırada ${people.nameOf(rankHolder.employeeId)} var; ikisi art arda görünür.`
-                : '1 en kıdemli; takvimde en üstte.'
+                ? tx('Bu sırada {0} var; ikisi art arda görünür.', [people.nameOf(rankHolder.employeeId)])
+                : tx('1 en kıdemli; takvimde en üstte.')
             }
           />
           <div className="sm:col-span-2">
             <TextField
-              label="Etiket"
+              label={tx('Etiket')}
               value={tag}
               onChange={(e) => setTag(e.target.value)}
               list="shift-tag-options"
-              placeholder="ör. Ekip Lideri"
-              hint="İsteğe bağlı."
+              placeholder={tx('ör. Ekip Lideri')}
+              hint={tx('İsteğe bağlı.')}
               maxLength={60}
             />
             <datalist id="shift-tag-options">
@@ -438,7 +436,7 @@ function AddMemberDialog({ team, teams, onClose }: { team: ShiftTeam; teams: Shi
         </div>
 
         <TextField
-          label="Ekipte başladığı tarih"
+          label={tx('Ekipte başladığı tarih')}
           type="date"
           value={effectiveFrom}
           onChange={(e) => setEffectiveFrom(e.target.value)}
@@ -469,12 +467,12 @@ function RemoveMemberDialog({
     <Modal
       open
       onClose={onClose}
-      title="Üyelik sonlandırılsın mı?"
-      note={`${name}, ${team.name} ekibinden bugün itibarıyla çıkarılır. Geçmiş üyelik kaydı silinmez.`}
+      title={tx('Üyelik sonlandırılsın mı?')}
+      note={tx('{0}, {1} ekibinden bugün itibarıyla çıkarılır. Geçmiş üyelik kaydı silinmez.', [name, team.name])}
       footer={
         <>
           <Button variant="outline" onClick={onClose}>
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button
             variant="destructive"
@@ -484,7 +482,7 @@ function RemoveMemberDialog({
                 { teamId: team.id, memberId: member.id },
                 {
                   onSuccess: () => {
-                    toast.ok(`${name} ekipten çıkarıldı.`)
+                    toast.ok(tx('{0} ekipten çıkarıldı.', [name]))
                     onClose()
                   },
                 },
@@ -492,17 +490,16 @@ function RemoveMemberDialog({
             }
           >
             {remove.isPending && <LoaderCircle className="size-4 animate-spin" />}
-            Ekipten çıkar
+            {tx('Ekipten çıkar')}
           </Button>
         </>
       }
     >
       {remove.isError ? (
-        <ErrorLine>{errorText(remove.error, 'Üyelik sonlandırılamadı.')}</ErrorLine>
+        <ErrorLine>{errorText(remove.error, tx('Üyelik sonlandırılamadı.'))}</ErrorLine>
       ) : (
         <p className="text-[13px] text-muted-foreground">
-          Çalışanın takvimi yarından itibaren bu ekibin desenini takip etmez. Başka bir ekibe eklemek için o ekibin
-          sayfasından “Üye ekle”yi kullanın.
+          {tx('Çalışanın takvimi yarından itibaren bu ekibin desenini takip etmez. Başka bir ekibe eklemek için o ekibin sayfasından “Üye ekle”yi kullanın.')}
         </p>
       )}
     </Modal>
@@ -538,10 +535,10 @@ function TeamDetail({
       <Panel>
         <PanelHead
           title={team.name}
-          note={`${team.shiftPattern?.name ?? 'Desen bulunamadı'} · ${team.departmentId ? depts.pathOf(team.departmentId) : 'Departman kısıtı yok'}`}
+          note={`${team.shiftPattern?.name ?? tx('Desen bulunamadı')} · ${team.departmentId ? depts.pathOf(team.departmentId) : tx('Departman kısıtı yok')}`}
           action={
             <Button size="sm" variant="outline" onClick={() => onOpenRoster(team.id)}>
-              <CalendarRange className="size-4" /> Takvimi aç
+              <CalendarRange className="size-4" />{' '}{tx('Takvimi aç')}
             </Button>
           }
         />
@@ -550,7 +547,7 @@ function TeamDetail({
             <>
               <PatternStrip days={days} size="sm" highlightIndex={todayIndex} />
               <p className="text-[13px] text-muted-foreground">
-                Bugün desenin <strong className="text-foreground">{todayIndex + 1}. gününde</strong>
+                {tx('Bugün desenin')}{' '}<strong className="text-foreground">{tx('{0}. gününde', [todayIndex + 1])}</strong>
                 {todayDay && (
                   <>
                     {' '}
@@ -558,23 +555,23 @@ function TeamDetail({
                     {todayDay.startTime && ` ${timeRange(todayDay.startTime, todayDay.endTime)}`}
                   </>
                 )}
-                . Döngü başlangıcı: {formatDate(team.anchorDate)}.
+                {tx('. Döngü başlangıcı:')}{' '}{formatDate(team.anchorDate)}.
               </p>
             </>
           ) : (
-            <p className="text-[13px] text-muted-foreground">Bu ekibin deseni yüklenemedi.</p>
+            <p className="text-[13px] text-muted-foreground">{tx('Bu ekibin deseni yüklenemedi.')}</p>
           )}
         </PanelBody>
       </Panel>
 
       <Panel>
         <PanelHead
-          title="Üyeler"
-          note={members.length ? `${formatNumber(members.length)} kişi · sıraya göre` : undefined}
+          title={tx('Üyeler')}
+          note={members.length ? tx('{0} kişi · sıraya göre', [formatNumber(members.length)]) : undefined}
           action={
             manage && (
               <Button size="sm" onClick={() => setAdding(true)}>
-                <UserPlus className="size-4" /> Üye ekle
+                <UserPlus className="size-4" />{' '}{tx('Üye ekle')}
               </Button>
             )
           }
@@ -582,12 +579,12 @@ function TeamDetail({
         {members.length === 0 ? (
           <EmptyState
             icon={UsersRound}
-            title="Ekipte kimse yok"
-            detail={manage ? 'Üye ekleyin; takvim onların adıyla dolar.' : 'Üyeleri İK yöneticisi ekler.'}
+            title={tx('Ekipte kimse yok')}
+            detail={manage ? tx('Üye ekleyin; takvim onların adıyla dolar.') : tx('Üyeleri İK yöneticisi ekler.')}
             action={
               manage && (
                 <Button size="sm" onClick={() => setAdding(true)}>
-                  <UserPlus className="size-4" /> Üye ekle
+                  <UserPlus className="size-4" />{' '}{tx('Üye ekle')}
                 </Button>
               )
             }
@@ -600,7 +597,7 @@ function TeamDetail({
                 <li key={m.id} className="flex items-center gap-3 px-4 py-2.5">
                   <span
                     className="tabular flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-[12px] font-semibold"
-                    title="Sıra (rank)"
+                    title={tx('Sıra (rank)')}
                   >
                     {m.rank}
                   </span>
@@ -608,7 +605,7 @@ function TeamDetail({
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-[13px] font-medium">{name}</p>
                     <p className="truncate text-[12px] text-muted-foreground">
-                      {[m.tag, people.titleOf(m.employeeId), `${formatDate(m.effectiveFrom)} itibarıyla`]
+                      {[m.tag, people.titleOf(m.employeeId), tx('{0} itibarıyla', [formatDate(m.effectiveFrom)])]
                         .filter(Boolean)
                         .join(' · ')}
                     </p>
@@ -617,7 +614,7 @@ function TeamDetail({
                     <Button
                       size="sm"
                       variant="ghost"
-                      aria-label={`${name} ekipten çıkar`}
+                      aria-label={tx('{0} ekipten çıkar', [name])}
                       onClick={() => setRemoving(m)}
                     >
                       <UserMinus className="size-4" />
@@ -674,15 +671,15 @@ export function TeamsView({
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="w-full sm:w-72">
           <SelectField
-            label="Departman"
+            label={tx('Departman')}
             value={deptFilter}
             onChange={setDeptFilter}
-            options={[{ value: ALL, label: 'Tüm departmanlar' }, ...depts.list.map((d) => ({ value: d.id, label: d.path }))]}
+            options={[{ value: ALL, label: tx('Tüm departmanlar') }, ...depts.list.map((d) => ({ value: d.id, label: d.path }))]}
           />
         </div>
         {manage && (
           <Button onClick={() => setCreating(true)}>
-            <Plus className="size-4" /> Yeni ekip
+            <Plus className="size-4" />{' '}{tx('Yeni ekip')}
           </Button>
         )}
       </div>
@@ -699,16 +696,16 @@ export function TeamsView({
         <Panel>
           <EmptyState
             icon={UsersRound}
-            title={deptFilter === ALL ? 'Henüz vardiya ekibi yok' : 'Bu departmanda vardiya ekibi yok'}
+            title={deptFilter === ALL ? tx('Henüz vardiya ekibi yok') : tx('Bu departmanda vardiya ekibi yok')}
             detail={
               manage
-                ? 'Ekip, bir deseni belirli bir tarihten başlayarak takip eden çalışan grubudur.'
-                : 'Vardiya ekiplerini İK yöneticisi kurar.'
+                ? tx('Ekip, bir deseni belirli bir tarihten başlayarak takip eden çalışan grubudur.')
+                : tx('Vardiya ekiplerini İK yöneticisi kurar.')
             }
             action={
               manage && (
                 <Button onClick={() => setCreating(true)}>
-                  <Plus className="size-4" /> Ekip oluştur
+                  <Plus className="size-4" />{' '}{tx('Ekip oluştur')}
                 </Button>
               )
             }
@@ -717,8 +714,8 @@ export function TeamsView({
       ) : (
         <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,320px)_minmax(0,1fr)]">
           <Panel>
-            <PanelHead title="Ekipler" note={`${formatNumber(list.length)} ekip · simge bugünkü vardiya`} />
-            <ul className="divide-y divide-border" aria-label="Vardiya ekipleri">
+            <PanelHead title={tx('Ekipler')} note={tx('{0} ekip · simge bugünkü vardiya', [formatNumber(list.length)])} />
+            <ul className="divide-y divide-border" aria-label={tx('Vardiya ekipleri')}>
               {list.map((t) => {
                 const days = t.shiftPattern ? sortedDays(t.shiftPattern) : []
                 const idx = days.length ? patternIndexAt(t.anchorDate, today, days.length) : 0
@@ -735,14 +732,14 @@ export function TeamsView({
                       )}
                     >
                       {days[idx] ? (
-                        <DayBlock type={days[idx].type} size="md" title={`Bugün: ${DAY_STYLE[days[idx].type].label}`} />
+                        <DayBlock type={days[idx].type} size="md" title={tx('Bugün: {0}', [DAY_STYLE[days[idx].type].label])} />
                       ) : (
                         <DayBlock type="Off" size="md" />
                       )}
                       <span className="min-w-0 flex-1">
                         <span className={cn('block truncate text-[13px]', on ? 'font-semibold' : 'font-medium')}>{t.name}</span>
                         <span className="block truncate text-[12px] text-muted-foreground">
-                          {formatNumber(t.members?.length ?? 0)} üye · {t.shiftPattern?.name ?? '—'}
+                          {tx('{0} üye · {1}', [formatNumber(t.members?.length ?? 0), t.shiftPattern?.name ?? '—'])}
                         </span>
                       </span>
                     </button>

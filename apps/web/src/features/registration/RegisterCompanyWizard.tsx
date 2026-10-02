@@ -43,8 +43,9 @@ import { planById } from '@/features/pricing/plans'
 import { EASE } from '@/motion/primitives'
 import { formatNumber } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { tx } from '@/lib/i18n'
 
-const STEPS = ['Şirket', 'Yönetici', 'Plan', 'Özet'] as const
+const STEPS = [tx('Şirket'), tx('Yönetici'), tx('Plan'), tx('Özet')] as const
 type StepIndex = 0 | 1 | 2 | 3
 
 interface FormState {
@@ -67,26 +68,26 @@ function validate(step: StepIndex, values: FormState, slugTaken: boolean): Error
   const errors: Errors = {}
 
   if (step === 0) {
-    if (values.companyName.trim().length < 2) errors.companyName = 'Şirket adı en az 2 karakter olmalı.'
-    if (!values.slug) errors.slug = 'Kısa ad zorunlu.'
-    else if (values.slug.length < 3) errors.slug = 'Kısa ad en az 3 karakter olmalı.'
-    else if (values.slug.length > 40) errors.slug = 'Kısa ad en fazla 40 karakter olabilir.'
+    if (values.companyName.trim().length < 2) errors.companyName = tx('Şirket adı en az 2 karakter olmalı.')
+    if (!values.slug) errors.slug = tx('Kısa ad zorunlu.')
+    else if (values.slug.length < 3) errors.slug = tx('Kısa ad en az 3 karakter olmalı.')
+    else if (values.slug.length > 40) errors.slug = tx('Kısa ad en fazla 40 karakter olabilir.')
     else if (!SLUG_RE.test(values.slug))
-      errors.slug = 'Yalnızca küçük harf, rakam ve tire kullanın (tire başta/sonda olamaz).'
-    else if (slugTaken) errors.slug = 'Bu kısa ad kullanımda. Başka bir tane deneyin.'
+      errors.slug = tx('Yalnızca küçük harf, rakam ve tire kullanın (tire başta/sonda olamaz).')
+    else if (slugTaken) errors.slug = tx('Bu kısa ad kullanımda. Başka bir tane deneyin.')
 
     if (values.taxNumber && !/^\d{10,11}$/.test(values.taxNumber))
-      errors.taxNumber = 'Vergi numarası 10 veya 11 hane olmalı.'
+      errors.taxNumber = tx('Vergi numarası 10 veya 11 hane olmalı.')
 
     if (values.emailDomain && !DOMAIN_RE.test(values.emailDomain.toLowerCase()))
-      errors.emailDomain = 'Geçerli bir alan adı girin (ör. sirket.com.tr).'
+      errors.emailDomain = tx('Geçerli bir alan adı girin (ör. sirket.com.tr).')
   }
 
   if (step === 1) {
     if (values.adminFullName.trim().length < 3)
-      errors.adminFullName = 'Yöneticinin ad soyadını girin.'
+      errors.adminFullName = tx('Yöneticinin ad soyadını girin.')
     if (!EMAIL_RE.test(values.adminEmail.trim()))
-      errors.adminEmail = 'Geçerli bir e-posta adresi girin.'
+      errors.adminEmail = tx('Geçerli bir e-posta adresi girin.')
   }
 
   return errors
@@ -111,7 +112,7 @@ function Field({
     <div className="flex flex-col gap-1.5">
       <Label htmlFor={id} className="text-[13px]">
         {label}
-        {optional && <span className="font-normal text-muted-foreground">(isteğe bağlı)</span>}
+        {optional && <span className="font-normal text-muted-foreground">{tx('(isteğe bağlı)')}</span>}
       </Label>
       {children}
       {error ? (
@@ -208,22 +209,22 @@ export function RegisterCompanyWizard() {
     if (error instanceof ApiError) {
       if (error.status === 409) {
         return {
-          title: 'Bu bilgilerle zaten bir kayıt var',
+          title: tx('Bu bilgilerle zaten bir kayıt var'),
           detail: error.message,
         }
       }
       if (error.status === 404 || error.status === 502 || error.status === 503) {
         return {
-          title: 'Kayıt servisine ulaşılamıyor',
+          title: tx('Kayıt servisine ulaşılamıyor'),
           detail:
-            'Sunucu şu anda yanıt vermiyor. Birkaç dakika sonra tekrar deneyin; sorun sürerse bize ulaşın.',
+            tx('Sunucu şu anda yanıt vermiyor. Birkaç dakika sonra tekrar deneyin; sorun sürerse bize ulaşın.'),
         }
       }
-      return { title: 'Kayıt tamamlanamadı', detail: error.message }
+      return { title: tx('Kayıt tamamlanamadı'), detail: error.message }
     }
     return {
-      title: 'Kayıt tamamlanamadı',
-      detail: 'Beklenmeyen bir hata oluştu. Lütfen tekrar deneyin.',
+      title: tx('Kayıt tamamlanamadı'),
+      detail: tx('Beklenmeyen bir hata oluştu. Lütfen tekrar deneyin.'),
     }
   }, [register.error])
 
@@ -247,23 +248,22 @@ export function RegisterCompanyWizard() {
             )}
             <CircleCheck className="size-6 text-[hsl(var(--success))]" strokeWidth={1.75} />
           </motion.span>
-          <h1 className="text-2xl font-semibold tracking-tight">Kaydınız alındı</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{tx('Kaydınız alındı')}</h1>
           <p className="mt-3 text-[14px] leading-relaxed text-muted-foreground">
-            <strong className="font-medium text-foreground">{result.companyName}</strong> için
-            çalışma alanı hazırlanıyor. E-postanıza parola belirleme bağlantısı gönderildi.
+            <strong className="font-medium text-foreground">{result.companyName}</strong>{' '}{tx('için çalışma alanı hazırlanıyor. E-postanıza parola belirleme bağlantısı gönderildi.')}
           </p>
 
           <dl className="mt-6 rounded-xl border border-border bg-muted/40 p-4 text-left text-[13px]">
             <div className="flex items-baseline justify-between gap-4 py-1">
-              <dt className="text-muted-foreground">Kısa ad</dt>
+              <dt className="text-muted-foreground">{tx('Kısa ad')}</dt>
               <dd className="font-mono font-medium">{result.slug}</dd>
             </div>
             <div className="flex items-baseline justify-between gap-4 py-1">
-              <dt className="text-muted-foreground">Yönetici e-postası</dt>
+              <dt className="text-muted-foreground">{tx('Yönetici e-postası')}</dt>
               <dd className="truncate font-medium">{values.adminEmail}</dd>
             </div>
             <div className="flex items-baseline justify-between gap-4 py-1">
-              <dt className="text-muted-foreground">Plan</dt>
+              <dt className="text-muted-foreground">{tx('Plan')}</dt>
               <dd className="font-medium">{tenantPlanLabels[result.plan ?? 'Trial']}</dd>
             </div>
           </dl>
@@ -273,12 +273,11 @@ export function RegisterCompanyWizard() {
           )}
 
           <p className="mt-6 text-[12px] leading-relaxed text-muted-foreground">
-            Bağlantı gelmediyse istenmeyen posta klasörünü kontrol edin. Kurulum birkaç dakika
-            sürebilir.
+            {tx('Bağlantı gelmediyse istenmeyen posta klasörünü kontrol edin. Kurulum birkaç dakika sürebilir.')}
           </p>
 
           <Button className="mt-7 w-full cursor-pointer" asChild>
-            <Link to="/giris">Giriş ekranına git</Link>
+            <Link to="/giris">{tx('Giriş ekranına git')}</Link>
           </Button>
         </div>
       </main>
@@ -301,19 +300,18 @@ export function RegisterCompanyWizard() {
             aria-hidden="true"
             className="size-7 shrink-0"
           />
-          HR360
+          {tx('HR360')}
         </Link>
 
         <h1 className="text-[30px] leading-tight font-semibold tracking-[-0.04em] sm:text-[42px]">
-          <TextReveal text="Şirketinizi" /> <GradientText>kaydedin</GradientText>
+          <TextReveal text={tx('Şirketinizi')} /> <GradientText>{tx('kaydedin')}</GradientText>
         </h1>
         <p className="mt-2 max-w-xl text-[14px] leading-relaxed text-muted-foreground">
-          Birkaç dakika sürer. Kaydı tamamladığınızda şirketiniz için ayrı bir çalışma alanı
-          oluşturulur ve yönetici hesabınıza parola belirleme bağlantısı gönderilir.
+          {tx('Birkaç dakika sürer. Kaydı tamamladığınızda şirketiniz için ayrı bir çalışma alanı oluşturulur ve yönetici hesabınıza parola belirleme bağlantısı gönderilir.')}
         </p>
 
         {/* Adım göstergesi */}
-        <ol className="mt-8 mb-7 flex items-center gap-2" aria-label="Kayıt adımları">
+        <ol className="mt-8 mb-7 flex items-center gap-2" aria-label={tx('Kayıt adımları')}>
           {STEPS.map((label, index) => (
             <li key={label} className="flex flex-1 items-center gap-2">
               <span
@@ -370,12 +368,12 @@ export function RegisterCompanyWizard() {
           {/* ------------------------------ 1. Şirket ------------------------------ */}
           {step === 0 && (
             <div className="flex flex-col gap-5">
-              <Field id="companyName" label="Şirket adı" error={errors.companyName}>
+              <Field id="companyName" label={tx('Şirket adı')} error={errors.companyName}>
                 <Input
                   id="companyName"
                   value={values.companyName}
                   onChange={(e) => set('companyName', e.target.value)}
-                  placeholder="Acme Holding A.Ş."
+                  placeholder={tx('Acme Holding A.Ş.')}
                   autoComplete="organization"
                   aria-invalid={Boolean(errors.companyName)}
                 />
@@ -383,9 +381,9 @@ export function RegisterCompanyWizard() {
 
               <Field
                 id="slug"
-                label="Kısa ad"
+                label={tx('Kısa ad')}
                 error={errors.slug}
-                hint="Çalışma alanınızın adresinde ve kayıtlarınızda kullanılır. Sonradan değiştirilemez."
+                hint={tx('Çalışma alanınızın adresinde ve kayıtlarınızda kullanılır. Sonradan değiştirilemez.')}
               >
                 <div className="relative">
                   <Input
@@ -412,25 +410,25 @@ export function RegisterCompanyWizard() {
                 </div>
                 <p id="slug-durum" aria-live="polite" className="sr-only">
                   {slugCheck.isFetching
-                    ? 'Kısa ad kontrol ediliyor'
+                    ? tx('Kısa ad kontrol ediliyor')
                     : slugTaken
-                      ? 'Bu kısa ad kullanımda'
+                      ? tx('Bu kısa ad kullanımda')
                       : slugSettled
-                        ? 'Bu kısa ad müsait'
+                        ? tx('Bu kısa ad müsait')
                         : ''}
                 </p>
                 {slugSettled && slugCheck.data?.available && !errors.slug && (
-                  <p className="text-[12px] text-[hsl(var(--success))]">Bu kısa ad müsait.</p>
+                  <p className="text-[12px] text-[hsl(var(--success))]">{tx('Bu kısa ad müsait.')}</p>
                 )}
                 {slugCheck.isError && (
                   <p className="text-[12px] text-muted-foreground">
-                    Müsaitlik kontrolü yapılamadı; kaydı yine de deneyebilirsiniz.
+                    {tx('Müsaitlik kontrolü yapılamadı; kaydı yine de deneyebilirsiniz.')}
                   </p>
                 )}
               </Field>
 
               <div className="grid gap-5 sm:grid-cols-2">
-                <Field id="taxNumber" label="Vergi numarası" optional error={errors.taxNumber}>
+                <Field id="taxNumber" label={tx('Vergi numarası')} optional error={errors.taxNumber}>
                   <Input
                     id="taxNumber"
                     value={values.taxNumber}
@@ -444,10 +442,10 @@ export function RegisterCompanyWizard() {
 
                 <Field
                   id="emailDomain"
-                  label="E-posta alan adı"
+                  label={tx('E-posta alan adı')}
                   optional
                   error={errors.emailDomain}
-                  hint="Bu alan adındaki çalışanlar otomatik eşleştirilir."
+                  hint={tx('Bu alan adındaki çalışanlar otomatik eşleştirilir.')}
                 >
                   <Input
                     id="emailDomain"
@@ -465,16 +463,15 @@ export function RegisterCompanyWizard() {
           {step === 1 && (
             <div className="flex flex-col gap-5">
               <p className="text-[13px] leading-relaxed text-muted-foreground">
-                Bu kişi şirketinizin ilk yöneticisi olur: çalışanları ekler, rolleri dağıtır ve
-                onay zincirlerini kurar.
+                {tx('Bu kişi şirketinizin ilk yöneticisi olur: çalışanları ekler, rolleri dağıtır ve onay zincirlerini kurar.')}
               </p>
 
-              <Field id="adminFullName" label="Ad soyad" error={errors.adminFullName}>
+              <Field id="adminFullName" label={tx('Ad soyad')} error={errors.adminFullName}>
                 <Input
                   id="adminFullName"
                   value={values.adminFullName}
                   onChange={(e) => set('adminFullName', e.target.value)}
-                  placeholder="Ayşe Yılmaz"
+                  placeholder={tx('Ayşe Yılmaz')}
                   autoComplete="name"
                   aria-invalid={Boolean(errors.adminFullName)}
                 />
@@ -484,7 +481,7 @@ export function RegisterCompanyWizard() {
                 id="adminEmail"
                 label="E-posta"
                 error={errors.adminEmail}
-                hint="Parola belirleme bağlantısı bu adrese gönderilir."
+                hint={tx('Parola belirleme bağlantısı bu adrese gönderilir.')}
               >
                 <Input
                   id="adminEmail"
@@ -503,10 +500,9 @@ export function RegisterCompanyWizard() {
           {step === 2 && (
             <div className="flex flex-col gap-5">
               <p className="text-[13px] leading-relaxed text-muted-foreground">
-                Her hesap Deneme planıyla açılır; seçtiğiniz plan talebiniz platform yöneticisi
-                tarafından onaylandığında etkinleşir.
+                {tx('Her hesap Deneme planıyla açılır; seçtiğiniz plan talebiniz platform yöneticisi tarafından onaylandığında etkinleşir.')}
               </p>
-              <div role="radiogroup" aria-label="Plan seçimi">
+              <div role="radiogroup" aria-label={tx('Plan seçimi')}>
                 <PricingPlans
                   mode="select"
                   value={values.plan}
@@ -520,26 +516,24 @@ export function RegisterCompanyWizard() {
           {step === 3 && (
             <div className="flex flex-col gap-5">
               <p className="text-[13px] leading-relaxed text-muted-foreground">
-                Bilgileri gözden geçirin. Bir şeyi değiştirmek için ilgili adıma dönebilirsiniz.
+                {tx('Bilgileri gözden geçirin. Bir şeyi değiştirmek için ilgili adıma dönebilirsiniz.')}
               </p>
 
               <dl className="divide-y divide-border rounded-lg border border-border">
                 {[
-                  { label: 'Şirket adı', value: values.companyName, step: 0 as StepIndex },
-                  { label: 'Kısa ad', value: values.slug, step: 0 as StepIndex, mono: true },
-                  { label: 'Vergi numarası', value: values.taxNumber || '—', step: 0 as StepIndex },
+                  { label: tx('Şirket adı'), value: values.companyName, step: 0 as StepIndex },
+                  { label: tx('Kısa ad'), value: values.slug, step: 0 as StepIndex, mono: true },
+                  { label: tx('Vergi numarası'), value: values.taxNumber || '—', step: 0 as StepIndex },
                   {
-                    label: 'E-posta alan adı',
+                    label: tx('E-posta alan adı'),
                     value: values.emailDomain || '—',
                     step: 0 as StepIndex,
                   },
-                  { label: 'Yönetici', value: values.adminFullName, step: 1 as StepIndex },
-                  { label: 'Yönetici e-postası', value: values.adminEmail, step: 1 as StepIndex },
+                  { label: tx('Yönetici'), value: values.adminFullName, step: 1 as StepIndex },
+                  { label: tx('Yönetici e-postası'), value: values.adminEmail, step: 1 as StepIndex },
                   {
-                    label: 'Plan',
-                    value: `${tenantPlanLabels[values.plan]} — ${formatNumber(
-                      planById(values.plan).maxEmployees,
-                    )} çalışana kadar`,
+                    label: tx('Plan'),
+                    value: tx('{0} — {1} çalışana kadar', [tenantPlanLabels[values.plan], formatNumber(planById(values.plan).maxEmployees)]),
                     step: 2 as StepIndex,
                   },
                 ].map((row) => (
@@ -557,7 +551,7 @@ export function RegisterCompanyWizard() {
                         onClick={() => goToStep(row.step)}
                         className="cursor-pointer text-[12px] text-primary underline-offset-2 hover:underline"
                       >
-                        Düzenle
+                        {tx('Düzenle')}
                       </button>
                     </dd>
                   </div>
@@ -598,20 +592,20 @@ export function RegisterCompanyWizard() {
                 onClick={() => goToStep(Math.max(0, step - 1) as StepIndex)}
               >
                 <ArrowLeft className="size-4" />
-                Geri
+                {tx('Geri')}
               </Button>
             ) : (
               <Button type="button" variant="ghost" className="cursor-pointer" asChild>
                 <Link to="/">
                   <ArrowLeft className="size-4" />
-                  Vazgeç
+                  {tx('Vazgeç')}
                 </Link>
               </Button>
             )}
 
             {step < 3 ? (
               <Button type="button" className="cursor-pointer" onClick={goNext}>
-                Devam
+                {tx('Devam')}
                 <ArrowRight className="size-4" />
               </Button>
             ) : (
@@ -622,16 +616,15 @@ export function RegisterCompanyWizard() {
                 onClick={submit}
               >
                 {register.isPending && <LoaderCircle className="size-4 animate-spin" />}
-                {register.isPending ? 'Gönderiliyor' : 'Kaydı tamamla'}
+                {register.isPending ? tx('Gönderiliyor') : tx('Kaydı tamamla')}
               </Button>
             )}
           </div>
         </div>
 
-        <p className="mt-6 text-center text-[13px] text-muted-foreground">
-          Şirketiniz zaten kayıtlı mı?{' '}
+        <p className="mt-6 text-center text-[13px] text-muted-foreground">{tx('Şirketiniz zaten kayıtlı mı?', [])}{' '}
           <Link to="/giris" className="font-medium text-primary underline-offset-2 hover:underline">
-            Giriş yapın
+            {tx('Giriş yapın')}
           </Link>
         </p>
       </div>

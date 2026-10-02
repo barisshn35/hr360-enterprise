@@ -19,6 +19,7 @@ import { formatNumber } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { EASE, useRevealed } from '@/motion/primitives'
 import { PLANS } from './plans'
+import { tx } from '@/lib/i18n'
 
 /**
  * Kart görünürken sırayla yükselir. Görünürlük ölçümü `useRevealed` üzerinden;
@@ -97,7 +98,7 @@ export function PricingPlans(props: SelectableProps | ShowcaseProps) {
                     </Badge>
                     {plan.highlighted && (
                       <span className="text-[11px] font-medium tracking-wide text-primary uppercase">
-                        En çok tercih edilen
+                        {tx('En çok tercih edilen')}
                       </span>
                     )}
                   </div>
@@ -111,7 +112,7 @@ export function PricingPlans(props: SelectableProps | ShowcaseProps) {
                     <p className="tabular flex items-end gap-1.5 text-4xl font-semibold text-card-foreground">
                       {formatNumber(plan.maxEmployees)}
                       <span className="pb-1 text-base font-normal text-muted-foreground">
-                        çalışana kadar
+                        {tx('çalışana kadar')}
                       </span>
                     </p>
                   )}
@@ -145,7 +146,7 @@ export function PricingPlans(props: SelectableProps | ShowcaseProps) {
                       props.onChange(plan.id)
                     }}
                   >
-                    {active ? 'Seçildi' : 'Bu planı seç'}
+                    {active ? tx('Seçildi') : tx('Bu planı seç')}
                   </Button>
                 ) : (
                   <Button

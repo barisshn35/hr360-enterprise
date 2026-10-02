@@ -12,6 +12,7 @@ import { ProgressBar } from '@/components/ui/Progress'
 import { useToast } from '@/components/ui/Toast'
 import { formatPercent } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { tx } from '@/lib/i18n'
 
 const FEATURE_COUNT = 6
 
@@ -36,7 +37,7 @@ function toContributions(explain: ExplainResponse) {
   const list = Array.isArray(raw)
     ? raw.map((c, i) =>
         typeof c === 'number'
-          ? { feature: `Özellik ${i + 1}`, contribution: c }
+          ? { feature: tx('Özellik {0}', [i + 1]), contribution: c }
           : { feature: c.feature, contribution: c.contribution },
       )
     : Object.entries(raw ?? {}).map(([feature, contribution]) => ({ feature, contribution }))
@@ -61,7 +62,7 @@ export function AttritionRiskPanel({ employee }: { employee: Employee }) {
       setResult(prediction)
       setExplain(explanation)
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : 'Risk analizi yapılamadı.'),
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Risk analizi yapılamadı.')),
   })
 
   const probability = useMemo(() => {
@@ -82,26 +83,25 @@ export function AttritionRiskPanel({ employee }: { employee: Employee }) {
           ? 'warning'
           : 'success'
   const label =
-    probability === null ? '' : probability >= 0.66 ? 'Yüksek' : probability >= 0.33 ? 'Orta' : 'Düşük'
+    probability === null ? '' : probability >= 0.66 ? tx('Yüksek') : probability >= 0.33 ? 'Orta' : tx('Düşük')
 
   return (
     <Panel>
       <PanelHead
-        title="Devir riski"
-        note="hr360-attrition-risk, MLflow sürüm 1"
-        action={<StatusBadge tone="neutral">Model</StatusBadge>}
+        title={tx('Devir riski')}
+        note={tx('hr360-attrition-risk, MLflow sürüm 1')}
+        action={<StatusBadge tone="neutral">{tx('Model')}</StatusBadge>}
       />
       <PanelBody className="space-y-4">
         <p className="border-l-2 border-border pl-3 text-[12px] leading-relaxed text-muted-foreground">
-          Modelin özellik şeması belgelenmediği için değerleri elle girin. İlk alan kıdem (yıl)
-          olarak kayıttan dolduruldu.
+          {tx('Modelin özellik şeması belgelenmediği için değerleri elle girin. İlk alan kıdem (yıl) olarak kayıttan dolduruldu.')}
         </p>
 
         <fieldset className="grid grid-cols-3 gap-2">
-          <legend className="sr-only">Model giriş özellikleri</legend>
+          <legend className="sr-only">{tx('Model giriş özellikleri')}</legend>
           {features.map((value, i) => (
             <label key={i} className="flex flex-col gap-1">
-              <span className="text-[11px] text-muted-foreground">Özellik {i + 1}</span>
+              <span className="text-[11px] text-muted-foreground">{tx('Özellik {0}', [i + 1])}</span>
               <Input
                 type="number"
                 step="any"
@@ -123,7 +123,7 @@ export function AttritionRiskPanel({ employee }: { employee: Employee }) {
           onClick={() => mutation.mutate()}
         >
           {mutation.isPending && <LoaderCircle className="size-4 animate-spin" />}
-          Riski hesapla
+          {tx('Riski hesapla')}
         </Button>
 
         {result && (
@@ -135,19 +135,19 @@ export function AttritionRiskPanel({ employee }: { employee: Employee }) {
           >
             <div className="flex items-end justify-between gap-3">
               <div>
-                <p className="text-[12px] text-muted-foreground">Ayrılma olasılığı</p>
+                <p className="text-[12px] text-muted-foreground">{tx('Ayrılma olasılığı')}</p>
                 <p className="tabular mt-1 text-[30px] leading-none font-bold">
                   {probability === null ? '—' : formatPercent(probability, 1)}
                 </p>
               </div>
-              {label && <StatusBadge tone={tone}>{label} risk</StatusBadge>}
+              {label && <StatusBadge tone={tone}>{tx('{0} risk', [label])}</StatusBadge>}
             </div>
 
             {probability !== null && (
               <ProgressBar
                 value={probability * 100}
                 tone={tone}
-                label="Ayrılma olasılığı"
+                label={tx('Ayrılma olasılığı')}
                 thick
               />
             )}
@@ -155,7 +155,7 @@ export function AttritionRiskPanel({ employee }: { employee: Employee }) {
             {contributions.length > 0 && (
               <div>
                 <p className="mb-2 text-[12px] text-muted-foreground">
-                  Hangi özellik ne kadar etkiledi
+                  {tx('Hangi özellik ne kadar etkiledi')}
                 </p>
                 <ul className="space-y-2">
                   {contributions.slice(0, 6).map((c) => {
@@ -189,7 +189,7 @@ export function AttritionRiskPanel({ employee }: { employee: Employee }) {
                   })}
                 </ul>
                 <p className="mt-2 text-[11px] text-muted-foreground">
-                  Kırmızı riski artırır, yeşil azaltır.
+                  {tx('Kırmızı riski artırır, yeşil azaltır.')}
                 </p>
               </div>
             )}

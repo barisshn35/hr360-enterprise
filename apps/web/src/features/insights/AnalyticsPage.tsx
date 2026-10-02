@@ -9,12 +9,13 @@ import { StatCard } from '@/components/ui/StatCard'
 import { governanceApi } from '@/api/governance'
 import { formatMoney } from '@/lib/format'
 import { PlanGate } from '@/features/shared/kit'
+import { tx, appLocale, pct } from '@/lib/i18n'
 
 const TT = { background: 'hsl(var(--popover))', border: '1px solid hsl(var(--border))', borderRadius: 12, fontSize: 12 }
 const COLORS = ['hsl(var(--primary))', '#38bdf8', '#f59e0b', '#a78bfa', '#f43f5e', '#22d3ee', '#84cc16']
-const MONTH = new Intl.DateTimeFormat('tr-TR', { month: 'short', year: '2-digit' })
+const MONTH = new Intl.DateTimeFormat(appLocale, { month: 'short', year: '2-digit' })
 const m = (s: string) => MONTH.format(new Date(s))
-const leaveTr: Record<string, string> = { Annual: 'Yıllık', Sick: 'Hastalık', Unpaid: 'Ücretsiz', Maternity: 'Doğum', Paternity: 'Babalık', Marriage: 'Evlilik', Bereavement: 'Vefat' }
+const leaveTr: Record<string, string> = { Annual: tx('Yıllık'), Sick: tx('Hastalık'), Unpaid: tx('Ücretsiz'), Maternity: tx('Doğum'), Paternity: tx('Babalık'), Marriage: tx('Evlilik'), Bereavement: tx('Vefat') }
 
 export function AnalyticsPage() {
   const [months, setMonths] = useState('12')
@@ -31,18 +32,18 @@ export function AnalyticsPage() {
   const k = q.data?.kpis
   return (
     <PlanGate feature="analytics">
-      <PageHeader title="Analitik" description="Kadro, işe alım ve ayrılış, izin, fazla mesai ve masraf eğilimleri — operasyonel veriden türetilen analitik görünümlerden." actions={<div className="w-40"><SelectField label="Dönem" value={months} onChange={setMonths} options={[{ value: '6', label: 'Son 6 ay' }, { value: '12', label: 'Son 12 ay' }, { value: '24', label: 'Son 24 ay' }]} /></div>} />
+      <PageHeader title={tx('Analitik')} description={tx('Kadro, işe alım ve ayrılış, izin, fazla mesai ve masraf eğilimleri — operasyonel veriden türetilen analitik görünümlerden.')} actions={<div className="w-40"><SelectField label={tx('Dönem')} value={months} onChange={setMonths} options={[{ value: '6', label: tx('Son 6 ay') }, { value: '12', label: tx('Son 12 ay') }, { value: '24', label: tx('Son 24 ay') }]} /></div>} />
       {q.isPending ? <RowsSkeleton rows={6} /> : q.isError ? <ErrorState message={(q.error as Error).message} onRetry={() => q.refetch()} /> : (
         <div className="space-y-6">
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <StatCard label="Aktif çalışan" count={k!.headcount} series={q.data.timeline.map((t) => t.headcount)} />
-            <StatCard label="İşe alım / ayrılış" value={`${k!.hires} / ${k!.exits}`} />
-            <StatCard label="Devir hızı" value={`%${k!.turnoverPercent.toLocaleString('tr-TR')}`} attention={k!.turnoverPercent > 15} />
-            <StatCard label="Onaylı izin günü" count={Number(k!.leaveDays)} />
+            <StatCard label={tx('Aktif çalışan')} count={k!.headcount} series={q.data.timeline.map((t) => t.headcount)} />
+            <StatCard label={tx('İşe alım / ayrılış')} value={`${k!.hires} / ${k!.exits}`} />
+            <StatCard label={tx('Devir hızı')} value={pct(k!.turnoverPercent.toLocaleString(appLocale))} attention={k!.turnoverPercent > 15} />
+            <StatCard label={tx('Onaylı izin günü')} count={Number(k!.leaveDays)} />
           </div>
           <div className="grid gap-6 xl:grid-cols-2">
             <Panel>
-              <PanelHead title="Kadro eğilimi" note="Ay sonu aktif çalışan, işe alım ve ayrılış" />
+              <PanelHead title={tx('Kadro eğilimi')} note={tx('Ay sonu aktif çalışan, işe alım ve ayrılış')} />
               <PanelBody className="h-72">
                 <ResponsiveContainer>
                   <ComposedChart data={q.data.timeline.map((t) => ({ ...t, month: m(t.month) }))}>
@@ -52,15 +53,15 @@ export function AnalyticsPage() {
                     <YAxis allowDecimals={false} fontSize={11} width={28} tickLine={false} axisLine={false} />
                     <Tooltip contentStyle={TT} />
                     <Legend wrapperStyle={{ fontSize: 12 }} />
-                    <Area type="monotone" dataKey="headcount" name="Çalışan" stroke="hsl(var(--primary))" fill="url(#hc)" strokeWidth={2} animationDuration={1200} />
-                    <Line type="monotone" dataKey="hires" name="İşe alım" stroke="#38bdf8" />
-                    <Line type="monotone" dataKey="exits" name="Ayrılış" stroke="#f43f5e" />
+                    <Area type="monotone" dataKey="headcount" name={tx('Çalışan')} stroke="hsl(var(--primary))" fill="url(#hc)" strokeWidth={2} animationDuration={1200} />
+                    <Line type="monotone" dataKey="hires" name={tx('İşe alım')} stroke="#38bdf8" />
+                    <Line type="monotone" dataKey="exits" name={tx('Ayrılış')} stroke="#f43f5e" />
                   </ComposedChart>
                 </ResponsiveContainer>
               </PanelBody>
             </Panel>
             <Panel>
-              <PanelHead title="İzin günleri (türe göre)" />
+              <PanelHead title={tx('İzin günleri (türe göre)')} />
               <PanelBody className="h-72">
                 <ResponsiveContainer>
                   <BarChart data={leaveByMonth.rows}>
@@ -75,7 +76,7 @@ export function AnalyticsPage() {
               </PanelBody>
             </Panel>
             <Panel>
-              <PanelHead title="Departman dağılımı" />
+              <PanelHead title={tx('Departman dağılımı')} />
               <PanelBody className="h-72">
                 <ResponsiveContainer>
                   <PieChart>
@@ -89,20 +90,20 @@ export function AnalyticsPage() {
               </PanelBody>
             </Panel>
             <Panel>
-              <PanelHead title="Kıdem dağılımı" />
+              <PanelHead title={tx('Kıdem dağılımı')} />
               <PanelBody className="h-72">
                 <ResponsiveContainer>
                   <BarChart data={q.data.tenure} layout="vertical">
                     <XAxis type="number" allowDecimals={false} fontSize={11} tickLine={false} axisLine={false} />
                     <YAxis type="category" dataKey="bucket" fontSize={11} width={70} tickLine={false} axisLine={false} />
                     <Tooltip contentStyle={TT} cursor={{ fill: 'hsl(var(--muted)/0.4)' }} />
-                    <Bar dataKey="count" name="Kişi" fill="hsl(var(--primary))" radius={[0, 6, 6, 0]} />
+                    <Bar dataKey="count" name={tx('Kişi')} fill="hsl(var(--primary))" radius={[0, 6, 6, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </PanelBody>
             </Panel>
             <Panel>
-              <PanelHead title="Çalışma ve fazla mesai (saat)" />
+              <PanelHead title={tx('Çalışma ve fazla mesai (saat)')} />
               <PanelBody className="h-72">
                 <ResponsiveContainer>
                   <LineChart data={q.data.overtime.map((o) => ({ ...o, month: m(o.month) }))}>
@@ -111,14 +112,14 @@ export function AnalyticsPage() {
                     <YAxis fontSize={11} width={36} tickLine={false} axisLine={false} />
                     <Tooltip contentStyle={TT} />
                     <Legend wrapperStyle={{ fontSize: 12 }} />
-                    <Line dataKey="workedHours" name="Çalışılan" stroke="#38bdf8" strokeWidth={2} />
-                    <Line dataKey="overtimeHours" name="Fazla mesai" stroke="#f59e0b" strokeWidth={2} />
+                    <Line dataKey="workedHours" name={tx('Çalışılan')} stroke="#38bdf8" strokeWidth={2} />
+                    <Line dataKey="overtimeHours" name={tx('Fazla mesai')} stroke="#f59e0b" strokeWidth={2} />
                   </LineChart>
                 </ResponsiveContainer>
               </PanelBody>
             </Panel>
             <Panel>
-              <PanelHead title="Onaylı masraf" note={formatMoney(k!.expenseTotal)} />
+              <PanelHead title={tx('Onaylı masraf')} note={formatMoney(k!.expenseTotal)} />
               <PanelBody className="h-72">
                 <ResponsiveContainer>
                   <BarChart data={q.data.expense.map((e) => ({ ...e, month: m(e.month) }))}>
@@ -131,7 +132,7 @@ export function AnalyticsPage() {
               </PanelBody>
             </Panel>
           </div>
-          <InfoNote>Veriler veritabanındaki <code className="font-mono text-[12px]">analytics_*</code> görünümlerinden gelir; Metabase/Power BI gibi bir BI aracı aynı görünümlere doğrudan bağlanabilir.</InfoNote>
+          <InfoNote>{tx('Veriler veritabanındaki')}{' '}<code className="font-mono text-[12px]">{tx('analytics_*')}</code>{' '}{tx('görünümlerinden gelir; Metabase/Power BI gibi bir BI aracı aynı görünümlere doğrudan bağlanabilir.')}</InfoNote>
         </div>
       )}
     </PlanGate>

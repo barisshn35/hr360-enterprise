@@ -1,4 +1,5 @@
 import { apiFetch, qs } from './client'
+import { tx } from '@/lib/i18n'
 
 const BASE = '/api/learning'
 
@@ -15,20 +16,20 @@ export type CourseCategory =
 export type EnrollmentStatus = 'Enrolled' | 'InProgress' | 'Completed' | 'Failed' | 'Dropped'
 
 export const courseCategoryLabels: Record<CourseCategory, string> = {
-  Technical: 'Teknik',
-  Compliance: 'Mevzuat',
-  Leadership: 'Liderlik',
-  Soft: 'Kişisel gelişim',
-  Safety: 'İş güvenliği',
-  Other: 'Diğer',
+  Technical: tx('Teknik'),
+  Compliance: tx('Mevzuat'),
+  Leadership: tx('Liderlik'),
+  Soft: tx('Kişisel gelişim'),
+  Safety: tx('İş güvenliği'),
+  Other: tx('Diğer'),
 }
 
 export const enrollmentStatusLabels: Record<EnrollmentStatus, string> = {
-  Enrolled: 'Kayıtlı',
-  InProgress: 'Sürüyor',
-  Completed: 'Tamamlandı',
-  Failed: 'Başarısız',
-  Dropped: 'Bırakıldı',
+  Enrolled: tx('Kayıtlı'),
+  InProgress: tx('Sürüyor'),
+  Completed: tx('Tamamlandı'),
+  Failed: tx('Başarısız'),
+  Dropped: tx('Bırakıldı'),
 }
 
 export interface Enrollment {

@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils'
 import { Button } from './button'
 import { Skeleton } from './skeleton'
 import { OrbitingCircles } from '@/components/fx/orbiting-circles'
+import { tx, txServer } from '@/lib/i18n'
 
 /**
  * Her listenin üç hâli tek yerden gelir: yükleniyor / boş / hata.
@@ -11,7 +12,7 @@ import { OrbitingCircles } from '@/components/fx/orbiting-circles'
  * boş durum metni oluşuyor.
  */
 
-export function CenteredSpinner({ label = 'Yükleniyor' }: { label?: string }) {
+export function CenteredSpinner({ label = tx('Yükleniyor') }: { label?: string }) {
   return (
     <div
       aria-busy="true"
@@ -28,7 +29,7 @@ export function CenteredSpinner({ label = 'Yükleniyor' }: { label?: string }) {
 }
 
 /** Tam sayfa (oturum doğrulanırken) — sayfa yerinden oynamasın diye ortalanır. */
-export function FullPageSpinner({ label = 'Yükleniyor' }: { label?: string }) {
+export function FullPageSpinner({ label = tx('Yükleniyor') }: { label?: string }) {
   return (
     <div
       aria-busy="true"
@@ -49,7 +50,7 @@ export function FullPageSpinner({ label = 'Yükleniyor' }: { label?: string }) {
 export function RowsSkeleton({ rows = 6, columns = 4 }: { rows?: number; columns?: number }) {
   return (
     <div aria-busy="true" aria-live="polite" className="divide-y divide-border">
-      <span className="sr-only">Yükleniyor</span>
+      <span className="sr-only">{tx('Yükleniyor')}</span>
       {Array.from({ length: rows }).map((_, r) => (
         <div key={r} className="flex items-center gap-4 px-4 py-3.5">
           {Array.from({ length: columns }).map((_, c) => (
@@ -118,7 +119,7 @@ export function EmptyState({
 
 /** Hata ne olduğunu ve nasıl düzeltileceğini söyler; özür dilemez. */
 export function ErrorState({
-  title = 'Veriler alınamadı',
+  title = tx('Veriler alınamadı'),
   message,
   onRetry,
 }: {
@@ -134,12 +135,12 @@ export function ErrorState({
           <p className="text-[15px] font-semibold">{title}</p>
           {message && (
             <p className="mt-1 text-[13px] leading-relaxed break-words text-muted-foreground">
-              {message}
+              {txServer(message)}
             </p>
           )}
           {onRetry && (
             <Button size="sm" variant="outline" className="mt-4" onClick={onRetry}>
-              Yeniden dene
+              {tx('Yeniden dene')}
             </Button>
           )}
         </div>

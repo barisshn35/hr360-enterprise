@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
+import { tx } from '@/lib/i18n'
 
 /**
  * Form alanı sarmalayıcıları: etiket, ipucu ve hata mesajı tek yerde.
@@ -41,7 +42,7 @@ function Shell({
     <div className="flex flex-col gap-1.5">
       <Label htmlFor={id} className="text-[13px]">
         {label}
-        {required && <span className="font-normal text-muted-foreground">zorunlu</span>}
+        {required && <span className="font-normal text-muted-foreground">{tx('zorunlu')}</span>}
       </Label>
       {children}
       {hint && !error && (
@@ -127,7 +128,7 @@ export function SelectField({
   value,
   onChange,
   options,
-  placeholder = 'Seçin',
+  placeholder = tx('Seçin'),
   disabled,
   required,
   className,

@@ -22,6 +22,7 @@ import { TeamSelect } from '../components/pickers'
 import { ThresholdTrack } from '../components/ThresholdTrack'
 import { usePeople } from '../hooks'
 import { RecommendationCard } from './RecommendationCard'
+import { tx } from '@/lib/i18n'
 
 const TONE_BG = {
   danger: 'hsl(var(--destructive))',
@@ -52,7 +53,7 @@ export function RecommendationsPage() {
     for (const r of items) {
       if (!count.has(r.action)) order.push(r.action)
       count.set(r.action, (count.get(r.action) ?? 0) + 1)
-      label.set(r.action, r.actionLabel || (actionLabelsFallback as Record<string, string>)[r.action] || 'Öneri')
+      label.set(r.action, r.actionLabel || (actionLabelsFallback as Record<string, string>)[r.action] || tx('Öneri'))
     }
     return order.map((a) => ({ action: a, count: count.get(a)!, label: label.get(a)! }))
   }, [items])
@@ -76,9 +77,9 @@ export function RecommendationsPage() {
   return (
     <div className="mx-auto w-full max-w-6xl">
       <PerfPageHeader
-        eyebrow="Performans"
-        title="Aksiyon önerileri"
-        description="Her öneri açıklanabilir: hangi etkenin öneriyi desteklediği, hangisinin zayıflattığı yazılı. Kararı kural motoru verir; ML sinyalleri yalnızca ek bilgidir."
+        eyebrow={tx('Performans')}
+        title={tx('Aksiyon önerileri')}
+        description={tx('Her öneri açıklanabilir: hangi etkenin öneriyi desteklediği, hangisinin zayıflattığı yazılı. Kararı kural motoru verir; ML sinyalleri yalnızca ek bilgidir.')}
       >
         <div className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-muted-foreground">
@@ -86,13 +87,13 @@ export function RecommendationsPage() {
               <>
                 <span className="inline-flex items-center gap-1.5">
                   <GitCommitVertical className="size-3.5" aria-hidden />
-                  Kural sürümü <span className="tabular font-semibold text-foreground">{data.configVersion ?? '—'}</span>
+                  {tx('Kural sürümü')}{' '}<span className="tabular font-semibold text-foreground">{data.configVersion ?? '—'}</span>
                 </span>
                 {thresholds && (
                   <span>
-                    Eşikler: kritik <b className="tabular text-foreground">{thresholds.critical}</b> · gelişim <b className="tabular text-foreground">{thresholds.improvement}</b> · takdir{' '}
-                    <b className="tabular text-foreground">{thresholds.recognition}</b> · terfi <b className="tabular text-foreground">{thresholds.promotion}</b>
-                    {data.promotionConsecutivePeriods ? ` (üst üste ${data.promotionConsecutivePeriods} dönem)` : ''}
+                    {tx('Eşikler: kritik')}{' '}<b className="tabular text-foreground">{thresholds.critical}</b>{' '}{tx('· gelişim')}{' '}<b className="tabular text-foreground">{thresholds.improvement}</b>{' '}{tx('· takdir', [])}{' '}
+                    <b className="tabular text-foreground">{thresholds.recognition}</b>{' '}{tx('· terfi')}{' '}<b className="tabular text-foreground">{thresholds.promotion}</b>
+                    {data.promotionConsecutivePeriods ? tx(' (üst üste {0} dönem)', [data.promotionConsecutivePeriods]) : ''}
                   </span>
                 )}
               </>
@@ -110,7 +111,7 @@ export function RecommendationsPage() {
 
       <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <TeamSelect className="w-64" value={teamId} onChange={(v) => set('ekip', v === '__all__' ? null : v)} allowAll />
-        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Öneri türleri">
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label={tx('Öneri türleri')}>
           {groups.map((g) => {
             const off = hidden.has(g.action)
             const color = TONE_BG[toneOfAction(g.action)]
@@ -146,7 +147,7 @@ export function RecommendationsPage() {
             <p className="font-medium">{data.mlLayer.note}</p>
             {data.mlLayer.skipReason && (
               <p className="mt-0.5 text-muted-foreground">
-                <span className="font-medium text-foreground">ML sinyalleri bu listede çalışmadı:</span> {data.mlLayer.skipReason}
+                <span className="font-medium text-foreground">{tx('ML sinyalleri bu listede çalışmadı:')}</span> {data.mlLayer.skipReason}
               </p>
             )}
           </div>
@@ -155,14 +156,14 @@ export function RecommendationsPage() {
 
       {focus && !focusInList && single.data && (
         <div className="mb-5">
-          <p className="mb-2 text-[12px] font-semibold text-muted-foreground">Seçili çalışan</p>
+          <p className="mb-2 text-[12px] font-semibold text-muted-foreground">{tx('Seçili çalışan')}</p>
           <RecommendationCard rec={single.data} name={people.nameOf(single.data.employeeId, single.data.employeeName)} thresholds={thresholds} index={0} highlighted />
         </div>
       )}
 
       {recs.isError ? (
         <Panel>
-          <ErrorState title="Öneriler alınamadı" message={errorText(recs.error)} onRetry={() => void recs.refetch()} />
+          <ErrorState title={tx('Öneriler alınamadı')} message={errorText(recs.error)} onRetry={() => void recs.refetch()} />
         </Panel>
       ) : recs.isPending ? (
         <div className="grid gap-4 lg:grid-cols-2" aria-busy="true">
@@ -172,7 +173,7 @@ export function RecommendationsPage() {
         </div>
       ) : items.length === 0 ? (
         <Panel>
-          <EmptyState icon={Lightbulb} title="Öneri yok" detail="Öneriler puanı olan çalışanlar için üretilir. Açık dönemde değerlendirmeler gönderildikçe burada belirir." />
+          <EmptyState icon={Lightbulb} title={tx('Öneri yok')} detail={tx('Öneriler puanı olan çalışanlar için üretilir. Açık dönemde değerlendirmeler gönderildikçe burada belirir.')} />
         </Panel>
       ) : (
         <div className="grid items-start gap-4 lg:grid-cols-2">
@@ -183,7 +184,7 @@ export function RecommendationsPage() {
           </AnimatePresence>
         </div>
       )}
-      {!recs.isPending && items.length > 0 && <p className="mt-4 text-[12px] text-muted-foreground">Sıralama backend'den gelir: dikkat gerektirenler önce. Tür süzgeci sırayı değiştirmez, yalnızca gizler.</p>}
+      {!recs.isPending && items.length > 0 && <p className="mt-4 text-[12px] text-muted-foreground">{tx('Sıralama backend\'den gelir: dikkat gerektirenler önce. Tür süzgeci sırayı değiştirmez, yalnızca gizler.')}</p>}
     </div>
   )
 }

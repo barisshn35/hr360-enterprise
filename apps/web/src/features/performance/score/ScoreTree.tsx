@@ -20,6 +20,7 @@ import { EASE } from '@/motion/primitives'
 import { Chip } from '../components/controls'
 import { scoreColor } from '../components/score'
 import type { Explained } from './explain'
+import { tx, pct } from '@/lib/i18n'
 
 const signed = (v: number) => `+${formatScore(v)}`
 
@@ -132,16 +133,16 @@ export function ScoreTree({ score, ex, thresholds }: { score: ScoreResult; ex: E
   return (
     <div>
       <div className="mb-1 hidden items-center gap-2 px-2 text-[11px] font-medium text-muted-foreground md:flex">
-        <span className="flex-1 pl-6">Katman</span>
-        <span className="w-24 text-center">Puan</span>
+        <span className="flex-1 pl-6">{tx('Katman')}</span>
+        <span className="w-24 text-center">{tx('Puan')}</span>
         <span className="w-14 text-right">0–100</span>
-        <span className="w-20 text-right">Katkı</span>
+        <span className="w-20 text-right">{tx('Katkı')}</span>
       </div>
       <ul className="tree">
         <Row
           depth={0}
-          label={<span className="text-[15px] font-semibold">Nihai puan</span>}
-          meta={`Sürüm ${score.configVersion} · ${score.reviewCount} değerlendirme`}
+          label={<span className="text-[15px] font-semibold">{tx('Nihai puan')}</span>}
+          meta={tx('Sürüm {0} · {1} değerlendirme', [score.configVersion, score.reviewCount])}
           score={score.score}
           color={scoreColor(score.score, thresholds)}
           contribution={score.score}
@@ -152,10 +153,10 @@ export function ScoreTree({ score, ex, thresholds }: { score: ScoreResult; ex: E
             icon={<Crosshair className="size-4 shrink-0 text-muted-foreground" aria-hidden />}
             label={
               <>
-                Hedefler <Chip className="ml-1">{ex.hasGoals ? `%${Math.round(ex.effGoalPct)}` : 'hedef yok'}</Chip>
+                {tx('Hedefler')}{' '}<Chip className="ml-1">{ex.hasGoals ? pct(Math.round(ex.effGoalPct)) : tx('hedef yok')}</Chip>
               </>
             }
-            meta={ex.hasGoals ? `${score.breakdown.goals.length} hedef · ilerlemelerin ağırlıklı ortalaması` : `Payı (%${Math.round(ex.goalPct)}) metriklere aktarıldı`}
+            meta={ex.hasGoals ? tx('{0} hedef · ilerlemelerin ağırlıklı ortalaması', [score.breakdown.goals.length]) : tx('Payı (%{0}) metriklere aktarıldı', [Math.round(ex.goalPct)])}
             score={ex.hasGoals ? score.goalScore : null}
             color="hsl(var(--foreground) / 0.75)"
             contribution={ex.hasGoals ? ex.goalContribution : null}
@@ -168,9 +169,9 @@ export function ScoreTree({ score, ex, thresholds }: { score: ScoreResult; ex: E
                 key={g.goalId}
                 depth={2}
                 label={g.title}
-                meta={`ağırlık ${formatWeight(g.weight)} · hedeflerin ${formatShare(g.share)}`}
+                meta={tx('ağırlık {0} · hedeflerin {1}', [formatWeight(g.weight), formatShare(g.share)])}
                 score={g.progress}
-                scoreText={g.progress === null ? '—' : `%${Math.round(g.progress)}`}
+                scoreText={g.progress === null ? '—' : pct(Math.round(g.progress))}
                 color="hsl(var(--foreground) / 0.6)"
                 contribution={g.contribution}
               />
@@ -182,10 +183,10 @@ export function ScoreTree({ score, ex, thresholds }: { score: ScoreResult; ex: E
             icon={<Ruler className="size-4 shrink-0 text-muted-foreground" aria-hidden />}
             label={
               <>
-                Metrikler <Chip className="ml-1">{ex.hasMetrics ? `%${Math.round(ex.effMetricPct)}` : 'puan yok'}</Chip>
+                {tx('Metrikler')}{' '}<Chip className="ml-1">{ex.hasMetrics ? pct(Math.round(ex.effMetricPct)) : tx('puan yok')}</Chip>
               </>
             }
-            meta={ex.hasMetrics ? 'kategori puanlarının ağırlıklı ortalaması' : 'Henüz metrik puanı yok'}
+            meta={ex.hasMetrics ? tx('kategori puanlarının ağırlıklı ortalaması') : tx('Henüz metrik puanı yok')}
             score={ex.hasMetrics ? score.metricScore : null}
             color="hsl(var(--primary))"
             contribution={ex.hasMetrics ? ex.metricContribution : null}
@@ -205,10 +206,10 @@ export function ScoreTree({ score, ex, thresholds }: { score: ScoreResult; ex: E
                 }
                 meta={
                   c.weight === 0
-                    ? 'ağırlık 0 — hesaba girmez'
+                    ? tx('ağırlık 0 — hesaba girmez')
                     : c.score === null
-                      ? `ağırlık ${formatWeight(c.weight)} · puanlanmadı`
-                      : `ağırlık ${formatWeight(c.weight)} · metrik ayağının ${formatShare(c.share)}`
+                      ? tx('ağırlık {0} · puanlanmadı', [formatWeight(c.weight)])
+                      : tx('ağırlık {0} · metrik ayağının {1}', [formatWeight(c.weight), formatShare(c.share)])
                 }
                 score={c.score}
                 color={categoryColor[c.category]}
@@ -222,7 +223,7 @@ export function ScoreTree({ score, ex, thresholds }: { score: ScoreResult; ex: E
                     key={m.metricId}
                     depth={3}
                     label={m.name}
-                    meta={m.normalizedScore === null ? 'değerlendirilmedi' : `ağırlık ${formatWeight(m.weight)} · ${m.reviewCount} değerlendirme`}
+                    meta={m.normalizedScore === null ? tx('değerlendirilmedi') : tx('ağırlık {0} · {1} değerlendirme', [formatWeight(m.weight), m.reviewCount])}
                     score={m.normalizedScore}
                     color={categoryColor[c.category]}
                     contribution={m.contribution}

@@ -18,6 +18,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
+import { appLocale } from '@/lib/i18n'
 
 export type SeriesPoint = {
   /** ISO tarih ya da hazır etiket — dateFormatter ile biçimlenir. */
@@ -88,7 +89,7 @@ export const SERIES_COLORS = [
   'hsl(var(--chart-5))',
 ]
 
-const compact = new Intl.NumberFormat('tr-TR', { notation: 'compact', maximumFractionDigits: 1 })
+const compact = new Intl.NumberFormat(appLocale, { notation: 'compact', maximumFractionDigits: 1 })
 
 /** 12.400 → "12,4 B". Kart başlığındaki büyük rakam bunu kullanıyor. */
 export function formatCompact(value: number): string {

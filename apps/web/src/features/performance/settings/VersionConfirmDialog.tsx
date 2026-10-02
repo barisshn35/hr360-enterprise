@@ -9,6 +9,7 @@ import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type { FieldChange } from './fields'
+import { tx } from '@/lib/i18n'
 
 export function VersionConfirmDialog({
   open,
@@ -33,16 +34,16 @@ export function VersionConfirmDialog({
     <Modal
       open={open}
       onClose={() => !pending && onClose()}
-      title={`Sürüm ${nextVersion} oluşturulsun mu?`}
-      note={`${changes.length} alan değişiyor.`}
+      title={tx('Sürüm {0} oluşturulsun mu?', [nextVersion])}
+      note={tx('{0} alan değişiyor.', [changes.length])}
       footer={
         <>
           <Button variant="outline" onClick={onClose} disabled={pending}>
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button onClick={onConfirm} disabled={pending}>
             <GitCommitVertical aria-hidden />
-            {pending ? 'Kaydediliyor…' : `Sürüm ${nextVersion} olarak yürürlüğe al`}
+            {pending ? tx('Kaydediliyor…') : tx('Sürüm {0} olarak yürürlüğe al', [nextVersion])}
           </Button>
         </>
       }
@@ -50,15 +51,13 @@ export function VersionConfirmDialog({
       <div className="rounded-lg border border-primary/25 bg-primary/5 p-3.5">
         <p className="flex items-start gap-2 text-[13px] font-medium">
           <ShieldCheck className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />
-          Bu değişiklik yeni bir sürüm oluşturur. Geçmiş dönemlerin puanları değişmez.
+          {tx('Bu değişiklik yeni bir sürüm oluşturur. Geçmiş dönemlerin puanları değişmez.')}
         </p>
         <p className="mt-1.5 pl-6 text-[12px] leading-relaxed text-muted-foreground">
-          Mevcut sürüm silinmez; geçmişte kalır ve kapanmış dönemler onunla puanlanmış olarak kalır.
+          {tx('Mevcut sürüm silinmez; geçmişte kalır ve kapanmış dönemler onunla puanlanmış olarak kalır.')}
           {activeCycleName && (
             <>
-              {' '}
-              Açık dönemin (<span className="font-medium text-foreground">{activeCycleName}</span>) puanları ve aksiyon önerileri yeni sürümle
-              hesaplanır.
+              {' '}{tx('Açık dönemin (', [])}<span className="font-medium text-foreground">{activeCycleName}</span>{tx(') puanları ve aksiyon önerileri yeni sürümle hesaplanır.')}
             </>
           )}
         </p>
@@ -79,7 +78,7 @@ export function VersionConfirmDialog({
         )}
       </AnimatePresence>
 
-      <p className="mt-4 mb-2 text-[12px] font-semibold text-muted-foreground">Değişenler</p>
+      <p className="mt-4 mb-2 text-[12px] font-semibold text-muted-foreground">{tx('Değişenler')}</p>
       <ul className="divide-y divide-border rounded-lg border border-border">
         {changes.map((c, i) => {
           const Icon = c.direction === 'up' ? ArrowUp : c.direction === 'down' ? ArrowDown : ArrowRight

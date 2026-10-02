@@ -7,6 +7,7 @@ import { Modal, ErrorSummary, type SummaryItem } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/button'
 import { SelectField, TextField } from '@/components/ui/Field'
 import { useToast } from '@/components/ui/Toast'
+import { tx } from '@/lib/i18n'
 
 interface Errors {
   departmentId?: string
@@ -64,18 +65,18 @@ export function NewAssignmentModal({
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: qk.employee(employeeId) })
       void queryClient.invalidateQueries({ queryKey: qk.employees })
-      toast.ok('Atama kaydedildi.')
+      toast.ok(tx('Atama kaydedildi.'))
       onClose()
     },
     onError: (e: unknown) => {
-      toast.stop(e instanceof Error ? e.message : 'Atama oluşturulamadı.')
+      toast.stop(e instanceof Error ? e.message : tx('Atama oluşturulamadı.'))
     },
   })
 
   function validate(): Errors {
     const next: Errors = {}
-    if (!departmentId) next.departmentId = 'Departman seçilmeli.'
-    if (!effectiveFrom) next.effectiveFrom = 'Geçerlilik başlangıcı zorunlu.'
+    if (!departmentId) next.departmentId = tx('Departman seçilmeli.')
+    if (!effectiveFrom) next.effectiveFrom = tx('Geçerlilik başlangıcı zorunlu.')
     return next
   }
 
@@ -98,8 +99,8 @@ export function NewAssignmentModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="Departman ataması"
-      note="Çalışanı bir departmana ve pozisyona atayın."
+      title={tx('Departman ataması')}
+      note={tx('Çalışanı bir departmana ve pozisyona atayın.')}
       footer={
         <>
           <Button
@@ -108,7 +109,7 @@ export function NewAssignmentModal({
             onClick={onClose}
             disabled={mutation.isPending}
           >
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button
             type="submit"
@@ -117,7 +118,7 @@ export function NewAssignmentModal({
             disabled={mutation.isPending || options.length === 0}
           >
             {mutation.isPending && <LoaderCircle className="size-4 animate-spin" />}
-            Atamayı kaydet
+            {tx('Atamayı kaydet')}
           </Button>
         </>
       }
@@ -126,18 +127,18 @@ export function NewAssignmentModal({
         <ErrorSummary items={summary} />
 
         {companies.isPending ? (
-          <p className="text-[13px] text-muted-foreground">Departmanlar yükleniyor…</p>
+          <p className="text-[13px] text-muted-foreground">{tx('Departmanlar yükleniyor…')}</p>
         ) : options.length === 0 ? (
           <p
             role="alert"
             className="rounded-md border border-[hsl(var(--warning))]/30 bg-[hsl(var(--warning))]/10 p-3 text-[13px] leading-relaxed"
           >
-            Atama yapabilmek için önce Organizasyon bölümünden departman tanımlamalısınız.
+            {tx('Atama yapabilmek için önce Organizasyon bölümünden departman tanımlamalısınız.')}
           </p>
         ) : (
           <SelectField
             id="assignment-department"
-            label="Departman"
+            label={tx('Departman')}
             required
             value={departmentId}
             onChange={(v) => {
@@ -145,15 +146,15 @@ export function NewAssignmentModal({
               if (submitted) setErrors(validate())
             }}
             options={options}
-            placeholder="Departman seçin"
+            placeholder={tx('Departman seçin')}
             error={errors.departmentId}
           />
         )}
 
         <TextField
           id="assignment-title"
-          label="Pozisyon"
-          hint="İsteğe bağlı — ör. Yazılım Mühendisi"
+          label={tx('Pozisyon')}
+          hint={tx('İsteğe bağlı — ör. Yazılım Mühendisi')}
           value={positionTitle}
           maxLength={200}
           onChange={(e) => setPositionTitle(e.target.value)}
@@ -161,7 +162,7 @@ export function NewAssignmentModal({
 
         <TextField
           id="assignment-from"
-          label="Geçerlilik başlangıcı"
+          label={tx('Geçerlilik başlangıcı')}
           type="date"
           required
           value={effectiveFrom}

@@ -16,6 +16,7 @@ import { learningApi } from '@/api/learning'
 import { useDirectory } from '@/api/directory'
 import { ImportEmployeesModal } from '@/features/employees/ImportEmployeesModal'
 import { PlanGate, errMsg } from '@/features/shared/kit'
+import { tx } from '@/lib/i18n'
 
 type Dataset = { id: string; title: string; detail: string; icon: React.ElementType; load: () => Promise<Record<string, unknown>[]> }
 
@@ -31,14 +32,14 @@ export function ImportExportPage() {
   const [importing, setImporting] = useState(false)
 
   const datasets: Dataset[] = [
-    { id: 'employees', title: 'Çalışanlar', detail: 'Ad, e-posta, işe giriş, durum, güncel departman ve pozisyon', icon: Users, load: async () => (await employeeApi.list()).map((e) => {
+    { id: 'employees', title: tx('Çalışanlar'), detail: tx('Ad, e-posta, işe giriş, durum, güncel departman ve pozisyon'), icon: Users, load: async () => (await employeeApi.list()).map((e) => {
       const a = [...(e.assignments ?? [])].sort((x, y) => (y.effectiveFrom ?? '').localeCompare(x.effectiveFrom ?? ''))[0]
       return { Ad: e.firstName, Soyad: e.lastName, 'E-posta': e.email, Telefon: e.phone ?? '', 'İşe giriş': e.hireDate, Durum: e.status, Departman: deptName(a?.departmentId), Pozisyon: a?.positionTitle ?? '' }
     }) },
-    { id: 'departments', title: 'Departmanlar', detail: 'Ad, üst departman ve departman başı', icon: Building2, load: async () => (await organizationApi.listDepartments()).map((d) => ({ Ad: d.name, 'Üst departman': deptName(d.parentDepartmentId), 'Departman başı': d.headEmployeeId ? name(d.headEmployeeId) : '' })) },
-    { id: 'leave', title: 'İzin talepleri', detail: 'Tüm izin talepleri ve durumları', icon: CalendarDays, load: async () => (await leaveApi.listRequests()).map((l) => ({ Çalışan: name(l.employeeId), Tür: leaveTypeLabels[l.type] ?? l.type, Başlangıç: l.startDate, Bitiş: l.endDate, Gün: l.days, Durum: leaveStatusLabels[l.status] ?? l.status, Açıklama: l.reason ?? '' })) },
-    { id: 'expense', title: 'Masraflar', detail: 'Beyanlar, tutar ve durum', icon: Wallet, load: async () => (await expenseApi.listClaims()).map((c) => ({ Çalışan: name(c.employeeId), Başlık: c.title, Tutar: c.totalAmount, 'Para birimi': c.currency, Durum: c.status, Oluşturma: c.createdAt?.slice(0, 10) })) },
-    { id: 'learning', title: 'Eğitim kayıtları', detail: 'Kurs bazında katılım ve tamamlama', icon: GraduationCap, load: async () => (await learningApi.listCourses()).flatMap((c) => (c.enrollments ?? []).map((e) => ({ Eğitim: c.title, Kategori: c.category, Zorunlu: c.isMandatory ? 'Evet' : 'Hayır', Çalışan: name(e.employeeId), Durum: e.status, Puan: e.score ?? '', Tamamlama: e.completedAt?.slice(0, 10) ?? '' }))) },
+    { id: 'departments', title: tx('Departmanlar'), detail: tx('Ad, üst departman ve departman başı'), icon: Building2, load: async () => (await organizationApi.listDepartments()).map((d) => ({ Ad: d.name, 'Üst departman': deptName(d.parentDepartmentId), 'Departman başı': d.headEmployeeId ? name(d.headEmployeeId) : '' })) },
+    { id: 'leave', title: tx('İzin talepleri'), detail: tx('Tüm izin talepleri ve durumları'), icon: CalendarDays, load: async () => (await leaveApi.listRequests()).map((l) => ({ Çalışan: name(l.employeeId), Tür: leaveTypeLabels[l.type] ?? l.type, Başlangıç: l.startDate, Bitiş: l.endDate, Gün: l.days, Durum: leaveStatusLabels[l.status] ?? l.status, Açıklama: l.reason ?? '' })) },
+    { id: 'expense', title: tx('Masraflar'), detail: tx('Beyanlar, tutar ve durum'), icon: Wallet, load: async () => (await expenseApi.listClaims()).map((c) => ({ Çalışan: name(c.employeeId), Başlık: c.title, Tutar: c.totalAmount, 'Para birimi': c.currency, Durum: c.status, Oluşturma: c.createdAt?.slice(0, 10) })) },
+    { id: 'learning', title: tx('Eğitim kayıtları'), detail: tx('Kurs bazında katılım ve tamamlama'), icon: GraduationCap, load: async () => (await learningApi.listCourses()).flatMap((c) => (c.enrollments ?? []).map((e) => ({ Eğitim: c.title, Kategori: c.category, Zorunlu: c.isMandatory ? 'Evet' : tx('Hayır'), Çalışan: name(e.employeeId), Durum: e.status, Puan: e.score ?? '', Tamamlama: e.completedAt?.slice(0, 10) ?? '' }))) },
   ]
 
   const exportOne = async (d: Dataset) => {
@@ -46,7 +47,7 @@ export function ImportExportPage() {
     try {
       const rows = await d.load()
       await download(`hr360-${d.id}-${new Date().toISOString().slice(0, 10)}.xlsx`, { [d.title]: rows })
-      toast.ok(`${rows.length} satır indirildi`)
+      toast.ok(tx('{0} satır indirildi', [rows.length]))
     } catch (e) { toast.stop(errMsg(e)) } finally { setBusy(null) }
   }
   const exportAll = async () => {
@@ -57,16 +58,16 @@ export function ImportExportPage() {
         try { sheets[d.title] = await d.load() } catch { sheets[d.title] = [] }
       }
       await download(`hr360-tum-veriler-${new Date().toISOString().slice(0, 10)}.xlsx`, sheets)
-      toast.ok('Tüm veriler tek dosyada indirildi')
+      toast.ok(tx('Tüm veriler tek dosyada indirildi'))
     } catch (e) { toast.stop(errMsg(e)) } finally { setBusy(null) }
   }
 
   return (
     <PlanGate feature="import-export">
-      <PageHeader title="İçe/dışa aktarım" description="Excel ile toplu veri: çalışanları içe aktarın, modül verilerini tek tıkla dışa aktarın." actions={<Button onClick={exportAll} disabled={busy !== null}>{busy === 'all' ? <LoaderCircle className="size-4 animate-spin" /> : <Download className="size-4" />} Hepsini tek dosyada indir</Button>} />
+      <PageHeader title={tx('İçe/dışa aktarım')} description={tx('Excel ile toplu veri: çalışanları içe aktarın, modül verilerini tek tıkla dışa aktarın.')} actions={<Button onClick={exportAll} disabled={busy !== null}>{busy === 'all' ? <LoaderCircle className="size-4 animate-spin" /> : <Download className="size-4" />}{' '}{tx('Hepsini tek dosyada indir')}</Button>} />
       <div className="grid gap-6 xl:grid-cols-[1fr_380px]">
         <Panel>
-          <PanelHead title="Dışa aktar" note="Yetkinizin gördüğü kadar veri indirilir; her sayfa ayrı Excel sekmesidir." />
+          <PanelHead title={tx('Dışa aktar')} note={tx('Yetkinizin gördüğü kadar veri indirilir; her sayfa ayrı Excel sekmesidir.')} />
           <PanelBody className="grid gap-3 sm:grid-cols-2">
             {datasets.map((d, i) => (
               <motion.button key={d.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }} whileHover={{ y: -3 }} onClick={() => void exportOne(d)} disabled={busy !== null}
@@ -78,14 +79,14 @@ export function ImportExportPage() {
           </PanelBody>
         </Panel>
         <Panel>
-          <PanelHead title="İçe aktar" />
+          <PanelHead title={tx('İçe aktar')} />
           <PanelBody className="space-y-4">
             <div className="flex items-start gap-3 rounded-2xl border border-dashed border-border p-4">
               <FileSpreadsheet className="mt-0.5 size-5 text-primary" />
-              <div className="text-[13px]"><p className="font-medium">Çalışanlar (Excel)</p><p className="text-muted-foreground">Şablonu indirin, doldurun, yükleyin. Satırlar tek tek doğrulanır; hatalı satırlar atlanır ve raporlanır.</p></div>
+              <div className="text-[13px]"><p className="font-medium">{tx('Çalışanlar (Excel)')}</p><p className="text-muted-foreground">{tx('Şablonu indirin, doldurun, yükleyin. Satırlar tek tek doğrulanır; hatalı satırlar atlanır ve raporlanır.')}</p></div>
             </div>
-            <Button className="w-full" onClick={() => setImporting(true)}><Upload className="size-4" /> Çalışan içe aktar</Button>
-            <InfoNote>Toplu içe aktarım çalışan kotanızı aşamaz; her eklenen çalışan için “işe alındı” olayı üretilir (bildirim, kural motoru ve webhook’lar tetiklenir).</InfoNote>
+            <Button className="w-full" onClick={() => setImporting(true)}><Upload className="size-4" />{' '}{tx('Çalışan içe aktar')}</Button>
+            <InfoNote>{tx('Toplu içe aktarım çalışan kotanızı aşamaz; her eklenen çalışan için “işe alındı” olayı üretilir (bildirim, kural motoru ve webhook’lar tetiklenir).')}</InfoNote>
           </PanelBody>
         </Panel>
       </div>

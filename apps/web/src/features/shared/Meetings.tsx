@@ -20,9 +20,10 @@ import { governanceApi, type MeetingInfo, type MeetingProvider } from '@/api/gov
 import { formatDateTime, formatRelativeToNow } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { errMsg, useAction } from './kit'
+import { tx, appLocale } from '@/lib/i18n'
 
-const PROVIDER_LABEL: Record<MeetingProvider, string> = { zoom: 'Zoom', teams: 'Microsoft Teams', google: 'Google Meet', none: 'Bağlantısız (yalnızca takvim)' }
-const ACCOUNT_LABEL = { Google: 'Google Takvim', Microsoft: 'Outlook (Microsoft 365)' } as const
+const PROVIDER_LABEL: Record<MeetingProvider, string> = { zoom: tx('Zoom'), teams: tx('Microsoft Teams'), google: tx('Google Meet'), none: tx('Bağlantısız (yalnızca takvim)') }
+const ACCOUNT_LABEL = { Google: tx('Google Takvim'), Microsoft: tx('Outlook (Microsoft 365)') } as const
 
 /* ------------------------------------------------------------------ kişisel takvim bağlantısı */
 
@@ -31,14 +32,14 @@ export function CalendarConnections() {
   const [params, setParams] = useSearchParams()
   const q = useQuery({ queryKey: ['calendar-connections'], queryFn: ({ signal }) => governanceApi.calendarConnections(signal) })
   const sync = useAction(({ id, on }: { id: string; on: boolean }) => governanceApi.patchCalendarConnection(id, on), { invalidate: [['calendar-connections']] })
-  const remove = useAction((id: string) => governanceApi.disconnectCalendar(id), { success: 'Takvim bağlantısı kaldırıldı', invalidate: [['calendar-connections']] })
+  const remove = useAction((id: string) => governanceApi.disconnectCalendar(id), { success: tx('Takvim bağlantısı kaldırıldı'), invalidate: [['calendar-connections']] })
 
   // OAuth dönüşü: ?takvim=baglandi | hata&mesaj=…
   useEffect(() => {
     const r = params.get('takvim')
     if (!r) return
-    if (r === 'baglandi') toast.ok('Takvim bağlandı')
-    else toast.stop(params.get('mesaj') ?? 'Takvim bağlanamadı')
+    if (r === 'baglandi') toast.ok(tx('Takvim bağlandı'))
+    else toast.stop(params.get('mesaj') ?? tx('Takvim bağlanamadı'))
     params.delete('takvim')
     params.delete('mesaj')
     setParams(params, { replace: true })
@@ -55,10 +56,10 @@ export function CalendarConnections() {
   const data = q.data
   return (
     <Panel>
-      <PanelHead title={<span className="flex items-center gap-2"><CalendarCheck className="size-4 text-primary" /> Takvim hesabı bağla</span>} note="Onaylanan izinleriniz takviminize anında yazılır; 1:1 ve mülakat davetleri, Teams ve Google Meet bağlantıları takviminizden gider." />
+      <PanelHead title={<span className="flex items-center gap-2"><CalendarCheck className="size-4 text-primary" />{' '}{tx('Takvim hesabı bağla')}</span>} note={tx('Onaylanan izinleriniz takviminize anında yazılır; 1:1 ve mülakat davetleri, Teams ve Google Meet bağlantıları takviminizden gider.')} />
       <PanelBody className="space-y-4">
         {q.isPending ? <RowsSkeleton rows={2} /> : !data?.linked ? (
-          <p className="text-[13px] text-muted-foreground">Hesabınıza bağlı çalışan kaydı yok.</p>
+          <p className="text-[13px] text-muted-foreground">{tx('Hesabınıza bağlı çalışan kaydı yok.')}</p>
         ) : (
           <>
             {data.connections.map((c) => (
@@ -66,13 +67,13 @@ export function CalendarConnections() {
                 <span className="grid size-9 place-items-center rounded-xl bg-primary/10 text-primary"><CalendarCheck className="size-4" /></span>
                 <div className="min-w-0 flex-1">
                   <p className="text-[13.5px] font-medium">{ACCOUNT_LABEL[c.provider]} <span className="text-muted-foreground">· {c.accountEmail}</span></p>
-                  <p className="text-[12px] text-muted-foreground">{c.lastSyncAt ? `Son eşitleme ${formatRelativeToNow(c.lastSyncAt)}` : `Bağlandı ${formatRelativeToNow(c.createdAt)}`}</p>
+                  <p className="text-[12px] text-muted-foreground">{c.lastSyncAt ? tx('Son eşitleme {0}', [formatRelativeToNow(c.lastSyncAt)]) : tx('Bağlandı {0}', [formatRelativeToNow(c.createdAt)])}</p>
                   {c.lastError && <p className="mt-1 text-[12px] text-destructive">{c.lastError}</p>}
                 </div>
-                <StatusBadge tone={c.status === 'Active' ? 'success' : 'danger'}>{c.status === 'Active' ? 'Bağlı' : 'Yeniden bağlayın'}</StatusBadge>
-                <label className="flex items-center gap-2 text-[12.5px]"><Checkbox checked={c.syncLeaves} onCheckedChange={(v) => sync.mutate({ id: c.id, on: v === true })} /> İzinlerimi ekle</label>
-                {c.status !== 'Active' && <Button size="sm" variant="outline" onClick={() => connect(c.provider)}>Yeniden bağla</Button>}
-                <Button size="icon" variant="ghost" aria-label="Bağlantıyı kaldır" onClick={() => remove.mutate(c.id)}><Trash2 className="size-4" /></Button>
+                <StatusBadge tone={c.status === 'Active' ? 'success' : 'danger'}>{c.status === 'Active' ? tx('Bağlı') : tx('Yeniden bağlayın')}</StatusBadge>
+                <label className="flex items-center gap-2 text-[12.5px]"><Checkbox checked={c.syncLeaves} onCheckedChange={(v) => sync.mutate({ id: c.id, on: v === true })} />{' '}{tx('İzinlerimi ekle')}</label>
+                {c.status !== 'Active' && <Button size="sm" variant="outline" onClick={() => connect(c.provider)}>{tx('Yeniden bağla')}</Button>}
+                <Button size="icon" variant="ghost" aria-label={tx('Bağlantıyı kaldır')} onClick={() => remove.mutate(c.id)}><Trash2 className="size-4" /></Button>
               </motion.div>
             ))}
             <div className="flex flex-wrap gap-2">
@@ -82,7 +83,7 @@ export function CalendarConnections() {
                 </Button>
               ))}
             </div>
-            {data.available.length === 0 && <InfoNote>Yöneticiniz henüz Google ya da Microsoft 365 entegrasyonunu açmadı (Entegrasyonlar › Takvim ve toplantı). Aşağıdaki .ics aboneliği her takvimle çalışır.</InfoNote>}
+            {data.available.length === 0 && <InfoNote>{tx('Yöneticiniz henüz Google ya da Microsoft 365 entegrasyonunu açmadı (Entegrasyonlar › Takvim ve toplantı). Aşağıdaki .ics aboneliği her takvimle çalışır.')}</InfoNote>}
           </>
         )}
       </PanelBody>
@@ -107,21 +108,21 @@ export function SlotFinder({ employeeIds, durationMinutes, onPick }: { employeeI
   return (
     <div className="space-y-2">
       <Button type="button" size="sm" variant="outline" disabled={employeeIds.length === 0 || find.isPending} onClick={() => find.mutate(undefined)}>
-        <Sparkles className="size-4" /> {find.isPending ? 'Bakılıyor…' : 'Uygun saat öner'}
+        <Sparkles className="size-4" /> {find.isPending ? tx('Bakılıyor…') : tx('Uygun saat öner')}
       </Button>
       {res && (
         <div className="space-y-2 rounded-xl border border-border p-3 text-[12.5px]">
-          {res.suggestions.length === 0 ? <p className="text-muted-foreground">Önümüzdeki 10 iş gününde herkesin boş olduğu aralık bulunamadı.</p> : (
+          {res.suggestions.length === 0 ? <p className="text-muted-foreground">{tx('Önümüzdeki 10 iş gününde herkesin boş olduğu aralık bulunamadı.')}</p> : (
             <div className="flex flex-wrap gap-1.5">
               {res.suggestions.map((s) => (
                 <button key={s} type="button" onClick={() => onPick(local(s))} className="cursor-pointer rounded-full border border-primary/40 bg-primary/10 px-2.5 py-1 hover:bg-primary/20">
-                  {new Date(s).toLocaleString('tr-TR', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                  {new Date(s).toLocaleString(appLocale, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                 </button>
               ))}
             </div>
           )}
           <p className="text-[11.5px] text-muted-foreground">
-            {res.people.map((p) => `${p.name}: ${p.calendarConnected ? 'takvim bağlı' : 'takvim bağlı değil (yalnızca HR360 izin ve 1:1 kayıtları)'}`).join(' · ')}
+            {res.people.map((p) => `${p.name}: ${p.calendarConnected ? tx('takvim bağlı') : tx('takvim bağlı değil (yalnızca HR360 izin ve 1:1 kayıtları)')}`).join(' · ')}
           </p>
         </div>
       )}
@@ -133,21 +134,21 @@ export function SlotFinder({ employeeIds, durationMinutes, onPick }: { employeeI
 
 function MeetingRow({ m, canCancel }: { m: MeetingInfo; canCancel: boolean }) {
   const toast = useToast()
-  const cancel = useAction(() => governanceApi.cancelMeeting(m.id), { success: 'Toplantı iptal edildi', invalidate: [['meetings']] })
+  const cancel = useAction(() => governanceApi.cancelMeeting(m.id), { success: tx('Toplantı iptal edildi'), invalidate: [['meetings']] })
   return (
     <li className="flex flex-wrap items-center gap-2 rounded-xl border border-border p-3 text-[13px]">
       <Video className="size-4 text-primary" />
       <div className="min-w-0 flex-1">
-        <p className="font-medium">{PROVIDER_LABEL[m.provider]} · {formatDateTime(m.startsAt)} · {m.durationMinutes} dk</p>
+        <p className="font-medium">{tx('{0} · {1} · {2} dk', [PROVIDER_LABEL[m.provider], formatDateTime(m.startsAt), m.durationMinutes])}</p>
         {m.warnings?.map((w) => <p key={w} className="text-[12px] text-[hsl(var(--warning))]">{w}</p>)}
       </div>
       {m.joinUrl && (
         <>
-          <Button size="sm" onClick={() => window.open(m.joinUrl!, '_blank', 'noopener')}><ExternalLink className="size-4" /> Katıl</Button>
-          <Button size="sm" variant="outline" onClick={() => navigator.clipboard.writeText(m.joinUrl!).then(() => toast.ok('Bağlantı kopyalandı'))}>Kopyala</Button>
+          <Button size="sm" onClick={() => window.open(m.joinUrl!, '_blank', 'noopener')}><ExternalLink className="size-4" />{' '}{tx('Katıl')}</Button>
+          <Button size="sm" variant="outline" onClick={() => navigator.clipboard.writeText(m.joinUrl!).then(() => toast.ok(tx('Bağlantı kopyalandı')))}>{tx('Kopyala')}</Button>
         </>
       )}
-      {canCancel && <Button size="icon" variant="ghost" aria-label="Toplantıyı iptal et" onClick={() => cancel.mutate(undefined)}><Trash2 className="size-4" /></Button>}
+      {canCancel && <Button size="icon" variant="ghost" aria-label={tx('Toplantıyı iptal et')} onClick={() => cancel.mutate(undefined)}><Trash2 className="size-4" /></Button>}
     </li>
   )
 }
@@ -159,7 +160,7 @@ export function MeetingPanel({ sourceType, sourceId, canCreate, candidate }: { s
   return (
     <div className="space-y-2">
       {(list.data ?? []).length > 0 && <ul className="space-y-2">{list.data!.map((m) => <MeetingRow key={m.id} m={m} canCancel={canCreate} />)}</ul>}
-      {canCreate && <Button size="sm" variant="outline" onClick={() => setOpen(true)}><Video className="size-4" /> {(list.data ?? []).length ? 'Başka toplantı bağlantısı' : 'Toplantı bağlantısı oluştur'}</Button>}
+      {canCreate && <Button size="sm" variant="outline" onClick={() => setOpen(true)}><Video className="size-4" /> {(list.data ?? []).length ? tx('Başka toplantı bağlantısı') : tx('Toplantı bağlantısı oluştur')}</Button>}
       {open && <NewMeetingDialog sourceType={sourceType} sourceId={sourceId} candidate={candidate} onClose={() => setOpen(false)} />}
     </div>
   )
@@ -173,20 +174,20 @@ function NewMeetingDialog({ sourceType, sourceId, candidate, onClose }: { source
   const [includeCandidate, setIncludeCandidate] = useState(true)
   const o = opts.data
   const choices: { value: MeetingProvider; label: string; enabled: boolean; why?: string }[] = [
-    { value: 'zoom', label: 'Zoom', enabled: !!o?.zoom, why: 'Yönetici Zoom entegrasyonunu açmadı' },
-    { value: 'teams', label: 'Microsoft Teams', enabled: !!o?.teams, why: 'Outlook (Microsoft 365) takviminizi bağlayın' },
-    { value: 'google', label: 'Google Meet', enabled: !!o?.google, why: 'Google Takvim\'inizi bağlayın' },
-    { value: 'none', label: 'Bağlantısız — yalnızca takvim daveti', enabled: !!o?.calendar, why: 'Takvim bağlı değil' },
+    { value: 'zoom', label: tx('Zoom'), enabled: !!o?.zoom, why: tx('Yönetici Zoom entegrasyonunu açmadı') },
+    { value: 'teams', label: tx('Microsoft Teams'), enabled: !!o?.teams, why: tx('Outlook (Microsoft 365) takviminizi bağlayın') },
+    { value: 'google', label: tx('Google Meet'), enabled: !!o?.google, why: tx('Google Takvim\'inizi bağlayın') },
+    { value: 'none', label: tx('Bağlantısız — yalnızca takvim daveti'), enabled: !!o?.calendar, why: tx('Takvim bağlı değil') },
   ]
   useEffect(() => { if (o && !provider) setProvider(choices.find((c) => c.enabled)?.value ?? '') }, [o]) // eslint-disable-line react-hooks/exhaustive-deps
   const create = useAction(() => governanceApi.createMeeting({ sourceType, sourceId, durationMinutes: Number(duration), provider: provider as MeetingProvider, addToCalendars, includeCandidate }), {
-    success: (m) => (m.warnings?.length ? 'Toplantı oluştu (uyarılar var)' : 'Toplantı oluştu; davetler gönderildi'),
+    success: (m) => (m.warnings?.length ? tx('Toplantı oluştu (uyarılar var)') : tx('Toplantı oluştu; davetler gönderildi')),
     invalidate: [['meetings']],
     onDone: onClose,
   })
   return (
-    <Modal open onClose={onClose} title="Toplantı bağlantısı" note="Görüşme saati kaydın kendisinden alınır."
-      footer={<><Button variant="outline" onClick={onClose}>Vazgeç</Button><Button disabled={!provider || create.isPending} onClick={() => create.mutate(undefined)}>{create.isPending ? 'Oluşturuluyor…' : 'Oluştur'}</Button></>}>
+    <Modal open onClose={onClose} title={tx('Toplantı bağlantısı')} note={tx('Görüşme saati kaydın kendisinden alınır.')}
+      footer={<><Button variant="outline" onClick={onClose}>{tx('Vazgeç')}</Button><Button disabled={!provider || create.isPending} onClick={() => create.mutate(undefined)}>{create.isPending ? tx('Oluşturuluyor…') : tx('Oluştur')}</Button></>}>
       {opts.isPending ? <RowsSkeleton rows={3} /> : (
         <div className="space-y-4">
           <div className="grid gap-2">
@@ -199,10 +200,10 @@ function NewMeetingDialog({ sourceType, sourceId, candidate, onClose }: { source
               </button>
             ))}
           </div>
-          <SelectField label="Süre" value={duration} onChange={setDuration} options={['15', '30', '45', '60', '90'].map((d) => ({ value: d, label: `${d} dakika` }))} />
-          <label className="flex items-center gap-2 text-[13px]"><Checkbox checked={addToCalendars} onCheckedChange={(v) => setAdd(v === true)} /> Takvim daveti gönder</label>
-          {candidate && <label className="flex items-center gap-2 text-[13px]"><Checkbox checked={includeCandidate} onCheckedChange={(v) => setIncludeCandidate(v === true)} /> Adayı da davet et (e-postasına)</label>}
-          {!o?.calendar && <InfoNote><CalendarClock className="mr-1 inline size-3.5" /> Takvim davetleri için Profil › Takvim'den Google ya da Outlook hesabınızı bağlayın.</InfoNote>}
+          <SelectField label={tx('Süre')} value={duration} onChange={setDuration} options={['15', '30', '45', '60', '90'].map((d) => ({ value: d, label: tx('{0} dakika', [d]) }))} />
+          <label className="flex items-center gap-2 text-[13px]"><Checkbox checked={addToCalendars} onCheckedChange={(v) => setAdd(v === true)} />{' '}{tx('Takvim daveti gönder')}</label>
+          {candidate && <label className="flex items-center gap-2 text-[13px]"><Checkbox checked={includeCandidate} onCheckedChange={(v) => setIncludeCandidate(v === true)} />{' '}{tx('Adayı da davet et (e-postasına)')}</label>}
+          {!o?.calendar && <InfoNote><CalendarClock className="mr-1 inline size-3.5" />{' '}{tx('Takvim davetleri için Profil › Takvim\'den Google ya da Outlook hesabınızı bağlayın.')}</InfoNote>}
         </div>
       )}
     </Modal>

@@ -43,22 +43,23 @@ import { TextReveal } from '@/components/fx/text-reveal'
 import { GradientText } from '@/components/fx/shiny-text'
 import { useAuth } from '@/auth/useAuth'
 import { EASE } from '@/motion/primitives'
+import { tx } from '@/lib/i18n'
 
 const MODULES = [
-  { icon: CalendarDays, label: 'İzin' },
-  { icon: Wallet, label: 'Masraf' },
-  { icon: Target, label: 'Performans' },
-  { icon: CalendarClock, label: 'Vardiya' },
-  { icon: UserPlus, label: 'İşe alım' },
-  { icon: ClipboardCheck, label: 'Onboarding' },
-  { icon: BadgeDollarSign, label: 'Ücret' },
-  { icon: GraduationCap, label: 'Eğitim' },
+  { icon: CalendarDays, label: tx('İzin') },
+  { icon: Wallet, label: tx('Masraf') },
+  { icon: Target, label: tx('Performans') },
+  { icon: CalendarClock, label: tx('Vardiya') },
+  { icon: UserPlus, label: tx('İşe alım') },
+  { icon: ClipboardCheck, label: tx('Onboarding') },
+  { icon: BadgeDollarSign, label: tx('Ücret') },
+  { icon: GraduationCap, label: tx('Eğitim') },
 ]
 
 const TRUST = [
-  { icon: LockKeyhole, text: 'Parola bu uygulamaya girilmez' },
-  { icon: ShieldCheck, text: 'Her istek sunucuda denetlenir' },
-  { icon: Building2, text: 'Her şirketin verisi ayrı' },
+  { icon: LockKeyhole, text: tx('Parola bu uygulamaya girilmez') },
+  { icon: ShieldCheck, text: tx('Her istek sunucuda denetlenir') },
+  { icon: Building2, text: tx('Her şirketin verisi ayrı') },
 ]
 
 export function SignInPage() {
@@ -67,7 +68,7 @@ export function SignInPage() {
   const [params] = useSearchParams()
   const next = params.get('devam') || '/panel'
 
-  if (status === 'loading') return <AppShellSkeleton label="Oturum doğrulanıyor" />
+  if (status === 'loading') return <AppShellSkeleton label={tx('Oturum doğrulanıyor')} />
   if (status === 'authenticated') return <Navigate to={next} replace />
 
   const up = (delay: number) =>
@@ -96,16 +97,16 @@ export function SignInPage() {
           className="mt-2 inline-flex items-center gap-2 rounded-full border border-border bg-card/60 px-3.5 py-1 text-[12px] font-medium text-muted-foreground backdrop-blur"
         >
           <span className="size-1.5 animate-pulse rounded-full bg-primary" />
-          HR360 Enterprise
+          {tx('HR360 Enterprise')}
         </motion.div>
 
         <h1 className="mt-5 text-center text-[38px] leading-[1.05] font-semibold tracking-[-0.045em] sm:text-[52px]">
-          <TextReveal text="İnsan kaynakları," delay={0.15} />
+          <TextReveal text={tx('İnsan kaynakları,')} delay={0.15} />
           <br />
-          <GradientText>tek ışıkta.</GradientText>
+          <GradientText>{tx('tek ışıkta.')}</GradientText>
         </h1>
         <motion.p {...up(0.35)} className="mt-4 max-w-sm text-center text-[14.5px] leading-relaxed text-muted-foreground">
-          Kimliğiniz kurumsal kimlik sunucusunda doğrulanır; gördüğünüz ekran rolünüze göre şekillenir.
+          {tx('Kimliğiniz kurumsal kimlik sunucusunda doğrulanır; gördüğünüz ekran rolünüze göre şekillenir.')}
         </motion.p>
 
         <motion.div {...up(0.45)} className="mt-9 w-full">
@@ -118,31 +119,30 @@ export function SignInPage() {
                 className="mb-5 flex items-start gap-2.5 rounded-xl border border-destructive/30 bg-destructive/[0.08] p-3.5 text-[13px] leading-relaxed"
               >
                 <TriangleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-destructive" />
-                <span>Kimlik sağlayıcıya ulaşılamadı. {error}</span>
+                <span>{tx('Kimlik sağlayıcıya ulaşılamadı. {0}', [error])}</span>
               </div>
             )}
 
             <Button size="lg" className="group h-12 w-full text-[15px]" onClick={() => login(next)}>
               <KeyRound className="size-4.5 transition-transform group-hover:-rotate-12" strokeWidth={1.75} />
-              Kurumsal hesabımla giriş yap
+              {tx('Kurumsal hesabımla giriş yap')}
             </Button>
 
             <div className="my-5 flex items-center gap-3 text-[12px] text-muted-foreground">
               <div className="h-px flex-1 bg-gradient-to-r from-transparent to-border" />
-              şirketiniz kayıtlı değil mi?
+              {tx('şirketiniz kayıtlı değil mi?')}
               <div className="h-px flex-1 bg-gradient-to-l from-transparent to-border" />
             </div>
 
             <Button variant="outline" size="lg" className="group h-12 w-full" asChild>
               <Link to="/kayit">
-                Şirketinizi kaydedin
+                {tx('Şirketinizi kaydedin')}
                 <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
               </Link>
             </Button>
 
             <p className="mt-5 text-center text-[11.5px] leading-relaxed text-muted-foreground">
-              Parolanızı unuttuysanız oturum açma ekranındaki “Parolamı unuttum” bağlantısını kullanın.
-              Giriş yapamıyorsanız İK yöneticiniz hesabınızı askıya almış olabilir.
+              {tx('Parolanızı unuttuysanız oturum açma ekranındaki “Parolamı unuttum” bağlantısını kullanın. Giriş yapamıyorsanız İK yöneticiniz hesabınızı askıya almış olabilir.')}
             </p>
           </Card>
         </motion.div>

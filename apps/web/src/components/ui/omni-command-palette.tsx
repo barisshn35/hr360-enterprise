@@ -1,4 +1,4 @@
-"use client";
+tx('use client');
 
 import * as React from "react";
 import * as Dialog from "@radix-ui/react-dialog";
@@ -17,6 +17,7 @@ import {
   Moon,
   Sun,
 } from "lucide-react";
+import { tx } from '@/lib/i18n'
 
 // Utility: className merger (avoid an extra dep)
 function cn(...classes: Array<string | undefined | null | false>) {
@@ -89,7 +90,7 @@ export type OmniCommandPaletteProps = {
 
 const DEFAULT_OPEN_KEYS = [{ key: "k", meta: true }, { key: "k", ctrl: true }];
 
-const DEFAULT_PLACEHOLDER = "Search commands, pages, people…";
+const DEFAULT_PLACEHOLDER = tx('Search commands, pages, people…');
 const DEFAULT_STORAGE_KEY = "omni:recents";
 const DEFAULT_DEBOUNCE = 120;
 const DEFAULT_MAX_RECENTS = 8;
@@ -327,7 +328,7 @@ export function OmniCommandPalette({
     if (!debouncedQuery && showPinnedFirst && pinned.length) {
       finalGroups.push({
         id: "__pinned",
-        label: "Pinned",
+        label: tx('Pinned'),
         items: pinned.map(p => ({ ...p, _score: 0, _indices: [] })),
       });
     }
@@ -336,11 +337,11 @@ export function OmniCommandPalette({
     if (!debouncedQuery && showRecents && recents.length) {
       finalGroups.push({
         id: "__recents",
-        label: "Recent",
+        label: tx('Recent'),
         items: recents.map(r => ({
           id: r.id,
           label: r.label,
-          subtitle: "Recently used",
+          subtitle: tx('Recently used'),
           groupId: r.groupId,
           href: r.href,
           shortcut: r.shortcut,
@@ -417,7 +418,7 @@ export function OmniCommandPalette({
           className="fixed inset-0 z-[100] bg-black/50 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0"
         />
         <Dialog.Content
-          aria-label="Command palette"
+          aria-label={tx('Command palette')}
           className={cn(
             "fixed z-[101] inset-x-2 top-16 mx-auto w-[min(720px,100%-16px)] rounded-xl border bg-[hsl(var(--popover))] text-[hsl(var(--foreground))] shadow-lg backdrop-blur supports-[backdrop-filter]:bg-[color-mix(in_oklab,hsl(var(--popover))_85%,transparent)]",
             "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95 data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0",
@@ -459,11 +460,11 @@ export function OmniCommandPalette({
                   className="flex-1 bg-transparent outline-none placeholder:text-[hsl(var(--muted-foreground))] text-sm"
                 />
                 <kbd className="rounded bg-[hsl(var(--muted))] px-1.5 py-0.5 text-[10px] text-[hsl(var(--muted-foreground))]">
-                  ⌘K
+                  {tx('⌘K')}
                 </kbd>
                 <Dialog.Close asChild>
                   <button
-                    aria-label="Close"
+                    aria-label={tx('Close')}
                     className="ml-2 rounded p-1 text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))]"
                   >
                     <X className="size-4" aria-hidden />
@@ -477,7 +478,7 @@ export function OmniCommandPalette({
           <div
             id="omni-listbox"
             role="listbox"
-            aria-label="Command results"
+            aria-label={tx('Command results')}
             className={cn("max-h-[60vh] overflow-auto p-1", className)}
             ref={listRef}
           >
@@ -485,7 +486,7 @@ export function OmniCommandPalette({
             {loadingIds.size > 0 && (
               <div className="flex items-center gap-2 px-3 py-2 text-[hsl(var(--muted-foreground))] text-xs">
                 <Loader2 className="size-3 animate-spin" aria-hidden />
-                Fetching results…
+                {tx('Fetching results…')}
               </div>
             )}
 
@@ -544,7 +545,7 @@ export function OmniCommandPalette({
                             {/* Shortcut / affordances */}
                             {item.pinned && (
                               <span
-                                title="Pinned"
+                                title={tx('Pinned')}
                                 className="text-[hsl(var(--muted-foreground))]"
                                 aria-hidden
                               >
@@ -574,9 +575,7 @@ export function OmniCommandPalette({
                 </div>
                 {/* Empty hint per group */}
                 {g.items.length === 0 && debouncedQuery && (
-                  <div className="px-3 py-2 text-xs text-[hsl(var(--muted-foreground))]">
-                    No matches in {g.label}.
-                  </div>
+                  <div className="px-3 py-2 text-xs text-[hsl(var(--muted-foreground))]">{tx('No matches in {0}.', [g.label])}</div>
                 )}
               </div>
             ))}
@@ -587,7 +586,7 @@ export function OmniCommandPalette({
                 <div className="mx-auto mb-2 flex size-8 items-center justify-center rounded-full bg-[hsl(var(--muted))]">
                   <History className="size-4" aria-hidden />
                 </div>
-                Try a different query, like “settings” or “invite”.
+                {tx('Try a different query, like “settings” or “invite”.')}
               </div>
             )}
           </div>
@@ -600,14 +599,14 @@ export function OmniCommandPalette({
               <div className="flex items-center justify-between px-3 py-2 text-xs text-[hsl(var(--muted-foreground))]">
                 <div className="flex items-center gap-4">
                   <span className="flex items-center gap-1">
-                    <CornerDownLeft className="size-3" /> to select
+                    <CornerDownLeft className="size-3" />{' '}{tx('to select')}
                   </span>
                   <span className="flex items-center gap-1">
                     <ArrowUp className="size-3" />
-                    <ArrowDown className="size-3" /> to navigate
+                    <ArrowDown className="size-3" />{' '}{tx('to navigate')}
                   </span>
                   <span className="hidden items-center gap-1 sm:flex">
-                    <X className="size-3" /> to close
+                    <X className="size-3" />{' '}{tx('to close')}
                   </span>
                 </div>
                 <ThemeIndicator />
@@ -704,7 +703,7 @@ function ThemeIndicator() {
   return (
     <div className="inline-flex items-center gap-1 rounded px-2 py-1 text-[hsl(var(--muted-foreground))]">
       {dark ? <Moon className="size-3.5" /> : <Sun className="size-3.5" />}
-      <span>{dark ? "Dark" : "Light"}</span>
+      <span>{dark ? tx('Dark') : tx('Light')}</span>
     </div>
   );
 }

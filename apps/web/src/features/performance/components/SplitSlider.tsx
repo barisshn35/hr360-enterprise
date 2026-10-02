@@ -9,6 +9,7 @@ import { motion } from 'motion/react'
 import { Slider as SliderPrimitive } from 'radix-ui'
 import { cn } from '@/lib/utils'
 import { AnimatedNumber } from './AnimatedNumber'
+import { tx } from '@/lib/i18n'
 
 export function SplitSlider({
   value,
@@ -74,13 +75,13 @@ export function SplitSlider({
           </div>
         </SliderPrimitive.Track>
         <SliderPrimitive.Thumb
-          aria-label={`${left} payı`}
+          aria-label={tx('{0} payı', [left])}
           className="block size-7 cursor-grab rounded-full border-[3px] border-background bg-card shadow-lg ring-1 ring-foreground/15 transition-transform hover:scale-110 focus-visible:ring-[4px] focus-visible:ring-ring/40 focus-visible:outline-none active:cursor-grabbing active:scale-110"
         />
       </SliderPrimitive.Root>
 
       <div className="mt-3 flex flex-wrap items-center gap-1.5">
-        <span className="mr-1 text-[12px] text-muted-foreground">Hazır oranlar:</span>
+        <span className="mr-1 text-[12px] text-muted-foreground">{tx('Hazır oranlar:')}</span>
         {presets.map((p) => (
           <motion.button
             key={p}

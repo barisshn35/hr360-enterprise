@@ -17,27 +17,28 @@ import { isHr } from '@/auth/roles'
 import { formatDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { Metric, PlanGate, useAction } from '@/features/shared/kit'
+import { tx, pct } from '@/lib/i18n'
 
 const SCALE_FACES = ['😞', '🙁', '😐', '🙂', '😄']
 const statusTone = { Draft: 'neutral', Open: 'success', Closed: 'info' } as const
-const statusLabel = { Draft: 'Taslak', Open: 'Açık', Closed: 'Kapandı' }
+const statusLabel = { Draft: tx('Taslak'), Open: tx('Açık'), Closed: tx('Kapandı') }
 
 function AnswerModal({ survey, onClose }: { survey: Survey; onClose: () => void }) {
   const [answers, setAnswers] = useState<Record<string, SurveyAnswer>>({})
   const set = (q: SurveyQuestion, patch: Partial<SurveyAnswer>) => setAnswers((a) => ({ ...a, [q.id]: { ...a[q.id], ...patch, questionId: q.id } }))
   const missing = survey.questions.filter((q) => q.required && !(answers[q.id]?.score != null || answers[q.id]?.choice || answers[q.id]?.text?.trim()))
-  const submit = useAction(() => engagementApi.respond(survey.id, Object.values(answers)), { success: 'Teşekkürler! Yanıtınız kaydedildi.', invalidate: [['surveys']], onDone: onClose })
+  const submit = useAction(() => engagementApi.respond(survey.id, Object.values(answers)), { success: tx('Teşekkürler! Yanıtınız kaydedildi.'), invalidate: [['surveys']], onDone: onClose })
   return (
     <Modal
       open
       onClose={onClose}
       size="lg"
       title={survey.title}
-      note={survey.isAnonymous ? 'Anonim anket: yanıtınız kimliğinizle eşleştirilmez; 3’ten az yanıtlı kırılımlar gizlenir.' : survey.description ?? undefined}
+      note={survey.isAnonymous ? tx('Anonim anket: yanıtınız kimliğinizle eşleştirilmez; 3’ten az yanıtlı kırılımlar gizlenir.') : survey.description ?? undefined}
       footer={
         <>
-          <Button variant="outline" onClick={onClose}>Vazgeç</Button>
-          <Button disabled={missing.length > 0 || submit.isPending} onClick={() => submit.mutate(undefined)}>Gönder</Button>
+          <Button variant="outline" onClick={onClose}>{tx('Vazgeç')}</Button>
+          <Button disabled={missing.length > 0 || submit.isPending} onClick={() => submit.mutate(undefined)}>{tx('Gönder')}</Button>
         </>
       }
     >
@@ -66,7 +67,7 @@ function AnswerModal({ survey, onClose }: { survey: Survey; onClose: () => void 
                     </button>
                   ))}
                 </div>
-                <div className="mt-1 flex justify-between text-[11px] text-muted-foreground"><span>Hiç önermem</span><span>Kesinlikle öneririm</span></div>
+                <div className="mt-1 flex justify-between text-[11px] text-muted-foreground"><span>{tx('Hiç önermem')}</span><span>{tx('Kesinlikle öneririm')}</span></div>
               </div>
             )}
             {q.type === 'Scale' && (
@@ -110,13 +111,13 @@ function ResultsModal({ survey, onClose }: { survey: Survey; onClose: () => void
   const r = q.data
   const nps = r?.questions.find((x) => x.type === 'Nps')
   return (
-    <Modal open onClose={onClose} size="xl" title={`Sonuçlar — ${survey.title}`} note={`Anonimlik eşiği: ${r?.anonymityThreshold ?? 3} yanıtın altındaki kırılımlar ve serbest metinler gizlenir.`}>
+    <Modal open onClose={onClose} size="xl" title={tx('Sonuçlar — {0}', [survey.title])} note={tx('Anonimlik eşiği: {0} yanıtın altındaki kırılımlar ve serbest metinler gizlenir.', [r?.anonymityThreshold ?? 3])}>
       {q.isPending ? <RowsSkeleton /> : q.isError ? <ErrorState message={(q.error as Error).message} /> : r && (
         <div className="space-y-6">
           <div className="grid gap-3 sm:grid-cols-3">
-            <Metric label="Yanıt" value={r.responseCount} hint={`${r.eligible} kişiden`} />
-            <Metric label="Katılım" value={`%${r.participation}`} tone={r.participation >= 60 ? 'good' : r.participation >= 30 ? 'warn' : 'bad'} />
-            {nps && <Metric label="eNPS" value={nps.enps ?? '—'} hint={`${nps.promoters ?? 0} destekçi · ${nps.passives ?? 0} pasif · ${nps.detractors ?? 0} eleştirmen`} tone={(nps.enps ?? 0) >= 20 ? 'good' : (nps.enps ?? 0) >= 0 ? 'warn' : 'bad'} />}
+            <Metric label={tx('Yanıt')} value={r.responseCount} hint={tx('{0} kişiden', [r.eligible])} />
+            <Metric label={tx('Katılım')} value={pct(r.participation)} tone={r.participation >= 60 ? 'good' : r.participation >= 30 ? 'warn' : 'bad'} />
+            {nps && <Metric label="eNPS" value={nps.enps ?? '—'} hint={tx('{0} destekçi · {1} pasif · {2} eleştirmen', [nps.promoters ?? 0, nps.passives ?? 0, nps.detractors ?? 0])} tone={(nps.enps ?? 0) >= 20 ? 'good' : (nps.enps ?? 0) >= 0 ? 'warn' : 'bad'} />}
           </div>
           {r.questions.map((x) => (
             <div key={x.id} className="rounded-2xl border border-border p-4">
@@ -128,7 +129,7 @@ function ResultsModal({ survey, onClose }: { survey: Survey; onClose: () => void
                       <XAxis dataKey="k" tickLine={false} axisLine={false} fontSize={11} />
                       <YAxis allowDecimals={false} width={24} fontSize={11} tickLine={false} axisLine={false} />
                       <Tooltip cursor={{ fill: 'hsl(var(--muted)/0.4)' }} contentStyle={{ background: 'hsl(var(--popover))', border: '1px solid hsl(var(--border))', borderRadius: 12 }} />
-                      <Bar dataKey="v" name="Yanıt" radius={[6, 6, 0, 0]}>
+                      <Bar dataKey="v" name={tx('Yanıt')} radius={[6, 6, 0, 0]}>
                         {x.distribution.map((_, i) => (
                           <Cell key={i} fill={x.type === 'Nps' ? (i <= 6 ? '#f43f5e' : i <= 8 ? '#f59e0b' : '#10b981') : `hsl(${150 - (4 - i) * 30} 60% 45%)`} />
                         ))}
@@ -137,7 +138,7 @@ function ResultsModal({ survey, onClose }: { survey: Survey; onClose: () => void
                   </ResponsiveContainer>
                 </div>
               )}
-              {x.type === 'Scale' && <p className="mt-1 text-[12.5px] text-muted-foreground">Ortalama {x.average ?? '—'} / 5 · olumlu %{x.favorable ?? '—'}</p>}
+              {x.type === 'Scale' && <p className="mt-1 text-[12.5px] text-muted-foreground">{tx('Ortalama {0} / 5 · olumlu %{1}', [x.average ?? '—', x.favorable ?? '—'])}</p>}
               {x.type === 'Choice' && (
                 <div className="space-y-1.5">
                   {x.options?.map((o) => (
@@ -152,22 +153,22 @@ function ResultsModal({ survey, onClose }: { survey: Survey; onClose: () => void
                 </div>
               )}
               {x.type === 'Text' && (x.hiddenForAnonymity ? (
-                <p className="flex items-center gap-1.5 text-[12.5px] text-muted-foreground"><Lock className="size-3.5" /> Anonimliği korumak için {x.count} yorum gizlendi (en az 3 gerekli).</p>
+                <p className="flex items-center gap-1.5 text-[12.5px] text-muted-foreground"><Lock className="size-3.5" />{' '}{tx('Anonimliği korumak için {0} yorum gizlendi (en az 3 gerekli).', [x.count])}</p>
               ) : (
                 <ul className="space-y-1.5">{x.texts?.map((t, i) => <li key={i} className="rounded-lg bg-muted/50 px-3 py-2 text-[13px]">“{t}”</li>)}</ul>
               ))}
             </div>
           ))}
           <div>
-            <p className="mb-2 text-[13.5px] font-medium">Departman kırılımı</p>
+            <p className="mb-2 text-[13.5px] font-medium">{tx('Departman kırılımı')}</p>
             <table className="w-full text-[13px]">
-              <thead><tr className="text-left text-muted-foreground"><th className="py-1.5">Departman</th><th>Yanıt</th><th>eNPS</th><th>Olumlu</th></tr></thead>
+              <thead><tr className="text-left text-muted-foreground"><th className="py-1.5">{tx('Departman')}</th><th>{tx('Yanıt')}</th><th>{tx('eNPS')}</th><th>{tx('Olumlu')}</th></tr></thead>
               <tbody>
                 {r.byDepartment.map((d) => (
                   <tr key={d.department} className="border-t border-border">
                     <td className="py-1.5">{d.department}</td><td className="tabular">{d.count}</td>
-                    <td className="tabular">{d.hidden ? <span className="text-muted-foreground">gizli</span> : d.enps ?? '—'}</td>
-                    <td className="tabular">{d.hidden ? <span className="text-muted-foreground">gizli</span> : d.favorable != null ? `%${d.favorable}` : '—'}</td>
+                    <td className="tabular">{d.hidden ? <span className="text-muted-foreground">{tx('gizli')}</span> : d.enps ?? '—'}</td>
+                    <td className="tabular">{d.hidden ? <span className="text-muted-foreground">{tx('gizli')}</span> : d.favorable != null ? pct(d.favorable) : '—'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -184,28 +185,28 @@ function BuilderModal({ onClose }: { onClose: () => void }) {
   const [description, setDescription] = useState('')
   const [questions, setQuestions] = useState<SurveyQuestion[]>([{ id: 'q1', text: '', type: 'Scale', options: [], required: true }])
   const create = useAction(() => engagementApi.createSurvey({ title, description, kind: 'Custom', isAnonymous: true, questions: questions.map((q) => ({ ...q, options: q.type === 'Choice' ? q.options : [] })) }), {
-    success: 'Anket taslağı oluşturuldu', invalidate: [['surveys']], onDone: onClose,
+    success: tx('Anket taslağı oluşturuldu'), invalidate: [['surveys']], onDone: onClose,
   })
   const upd = (i: number, patch: Partial<SurveyQuestion>) => setQuestions((qs) => qs.map((q, j) => (j === i ? { ...q, ...patch } : q)))
   return (
-    <Modal open onClose={onClose} size="lg" title="Yeni anket" note="Anketler anonim oluşturulur. Taslak olarak kaydedilir; yayınlamak için listeden açın."
-      footer={<><Button variant="outline" onClick={onClose}>Vazgeç</Button><Button disabled={!title.trim() || questions.some((q) => !q.text.trim()) || create.isPending} onClick={() => create.mutate(undefined)}>Kaydet</Button></>}>
+    <Modal open onClose={onClose} size="lg" title={tx('Yeni anket')} note={tx('Anketler anonim oluşturulur. Taslak olarak kaydedilir; yayınlamak için listeden açın.')}
+      footer={<><Button variant="outline" onClick={onClose}>{tx('Vazgeç')}</Button><Button disabled={!title.trim() || questions.some((q) => !q.text.trim()) || create.isPending} onClick={() => create.mutate(undefined)}>{tx('Kaydet')}</Button></>}>
       <div className="space-y-4">
-        <TextField label="Başlık" value={title} onChange={(e) => setTitle(e.target.value)} required />
-        <TextAreaField label="Açıklama" rows={2} value={description} onChange={(e) => setDescription(e.target.value)} />
+        <TextField label={tx('Başlık')} value={title} onChange={(e) => setTitle(e.target.value)} required />
+        <TextAreaField label={tx('Açıklama')} rows={2} value={description} onChange={(e) => setDescription(e.target.value)} />
         {questions.map((q, i) => (
           <div key={q.id} className="space-y-2 rounded-xl border border-border p-3">
             <div className="flex items-end gap-2">
-              <div className="flex-1"><TextField label={`Soru ${i + 1}`} value={q.text} onChange={(e) => upd(i, { text: e.target.value })} /></div>
+              <div className="flex-1"><TextField label={tx('Soru {0}', [i + 1])} value={q.text} onChange={(e) => upd(i, { text: e.target.value })} /></div>
               <div className="w-40">
-                <SelectField label="Tip" value={q.type} onChange={(v) => upd(i, { type: v as QuestionType })} options={[{ value: 'Nps', label: '0–10 (NPS)' }, { value: 'Scale', label: '1–5 ölçek' }, { value: 'Choice', label: 'Seçenekli' }, { value: 'Text', label: 'Serbest metin' }]} />
+                <SelectField label={tx('Tip')} value={q.type} onChange={(v) => upd(i, { type: v as QuestionType })} options={[{ value: 'Nps', label: '0–10 (NPS)' }, { value: 'Scale', label: tx('1–5 ölçek') }, { value: 'Choice', label: tx('Seçenekli') }, { value: 'Text', label: tx('Serbest metin') }]} />
               </div>
-              <Button variant="ghost" size="icon" aria-label="Soruyu sil" onClick={() => setQuestions((qs) => qs.filter((_, j) => j !== i))} disabled={questions.length === 1}><Trash2 className="size-4" /></Button>
+              <Button variant="ghost" size="icon" aria-label={tx('Soruyu sil')} onClick={() => setQuestions((qs) => qs.filter((_, j) => j !== i))} disabled={questions.length === 1}><Trash2 className="size-4" /></Button>
             </div>
-            {q.type === 'Choice' && <TextField label="Seçenekler (virgülle)" value={q.options.join(', ')} onChange={(e) => upd(i, { options: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })} />}
+            {q.type === 'Choice' && <TextField label={tx('Seçenekler (virgülle)')} value={q.options.join(', ')} onChange={(e) => upd(i, { options: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })} />}
           </div>
         ))}
-        <Button variant="outline" onClick={() => setQuestions((qs) => [...qs, { id: `q${Date.now().toString(36)}`, text: '', type: 'Scale', options: [], required: true }])}><Plus className="size-4" /> Soru ekle</Button>
+        <Button variant="outline" onClick={() => setQuestions((qs) => [...qs, { id: `q${Date.now().toString(36)}`, text: '', type: 'Scale', options: [], required: true }])}><Plus className="size-4" />{' '}{tx('Soru ekle')}</Button>
       </div>
     </Modal>
   )
@@ -219,36 +220,36 @@ export function SurveysPage() {
   const [results, setResults] = useState<Survey | null>(null)
   const [building, setBuilding] = useState(false)
   const list = useQuery({ queryKey: ['surveys'], queryFn: ({ signal }) => engagementApi.surveys(signal) })
-  const tpl = useAction((k: 'enps' | 'pulse') => engagementApi.surveyFromTemplate(k), { success: 'Şablondan taslak oluşturuldu', invalidate: [['surveys']] })
-  const status = useAction(({ id, s }: { id: string; s: Survey['status'] }) => engagementApi.setSurveyStatus(id, s), { success: 'Güncellendi', invalidate: [['surveys']] })
-  const del = useAction((id: string) => engagementApi.deleteSurvey(id), { success: 'Silindi', invalidate: [['surveys']] })
+  const tpl = useAction((k: 'enps' | 'pulse') => engagementApi.surveyFromTemplate(k), { success: tx('Şablondan taslak oluşturuldu'), invalidate: [['surveys']] })
+  const status = useAction(({ id, s }: { id: string; s: Survey['status'] }) => engagementApi.setSurveyStatus(id, s), { success: tx('Güncellendi'), invalidate: [['surveys']] })
+  const del = useAction((id: string) => engagementApi.deleteSurvey(id), { success: tx('Silindi'), invalidate: [['surveys']] })
 
   const open = (list.data ?? []).filter((s) => s.status === 'Open')
   return (
     <PlanGate feature="surveys">
-      <PageHeader title="Anketler ve eNPS" description="Kısa, anonim nabız anketleri. Çalışan bağlılığını ölçün, eğilimi izleyin." actions={hr && <Button onClick={() => setBuilding(true)}><Plus className="size-4" /> Yeni anket</Button>} />
+      <PageHeader title={tx('Anketler ve eNPS')} description={tx('Kısa, anonim nabız anketleri. Çalışan bağlılığını ölçün, eğilimi izleyin.')} actions={hr && <Button onClick={() => setBuilding(true)}><Plus className="size-4" />{' '}{tx('Yeni anket')}</Button>} />
       {hr && (
         <div className="mb-5">
-          <Tabs label="Görünüm" value={tab} onChange={setTab} tabs={[{ key: 'answer', label: 'Yanıtla', count: open.filter((s) => !s.answered).length }, { key: 'manage', label: 'Yönetim', count: list.data?.length }]} />
+          <Tabs label={tx('Görünüm')} value={tab} onChange={setTab} tabs={[{ key: 'answer', label: tx('Yanıtla'), count: open.filter((s) => !s.answered).length }, { key: 'manage', label: tx('Yönetim'), count: list.data?.length }]} />
         </div>
       )}
       {list.isPending ? <RowsSkeleton /> : list.isError ? <ErrorState message={(list.error as Error).message} onRetry={() => list.refetch()} /> : tab === 'answer' || !hr ? (
         open.length === 0 ? (
-          <EmptyState icon={MessagesSquare} title="Açık anket yok" detail="Yeni bir anket yayınlandığında burada görünecek." />
+          <EmptyState icon={MessagesSquare} title={tx('Açık anket yok')} detail={tx('Yeni bir anket yayınlandığında burada görünecek.')} />
         ) : (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {open.map((s, i) => (
               <motion.div key={s.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06 }} className="surface flex flex-col rounded-2xl border border-border p-5">
                 <div className="flex items-center gap-2">
                   <StatusBadge tone={s.kind === 'eNPS' ? 'info' : 'neutral'}>{s.kind}</StatusBadge>
-                  {s.isAnonymous && <span className="flex items-center gap-1 text-[12px] text-muted-foreground"><ShieldCheck className="size-3.5" /> anonim</span>}
+                  {s.isAnonymous && <span className="flex items-center gap-1 text-[12px] text-muted-foreground"><ShieldCheck className="size-3.5" />{' '}{tx('anonim')}</span>}
                 </div>
                 <h3 className="mt-3 text-[15.5px] font-semibold">{s.title}</h3>
-                <p className="mt-1 flex-1 text-[13px] text-muted-foreground">{s.questions.length} soru · {s.closesAt ? `${formatDate(s.closesAt)} tarihine kadar` : 'süresiz'}</p>
+                <p className="mt-1 flex-1 text-[13px] text-muted-foreground">{tx('{0} soru · {1}', [s.questions.length, s.closesAt ? tx('{0} tarihine kadar', [formatDate(s.closesAt)]) : tx('süresiz')])}</p>
                 {s.answered ? (
-                  <p className="mt-4 flex items-center gap-1.5 text-[13px] text-[hsl(var(--success))]"><CheckCircle2 className="size-4" /> Yanıtladınız, teşekkürler</p>
+                  <p className="mt-4 flex items-center gap-1.5 text-[13px] text-[hsl(var(--success))]"><CheckCircle2 className="size-4" />{' '}{tx('Yanıtladınız, teşekkürler')}</p>
                 ) : (
-                  <Button className="mt-4" onClick={() => setAnswering(s)}>Yanıtla (~1 dk)</Button>
+                  <Button className="mt-4" onClick={() => setAnswering(s)}>{tx('Yanıtla (~1 dk)')}</Button>
                 )}
               </motion.div>
             ))}
@@ -256,23 +257,23 @@ export function SurveysPage() {
         )
       ) : (
         <div className="space-y-4">
-          <InfoNote>Hazır şablonlar: <button className="cursor-pointer font-medium text-primary underline-offset-2 hover:underline" onClick={() => tpl.mutate('enps')}>eNPS anketi</button> · <button className="cursor-pointer font-medium text-primary underline-offset-2 hover:underline" onClick={() => tpl.mutate('pulse')}>haftalık nabız</button>. Taslak oluşur, “Yayınla” ile açılır.</InfoNote>
+          <InfoNote>{tx('Hazır şablonlar:')}{' '}<button className="cursor-pointer font-medium text-primary underline-offset-2 hover:underline" onClick={() => tpl.mutate('enps')}>{tx('eNPS anketi')}</button> · <button className="cursor-pointer font-medium text-primary underline-offset-2 hover:underline" onClick={() => tpl.mutate('pulse')}>{tx('haftalık nabız')}</button>{tx('. Taslak oluşur, “Yayınla” ile açılır.')}</InfoNote>
           <Panel>
-            <PanelHead title="Tüm anketler" />
+            <PanelHead title={tx('Tüm anketler')} />
             <PanelBody className="p-0">
-              {(list.data ?? []).length === 0 ? <EmptyState title="Henüz anket yok" detail="Bir şablonla başlayın." /> : (
+              {(list.data ?? []).length === 0 ? <EmptyState title={tx('Henüz anket yok')} detail={tx('Bir şablonla başlayın.')} /> : (
                 <ul className="divide-y divide-border">
                   {list.data!.map((s) => (
                     <li key={s.id} className="flex flex-wrap items-center gap-3 px-5 py-3.5">
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-[14px] font-medium">{s.title}</p>
-                        <p className="text-[12px] text-muted-foreground">{s.kind} · {s.questions.length} soru · {s.responseCount} yanıt · {s.createdByName}</p>
+                        <p className="text-[12px] text-muted-foreground">{tx('{0} · {1} soru · {2} yanıt · {3}', [s.kind, s.questions.length, s.responseCount, s.createdByName])}</p>
                       </div>
                       <StatusBadge tone={statusTone[s.status]}>{statusLabel[s.status]}</StatusBadge>
-                      {s.status !== 'Open' && <Button size="sm" variant="outline" onClick={() => status.mutate({ id: s.id, s: 'Open' })}>Yayınla</Button>}
-                      {s.status === 'Open' && <Button size="sm" variant="outline" onClick={() => status.mutate({ id: s.id, s: 'Closed' })}>Kapat</Button>}
-                      <Button size="sm" variant="outline" onClick={() => setResults(s)} disabled={s.responseCount === 0}><BarChart3 className="size-4" /> Sonuçlar</Button>
-                      <Button size="icon" variant="ghost" aria-label="Sil" onClick={() => del.mutate(s.id)}><Trash2 className="size-4" /></Button>
+                      {s.status !== 'Open' && <Button size="sm" variant="outline" onClick={() => status.mutate({ id: s.id, s: 'Open' })}>{tx('Yayınla')}</Button>}
+                      {s.status === 'Open' && <Button size="sm" variant="outline" onClick={() => status.mutate({ id: s.id, s: 'Closed' })}>{tx('Kapat')}</Button>}
+                      <Button size="sm" variant="outline" onClick={() => setResults(s)} disabled={s.responseCount === 0}><BarChart3 className="size-4" />{' '}{tx('Sonuçlar')}</Button>
+                      <Button size="icon" variant="ghost" aria-label={tx('Sil')} onClick={() => del.mutate(s.id)}><Trash2 className="size-4" /></Button>
                     </li>
                   ))}
                 </ul>

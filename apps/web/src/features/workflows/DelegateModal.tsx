@@ -6,6 +6,7 @@ import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/button'
 import { SelectField, TextAreaField } from '@/components/ui/Field'
 import { fullName } from '@/lib/format'
+import { tx } from '@/lib/i18n'
 
 export function DelegateModal({
   step,
@@ -48,7 +49,7 @@ export function DelegateModal({
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!target) {
-      setError('Devredilecek çalışanı seçin.')
+      setError(tx('Devredilecek çalışanı seçin.'))
       return
     }
     setError(undefined)
@@ -59,12 +60,12 @@ export function DelegateModal({
     <Modal
       open
       onClose={onClose}
-      title="Adımı devret"
-      note={`${step.order}. onay adımını başka bir çalışana devredin.`}
+      title={tx('Adımı devret')}
+      note={tx('{0}. onay adımını başka bir çalışana devredin.', [step.order])}
       footer={
         <>
           <Button variant="outline" className="cursor-pointer" onClick={onClose} disabled={pending}>
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button
             type="submit"
@@ -73,25 +74,25 @@ export function DelegateModal({
             disabled={pending || candidates.length === 0}
           >
             {pending && <LoaderCircle className="size-4 animate-spin" />}
-            Devret
+            {tx('Devret')}
           </Button>
         </>
       }
     >
       <form id="delegate-form" onSubmit={handleSubmit} noValidate className="space-y-4">
         {employees.isPending ? (
-          <p className="text-[13px] text-muted-foreground">Çalışanlar yükleniyor…</p>
+          <p className="text-[13px] text-muted-foreground">{tx('Çalışanlar yükleniyor…')}</p>
         ) : candidates.length === 0 ? (
           <p
             role="alert"
             className="rounded-md border border-[hsl(var(--warning))]/30 bg-[hsl(var(--warning))]/10 p-3 text-[13px]"
           >
-            Devredilebilecek başka çalışan kaydı bulunamadı.
+            {tx('Devredilebilecek başka çalışan kaydı bulunamadı.')}
           </p>
         ) : (
           <SelectField
             id="delegate-target"
-            label="Devredilecek çalışan"
+            label={tx('Devredilecek çalışan')}
             required
             value={target}
             onChange={setTarget}
@@ -102,11 +103,11 @@ export function DelegateModal({
 
         <TextAreaField
           id="delegate-comment"
-          label="Açıklama"
+          label={tx('Açıklama')}
           rows={3}
           value={comment}
           maxLength={1000}
-          hint="İsteğe bağlı. Devir gerekçesi denetim izinde görünür."
+          hint={tx('İsteğe bağlı. Devir gerekçesi denetim izinde görünür.')}
           onChange={(e) => setComment(e.target.value)}
         />
       </form>

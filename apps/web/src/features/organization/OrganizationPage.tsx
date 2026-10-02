@@ -9,6 +9,7 @@ import { useCompanies } from '@/api/queries'
 import type { Company } from '@/api/types'
 import { formatDate, formatNumber } from '@/lib/format'
 import { NewCompanyModal } from './NewCompanyModal'
+import { tx } from '@/lib/i18n'
 
 export function OrganizationPage() {
   const { can } = useAuth()
@@ -21,7 +22,7 @@ export function OrganizationPage() {
   const columns: Array<Column<Company>> = [
     {
       id: 'name',
-      header: 'Şirket',
+      header: tx('Şirket'),
       searchText: (c) => `${c.name} ${c.taxNumber ?? ''}`,
       sortValue: (c) => c.name,
       cell: (c) => (
@@ -32,7 +33,7 @@ export function OrganizationPage() {
           <div className="min-w-0">
             <p className="truncate font-medium text-foreground">{c.name}</p>
             <p className="mt-0.5 truncate text-[12px] text-muted-foreground">
-              {c.taxNumber ? `Vergi no ${c.taxNumber}` : 'Vergi numarası girilmemiş'}
+              {c.taxNumber ? tx('Vergi no {0}', [c.taxNumber]) : tx('Vergi numarası girilmemiş')}
             </p>
           </div>
         </div>
@@ -40,7 +41,7 @@ export function OrganizationPage() {
     },
     {
       id: 'departments',
-      header: 'Departman',
+      header: tx('Departman'),
       align: 'right',
       hideBelow: 'sm',
       sortValue: (c) => c.departments?.length ?? 0,
@@ -49,7 +50,7 @@ export function OrganizationPage() {
     },
     {
       id: 'createdAt',
-      header: 'Oluşturulma',
+      header: tx('Oluşturulma'),
       align: 'right',
       hideBelow: 'md',
       sortValue: (c) => new Date(c.createdAt).getTime(),
@@ -61,13 +62,13 @@ export function OrganizationPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Organizasyon"
-        description="Şirketler ve altlarındaki departman hiyerarşisi."
+        title={tx('Organizasyon')}
+        description={tx('Şirketler ve altlarındaki departman hiyerarşisi.')}
         actions={
           canCreate && (
             <Button className="cursor-pointer" onClick={() => setModalOpen(true)}>
               <Plus className="size-4" />
-              Yeni şirket
+              {tx('Yeni şirket')}
             </Button>
           )
         }
@@ -81,15 +82,15 @@ export function OrganizationPage() {
         error={companies.error}
         onRetry={() => void companies.refetch()}
         onRowClick={(c) => navigate(`/panel/organizasyon/${c.id}`)}
-        searchPlaceholder="Şirket adı veya vergi numarası"
+        searchPlaceholder={tx('Şirket adı veya vergi numarası')}
         exportFileName="sirketler"
         initialSort={{ columnId: 'name', dir: 'asc' }}
-        emptyTitle="Şirket kaydı yok"
-        emptyDetail="İlk şirketi ekleyin; departmanlar onun altına bağlanır."
+        emptyTitle={tx('Şirket kaydı yok')}
+        emptyDetail={tx('İlk şirketi ekleyin; departmanlar onun altına bağlanır.')}
         emptyAction={
           canCreate ? (
             <Button size="sm" className="cursor-pointer" onClick={() => setModalOpen(true)}>
-              Yeni şirket
+              {tx('Yeni şirket')}
             </Button>
           ) : undefined
         }

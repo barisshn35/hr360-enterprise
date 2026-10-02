@@ -6,6 +6,7 @@
  */
 
 import type { Goal, GoalStatus } from '@/api/performance'
+import { appLocale, pct } from '@/lib/i18n'
 
 export const STATUS_PROGRESS: Partial<Record<GoalStatus, number>> = { Achieved: 100, Missed: 0, Active: 50, Draft: 0 }
 
@@ -35,11 +36,11 @@ export function goalSideScore(goals: Goal[]): number | null {
   return counted.reduce((a, g) => a + (progressOf(g).pct ?? 0) * g.weight, 0) / w
 }
 
-const num = new Intl.NumberFormat('tr-TR', { maximumFractionDigits: 2 })
+const num = new Intl.NumberFormat(appLocale, { maximumFractionDigits: 2 })
 
 export function formatGoalValue(value: number | null, unit: string | null): string {
   if (value === null) return '—'
   if (unit === '₺') return `${num.format(value)} ₺`
-  if (unit === '%') return `%${num.format(value)}`
+  if (unit === '%') return pct(num.format(value))
   return unit ? `${num.format(value)} ${unit}` : num.format(value)
 }

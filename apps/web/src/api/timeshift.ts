@@ -1,4 +1,5 @@
 import { apiFetch, qs } from './client'
+import { tx } from '@/lib/i18n'
 
 const BASE = '/api/timeshift'
 
@@ -7,9 +8,9 @@ const BASE = '/api/timeshift'
 export type TimeEntrySource = 'Manual' | 'Device' | 'Import'
 
 export const timeEntrySourceLabels: Record<TimeEntrySource, string> = {
-  Manual: 'Elle',
-  Device: 'Cihaz',
-  Import: 'İçe aktarım',
+  Manual: tx('Elle'),
+  Device: tx('Cihaz'),
+  Import: tx('İçe aktarım'),
 }
 
 export interface Shift {

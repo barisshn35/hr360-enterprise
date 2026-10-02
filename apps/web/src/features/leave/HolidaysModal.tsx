@@ -9,6 +9,7 @@ import { useToast } from '@/components/ui/Toast'
 import { leaveApi } from '@/api/leave'
 import { useLeaveHolidays } from '@/api/queries'
 import { formatDate } from '@/lib/format'
+import { tx } from '@/lib/i18n'
 
 /**
  * Resmi tatil takvimi (İK). Buradaki günler izin günü hesabında düşülür —
@@ -29,11 +30,11 @@ export function HolidaysModal({ open, onClose, year }: { open: boolean; onClose:
     mutationFn: () => leaveApi.createHoliday({ date, name: name.trim() }),
     onSuccess: () => {
       invalidate()
-      toast.ok('Tatil eklendi')
+      toast.ok(tx('Tatil eklendi'))
       setDate('')
       setName('')
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : 'Tatil eklenemedi.'),
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Tatil eklenemedi.')),
   })
 
   const seed = useMutation({
@@ -42,22 +43,22 @@ export function HolidaysModal({ open, onClose, year }: { open: boolean; onClose:
       invalidate()
       toast.ok(r.message)
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : 'Tatiller eklenemedi.'),
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Tatiller eklenemedi.')),
   })
 
   const remove = useMutation({
     mutationFn: (id: string) => leaveApi.deleteHoliday(id),
     onSuccess: () => {
       invalidate()
-      toast.ok('Tatil silindi')
+      toast.ok(tx('Tatil silindi'))
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : 'Tatil silinemedi.'),
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Tatil silinemedi.')),
   })
 
   function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (!date) return setError('Tarih zorunlu.')
-    if (name.trim().length < 2) return setError('Tatil adı zorunlu.')
+    if (!date) return setError(tx('Tarih zorunlu.'))
+    if (name.trim().length < 2) return setError(tx('Tatil adı zorunlu.'))
     setError(undefined)
     add.mutate()
   }
@@ -68,8 +69,8 @@ export function HolidaysModal({ open, onClose, year }: { open: boolean; onClose:
     <Modal
       open={open}
       onClose={onClose}
-      title={`${year} resmi tatilleri`}
-      note="Bu günler izin talebinde gün sayısından düşülür (hafta sonları zaten düşülür)."
+      title={tx('{0} resmi tatilleri', [year])}
+      note={tx('Bu günler izin talebinde gün sayısından düşülür (hafta sonları zaten düşülür).')}
       size="lg"
       footer={
         <>
@@ -80,10 +81,10 @@ export function HolidaysModal({ open, onClose, year }: { open: boolean; onClose:
             onClick={() => seed.mutate()}
           >
             {seed.isPending && <LoaderCircle className="size-4 animate-spin" />}
-            Türkiye resmi tatillerini ekle
+            {tx('Türkiye resmi tatillerini ekle')}
           </Button>
           <Button variant="outline" className="cursor-pointer" onClick={onClose}>
-            Kapat
+            {tx('Kapat')}
           </Button>
         </>
       }
@@ -91,7 +92,7 @@ export function HolidaysModal({ open, onClose, year }: { open: boolean; onClose:
       <form onSubmit={submit} noValidate className="grid gap-3 sm:grid-cols-[180px_1fr_auto] sm:items-end">
         <TextField
           id="holiday-date"
-          label="Tarih"
+          label={tx('Tarih')}
           type="date"
           required
           value={date}
@@ -100,16 +101,16 @@ export function HolidaysModal({ open, onClose, year }: { open: boolean; onClose:
         />
         <TextField
           id="holiday-name"
-          label="Tatil adı"
+          label={tx('Tatil adı')}
           required
-          placeholder="Örn. Cumhuriyet Bayramı"
+          placeholder={tx('Örn. Cumhuriyet Bayramı')}
           value={name}
           onChange={(e) => setName(e.target.value)}
           error={error?.includes('adı') ? error : undefined}
         />
         <Button type="submit" className="cursor-pointer" disabled={add.isPending}>
           {add.isPending && <LoaderCircle className="size-4 animate-spin" />}
-          Ekle
+          {tx('Ekle')}
         </Button>
       </form>
 
@@ -117,7 +118,7 @@ export function HolidaysModal({ open, onClose, year }: { open: boolean; onClose:
         {holidays.isPending ? (
           <RowsSkeleton rows={3} />
         ) : rows.length === 0 ? (
-          <EmptyState title="Bu yıl için tatil girilmemiş" detail="İzin günleri yalnızca hafta sonları düşülerek hesaplanır." />
+          <EmptyState title={tx('Bu yıl için tatil girilmemiş')} detail={tx('İzin günleri yalnızca hafta sonları düşülerek hesaplanır.')} />
         ) : (
           <ul className="divide-y divide-border rounded-xl border border-border">
             {rows.map((h) => (
@@ -130,7 +131,7 @@ export function HolidaysModal({ open, onClose, year }: { open: boolean; onClose:
                   variant="ghost"
                   size="sm"
                   className="cursor-pointer"
-                  aria-label={`${h.name} tatilini sil`}
+                  aria-label={tx('{0} tatilini sil', [h.name])}
                   disabled={remove.isPending}
                   onClick={() => remove.mutate(h.id)}
                 >

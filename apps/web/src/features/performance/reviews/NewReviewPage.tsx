@@ -14,6 +14,7 @@ import { CenteredSpinner, ErrorState } from '@/components/ui/States'
 import { errorText } from '../components/controls'
 import { useCurrentCycle } from '../hooks'
 import { StartReviewDialog } from './StartReviewDialog'
+import { tx } from '@/lib/i18n'
 
 export function NewReviewPage() {
   const [params] = useSearchParams()
@@ -51,12 +52,12 @@ export function NewReviewPage() {
     return (
       <div className="mx-auto w-full max-w-3xl">
         <Panel>
-          <ErrorState title="Değerlendirme başlatılamadı" message={error} />
+          <ErrorState title={tx('Değerlendirme başlatılamadı')} message={error} />
         </Panel>
       </div>
     )
   }
-  if (complete || isPending || me.isPending) return <CenteredSpinner label="Değerlendirme hazırlanıyor" />
+  if (complete || isPending || me.isPending) return <CenteredSpinner label={tx('Değerlendirme hazırlanıyor')} />
   if (!me.employeeId) return <Navigate to="/panel/performans/degerlendirme" replace />
 
   return (

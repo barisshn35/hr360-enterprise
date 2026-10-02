@@ -8,6 +8,7 @@ import { useAuth } from '@/auth/useAuth'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 import { formatRelativeToNow } from '@/lib/format'
+import { tx } from '@/lib/i18n'
 
 /**
  * Bildirim çanı.
@@ -44,7 +45,7 @@ export function NotificationBell() {
       <PopoverTrigger asChild>
         <button
           type="button"
-          aria-label={count > 0 ? `Bildirimler, ${count} okunmamış` : 'Bildirimler'}
+          aria-label={count > 0 ? tx('Bildirimler, {0} okunmamış', [count]) : tx('Bildirimler')}
           className="group relative flex size-9 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
         >
           <Bell
@@ -63,22 +64,22 @@ export function NotificationBell() {
 
       <PopoverContent align="end" className="w-[min(20rem,calc(100vw-1.5rem))] p-0">
         <div className="flex items-baseline justify-between gap-3 border-b border-border px-3.5 py-3">
-          <span className="text-[13px] font-semibold">Bildirimler</span>
+          <span className="text-[13px] font-semibold">{tx('Bildirimler')}</span>
           <span className="tabular text-[11px] text-muted-foreground">
-            {count > 0 ? `${count} okunmamış` : 'hepsi okundu'}
+            {count > 0 ? tx('{0} okunmamış', [count]) : tx('hepsi okundu')}
           </span>
         </div>
 
         <div className="max-h-80 overflow-y-auto">
           {list.isPending ? (
-            <p className="px-3.5 py-6 text-center text-[13px] text-muted-foreground">Yükleniyor</p>
+            <p className="px-3.5 py-6 text-center text-[13px] text-muted-foreground">{tx('Yükleniyor')}</p>
           ) : list.isError ? (
             <p className="px-3.5 py-6 text-center text-[13px] text-destructive">
-              Bildirimler alınamadı.
+              {tx('Bildirimler alınamadı.')}
             </p>
           ) : (list.data?.length ?? 0) === 0 ? (
             <p className="px-3.5 py-6 text-center text-[13px] text-muted-foreground">
-              Henüz bildirim yok.
+              {tx('Henüz bildirim yok.')}
             </p>
           ) : (
             <ul className="divide-y divide-border">
@@ -118,7 +119,7 @@ export function NotificationBell() {
                         )}
                         <span className="tabular mt-1 block text-[11px] text-muted-foreground/70">
                           {formatRelativeToNow(n.createdAt)}
-                          {isUnread ? ', okundu işaretlemek için tıklayın' : ''}
+                          {isUnread ? tx(', okundu işaretlemek için tıklayın') : ''}
                         </span>
                       </span>
                     </button>
@@ -134,7 +135,7 @@ export function NotificationBell() {
           onClick={() => setOpen(false)}
           className="flex min-h-11 items-center justify-center border-t border-border text-[13px] font-medium transition-colors hover:bg-accent"
         >
-          Tümünü gör
+          {tx('Tümünü gör')}
         </Link>
       </PopoverContent>
     </Popover>

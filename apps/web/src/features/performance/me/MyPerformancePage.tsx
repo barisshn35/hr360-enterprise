@@ -36,6 +36,7 @@ import { CHART, ChartLegend, TrendChart } from '../components/charts'
 import { Chip, Segmented, errorText } from '../components/controls'
 import { FeedbackCard } from '../feedback/FeedbackCard'
 import { usePeople } from '../hooks'
+import { tx } from '@/lib/i18n'
 
 export function MyPerformancePage() {
   const { user } = useAuth()
@@ -53,8 +54,8 @@ export function MyPerformancePage() {
         <Panel>
           <EmptyState
             icon={UserRoundX}
-            title="Hesabınıza bağlı çalışan kaydı bulunamadı"
-            detail="Performans bilgilerinizi görebilmeniz için oturum açtığınız e-posta adresinin bir çalışan kaydıyla eşleşmesi gerekiyor. İK yöneticinize başvurun."
+            title={tx('Hesabınıza bağlı çalışan kaydı bulunamadı')}
+            detail={tx('Performans bilgilerinizi görebilmeniz için oturum açtığınız e-posta adresinin bir çalışan kaydıyla eşleşmesi gerekiyor. İK yöneticinize başvurun.')}
           />
         </Panel>
       </div>
@@ -81,40 +82,40 @@ export function MyPerformancePage() {
         </div>
         <div className="relative grid gap-6 p-6 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
           <div>
-            <p className="text-[12px] font-semibold text-primary">Benim performansım</p>
-            <h1 className="mt-1 text-[26px] leading-tight font-semibold tracking-tight">Merhaba{firstName ? `, ${firstName}` : ''}</h1>
+            <p className="text-[12px] font-semibold text-primary">{tx('Benim performansım')}</p>
+            <h1 className="mt-1 text-[26px] leading-tight font-semibold tracking-tight">{tx('Merhaba{0}', [firstName ? `, ${firstName}` : ''])}</h1>
             <p className="mt-1.5 max-w-xl text-[13px] leading-relaxed text-muted-foreground">
-              Puanınızın zaman içindeki seyri, dönem sonuçlarınız ve size gelen geri bildirimler. Puanın nasıl hesaplandığını her zaman puan dökümünde görebilirsiniz.
+              {tx('Puanınızın zaman içindeki seyri, dönem sonuçlarınız ve size gelen geri bildirimler. Puanın nasıl hesaplandığını her zaman puan dökümünde görebilirsiniz.')}
             </p>
             <div className="mt-4 flex flex-wrap gap-2">
               <Button asChild size="sm">
                 <Link to="/panel/performans/puan">
                   <Gauge aria-hidden />
-                  Puan dökümüm
+                  {tx('Puan dökümüm')}
                 </Link>
               </Button>
               <Button asChild size="sm" variant="outline">
                 <Link to="/panel/performans/hedefler">
                   <Crosshair aria-hidden />
-                  Hedeflerim
+                  {tx('Hedeflerim')}
                 </Link>
               </Button>
               <Button asChild size="sm" variant="outline">
                 <Link to="/panel/performans/degerlendirme">
                   <ClipboardList aria-hidden />
-                  Değerlendirmelerim
+                  {tx('Değerlendirmelerim')}
                 </Link>
               </Button>
               <Button asChild size="sm" variant="ghost">
                 <Link to="/panel/performans/geri-bildirim">
                   <MessageSquarePlus aria-hidden />
-                  Geri bildirim yaz
+                  {tx('Geri bildirim yaz')}
                 </Link>
               </Button>
             </div>
           </div>
           <div className="rounded-2xl border border-border bg-background/70 p-4 backdrop-blur-sm md:min-w-60">
-            <p className="text-[11px] text-muted-foreground">Güncel puan · {a?.periodLabel ?? '…'}</p>
+            <p className="text-[11px] text-muted-foreground">{tx('Güncel puan · {0}', [a?.periodLabel ?? '…'])}</p>
             {me.isPending ? (
               <Skeleton className="mt-2 h-10 w-28" />
             ) : (
@@ -132,7 +133,7 @@ export function MyPerformancePage() {
                 {a.series.at(-1)?.isProvisional && (
                   <Chip tone="warning">
                     <Hourglass className="size-3" aria-hidden />
-                    geçici
+                    {tx('geçici')}
                   </Chip>
                 )}
               </div>
@@ -143,7 +144,7 @@ export function MyPerformancePage() {
 
       {me.isError && !isNoEmployeeRecord(me.error) && (
         <Panel className="mb-5">
-          <ErrorState title="Performans bilgileriniz alınamadı" message={errorText(me.error)} onRetry={() => void me.refetch()} />
+          <ErrorState title={tx('Performans bilgileriniz alınamadı')} message={errorText(me.error)} onRetry={() => void me.refetch()} />
         </Panel>
       )}
 
@@ -153,21 +154,21 @@ export function MyPerformancePage() {
           <Panel className="p-5">
             <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <h2 className="text-[15px] font-semibold">Gidişatım</h2>
-                <ChartLegend items={[{ label: 'Kesin', color: CHART.c1 }, { label: 'Geçici (az değerlendirme)', color: CHART.c1, hollow: true }]} />
+                <h2 className="text-[15px] font-semibold">{tx('Gidişatım')}</h2>
+                <ChartLegend items={[{ label: tx('Kesin'), color: CHART.c1 }, { label: tx('Geçici (az değerlendirme)'), color: CHART.c1, hollow: true }]} />
               </div>
-              <Segmented ariaLabel="Aralık" size="sm" value={period} onChange={setPeriod} options={PERIODS.map((p) => ({ value: p, label: periodLabels[p] }))} />
+              <Segmented ariaLabel={tx('Aralık')} size="sm" value={period} onChange={setPeriod} options={PERIODS.map((p) => ({ value: p, label: periodLabels[p] }))} />
             </div>
-            {me.isPending ? <Skeleton className="h-60 rounded-xl" /> : a && a.series.some((p) => p.score !== null) ? <TrendChart data={a.series} color={CHART.c1} label="Puanım" /> : <p className="py-16 text-center text-[13px] text-muted-foreground">Bu aralıkta puanınız yok.</p>}
+            {me.isPending ? <Skeleton className="h-60 rounded-xl" /> : a && a.series.some((p) => p.score !== null) ? <TrendChart data={a.series} color={CHART.c1} label={tx('Puanım')} /> : <p className="py-16 text-center text-[13px] text-muted-foreground">{tx('Bu aralıkta puanınız yok.')}</p>}
           </Panel>
 
           {/* dönem geçmişi */}
           <Panel className="p-5">
             <h2 className="mb-1 flex items-center gap-2 text-[15px] font-semibold">
               <CalendarCheck className="size-4 text-muted-foreground" aria-hidden />
-              Dönem geçmişim
+              {tx('Dönem geçmişim')}
             </h2>
-            <p className="mb-4 text-[12px] text-muted-foreground">Kapanan dönemlerin puanı kesindir; açık dönemin puanı yeni değerlendirmelerle değişebilir.</p>
+            <p className="mb-4 text-[12px] text-muted-foreground">{tx('Kapanan dönemlerin puanı kesindir; açık dönemin puanı yeni değerlendirmelerle değişebilir.')}</p>
             {cycles.isPending ? (
               <div className="grid gap-3 sm:grid-cols-2">
                 {[0, 1, 2, 3].map((i) => (
@@ -177,7 +178,7 @@ export function MyPerformancePage() {
             ) : cycles.isError ? (
               <p className="text-[13px] text-destructive">{errorText(cycles.error)}</p>
             ) : history.length === 0 ? (
-              <p className="py-6 text-center text-[13px] text-muted-foreground">Henüz dönem sonucunuz yok.</p>
+              <p className="py-6 text-center text-[13px] text-muted-foreground">{tx('Henüz dönem sonucunuz yok.')}</p>
             ) : (
               <ol className="relative grid gap-3 sm:grid-cols-2">
                 {[...history].reverse().map((c, i) => (
@@ -193,10 +194,10 @@ export function MyPerformancePage() {
                       {c.isFinal ? (
                         <Chip tone="success">
                           <Lock className="size-3" aria-hidden />
-                          Kesin
+                          {tx('Kesin')}
                         </Chip>
                       ) : (
-                        <Chip tone="primary">Açık dönem</Chip>
+                        <Chip tone="primary">{tx('Açık dönem')}</Chip>
                       )}
                     </div>
                     <p className="mt-2 text-[28px] leading-none font-semibold tracking-tight">{c.score === null ? '—' : <AnimatedNumber value={c.score} format={(v) => formatScore(v)} />}</p>
@@ -204,13 +205,13 @@ export function MyPerformancePage() {
                       {c.isProvisional ? (
                         <span className="inline-flex items-center gap-1 text-[11px] text-[hsl(var(--warning))]">
                           <Hourglass className="size-3" aria-hidden />
-                          geçici puan
+                          {tx('geçici puan')}
                         </span>
                       ) : (
                         <span />
                       )}
                       <Link to={`/panel/performans/puan?donem=${c.cycleId}`} className="inline-flex items-center gap-1 text-[12px] font-medium text-primary hover:underline">
-                        Döküm
+                        {tx('Döküm')}
                         <ArrowRight className="size-3" aria-hidden />
                       </Link>
                     </div>
@@ -226,14 +227,13 @@ export function MyPerformancePage() {
           <div className="mb-3 flex items-center justify-between gap-2">
             <h2 className="flex items-center gap-2 text-[15px] font-semibold">
               <Inbox className="size-4 text-muted-foreground" aria-hidden />
-              Bana gelen geri bildirimler
+              {tx('Bana gelen geri bildirimler')}
               {a && a.unreadCount > 0 && (
                 <motion.span initial={{ scale: 0 }} animate={{ scale: 1 }} className="tabular rounded-full bg-primary px-2 text-[11px] text-primary-foreground">
-                  {a.unreadCount} yeni
-                </motion.span>
+                  {tx('{0} yeni', [a.unreadCount])}</motion.span>
               )}
             </h2>
-            <Segmented ariaLabel="Süzgeç" size="sm" value={onlyUnread ? 'u' : 'a'} onChange={(v) => setOnlyUnread(v === 'u')} options={[{ value: 'a', label: 'Tümü' }, { value: 'u', label: 'Okunmamış' }]} />
+            <Segmented ariaLabel={tx('Süzgeç')} size="sm" value={onlyUnread ? 'u' : 'a'} onChange={(v) => setOnlyUnread(v === 'u')} options={[{ value: 'a', label: tx('Tümü') }, { value: 'u', label: tx('Okunmamış') }]} />
           </div>
           {me.isPending ? (
             <div className="flex flex-col gap-3">
@@ -242,7 +242,7 @@ export function MyPerformancePage() {
               ))}
             </div>
           ) : feedback.length === 0 ? (
-            <p className="py-10 text-center text-[13px] text-muted-foreground">{onlyUnread ? 'Okunmamış geri bildiriminiz yok.' : 'Henüz size geri bildirim yazılmadı.'}</p>
+            <p className="py-10 text-center text-[13px] text-muted-foreground">{onlyUnread ? tx('Okunmamış geri bildiriminiz yok.') : tx('Henüz size geri bildirim yazılmadı.')}</p>
           ) : (
             <div className="flex max-h-[70vh] flex-col gap-3 overflow-y-auto pr-1">
               <AnimatePresence initial={false}>
@@ -260,7 +260,7 @@ export function MyPerformancePage() {
               </AnimatePresence>
             </div>
           )}
-          <p className="mt-3 text-[11px] text-muted-foreground">Geri bildirimler anonim değildir; her kartta kimin yazdığı görünür.</p>
+          <p className="mt-3 text-[11px] text-muted-foreground">{tx('Geri bildirimler anonim değildir; her kartta kimin yazdığı görünür.')}</p>
         </Panel>
       </div>
     </div>

@@ -18,6 +18,7 @@ import { useHrCase, useMyEmployeeId } from '@/api/queries'
 import { caseCategoryLabels } from '@/api/types'
 import { formatDateTime } from '@/lib/format'
 import { useEmployeeName } from '@/lib/useEmployeeName'
+import { tx } from '@/lib/i18n'
 
 export function CaseDetailPage() {
   const { caseId } = useParams<{ caseId: string }>()
@@ -40,24 +41,24 @@ export function CaseDetailPage() {
     mutationFn: () => expenseApi.assignCase(caseId!, assignee),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['expense'] })
-      toast.ok('Vaka atandı')
+      toast.ok(tx('Vaka atandı'))
       setAssignOpen(false)
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : 'Vaka atanamadı.'),
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Vaka atanamadı.')),
   })
 
   const resolve = useMutation({
     mutationFn: () => expenseApi.resolveCase(caseId!, resolution.trim()),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['expense'] })
-      toast.ok('Vaka çözüldü olarak kapatıldı')
+      toast.ok(tx('Vaka çözüldü olarak kapatıldı'))
       setResolveOpen(false)
       setResolution('')
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : 'Vaka kapatılamadı.'),
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Vaka kapatılamadı.')),
   })
 
-  if (hrCase.isPending) return <CenteredSpinner label="Vaka yükleniyor" />
+  if (hrCase.isPending) return <CenteredSpinner label={tx('Vaka yükleniyor')} />
 
   if (hrCase.isError) {
     return (
@@ -73,7 +74,7 @@ export function CaseDetailPage() {
   if (!hrCase.data) {
     return (
       <Panel>
-        <EmptyState title="Vaka bulunamadı" detail="Bu vaka silinmiş olabilir." />
+        <EmptyState title={tx('Vaka bulunamadı')} detail={tx('Bu vaka silinmiş olabilir.')} />
       </Panel>
     )
   }
@@ -94,7 +95,7 @@ export function CaseDetailPage() {
       <Button variant="ghost" size="sm" className="-ml-2 cursor-pointer" asChild>
         <Link to="/panel/ik-vakalari">
           <ArrowLeft className="size-4" />
-          İK vakaları
+          {tx('İK vakaları')}
         </Link>
       </Button>
 
@@ -111,12 +112,12 @@ export function CaseDetailPage() {
                 className="cursor-pointer"
                 onClick={() => setAssignOpen(true)}
               >
-                Ata
+                {tx('Ata')}
               </Button>
             )}
             {!closed && canResolve && (
               <Button className="cursor-pointer" onClick={() => setResolveOpen(true)}>
-                Çözüldü olarak kapat
+                {tx('Çözüldü olarak kapat')}
               </Button>
             )}
           </>
@@ -125,7 +126,7 @@ export function CaseDetailPage() {
 
       {c.description && (
         <Panel>
-          <PanelHead title="Açıklama" />
+          <PanelHead title={tx('Açıklama')} />
           <PanelBody>
             <p className="text-[14px] leading-relaxed whitespace-pre-line text-muted-foreground">
               {c.description}
@@ -143,7 +144,7 @@ export function CaseDetailPage() {
           >
             <Panel className="border-[hsl(var(--success))]/40 bg-[hsl(var(--success))]/5">
               <PanelHead
-                title="Çözüm"
+                title={tx('Çözüm')}
                 note={c.resolvedAt ? formatDateTime(c.resolvedAt) : undefined}
               />
               <PanelBody>
@@ -155,19 +156,19 @@ export function CaseDetailPage() {
       </AnimatePresence>
 
       <Panel>
-        <PanelHead title="Vaka bilgisi" />
+        <PanelHead title={tx('Vaka bilgisi')} />
         <PanelBody>
           <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-4">
-            <DataField label="Açan çalışan">{nameOf(c.employeeId)}</DataField>
-            <DataField label="Açılış">{formatDateTime(c.createdAt)}</DataField>
-            <DataField label="Atanan">
+            <DataField label={tx('Açan çalışan')}>{nameOf(c.employeeId)}</DataField>
+            <DataField label={tx('Açılış')}>{formatDateTime(c.createdAt)}</DataField>
+            <DataField label={tx('Atanan')}>
               {c.assignedToEmployeeId ? (
                 nameOf(c.assignedToEmployeeId)
               ) : (
-                <span className="text-muted-foreground">Atanmadı</span>
+                <span className="text-muted-foreground">{tx('Atanmadı')}</span>
               )}
             </DataField>
-            <DataField label="Kapanış">
+            <DataField label={tx('Kapanış')}>
               {c.resolvedAt ? formatDateTime(c.resolvedAt) : '—'}
             </DataField>
           </dl>
@@ -177,7 +178,7 @@ export function CaseDetailPage() {
       <Modal
         open={assignOpen}
         onClose={() => setAssignOpen(false)}
-        title="Vakayı ata"
+        title={tx('Vakayı ata')}
         note={c.subject}
         footer={
           <>
@@ -187,22 +188,22 @@ export function CaseDetailPage() {
               onClick={() => setAssignOpen(false)}
               disabled={assign.isPending}
             >
-              Vazgeç
+              {tx('Vazgeç')}
             </Button>
             <Button
               className="cursor-pointer"
               disabled={assign.isPending}
-              onClick={() => (assignee ? assign.mutate() : setError('Çalışan seçilmeli.'))}
+              onClick={() => (assignee ? assign.mutate() : setError(tx('Çalışan seçilmeli.')))}
             >
               {assign.isPending && <LoaderCircle className="size-4 animate-spin" />}
-              Ata
+              {tx('Ata')}
             </Button>
           </>
         }
       >
         <EmployeePicker
           id="case-assignee"
-          label="Sorumlu"
+          label={tx('Sorumlu')}
           value={assignee}
           onChange={setAssignee}
           hint={error?.includes('Çalışan') ? error : undefined}
@@ -212,8 +213,8 @@ export function CaseDetailPage() {
       <Modal
         open={resolveOpen}
         onClose={() => setResolveOpen(false)}
-        title="Vakayı kapat"
-        note="Çözüm metni kayda geçer ve çalışana bildirilir."
+        title={tx('Vakayı kapat')}
+        note={tx('Çözüm metni kayda geçer ve çalışana bildirilir.')}
         footer={
           <>
             <Button
@@ -222,7 +223,7 @@ export function CaseDetailPage() {
               onClick={() => setResolveOpen(false)}
               disabled={resolve.isPending}
             >
-              Vazgeç
+              {tx('Vazgeç')}
             </Button>
             <Button
               className="cursor-pointer"
@@ -230,18 +231,18 @@ export function CaseDetailPage() {
               onClick={() =>
                 resolution.trim().length >= 5
                   ? resolve.mutate()
-                  : setError('Çözüm en az 5 karakter olmalı.')
+                  : setError(tx('Çözüm en az 5 karakter olmalı.'))
               }
             >
               {resolve.isPending && <LoaderCircle className="size-4 animate-spin" />}
-              Kapat
+              {tx('Kapat')}
             </Button>
           </>
         }
       >
         <TextAreaField
           id="case-resolution"
-          label="Çözüm"
+          label={tx('Çözüm')}
           rows={4}
           required
           value={resolution}

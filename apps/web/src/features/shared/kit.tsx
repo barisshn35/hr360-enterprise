@@ -12,9 +12,11 @@ import { ApiError } from '@/api/client'
 import { SelectField } from '@/components/ui/Field'
 import { useToast } from '@/components/ui/Toast'
 import { cn } from '@/lib/utils'
+import { tx, txServer, appLocale } from '@/lib/i18n'
 
-export function errMsg(e: unknown, fallback = 'İşlem tamamlanamadı.') {
-  if (e instanceof ApiError || e instanceof Error) return e.message || fallback
+export function errMsg(e: unknown, fallback = tx('İşlem tamamlanamadı.')) {
+  // Servis iletileri Türkçe gelir; İngilizce arayüzde sözlükte karşılığı varsa çevrilir.
+  if (e instanceof ApiError || e instanceof Error) return e.message ? txServer(e.message) : fallback
   return fallback
 }
 
@@ -39,7 +41,7 @@ export function useAction<TArgs, TResult>(
 
 /** Baş harfli yuvarlak avatar; ad sabit bir renk tonuna eşlenir. */
 export function Initials({ name, size = 36, className }: { name: string; size?: number; className?: string }) {
-  const initials = name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]!.toLocaleUpperCase('tr-TR')).join('')
+  const initials = name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]!.toLocaleUpperCase(appLocale)).join('')
   const hue = [...name].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 360, 7)
   return (
     <span
@@ -61,7 +63,7 @@ export function Initials({ name, size = 36, className }: { name: string; size?: 
 export function ChipInput({
   value,
   onChange,
-  placeholder = 'Yazıp Enter’a basın',
+  placeholder = tx('Yazıp Enter’a basın'),
   suggestions = [],
   id,
   label,
@@ -76,7 +78,7 @@ export function ChipInput({
   const [draft, setDraft] = useState('')
   const add = (raw: string) => {
     const v = raw.trim()
-    if (!v || value.some((x) => x.toLocaleLowerCase('tr-TR') === v.toLocaleLowerCase('tr-TR'))) return
+    if (!v || value.some((x) => x.toLocaleLowerCase(appLocale) === v.toLocaleLowerCase(appLocale))) return
     onChange([...value, v])
   }
   const remaining = suggestions.filter((s) => !value.includes(s)).slice(0, 8)
@@ -91,7 +93,7 @@ export function ChipInput({
         {value.map((v) => (
           <span key={v} className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-[12.5px] text-primary">
             {v}
-            <button type="button" aria-label={`${v} kaldır`} onClick={() => onChange(value.filter((x) => x !== v))} className="cursor-pointer opacity-70 hover:opacity-100">
+            <button type="button" aria-label={tx('{0} kaldır', [v])} onClick={() => onChange(value.filter((x) => x !== v))} className="cursor-pointer opacity-70 hover:opacity-100">
               <X className="size-3" />
             </button>
           </span>
@@ -134,7 +136,7 @@ export function ChipInput({
 export function PersonSelect({
   value,
   onChange,
-  label = 'Çalışan',
+  label = tx('Çalışan'),
   exclude = [],
   id,
   hint,
@@ -155,7 +157,7 @@ export function PersonSelect({
         .map((d) => ({ value: d.id, label: d.fullName })),
     [dir.data, exclude],
   )
-  return <SelectField id={id} label={label} value={value} onChange={onChange} options={options} hint={hint ?? (dir.isPending ? 'Yükleniyor' : undefined)} />
+  return <SelectField id={id} label={label} value={value} onChange={onChange} options={options} hint={hint ?? (dir.isPending ? tx('Yükleniyor') : undefined)} />
 }
 
 export { PlanGate } from './FeatureGate'

@@ -12,6 +12,7 @@ import { formatDate, formatNumber, fullName } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { NewAssignmentModal } from './NewAssignmentModal'
 import { AttritionRiskPanel } from './AttritionRiskCard'
+import { tx } from '@/lib/i18n'
 
 export function EmployeeDetailPage() {
   const { employeeId } = useParams<{ employeeId: string }>()
@@ -36,13 +37,13 @@ export function EmployeeDetailPage() {
     [employee.data],
   )
 
-  if (employee.isPending) return <CenteredSpinner label="Çalışan yükleniyor" />
+  if (employee.isPending) return <CenteredSpinner label={tx('Çalışan yükleniyor')} />
 
   if (employee.isError || !employee.data) {
     return (
       <Panel>
         <ErrorState
-          title="Çalışan bulunamadı"
+          title={tx('Çalışan bulunamadı')}
           message={employee.error instanceof Error ? employee.error.message : undefined}
           onRetry={() => void employee.refetch()}
         />
@@ -59,18 +60,18 @@ export function EmployeeDetailPage() {
       <Button variant="ghost" size="sm" className="-ml-2 cursor-pointer" asChild>
         <Link to="/panel/calisanlar">
           <ArrowLeft className="size-4" />
-          Çalışanlar
+          {tx('Çalışanlar')}
         </Link>
       </Button>
 
       <PageHeader
         title={fullName(data)}
-        description={`${formatDate(data.hireDate)} tarihinde işe başladı. ${formatNumber(activeCount)} aktif atama.`}
+        description={tx('{0} tarihinde işe başladı. {1} aktif atama.', [formatDate(data.hireDate), formatNumber(activeCount)])}
         actions={
           canManage && (
             <Button className="cursor-pointer" onClick={() => setAssignOpen(true)}>
               <Plus className="size-4" />
-              Yeni atama
+              {tx('Yeni atama')}
             </Button>
           )
         }
@@ -79,11 +80,11 @@ export function EmployeeDetailPage() {
       <div className="grid gap-4 lg:grid-cols-[1.45fr_1fr]">
         <div className="space-y-4">
           <Panel>
-            <PanelHead title="İletişim" action={<EmployeeStatusBadge status={data.status} />} />
+            <PanelHead title={tx('İletişim')} action={<EmployeeStatusBadge status={data.status} />} />
             <PanelBody>
               <dl className="divide-y divide-border">
                 <div className="flex items-baseline justify-between gap-4 pb-2.5">
-                  <dt className="text-[12px] text-muted-foreground">E-posta</dt>
+                  <dt className="text-[12px] text-muted-foreground">{tx('E-posta')}</dt>
                   <dd className="min-w-0 truncate text-right text-[13px]">
                     <a
                       href={`mailto:${data.email}`}
@@ -94,7 +95,7 @@ export function EmployeeDetailPage() {
                   </dd>
                 </div>
                 <div className="flex items-baseline justify-between gap-4 py-2.5">
-                  <dt className="text-[12px] text-muted-foreground">Telefon</dt>
+                  <dt className="text-[12px] text-muted-foreground">{tx('Telefon')}</dt>
                   <dd className="text-right text-[13px]">
                     {data.phone ? (
                       <a
@@ -104,12 +105,12 @@ export function EmployeeDetailPage() {
                         {data.phone}
                       </a>
                     ) : (
-                      <span className="text-muted-foreground">Girilmemiş</span>
+                      <span className="text-muted-foreground">{tx('Girilmemiş')}</span>
                     )}
                   </dd>
                 </div>
                 <div className="flex items-baseline justify-between gap-4 pt-2.5">
-                  <dt className="text-[12px] text-muted-foreground">İşe giriş</dt>
+                  <dt className="text-[12px] text-muted-foreground">{tx('İşe giriş')}</dt>
                   <dd className="tabular text-right text-[13px]">{formatDate(data.hireDate)}</dd>
                 </div>
               </dl>
@@ -118,22 +119,21 @@ export function EmployeeDetailPage() {
 
           <Panel>
             <PanelHead
-              title="Atama geçmişi"
-              note="En yeni atama en üstte"
+              title={tx('Atama geçmişi')}
+              note={tx('En yeni atama en üstte')}
               action={
                 <span className="tabular text-[12px] text-muted-foreground">
-                  {formatNumber(assignments.length)} kayıt
-                </span>
+                  {tx('{0} kayıt', [formatNumber(assignments.length)])}</span>
               }
             />
             {assignments.length === 0 ? (
               <EmptyState
-                title="Atama yok"
-                detail="Bu çalışan henüz bir departmana atanmadı."
+                title={tx('Atama yok')}
+                detail={tx('Bu çalışan henüz bir departmana atanmadı.')}
                 action={
                   canManage ? (
                     <Button size="sm" className="cursor-pointer" onClick={() => setAssignOpen(true)}>
-                      İlk atamayı yap
+                      {tx('İlk atamayı yap')}
                     </Button>
                   ) : undefined
                 }
@@ -159,7 +159,7 @@ export function EmployeeDetailPage() {
                         </div>
                         <div className={isLast ? 'min-w-0 pb-0' : 'min-w-0 pb-6'}>
                           <p className="text-[14px] font-medium">
-                            {departmentNames.get(a.departmentId) ?? 'Listede olmayan departman'}
+                            {departmentNames.get(a.departmentId) ?? tx('Listede olmayan departman')}
                           </p>
                           {a.positionTitle && (
                             <p className="mt-0.5 text-[13px] text-muted-foreground">
@@ -170,7 +170,7 @@ export function EmployeeDetailPage() {
                             {formatDate(a.effectiveFrom)}
                             {a.effectiveTo
                               ? ` – ${formatDate(a.effectiveTo)}`
-                              : ' tarihinden bu yana'}
+                              : tx(' tarihinden bu yana')}
                           </p>
                         </div>
                       </li>
@@ -187,7 +187,7 @@ export function EmployeeDetailPage() {
 
           <Panel>
             <PanelBody>
-              <p className="text-[11px] text-muted-foreground">Çalışan kimliği</p>
+              <p className="text-[11px] text-muted-foreground">{tx('Çalışan kimliği')}</p>
               <p className="mt-1 font-mono text-[11px] break-all text-muted-foreground">{data.id}</p>
             </PanelBody>
           </Panel>

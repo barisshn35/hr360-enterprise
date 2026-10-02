@@ -8,8 +8,9 @@
 import { motion, useReducedMotion } from 'motion/react'
 import { OrbitingCircles } from '@/components/fx/orbiting-circles'
 import { AmbientBackground } from '@/components/fx/ambient-background'
+import { tx } from '@/lib/i18n'
 
-export function AppShellSkeleton({ label = 'Yükleniyor' }: { label?: string }) {
+export function AppShellSkeleton({ label = tx('Yükleniyor') }: { label?: string }) {
   const reduced = useReducedMotion()
   return (
     <div aria-busy="true" className="relative flex min-h-dvh flex-col items-center justify-center bg-background">

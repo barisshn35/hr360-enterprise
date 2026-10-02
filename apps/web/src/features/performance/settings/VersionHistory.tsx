@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils'
 import { EASE } from '@/motion/primitives'
 import { Chip, errorText } from '../components/controls'
 import { FIELDS, FIELD_KEYS, diff, toInput } from './fields'
+import { tx } from '@/lib/i18n'
 
 export function VersionHistory({
   versions,
@@ -36,9 +37,9 @@ export function VersionHistory({
     <div>
       <h2 className="flex items-center gap-2 text-[14px] font-semibold">
         <History className="size-4 text-muted-foreground" aria-hidden />
-        Sürüm geçmişi
+        {tx('Sürüm geçmişi')}
       </h2>
-      <p className="mt-0.5 text-[12px] text-muted-foreground">Kapanmış dönemler, kapandıkları sürümle puanlanmış olarak kalır.</p>
+      <p className="mt-0.5 text-[12px] text-muted-foreground">{tx('Kapanmış dönemler, kapandıkları sürümle puanlanmış olarak kalır.')}</p>
 
       {isPending && (
         <div className="mt-4 flex flex-col gap-3">
@@ -47,8 +48,8 @@ export function VersionHistory({
           ))}
         </div>
       )}
-      {!isPending && Boolean(error) && <p className="mt-4 text-[12px] text-destructive">{errorText(error, 'Sürüm geçmişi alınamadı.')}</p>}
-      {!isPending && !error && list.length === 0 && <p className="mt-4 text-[12px] text-muted-foreground">Henüz kayıtlı sürüm yok.</p>}
+      {!isPending && Boolean(error) && <p className="mt-4 text-[12px] text-destructive">{errorText(error, tx('Sürüm geçmişi alınamadı.'))}</p>}
+      {!isPending && !error && list.length === 0 && <p className="mt-4 text-[12px] text-muted-foreground">{tx('Henüz kayıtlı sürüm yok.')}</p>}
 
       <ol className="relative mt-4">
         <span aria-hidden className="absolute top-2 bottom-2 left-[13px] w-px bg-border" />
@@ -76,8 +77,8 @@ export function VersionHistory({
                 {isCurrent && <span aria-hidden className="hr-ring absolute inset-0 rounded-full border-2 border-primary" />}
               </span>
               <div className="flex flex-wrap items-center gap-1.5">
-                <span className="text-[13px] font-semibold">Sürüm {v.version}</span>
-                {isCurrent && <Chip tone="success">Yürürlükte</Chip>}
+                <span className="text-[13px] font-semibold">{tx('Sürüm {0}', [v.version])}</span>
+                {isCurrent && <Chip tone="success">{tx('Yürürlükte')}</Chip>}
               </div>
               <p className="text-[11px] text-muted-foreground">
                 {formatDateTime(v.createdAt ?? null)}
@@ -97,10 +98,10 @@ export function VersionHistory({
                     ))}
                   </ul>
                 ) : (
-                  <p className="mt-1 text-[11px] text-muted-foreground">Değer değişikliği yok.</p>
+                  <p className="mt-1 text-[11px] text-muted-foreground">{tx('Değer değişikliği yok.')}</p>
                 )
               ) : (
-                <p className="mt-1 text-[11px] text-muted-foreground">İlk sürüm.</p>
+                <p className="mt-1 text-[11px] text-muted-foreground">{tx('İlk sürüm.')}</p>
               )}
 
               <div className="mt-1.5 flex flex-wrap items-center gap-1">
@@ -110,13 +111,13 @@ export function VersionHistory({
                   className="inline-flex items-center gap-0.5 text-[11px] font-medium text-primary hover:underline"
                   aria-expanded={expanded}
                 >
-                  {expanded ? 'Daha az' : changes.length > 3 ? `+${changes.length - 3} değişiklik · tüm değerler` : 'Tüm değerler'}
+                  {expanded ? tx('Daha az') : changes.length > 3 ? tx('+{0} değişiklik · tüm değerler', [changes.length - 3]) : tx('Tüm değerler')}
                   <ChevronDown className={cn('size-3 transition-transform', expanded && 'rotate-180')} aria-hidden />
                 </button>
                 {!isCurrent && (
                   <Button size="xs" variant="ghost" onClick={() => onLoad(v)} className="h-5 px-1.5 text-[11px]">
                     <Upload aria-hidden />
-                    Forma yükle
+                    {tx('Forma yükle')}
                   </Button>
                 )}
               </div>

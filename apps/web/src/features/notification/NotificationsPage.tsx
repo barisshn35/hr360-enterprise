@@ -29,6 +29,7 @@ import {
 } from '@/api/types'
 import { formatDateTime, formatRelativeToNow } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { tx } from '@/lib/i18n'
 
 type TabKey = 'gelen' | 'sablonlar'
 
@@ -53,20 +54,20 @@ function NewTemplateModal({ open, onClose }: { open: boolean; onClose: () => voi
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['notification'] })
-      toast.ok('Şablon eklendi')
+      toast.ok(tx('Şablon eklendi'))
       onClose()
       setCode('')
       setSubject('')
       setBody('')
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : 'Şablon eklenemedi.'),
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Şablon eklenemedi.')),
   })
 
   function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (!code.trim()) return setError('Şablon kodu zorunlu.')
-    if (!subject.trim()) return setError('Konu zorunlu.')
-    if (body.trim().length < 5) return setError('Gövde en az 5 karakter olmalı.')
+    if (!code.trim()) return setError(tx('Şablon kodu zorunlu.'))
+    if (!subject.trim()) return setError(tx('Konu zorunlu.'))
+    if (body.trim().length < 5) return setError(tx('Gövde en az 5 karakter olmalı.'))
     setError(undefined)
     mutation.mutate()
   }
@@ -75,8 +76,8 @@ function NewTemplateModal({ open, onClose }: { open: boolean; onClose: () => voi
     <Modal
       open={open}
       onClose={onClose}
-      title="Yeni bildirim şablonu"
-      note="Servisler bildirimi bu kodla çağırır."
+      title={tx('Yeni bildirim şablonu')}
+      note={tx('Servisler bildirimi bu kodla çağırır.')}
       size="lg"
       footer={
         <>
@@ -86,7 +87,7 @@ function NewTemplateModal({ open, onClose }: { open: boolean; onClose: () => voi
             onClick={onClose}
             disabled={mutation.isPending}
           >
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button
             type="submit"
@@ -95,7 +96,7 @@ function NewTemplateModal({ open, onClose }: { open: boolean; onClose: () => voi
             disabled={mutation.isPending}
           >
             {mutation.isPending && <LoaderCircle className="size-4 animate-spin" />}
-            Şablonu ekle
+            {tx('Şablonu ekle')}
           </Button>
         </>
       }
@@ -104,9 +105,9 @@ function NewTemplateModal({ open, onClose }: { open: boolean; onClose: () => voi
         <div className="grid gap-4 sm:grid-cols-2">
           <TextField
             id="tpl-code"
-            label="Kod"
+            label={tx('Kod')}
             required
-            hint="Örn. leave.approved"
+            hint={tx('Örn. leave.approved')}
             className="font-mono"
             value={code}
             onChange={(e) => setCode(e.target.value)}
@@ -114,7 +115,7 @@ function NewTemplateModal({ open, onClose }: { open: boolean; onClose: () => voi
           />
           <SelectField
             id="tpl-channel"
-            label="Kanal"
+            label={tx('Kanal')}
             value={channel}
             onChange={(v) => setChannel(v as NotificationChannel)}
             options={(Object.keys(notificationChannelLabels) as NotificationChannel[]).map((c) => ({
@@ -125,7 +126,7 @@ function NewTemplateModal({ open, onClose }: { open: boolean; onClose: () => voi
         </div>
         <TextField
           id="tpl-subject"
-          label="Konu"
+          label={tx('Konu')}
           required
           value={subject}
           onChange={(e) => setSubject(e.target.value)}
@@ -133,10 +134,10 @@ function NewTemplateModal({ open, onClose }: { open: boolean; onClose: () => voi
         />
         <TextAreaField
           id="tpl-body"
-          label="Gövde"
+          label={tx('Gövde')}
           rows={5}
           required
-          hint="Değişkenler için {{ad}} biçimi kullanılabilir."
+          hint={tx('Değişkenler için {{ad}} biçimi kullanılabilir.')}
           value={body}
           onChange={(e) => setBody(e.target.value)}
           error={error?.includes('Gövde') ? error : undefined}
@@ -160,10 +161,10 @@ function DeleteTemplateConfirm({
     mutationFn: () => notificationApi.deleteTemplate(template!.id),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['notification'] })
-      toast.ok('Şablon silindi')
+      toast.ok(tx('Şablon silindi'))
       onClose()
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : 'Şablon silinemedi.'),
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Şablon silinemedi.')),
   })
 
   if (!template) return null
@@ -172,7 +173,7 @@ function DeleteTemplateConfirm({
     <Modal
       open
       onClose={onClose}
-      title="Şablonu sil"
+      title={tx('Şablonu sil')}
       note={template.code}
       footer={
         <>
@@ -182,7 +183,7 @@ function DeleteTemplateConfirm({
             onClick={onClose}
             disabled={mutation.isPending}
           >
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button
             variant="destructive"
@@ -191,13 +192,13 @@ function DeleteTemplateConfirm({
             onClick={() => mutation.mutate()}
           >
             {mutation.isPending && <LoaderCircle className="size-4 animate-spin" />}
-            Sil
+            {tx('Sil')}
           </Button>
         </>
       }
     >
       <p className="text-[14px] leading-relaxed text-muted-foreground">
-        Bu şablonu kullanan servisler bildirim üretemez hale gelir. İşlem geri alınamaz.
+        {tx('Bu şablonu kullanan servisler bildirim üretemez hale gelir. İşlem geri alınamaz.')}
       </p>
     </Modal>
   )
@@ -249,15 +250,15 @@ export function NotificationsPage() {
   })
 
   const tabs: Array<TabDef<TabKey>> = [
-    { key: 'gelen', label: 'Bildirimlerim', count: unread.data?.unreadCount },
-    ...(canManage ? [{ key: 'sablonlar' as TabKey, label: 'Şablonlar' }] : []),
+    { key: 'gelen', label: tx('Bildirimlerim'), count: unread.data?.unreadCount },
+    ...(canManage ? [{ key: 'sablonlar' as TabKey, label: tx('Şablonlar') }] : []),
   ]
 
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Bildirimler"
-        description="Size gönderilen bildirimler ve İK yönetimi için bildirim şablonları."
+        title={tx('Bildirimler')}
+        description={tx('Size gönderilen bildirimler ve İK yönetimi için bildirim şablonları.')}
         actions={
           tab === 'gelen'
             ? unreadItems.length > 0 && (
@@ -268,26 +269,26 @@ export function NotificationsPage() {
                   onClick={() => markAllRead.mutate()}
                 >
                   {markAllRead.isPending && <LoaderCircle className="size-4 animate-spin" />}
-                  Tümünü okundu işaretle
+                  {tx('Tümünü okundu işaretle')}
                 </Button>
               )
             : canManage && (
                 <Button className="cursor-pointer" onClick={() => setTemplateModal(true)}>
                   <Plus className="size-4" />
-                  Yeni şablon
+                  {tx('Yeni şablon')}
                 </Button>
               )
         }
       />
 
-      <Tabs tabs={tabs} value={tab} onChange={setTab} label="Bildirim görünümü" />
+      <Tabs tabs={tabs} value={tab} onChange={setTab} label={tx('Bildirim görünümü')} />
 
       {tab === 'gelen' && notLinked && (
         <Panel>
           <EmptyState
             icon={Lock}
-            title="Hesabınıza bağlı çalışan kaydı bulunamadı"
-            detail="Bildirim alabilmeniz için hesabınızın bir çalışan kaydıyla eşleşmesi gerekiyor. İK yöneticinize başvurun."
+            title={tx('Hesabınıza bağlı çalışan kaydı bulunamadı')}
+            detail={tx('Bildirim alabilmeniz için hesabınızın bir çalışan kaydıyla eşleşmesi gerekiyor. İK yöneticinize başvurun.')}
           />
         </Panel>
       )}
@@ -297,11 +298,11 @@ export function NotificationsPage() {
           <div className="w-56">
             <SelectField
               id="notif-status"
-              label="Durum"
+              label={tx('Durum')}
               value={status}
               onChange={setStatus}
               options={[
-                { value: ALL, label: 'Tüm durumlar' },
+                { value: ALL, label: tx('Tüm durumlar') },
                 ...(Object.keys(notificationStatusLabels) as NotificationStatus[]).map((s) => ({
                   value: s,
                   label: notificationStatusLabels[s],
@@ -321,7 +322,7 @@ export function NotificationsPage() {
                 onRetry={() => void notifications.refetch()}
               />
             ) : (notifications.data?.length ?? 0) === 0 ? (
-              <EmptyState title="Bildirim yok" detail="Bu filtreye uyan bildirim bulunmuyor." />
+              <EmptyState title={tx('Bildirim yok')} detail={tx('Bu filtreye uyan bildirim bulunmuyor.')} />
             ) : (
               <ul className="divide-y divide-border">
                 {notifications.data!.map((n, i) => {
@@ -371,7 +372,7 @@ export function NotificationsPage() {
                             disabled={markRead.isPending && markRead.variables === n.id}
                             onClick={() => markRead.mutate(n.id)}
                           >
-                            Okundu
+                            {tx('Okundu')}
                           </Button>
                         )}
                       </span>
@@ -395,11 +396,11 @@ export function NotificationsPage() {
             />
           ) : (templates.data?.length ?? 0) === 0 ? (
             <EmptyState
-              title="Şablon yok"
-              detail="Servislerin kullanacağı ilk bildirim şablonunu ekleyin."
+              title={tx('Şablon yok')}
+              detail={tx('Servislerin kullanacağı ilk bildirim şablonunu ekleyin.')}
               action={
                 <Button size="sm" className="cursor-pointer" onClick={() => setTemplateModal(true)}>
-                  Yeni şablon
+                  {tx('Yeni şablon')}
                 </Button>
               }
             />
@@ -424,7 +425,7 @@ export function NotificationsPage() {
                         className="cursor-pointer text-destructive"
                         onClick={() => setToDelete(t)}
                       >
-                        Sil
+                        {tx('Sil')}
                       </Button>
                     </span>
                   </div>

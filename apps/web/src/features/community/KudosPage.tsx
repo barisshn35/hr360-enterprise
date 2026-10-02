@@ -14,6 +14,7 @@ import { formatRelativeToNow } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { Initials, PersonSelect, PlanGate, useAction } from '@/features/shared/kit'
 import { CelebrationList } from './CelebrationsPage'
+import { tx } from '@/lib/i18n'
 
 const BADGE_STYLE: Record<string, { emoji: string; ring: string }> = {
   teamwork: { emoji: '🤝', ring: 'from-sky-500/30 to-sky-500/0' },
@@ -31,7 +32,7 @@ function SendKudosModal({ open, onClose }: { open: boolean; onClose: () => void 
   const [badge, setBadge] = useState('thanks')
   const [message, setMessage] = useState('')
   const send = useAction(() => engagementApi.sendKudos({ toEmployeeId: to, badge, message: message.trim() }), {
-    success: 'Takdiriniz gönderildi 🎉',
+    success: tx('Takdiriniz gönderildi 🎉'),
     invalidate: [['kudos']],
     onDone: () => {
       onClose()
@@ -43,21 +44,21 @@ function SendKudosModal({ open, onClose }: { open: boolean; onClose: () => void 
     <Modal
       open={open}
       onClose={onClose}
-      title="Takdir gönder"
-      note="Takdirler herkese açık duvarda görünür; alıcıya bildirim gider."
+      title={tx('Takdir gönder')}
+      note={tx('Takdirler herkese açık duvarda görünür; alıcıya bildirim gider.')}
       footer={
         <>
-          <Button variant="outline" onClick={onClose}>Vazgeç</Button>
+          <Button variant="outline" onClick={onClose}>{tx('Vazgeç')}</Button>
           <Button disabled={!to || message.trim().length < 3 || send.isPending} onClick={() => send.mutate(undefined)}>
-            <Send className="size-4" /> Gönder
+            <Send className="size-4" />{' '}{tx('Gönder')}
           </Button>
         </>
       }
     >
       <div className="space-y-4">
-        <PersonSelect id="kudos-to" label="Kime?" value={to} onChange={setTo} exclude={me ? [me] : []} />
+        <PersonSelect id="kudos-to" label={tx('Kime?')} value={to} onChange={setTo} exclude={me ? [me] : []} />
         <div>
-          <p className="mb-2 text-[13px] font-medium">Rozet</p>
+          <p className="mb-2 text-[13px] font-medium">{tx('Rozet')}</p>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             {(badges.data ?? []).map((b) => (
               <button
@@ -75,7 +76,7 @@ function SendKudosModal({ open, onClose }: { open: boolean; onClose: () => void 
             ))}
           </div>
         </div>
-        <TextAreaField id="kudos-msg" label="Mesajınız" rows={3} maxLength={500} value={message} onChange={(e) => setMessage(e.target.value)} hint={`${message.length}/500`} />
+        <TextAreaField id="kudos-msg" label={tx('Mesajınız')} rows={3} maxLength={500} value={message} onChange={(e) => setMessage(e.target.value)} hint={`${message.length}/500`} />
       </div>
     </Modal>
   )
@@ -83,7 +84,7 @@ function SendKudosModal({ open, onClose }: { open: boolean; onClose: () => void 
 
 function KudosCard({ k, index }: { k: Kudos; index: number }) {
   const like = useAction(() => engagementApi.likeKudos(k.id), { invalidate: [['kudos', 'wall']] })
-  const del = useAction(() => engagementApi.deleteKudos(k.id), { success: 'Silindi', invalidate: [['kudos']] })
+  const del = useAction(() => engagementApi.deleteKudos(k.id), { success: tx('Silindi'), invalidate: [['kudos']] })
   const style = BADGE_STYLE[k.badge] ?? BADGE_STYLE.thanks
   return (
     <motion.article
@@ -112,7 +113,7 @@ function KudosCard({ k, index }: { k: Kudos; index: number }) {
         <span className="rounded-full bg-muted px-2.5 py-0.5 text-[11.5px] text-muted-foreground">{k.badgeLabel}</span>
         <div className="flex items-center gap-1">
           {k.mine && (
-            <button type="button" aria-label="Sil" onClick={() => del.mutate(undefined)} className="cursor-pointer rounded-lg p-1.5 text-muted-foreground opacity-0 transition group-hover:opacity-100 hover:text-destructive">
+            <button type="button" aria-label={tx('Sil')} onClick={() => del.mutate(undefined)} className="cursor-pointer rounded-lg p-1.5 text-muted-foreground opacity-0 transition group-hover:opacity-100 hover:text-destructive">
               <Trash2 className="size-3.5" />
             </button>
           )}
@@ -137,11 +138,11 @@ export function KudosPage() {
   return (
     <PlanGate feature="kudos">
       <PageHeader
-        title="Takdir duvarı"
-        description="Bir çalışma arkadaşınızın emeğini görünür kılın. Küçük bir teşekkür, büyük bir motivasyondur."
+        title={tx('Takdir duvarı')}
+        description={tx('Bir çalışma arkadaşınızın emeğini görünür kılın. Küçük bir teşekkür, büyük bir motivasyondur.')}
         actions={
           <Button onClick={() => setOpen(true)}>
-            <Award className="size-4" /> Takdir gönder
+            <Award className="size-4" />{' '}{tx('Takdir gönder')}
           </Button>
         }
       />
@@ -152,7 +153,7 @@ export function KudosPage() {
           ) : wall.isError ? (
             <ErrorState message={(wall.error as Error).message} onRetry={() => wall.refetch()} />
           ) : wall.data.length === 0 ? (
-            <EmptyState icon={PartyPopper} title="Duvar henüz boş" detail="İlk takdiri siz gönderin; bir teşekkür bütün ekibin gününü değiştirebilir." action={<Button onClick={() => setOpen(true)}>Takdir gönder</Button>} />
+            <EmptyState icon={PartyPopper} title={tx('Duvar henüz boş')} detail={tx('İlk takdiri siz gönderin; bir teşekkür bütün ekibin gününü değiştirebilir.')} action={<Button onClick={() => setOpen(true)}>{tx('Takdir gönder')}</Button>} />
           ) : (
             <div className="columns-1 gap-4 md:columns-2">
               <AnimatePresence>
@@ -165,9 +166,9 @@ export function KudosPage() {
         </div>
         <aside className="space-y-5">
           <Panel>
-            <PanelHead title={<span className="flex items-center gap-2"><Trophy className="size-4 text-amber-400" /> Son 30 gün</span>} note={board.data ? `${board.data.total} takdir · ${board.data.givers} kişi verdi` : undefined} />
+            <PanelHead title={<span className="flex items-center gap-2"><Trophy className="size-4 text-amber-400" />{' '}{tx('Son 30 gün')}</span>} note={board.data ? tx('{0} takdir · {1} kişi verdi', [board.data.total, board.data.givers]) : undefined} />
             <PanelBody className="space-y-2.5">
-              {(board.data?.top ?? []).length === 0 && <p className="text-[13px] text-muted-foreground">Henüz veri yok.</p>}
+              {(board.data?.top ?? []).length === 0 && <p className="text-[13px] text-muted-foreground">{tx('Henüz veri yok.')}</p>}
               {board.data?.top.map((t, i) => (
                 <motion.div key={t.employeeId} initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.06 }} className="flex items-center gap-2.5">
                   <span className={cn('tabular w-5 text-center text-[13px] font-semibold', i === 0 ? 'text-amber-400' : i === 1 ? 'text-zinc-300' : i === 2 ? 'text-orange-400' : 'text-muted-foreground')}>{i + 1}</span>
@@ -180,7 +181,7 @@ export function KudosPage() {
             </PanelBody>
           </Panel>
           <Panel>
-            <PanelHead title={<span className="flex items-center gap-2"><PartyPopper className="size-4 text-primary" /> Yaklaşan kutlamalar</span>} />
+            <PanelHead title={<span className="flex items-center gap-2"><PartyPopper className="size-4 text-primary" />{' '}{tx('Yaklaşan kutlamalar')}</span>} />
             <PanelBody className="p-3">
               <CelebrationList days={14} compact />
             </PanelBody>

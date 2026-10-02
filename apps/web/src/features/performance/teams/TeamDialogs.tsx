@@ -24,6 +24,7 @@ import { Switch, errorText } from '../components/controls'
 import { PersonAvatar, PersonPicker } from '../components/people'
 import type { DeptNode, PickerPerson } from '../hooks'
 import { localISODate } from '@/lib/dates'
+import { tx } from '@/lib/i18n'
 
 const today = () => localISODate()
 
@@ -73,12 +74,12 @@ export function TeamFormDialog({
   const multiCompany = new Set(departments.map((d) => d.companyName)).size > 1
   const pending = create.isPending || update.isPending
 
-  const nameError = !name.trim() ? 'Ekibe bir ad verin.' : undefined
+  const nameError = !name.trim() ? tx('Ekibe bir ad verin.') : undefined
   const submit = () => {
     setTouched(true)
     if (nameError || !departmentId) return
     const done = (t: Team) => {
-      toast.ok(team ? `«${t.name}» güncellendi.` : `«${t.name}» ekibi oluşturuldu.`)
+      toast.ok(team ? tx('«{0}» güncellendi.', [t.name]) : tx('«{0}» ekibi oluşturuldu.', [t.name]))
       onSaved?.(t)
       onClose()
     }
@@ -91,44 +92,44 @@ export function TeamFormDialog({
     <Modal
       open
       onClose={onClose}
-      title={team ? 'Ekibi düzenle' : 'Yeni ekip'}
-      note={team ? undefined : 'Ekip bir departmana bağlıdır. Lider ve üyeleri oluşturduktan sonra eklersiniz.'}
+      title={team ? tx('Ekibi düzenle') : tx('Yeni ekip')}
+      note={team ? undefined : tx('Ekip bir departmana bağlıdır. Lider ve üyeleri oluşturduktan sonra eklersiniz.')}
       footer={
         <>
           <Button variant="outline" onClick={onClose} disabled={pending}>
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button onClick={submit} disabled={pending}>
-            {pending ? 'Kaydediliyor…' : team ? 'Kaydet' : 'Ekibi oluştur'}
+            {pending ? tx('Kaydediliyor…') : team ? tx('Kaydet') : tx('Ekibi oluştur')}
           </Button>
         </>
       }
     >
       <ErrorLine message={error} />
       <div className="flex flex-col gap-4">
-        <TextField label="Ekip adı" value={name} onChange={(e) => { setName(e.target.value); setError(null) }} error={touched ? nameError : undefined} placeholder="ör. Platform Ekibi" autoFocus required />
+        <TextField label={tx('Ekip adı')} value={name} onChange={(e) => { setName(e.target.value); setError(null) }} error={touched ? nameError : undefined} placeholder={tx('ör. Platform Ekibi')} autoFocus required />
         {team ? (
           <div>
-            <p className="text-[13px] font-medium">Departman</p>
+            <p className="text-[13px] font-medium">{tx('Departman')}</p>
             <p className="mt-1.5 rounded-md border border-border bg-muted/40 px-3 py-2 text-[13px]">{departments.find((d) => d.id === departmentId)?.path ?? '—'}</p>
-            <p className="mt-1.5 text-[12px] text-muted-foreground">Ekibin departmanı oluşturulduktan sonra değiştirilemez.</p>
+            <p className="mt-1.5 text-[12px] text-muted-foreground">{tx('Ekibin departmanı oluşturulduktan sonra değiştirilemez.')}</p>
           </div>
         ) : (
           <SelectField
-            label="Departman"
+            label={tx('Departman')}
             value={departmentId}
             onChange={setDepartmentId}
             options={departments.map((d) => ({ value: d.id, label: `${multiCompany ? `${d.companyName} · ` : ''}${d.path}` }))}
-            hint="Hiyerarşi: Şirket → Departman (→ alt departman) → Ekip → Üyeler. Departman sonradan değiştirilemez."
+            hint={tx('Hiyerarşi: Şirket → Departman (→ alt departman) → Ekip → Üyeler. Departman sonradan değiştirilemez.')}
           />
         )}
-        <TextAreaField label="Açıklama" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Ekip neden var, neyden sorumlu?" />
+        <TextAreaField label={tx('Açıklama')} value={description} onChange={(e) => setDescription(e.target.value)} placeholder={tx('Ekip neden var, neyden sorumlu?')} />
         {team && (
           <Switch
             checked={isActive}
             onChange={setIsActive}
-            label="Ekip etkin"
-            hint={isActive ? 'Etkin ekipler diyagramda ve seçimlerde görünür.' : 'Pasif ekip diyagramda gizlenir, yeni üye alınamaz. Üyelik geçmişi ve analizler korunur.'}
+            label={tx('Ekip etkin')}
+            hint={isActive ? tx('Etkin ekipler diyagramda ve seçimlerde görünür.') : tx('Pasif ekip diyagramda gizlenir, yeni üye alınamaz. Üyelik geçmişi ve analizler korunur.')}
           />
         )}
       </div>
@@ -166,7 +167,7 @@ export function LeadDialog({
       { id: team.id, leadEmployeeId: lead },
       {
         onSuccess: () => {
-          toast.ok(lead ? `${name(lead)} takım lideri oldu${activeIds.has(lead) ? '' : ' ve ekibe eklendi'}.` : 'Ekip artık lidersiz; kişi üye olarak kaldı.')
+          toast.ok(lead ? tx('{0} takım lideri oldu{1}.', [name(lead), activeIds.has(lead) ? '' : tx(' ve ekibe eklendi')]) : tx('Ekip artık lidersiz; kişi üye olarak kaldı.'))
           onClose()
         },
         onError: (e) => setError(errorText(e)),
@@ -177,21 +178,21 @@ export function LeadDialog({
     <Modal
       open
       onClose={onClose}
-      title={team.leadEmployeeId ? 'Takım liderini değiştir' : 'Takım lideri ata'}
-      note="Lider opsiyoneldir. Atanan kişi ekipte değilse otomatik olarak üye olarak eklenir."
+      title={team.leadEmployeeId ? tx('Takım liderini değiştir') : tx('Takım lideri ata')}
+      note={tx('Lider opsiyoneldir. Atanan kişi ekipte değilse otomatik olarak üye olarak eklenir.')}
       footer={
         <>
           {team.leadEmployeeId && (
             <Button variant="ghost" className="sm:mr-auto" onClick={() => run(null)} disabled={setLead.isPending}>
-              Lideri kaldır
+              {tx('Lideri kaldır')}
             </Button>
           )}
           <Button variant="outline" onClick={onClose} disabled={setLead.isPending}>
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button onClick={() => picked && run(picked)} disabled={!picked || picked === team.leadEmployeeId || setLead.isPending}>
             <Crown aria-hidden />
-            {setLead.isPending ? 'Kaydediliyor…' : 'Lider yap'}
+            {setLead.isPending ? tx('Kaydediliyor…') : tx('Lider yap')}
           </Button>
         </>
       }
@@ -204,7 +205,7 @@ export function LeadDialog({
           setPicked(id)
           setError(null)
         }}
-        note={(id) => (id === team.leadEmployeeId ? 'şu anki lider' : activeIds.has(id) ? 'üye' : null)}
+        note={(id) => (id === team.leadEmployeeId ? tx('şu anki lider') : activeIds.has(id) ? tx('üye') : null)}
         detailOf={detailOf}
       />
       <AnimatePresence>
@@ -216,12 +217,11 @@ export function LeadDialog({
             className="mt-3 flex items-start gap-2 overflow-hidden rounded-lg bg-primary/5 px-3 py-2 text-[12px] text-foreground"
           >
             <Info className="mt-0.5 size-3.5 shrink-0 text-primary" aria-hidden />
-            {name(picked)} bu ekipte değil; lider atanınca bugünün tarihiyle ekibe üye olarak da eklenecek.
-          </motion.p>
+            {tx('{0} bu ekipte değil; lider atanınca bugünün tarihiyle ekibe üye olarak da eklenecek.', [name(picked)])}</motion.p>
         )}
       </AnimatePresence>
       {team.leadEmployeeId && (
-        <p className="mt-3 text-[12px] text-muted-foreground">Lideri kaldırırsanız kişi ekipte üye olarak kalır; ekip lidersiz devam eder.</p>
+        <p className="mt-3 text-[12px] text-muted-foreground">{tx('Lideri kaldırırsanız kişi ekipte üye olarak kalır; ekip lidersiz devam eder.')}</p>
       )}
     </Modal>
   )
@@ -261,7 +261,7 @@ export function AddMemberDialog({
       { id: team.id, input: { employeeId: picked, roleInTeam: role.trim() || undefined, joinedOn } },
       {
         onSuccess: () => {
-          toast.ok(`${nameOf(picked)} «${team.name}» ekibine eklendi.`)
+          toast.ok(tx('{0} «{1}» ekibine eklendi.', [nameOf(picked), team.name]))
           onClose()
         },
         onError: (e) => setError(errorText(e)),
@@ -274,16 +274,16 @@ export function AddMemberDialog({
       open
       onClose={onClose}
       size="lg"
-      title={`«${team.name}» ekibine üye ekle`}
-      note="Bir çalışan birden fazla ekipte olabilir."
+      title={tx('«{0}» ekibine üye ekle', [team.name])}
+      note={tx('Bir çalışan birden fazla ekipte olabilir.')}
       footer={
         <>
           <Button variant="outline" onClick={onClose} disabled={add.isPending}>
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button onClick={submit} disabled={!picked || add.isPending}>
             <UserPlus aria-hidden />
-            {add.isPending ? 'Ekleniyor…' : 'Üye ekle'}
+            {add.isPending ? tx('Ekleniyor…') : tx('Üye ekle')}
           </Button>
         </>
       }
@@ -302,8 +302,8 @@ export function AddMemberDialog({
           detailOf={detailOf}
         />
         <div className="flex flex-col gap-4">
-          <TextField label="Ekipteki rolü" value={role} onChange={(e) => setRole(e.target.value)} placeholder="ör. Backend" hint="Opsiyonel." />
-          <TextField label="Katılım tarihi" type="date" value={joinedOn} onChange={(e) => setJoinedOn(e.target.value)} />
+          <TextField label={tx('Ekipteki rolü')} value={role} onChange={(e) => setRole(e.target.value)} placeholder={tx('ör. Backend')} hint={tx('Opsiyonel.')} />
+          <TextField label={tx('Katılım tarihi')} type="date" value={joinedOn} onChange={(e) => setJoinedOn(e.target.value)} />
         </div>
       </div>
     </Modal>
@@ -335,7 +335,7 @@ export function RemoveMemberDialog({
       { id: team.id, memberId: member.id, leftOn },
       {
         onSuccess: () => {
-          toast.ok(`${name} ekipten ayrıldı (${formatDate(leftOn)}). Kayıt "Eski üyeler" altında duruyor.`)
+          toast.ok(tx('{0} ekipten ayrıldı ({1}). Kayıt "Eski üyeler" altında duruyor.', [name, formatDate(leftOn)]))
           onClose()
         },
         onError: (e) => setError(errorText(e)),
@@ -346,15 +346,15 @@ export function RemoveMemberDialog({
     <Modal
       open
       onClose={onClose}
-      title={`${name} ekipten çıkarılsın mı?`}
+      title={tx('{0} ekipten çıkarılsın mı?', [name])}
       footer={
         <>
           <Button variant="outline" onClick={onClose} disabled={remove.isPending}>
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button onClick={submit} disabled={remove.isPending || invalidDate}>
             <UserMinus aria-hidden />
-            {remove.isPending ? 'Kaydediliyor…' : 'Ayrılma tarihini yaz'}
+            {remove.isPending ? tx('Kaydediliyor…') : tx('Ayrılma tarihini yaz')}
           </Button>
         </>
       }
@@ -365,28 +365,27 @@ export function RemoveMemberDialog({
         <div>
           <p className="text-[14px] font-semibold">{name}</p>
           <p className="text-[12px] text-muted-foreground">
-            {team.name} · {formatDate(member.joinedOn)} tarihinden beri{member.roleInTeam ? ` · ${member.roleInTeam}` : ''}
+            {tx('{0} · {1} tarihinden beri{2}', [team.name, formatDate(member.joinedOn), member.roleInTeam ? ` · ${member.roleInTeam}` : ''])}
           </p>
         </div>
       </div>
       <p className="mb-4 flex items-start gap-2 text-[13px] leading-relaxed text-muted-foreground">
         <History className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />
-        Üyelik kaydı silinmez; yalnızca ayrılma tarihi yazılır. "Eski üyeleri göster" ile her zaman görülebilir, geçmiş değerlendirmeler ve ekip
-        analizleri korunur.
+        {tx('Üyelik kaydı silinmez; yalnızca ayrılma tarihi yazılır. "Eski üyeleri göster" ile her zaman görülebilir, geçmiş değerlendirmeler ve ekip analizleri korunur.')}
       </p>
       {isLead && (
         <p className="mb-4 flex items-start gap-2 rounded-lg border border-[hsl(var(--warning))]/30 bg-[hsl(var(--warning))]/8 px-3 py-2 text-[12px]">
           <Crown className="mt-0.5 size-3.5 shrink-0 text-[hsl(var(--warning))]" aria-hidden />
-          Bu kişi takım lideri. Çıkarıldığında ekip lidersiz kalır.
+          {tx('Bu kişi takım lideri. Çıkarıldığında ekip lidersiz kalır.')}
         </p>
       )}
       <TextField
-        label="Ayrılma tarihi"
+        label={tx('Ayrılma tarihi')}
         type="date"
         value={leftOn}
         min={member.joinedOn}
         onChange={(e) => setLeftOn(e.target.value)}
-        error={invalidDate ? 'Ayrılma tarihi katılma tarihinden önce olamaz.' : undefined}
+        error={invalidDate ? tx('Ayrılma tarihi katılma tarihinden önce olamaz.') : undefined}
       />
     </Modal>
   )

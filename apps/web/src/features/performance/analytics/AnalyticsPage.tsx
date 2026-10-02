@@ -19,6 +19,7 @@ import { PerfPageHeader } from '../components/PerfPageHeader'
 import { useCurrentCycle } from '../hooks'
 import { ContinuousTab } from './ContinuousTab'
 import { CycleTab } from './CycleTab'
+import { tx } from '@/lib/i18n'
 
 type Tab = 'izleme' | 'donem'
 
@@ -60,17 +61,17 @@ export function AnalyticsPage() {
   return (
     <div className="mx-auto w-full max-w-7xl">
       <PerfPageHeader
-        eyebrow="Performans"
-        title="Analiz"
-        description="Sürekli izleme zaman içindeki gidişatı, dönem sonuçları resmi dönem puanlarını gösterir. Geçici noktalar kesik çizgi ve içi boş daireyle çizilir."
+        eyebrow={tx('Performans')}
+        title={tx('Analiz')}
+        description={tx('Sürekli izleme zaman içindeki gidişatı, dönem sonuçları resmi dönem puanlarını gösterir. Geçici noktalar kesik çizgi ve içi boş daireyle çizilir.')}
       >
         <Segmented
-          ariaLabel="Analiz türü"
+          ariaLabel={tx('Analiz türü')}
           value={tab}
           onChange={(v) => set({ sekme: v === 'donem' ? 'donem' : null })}
           options={[
-            { value: 'izleme', label: <span className="inline-flex items-center gap-1.5"><Activity className="size-3.5" aria-hidden />Sürekli izleme</span> },
-            { value: 'donem', label: <span className="inline-flex items-center gap-1.5"><CalendarCheck className="size-3.5" aria-hidden />Dönem sonuçları</span> },
+            { value: 'izleme', label: <span className="inline-flex items-center gap-1.5"><Activity className="size-3.5" aria-hidden />{tx('Sürekli izleme')}</span> },
+            { value: 'donem', label: <span className="inline-flex items-center gap-1.5"><CalendarCheck className="size-3.5" aria-hidden />{tx('Dönem sonuçları')}</span> },
           ]}
         />
       </PerfPageHeader>

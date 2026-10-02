@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import type { ChartView } from './metric-chart'
+import { tx } from '@/lib/i18n'
 
 export type PeriodOption = {
   label: string
@@ -58,8 +59,8 @@ export function PeriodSelect({
 }
 
 const VIEWS: Array<{ value: ChartView; label: string; icon: React.ElementType }> = [
-  { value: 'curve', label: 'Eğri', icon: Activity },
-  { value: 'bars', label: 'Sütun', icon: BarChart3 },
+  { value: 'curve', label: tx('Eğri'), icon: Activity },
+  { value: 'bars', label: tx('Sütun'), icon: BarChart3 },
 ]
 
 export function ViewToggle({
@@ -72,7 +73,7 @@ export function ViewToggle({
   return (
     <div
       role="group"
-      aria-label="Grafik türü"
+      aria-label={tx('Grafik türü')}
       className="pointer-events-auto flex items-center gap-0.5 rounded-md border border-border p-0.5"
     >
       {VIEWS.map((view) => {

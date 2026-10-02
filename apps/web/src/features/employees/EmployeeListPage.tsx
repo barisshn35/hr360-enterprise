@@ -17,6 +17,7 @@ import {
 import { formatDate, fullName, initialsOf } from '@/lib/format'
 import { NewEmployeeModal } from './NewEmployeeModal'
 import { ImportEmployeesModal } from './ImportEmployeesModal'
+import { tx } from '@/lib/i18n'
 
 type StatusFilter = 'all' | `${EmployeeStatusValue}`
 
@@ -62,18 +63,18 @@ export function EmployeeListPage() {
 
   const departmentOf = (e: Employee) => {
     const current = currentAssignment(e)
-    if (!current) return 'Atanmamış'
-    return departmentNames.get(current.departmentId) ?? 'Listede olmayan departman'
+    if (!current) return tx('Atanmamış')
+    return departmentNames.get(current.departmentId) ?? tx('Listede olmayan departman')
   }
 
   const filters: TableFilter[] = [
     {
       id: 'status',
-      label: 'Durum',
+      label: tx('Durum'),
       value: status,
       onChange: (v) => setStatus(v as StatusFilter),
       options: [
-        { value: 'all', label: 'Tüm durumlar' },
+        { value: 'all', label: tx('Tüm durumlar') },
         { value: String(EmployeeStatus.Active), label: employeeStatusLabels[0] },
         { value: String(EmployeeStatus.OnLeave), label: employeeStatusLabels[1] },
         { value: String(EmployeeStatus.Terminated), label: employeeStatusLabels[2] },
@@ -84,7 +85,7 @@ export function EmployeeListPage() {
   const columns: Array<Column<Employee>> = [
     {
       id: 'name',
-      header: 'Çalışan',
+      header: tx('Çalışan'),
       searchText: (e) => `${fullName(e)} ${e.email ?? ''}`,
       sortValue: (e) => fullName(e),
       exportText: (e) => fullName(e),
@@ -104,7 +105,7 @@ export function EmployeeListPage() {
     },
     {
       id: 'department',
-      header: 'Departman',
+      header: tx('Departman'),
       hideBelow: 'md',
       searchText: (e) => departmentOf(e),
       sortValue: (e) => departmentOf(e),
@@ -123,7 +124,7 @@ export function EmployeeListPage() {
     },
     {
       id: 'position',
-      header: 'Pozisyon',
+      header: tx('Pozisyon'),
       hideBelow: 'lg',
       searchText: (e) => currentAssignment(e)?.positionTitle ?? '',
       sortValue: (e) => currentAssignment(e)?.positionTitle ?? '',
@@ -136,7 +137,7 @@ export function EmployeeListPage() {
     },
     {
       id: 'hireDate',
-      header: 'İşe giriş',
+      header: tx('İşe giriş'),
       align: 'right',
       hideBelow: 'sm',
       sortValue: (e) => new Date(e.hireDate).getTime(),
@@ -145,7 +146,7 @@ export function EmployeeListPage() {
     },
     {
       id: 'status',
-      header: 'Durum',
+      header: tx('Durum'),
       align: 'right',
       sortValue: (e) => employeeStatusLabels[e.status] ?? '',
       exportText: (e) => employeeStatusLabels[e.status] ?? 'Bilinmiyor',
@@ -156,8 +157,8 @@ export function EmployeeListPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Çalışanlar"
-        description="Kayıtlar, departman atamaları ve çalışma durumu."
+        title={tx('Çalışanlar')}
+        description={tx('Kayıtlar, departman atamaları ve çalışma durumu.')}
         actions={
           canCreate && (
             <div className="flex gap-2">
@@ -167,11 +168,11 @@ export function EmployeeListPage() {
                 onClick={() => setImportModalOpen(true)}
               >
                 <FileSpreadsheet className="size-4" />
-                Excel'den içe aktar
+                {tx('Excel\'den içe aktar')}
               </Button>
               <Button className="cursor-pointer" onClick={() => setModalOpen(true)}>
                 <Plus className="size-4" />
-                Yeni çalışan
+                {tx('Yeni çalışan')}
               </Button>
             </div>
           )
@@ -187,20 +188,20 @@ export function EmployeeListPage() {
         error={employees.error}
         onRetry={() => void employees.refetch()}
         onRowClick={(e) => navigate(`/panel/calisanlar/${e.id}`)}
-        searchPlaceholder="Ad, soyad, e-posta veya departman"
+        searchPlaceholder={tx('Ad, soyad, e-posta veya departman')}
         exportFileName="calisanlar"
         pageSize={12}
         initialSort={{ columnId: 'name', dir: 'asc' }}
-        emptyTitle={employees.data?.length === 0 ? 'Çalışan kaydı yok' : 'Filtreye uyan kayıt yok'}
+        emptyTitle={employees.data?.length === 0 ? tx('Çalışan kaydı yok') : tx('Filtreye uyan kayıt yok')}
         emptyDetail={
           employees.data?.length === 0
-            ? 'İlk çalışanı ekleyin; atamasını kayıttan sonra yapabilirsiniz.'
-            : 'Durum filtresini değiştirin ya da aramayı temizleyin.'
+            ? tx('İlk çalışanı ekleyin; atamasını kayıttan sonra yapabilirsiniz.')
+            : tx('Durum filtresini değiştirin ya da aramayı temizleyin.')
         }
         emptyAction={
           canCreate && employees.data?.length === 0 ? (
             <Button size="sm" className="cursor-pointer" onClick={() => setModalOpen(true)}>
-              Yeni çalışan
+              {tx('Yeni çalışan')}
             </Button>
           ) : undefined
         }

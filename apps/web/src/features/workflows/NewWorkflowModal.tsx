@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/select'
 import { useToast } from '@/components/ui/Toast'
 import { fullName } from '@/lib/format'
+import { tx } from '@/lib/i18n'
 
 interface Errors {
   requester?: string
@@ -103,21 +104,21 @@ export function NewWorkflowModal({
       }),
     onSuccess: (workflow) => {
       void queryClient.invalidateQueries({ queryKey: ['workflows'] })
-      toast.ok('Onay talebi oluşturuldu.')
+      toast.ok(tx('Onay talebi oluşturuldu.'))
       onClose()
       navigate(`/panel/onaylar/${workflow.id}`)
     },
     onError: (e: unknown) => {
-      toast.stop(e instanceof Error ? e.message : 'Talep oluşturulamadı.')
+      toast.stop(e instanceof Error ? e.message : tx('Talep oluşturulamadı.'))
     },
   })
 
   function validate(): Errors {
     const next: Errors = {}
-    if (!requester) next.requester = 'Talep eden çalışan seçilmeli.'
-    if (approvers.length === 0) next.approvers = 'En az bir onaycı eklenmeli.'
+    if (!requester) next.requester = tx('Talep eden çalışan seçilmeli.')
+    if (approvers.length === 0) next.approvers = tx('En az bir onaycı eklenmeli.')
     if (subject.trim().length > 0 && subject.trim().length < 3)
-      next.subject = 'Konu en az 3 karakter olmalı.'
+      next.subject = tx('Konu en az 3 karakter olmalı.')
     return next
   }
 
@@ -141,8 +142,8 @@ export function NewWorkflowModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="Yeni onay talebi"
-      note="Onaycıları eklediğiniz sırayla zincir oluşturulur."
+      title={tx('Yeni onay talebi')}
+      note={tx('Onaycıları eklediğiniz sırayla zincir oluşturulur.')}
       size="lg"
       footer={
         <>
@@ -152,7 +153,7 @@ export function NewWorkflowModal({
             onClick={onClose}
             disabled={mutation.isPending}
           >
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button
             type="submit"
@@ -161,7 +162,7 @@ export function NewWorkflowModal({
             disabled={mutation.isPending}
           >
             {mutation.isPending && <LoaderCircle className="size-4 animate-spin" />}
-            Talebi oluştur
+            {tx('Talebi oluştur')}
           </Button>
         </>
       }
@@ -172,7 +173,7 @@ export function NewWorkflowModal({
         <div className="grid gap-4 sm:grid-cols-2">
           <SelectField
             id="workflow-type"
-            label="Talep türü"
+            label={tx('Talep türü')}
             required
             value={type}
             onChange={(v) => setType(v as WorkflowType)}
@@ -184,12 +185,12 @@ export function NewWorkflowModal({
 
           <TextField
             id="workflow-sla"
-            label="SLA (saat)"
+            label={tx('SLA (saat)')}
             type="number"
             min={1}
             max={720}
             value={slaHours}
-            hint="Karar için hedef süre"
+            hint={tx('Karar için hedef süre')}
             className="tabular"
             onChange={(e) => setSlaHours(e.target.value)}
           />
@@ -198,7 +199,7 @@ export function NewWorkflowModal({
         {isHr ? (
           <SelectField
             id="workflow-requester"
-            label="Talep eden"
+            label={tx('Talep eden')}
             required
             value={requester}
             onChange={(v) => {
@@ -207,23 +208,23 @@ export function NewWorkflowModal({
               if (submitted) setErrors(validate())
             }}
             options={people.map((e) => ({ value: e.id, label: e.email ? `${fullName(e)} — ${e.email}` : fullName(e) }))}
-            placeholder="Çalışan seçin"
+            placeholder={tx('Çalışan seçin')}
             error={errors.requester}
           />
         ) : (
           <p className="text-[13px] text-muted-foreground">
             {me.notLinked
-              ? 'Hesabınıza bağlı çalışan kaydı bulunamadı; talep açamazsınız.'
-              : 'Talep sizin adınıza oluşturulacak.'}
+              ? tx('Hesabınıza bağlı çalışan kaydı bulunamadı; talep açamazsınız.')
+              : tx('Talep sizin adınıza oluşturulacak.')}
           </p>
         )}
 
         <TextField
           id="workflow-subject"
-          label="Konu"
+          label={tx('Konu')}
           value={subject}
           maxLength={200}
-          hint="İsteğe bağlı — boş bırakılırsa talep türü kullanılır."
+          hint={tx('İsteğe bağlı — boş bırakılırsa talep türü kullanılır.')}
           onChange={(e) => setSubject(e.target.value)}
           onBlur={() => submitted && setErrors(validate())}
           error={errors.subject}
@@ -232,8 +233,8 @@ export function NewWorkflowModal({
         {/* Onay zinciri: sıra anlamlı olduğu için ekleme sırası korunur */}
         <div className="flex flex-col gap-2">
           <span className="text-[13px] font-medium">
-            Onay zinciri
-            <span className="ml-1 font-normal text-muted-foreground">zorunlu</span>
+            {tx('Onay zinciri')}
+            <span className="ml-1 font-normal text-muted-foreground">{tx('zorunlu')}</span>
           </span>
 
           {approvers.length > 0 && (
@@ -253,7 +254,7 @@ export function NewWorkflowModal({
                     <button
                       type="button"
                       onClick={() => setApprovers((prev) => prev.filter((a) => a !== id))}
-                      aria-label={`${nameOf.get(id) ?? 'Onaycı'} adımını kaldır`}
+                      aria-label={tx('{0} adımını kaldır', [nameOf.get(id) ?? tx('Onaycı')])}
                       className="flex size-7 shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
                     >
                       <X aria-hidden="true" className="size-3.5" />
@@ -278,15 +279,15 @@ export function NewWorkflowModal({
               <SelectTrigger
                 id="workflow-approver-picker"
                 className="min-w-0 flex-1"
-                aria-label="Onaycı ekle"
+                aria-label={tx('Onaycı ekle')}
                 aria-invalid={errors.approvers ? true : undefined}
                 aria-describedby={errors.approvers ? 'workflow-approver-error' : undefined}
               >
                 <SelectValue
                   placeholder={
                     availableApprovers.length === 0
-                      ? 'Eklenebilecek başka çalışan yok'
-                      : 'Onaycı ekle…'
+                      ? tx('Eklenebilecek başka çalışan yok')
+                      : tx('Onaycı ekle…')
                   }
                 />
               </SelectTrigger>
@@ -303,8 +304,7 @@ export function NewWorkflowModal({
               className="tabular flex h-9 items-center gap-1 rounded-md border border-border px-3 text-[12px] font-medium text-muted-foreground"
             >
               <Plus className="size-3.5" />
-              {approvers.length} adım
-            </span>
+              {tx('{0} adım', [approvers.length])}</span>
           </div>
 
           {errors.approvers && (
@@ -313,17 +313,17 @@ export function NewWorkflowModal({
             </p>
           )}
           <p className="text-[12px] leading-relaxed text-muted-foreground">
-            Adımlar bu sırayla işler; önceki adım karara bağlanmadan sonraki adım açılmaz.
+            {tx('Adımlar bu sırayla işler; önceki adım karara bağlanmadan sonraki adım açılmaz.')}
           </p>
         </div>
 
         <TextAreaField
           id="workflow-payload"
-          label="Ek veri"
+          label={tx('Ek veri')}
           rows={3}
           value={payload}
           maxLength={4000}
-          hint="İsteğe bağlı — serbest metin veya JSON."
+          hint={tx('İsteğe bağlı — serbest metin veya JSON.')}
           onChange={(e) => setPayload(e.target.value)}
         />
       </form>

@@ -10,6 +10,7 @@ import type { Assignment, Department, Employee } from '@/api/types'
 import { useAuth } from '@/auth/useAuth'
 import { fullName } from '@/lib/format'
 import { localISODate } from '@/lib/dates'
+import { tx, appLocale } from '@/lib/i18n'
 
 /* --------------------------------- Departmanlar --------------------------------- */
 
@@ -74,8 +75,8 @@ export function useDepartments() {
       list,
       trees,
       companies: companies.data ?? [],
-      nameOf: (id: string | null | undefined) => (id ? (byId.get(id)?.name ?? 'Bilinmeyen departman') : 'Tüm departmanlar'),
-      pathOf: (id: string | null | undefined) => (id ? (byId.get(id)?.path ?? 'Bilinmeyen departman') : 'Tüm departmanlar'),
+      nameOf: (id: string | null | undefined) => (id ? (byId.get(id)?.name ?? tx('Bilinmeyen departman')) : tx('Tüm departmanlar')),
+      pathOf: (id: string | null | undefined) => (id ? (byId.get(id)?.path ?? tx('Bilinmeyen departman')) : tx('Tüm departmanlar')),
       isPending: companies.isPending,
       error: companies.error,
     }
@@ -122,7 +123,7 @@ export function usePeople() {
     const nameOf = (id: string | null | undefined, fallback?: string | null) => {
       if (!id) return '—'
       const n = names.get(id) ?? (byId.has(id) ? fullName(byId.get(id)!) : null)
-      return n ?? fallback ?? 'Bilinmeyen çalışan'
+      return n ?? fallback ?? tx('Bilinmeyen çalışan')
     }
     const isFormer = (id: string) => byId.get(id)?.status === 2
     const source = directory.data?.length ? directory.data.map((d) => d.id) : (employees.data ?? []).map((e) => e.id)
@@ -162,6 +163,6 @@ export function initialsOf(name: string): string {
     .split(/\s+/)
     .filter(Boolean)
     .slice(0, 2)
-    .map((p) => p.charAt(0).toLocaleUpperCase('tr-TR'))
+    .map((p) => p.charAt(0).toLocaleUpperCase(appLocale))
     .join('')
 }

@@ -9,6 +9,7 @@ import { AmbientBackground } from '@/components/fx/ambient-background'
 import { TopNav } from './TopNav'
 import { AppDock } from './AppDock'
 import { CommandPalette } from './CommandPalette'
+import { tx } from '@/lib/i18n'
 
 /**
  * Panelin dış kabuğu ("Zümrüt Yörünge" düzeni).
@@ -68,9 +69,8 @@ export function AppShell() {
             >
               <TriangleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-[hsl(var(--warning))]" />
               <p>
-                <strong className="font-semibold">Oturumunuzda kiracı bilgisi yok.</strong> Kimlik doğrulama{' '}
-                <code className="font-mono text-[12px]">organization</code> kapsamı olmadan tamamlandığı için listeler boş
-                görünecek. Oturumu kapatıp yeniden girin; sorun sürerse sistem yöneticinize bildirin.
+                <strong className="font-semibold">{tx('Oturumunuzda kiracı bilgisi yok.')}</strong>{' '}{tx('Kimlik doğrulama', [])}{' '}
+                <code className="font-mono text-[12px]">{tx('organization')}</code>{' '}{tx('kapsamı olmadan tamamlandığı için listeler boş görünecek. Oturumu kapatıp yeniden girin; sorun sürerse sistem yöneticinize bildirin.')}
               </p>
             </div>
           </div>

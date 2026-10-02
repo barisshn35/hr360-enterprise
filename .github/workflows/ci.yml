@@ -35,6 +35,8 @@ jobs:
         run: npm run lint
       - name: Birim testleri (Vitest)
         run: npm test
+      - name: Çeviri sözlüğü (eksik ya da yer tutucusu uyumsuz anahtar)
+        run: npm run i18n:check
       - name: Uretim derlemesi
         env:
           VITE_KEYCLOAK_URL: /auth

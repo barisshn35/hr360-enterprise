@@ -23,6 +23,7 @@ import {
 } from '@/api/types'
 import { formatDate, formatNumber, fullName } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { tx } from '@/lib/i18n'
 
 const CATEGORY_ORDER: TaskCategory[] = ['IT', 'HR', 'Facility', 'Training', 'Legal', 'Other']
 
@@ -57,17 +58,17 @@ function NewTaskModal({
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['onboarding'] })
-      toast.ok('Görev eklendi')
+      toast.ok(tx('Görev eklendi'))
       onClose()
       setTitle('')
       setDueDate('')
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : 'Görev eklenemedi.'),
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Görev eklenemedi.')),
   })
 
   function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (title.trim().length < 3) return setError('Görev başlığı en az 3 karakter olmalı.')
+    if (title.trim().length < 3) return setError(tx('Görev başlığı en az 3 karakter olmalı.'))
     setError(undefined)
     mutation.mutate()
   }
@@ -76,8 +77,8 @@ function NewTaskModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="Yeni görev"
-      note="Görev kategorisine göre gruplanır."
+      title={tx('Yeni görev')}
+      note={tx('Görev kategorisine göre gruplanır.')}
       footer={
         <>
           <Button
@@ -86,7 +87,7 @@ function NewTaskModal({
             onClick={onClose}
             disabled={mutation.isPending}
           >
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button
             type="submit"
@@ -95,7 +96,7 @@ function NewTaskModal({
             disabled={mutation.isPending}
           >
             {mutation.isPending && <LoaderCircle className="size-4 animate-spin" />}
-            Görevi ekle
+            {tx('Görevi ekle')}
           </Button>
         </>
       }
@@ -103,7 +104,7 @@ function NewTaskModal({
       <form id="new-task" onSubmit={submit} noValidate className="space-y-4">
         <TextField
           id="task-title"
-          label="Görev"
+          label={tx('Görev')}
           required
           value={title}
           maxLength={200}
@@ -112,7 +113,7 @@ function NewTaskModal({
         />
         <SelectField
           id="task-category"
-          label="Kategori"
+          label={tx('Kategori')}
           value={category}
           onChange={(v) => setCategory(v as TaskCategory)}
           options={CATEGORY_ORDER.map((c) => ({ value: c, label: taskCategoryLabels[c] }))}
@@ -120,20 +121,20 @@ function NewTaskModal({
         <div className="grid gap-4 sm:grid-cols-2">
           <TextField
             id="task-due"
-            label="Son tarih"
+            label={tx('Son tarih')}
             type="date"
-            hint="İsteğe bağlı"
+            hint={tx('İsteğe bağlı')}
             value={dueDate}
             onChange={(e) => setDueDate(e.target.value)}
           />
           <SelectField
             id="task-assignee"
-            label="Sorumlu"
-            hint="İsteğe bağlı"
+            label={tx('Sorumlu')}
+            hint={tx('İsteğe bağlı')}
             value={assignee}
             onChange={setAssignee}
             options={[
-              { value: UNASSIGNED, label: 'Atanmadı' },
+              { value: UNASSIGNED, label: tx('Atanmadı') },
               ...(employees.data ?? []).map((e) => ({ value: e.id, label: fullName(e) })),
             ]}
           />
@@ -173,7 +174,7 @@ function TaskRow({
       onboardingApi.setTaskStatus(planId, task.id, status),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['onboarding'] }),
     onError: (e: unknown) =>
-      toast.stop(e instanceof Error ? e.message : 'Görev durumu güncellenemedi.'),
+      toast.stop(e instanceof Error ? e.message : tx('Görev durumu güncellenemedi.')),
   })
 
   const done = task.status === 'Done'
@@ -184,7 +185,7 @@ function TaskRow({
         type="button"
         disabled={!canEdit || mutation.isPending}
         onClick={() => mutation.mutate(nextStatus[task.status])}
-        aria-label={`${task.title} durumunu ilerlet`}
+        aria-label={tx('{0} durumunu ilerlet', [task.title])}
         className={cn(
           'mt-px flex size-5 shrink-0 items-center justify-center rounded-[6px] border transition-colors',
           done
@@ -214,7 +215,7 @@ function TaskRow({
           {task.title}
         </p>
         <p className="tabular mt-0.5 text-[12px] text-muted-foreground">
-          {task.dueDate ? `Son tarih ${formatDate(task.dueDate)}` : 'Son tarih yok'}
+          {task.dueDate ? tx('Son tarih {0}', [formatDate(task.dueDate)]) : tx('Son tarih yok')}
         </p>
       </div>
 
@@ -250,13 +251,13 @@ export function OnboardingPlanPage() {
     }))
   }, [tasks])
 
-  if (plan.isPending) return <CenteredSpinner label="Plan yükleniyor" />
+  if (plan.isPending) return <CenteredSpinner label={tx('Plan yükleniyor')} />
 
   if (plan.isError || !plan.data) {
     return (
       <Panel>
         <ErrorState
-          title="Plan bulunamadı"
+          title={tx('Plan bulunamadı')}
           message={plan.error instanceof Error ? plan.error.message : undefined}
           onRetry={() => void plan.refetch()}
         />
@@ -280,20 +281,20 @@ export function OnboardingPlanPage() {
       <Button variant="ghost" size="sm" className="-ml-2 cursor-pointer" asChild>
         <Link to="/panel/onboarding">
           <ArrowLeft className="size-4" />
-          Onboarding
+          {tx('Onboarding')}
         </Link>
       </Button>
 
       <PageHeader
         title={who}
-        description={`${formatDate(data.startDate)} tarihinde başlıyor. ${formatNumber(done)}/${formatNumber(tasks.length)} görev tamam.`}
+        description={tx('{0} tarihinde başlıyor. {1}/{2} görev tamam.', [formatDate(data.startDate), formatNumber(done), formatNumber(tasks.length)])}
         actions={
           <>
             <PlanStatusBadge status={data.status} />
             {canEdit && (
               <Button className="cursor-pointer" onClick={() => setTaskModal(true)}>
                 <Plus className="size-4" />
-                Görev ekle
+                {tx('Görev ekle')}
               </Button>
             )}
           </>
@@ -308,14 +309,14 @@ export function OnboardingPlanPage() {
               value={done}
               max={tasks.length || 1}
               tone={done === tasks.length && tasks.length > 0 ? 'success' : 'info'}
-              label="Plan ilerlemesi"
+              label={tx('Plan ilerlemesi')}
             />
             <span className="tabular shrink-0 text-[18px] font-bold">
               %{tasks.length > 0 ? Math.round((done / tasks.length) * 100) : 0}
             </span>
           </div>
           <p className="mt-2 text-[12px] text-muted-foreground">
-            Tüm görevler tamamlanınca plan kendiliğinden kapanır.
+            {tx('Tüm görevler tamamlanınca plan kendiliğinden kapanır.')}
           </p>
         </PanelBody>
       </Panel>
@@ -323,12 +324,12 @@ export function OnboardingPlanPage() {
       {tasks.length === 0 ? (
         <Panel>
           <EmptyState
-            title="Görev yok"
-            detail="Bu plana henüz görev eklenmemiş."
+            title={tx('Görev yok')}
+            detail={tx('Bu plana henüz görev eklenmemiş.')}
             action={
               canEdit ? (
                 <Button size="sm" className="cursor-pointer" onClick={() => setTaskModal(true)}>
-                  İlk görevi ekle
+                  {tx('İlk görevi ekle')}
                 </Button>
               ) : undefined
             }

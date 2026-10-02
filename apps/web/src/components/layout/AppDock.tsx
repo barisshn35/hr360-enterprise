@@ -10,6 +10,7 @@ import { FloatingDock, type DockItem } from '@/components/fx/floating-dock'
 import { cn } from '@/lib/utils'
 import { flattenItems, locate, overviewItem } from './nav-config'
 import { useNavGroups } from './use-nav'
+import { tx } from '@/lib/i18n'
 
 /** Rıhtıma girecek modüller, öncelik sırasıyla; yetkisi olmayanlar atlanır. */
 const PREFERRED = ['approvals', 'leave', 'workplace', 'kudos', 'expense', 'employees', 'timeshift', 'perf-me', 'learning', 'tenants', 'notifications']
@@ -36,14 +37,14 @@ export function AppDock({ unreadCount, onOpenCommandPalette }: { unreadCount: nu
       badge: m.id === 'notifications' ? unreadCount : undefined,
     })),
     { kind: 'separator', id: 'sep-2' },
-    { kind: 'action', id: 'search', title: 'Komut paleti (⌘K)', icon: Command, onClick: onOpenCommandPalette },
-    { id: 'settings', title: 'Ayarlar', icon: Settings, href: '/panel/ayarlar', active: pathname.startsWith('/panel/ayarlar') },
+    { kind: 'action', id: 'search', title: tx('Komut paleti (⌘K)'), icon: Command, onClick: onOpenCommandPalette },
+    { id: 'settings', title: tx('Ayarlar'), icon: Settings, href: '/panel/ayarlar', active: pathname.startsWith('/panel/ayarlar') },
   ]
 
   const mobile = [
-    { id: 'overview', title: 'Özet', icon: overviewItem.icon, href: '/panel' },
+    { id: 'overview', title: tx('Özet'), icon: overviewItem.icon, href: '/panel' },
     ...modules.slice(0, 3).map((m) => ({ id: m.id, title: m.title, icon: m.icon, href: m.path! })),
-    { id: 'settings', title: 'Ayarlar', icon: Settings, href: '/panel/ayarlar' },
+    { id: 'settings', title: tx('Ayarlar'), icon: Settings, href: '/panel/ayarlar' },
   ]
 
   return (
@@ -53,7 +54,7 @@ export function AppDock({ unreadCount, onOpenCommandPalette }: { unreadCount: nu
       </div>
 
       <nav
-        aria-label="Hızlı erişim"
+        aria-label={tx('Hızlı erişim')}
         className="fixed inset-x-3 bottom-3 z-40 flex items-center justify-around rounded-2xl border border-border/70 bg-background/80 px-1 py-1.5 shadow-[0_20px_50px_-20px_rgb(0_0_0/0.8)] backdrop-blur-xl md:hidden"
       >
         {mobile.map((m) => {

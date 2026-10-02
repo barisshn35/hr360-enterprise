@@ -13,6 +13,7 @@ import {
 } from "react-hook-form"
 
 import { Label } from "@/components/ui/label"
+import { tx } from '@/lib/i18n'
 
 const Form = FormProvider
 
@@ -48,7 +49,7 @@ const useFormField = () => {
   const fieldState = getFieldState(fieldContext.name, formState)
 
   if (!fieldContext) {
-    throw new Error("useFormField should be used within <FormField>")
+    throw new Error(tx('useFormField should be used within <FormField>'))
   }
 
   const { id } = itemContext

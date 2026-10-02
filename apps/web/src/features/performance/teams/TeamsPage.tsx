@@ -25,6 +25,7 @@ import { TeamFormDialog } from './TeamDialogs'
 import { TeamSheet } from './TeamSheet'
 import { TeamsManage } from './TeamsManage'
 import { useOrgTree, walkDepartments } from './useOrgTree'
+import { tx } from '@/lib/i18n'
 
 type View = 'diyagram' | 'yonetim'
 
@@ -55,36 +56,36 @@ export function TeamsPage() {
   const unassigned = allDepts.some((d) => d.unassigned === null) ? null : allDepts.reduce((a, d) => a + (d.unassigned?.length ?? 0), 0)
   const stats = company
     ? [
-        { label: 'Departman', value: org.tree.reduce((a, c) => a + c.departmentCount, 0) },
-        { label: 'Etkin ekip', value: org.tree.reduce((a, c) => a + c.teamCount, 0) },
-        { label: 'Ekip üyesi', value: org.tree.reduce((a, c) => a + c.memberCount, 0) },
+        { label: tx('Departman'), value: org.tree.reduce((a, c) => a + c.departmentCount, 0) },
+        { label: tx('Etkin ekip'), value: org.tree.reduce((a, c) => a + c.teamCount, 0) },
+        { label: tx('Ekip üyesi'), value: org.tree.reduce((a, c) => a + c.memberCount, 0) },
         // Çalışan rolünde hesaplanamaz (tam çalışan listesi yönetici yetkisi ister) — hiç gösterilmez.
-        ...(unassigned !== null ? [{ label: 'Ekipte olmayan', value: unassigned }] : []),
+        ...(unassigned !== null ? [{ label: tx('Ekipte olmayan'), value: unassigned }] : []),
       ]
     : []
 
   return (
     <div className="mx-auto w-full max-w-7xl">
       <PerfPageHeader
-        eyebrow="Organizasyon"
-        title="Ekipler"
+        eyebrow={tx('Organizasyon')}
+        title={tx('Ekipler')}
         description={
           canManage
-            ? 'Şirket → departman → ekip → üyeler. Diyagram herkese açık; yönetim görünümünde ekip kurar, lider atar ve üyelikleri yönetirsiniz.'
-            : 'Şirketin departmanları, ekipleri ve ekip üyeleri. Bir ekibe tıklayıp üyelerini görebilirsiniz.'
+            ? tx('Şirket → departman → ekip → üyeler. Diyagram herkese açık; yönetim görünümünde ekip kurar, lider atar ve üyelikleri yönetirsiniz.')
+            : tx('Şirketin departmanları, ekipleri ve ekip üyeleri. Bir ekibe tıklayıp üyelerini görebilirsiniz.')
         }
         actions={
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" asChild>
               <Link to="/panel/organizasyon/sunum">
                 <Presentation aria-hidden />
-                Sunum modu
+                {tx('Sunum modu')}
               </Link>
             </Button>
             {canManage && (
               <Button onClick={() => (view === 'yonetim' ? setCreating(true) : (setParam({ gorunum: 'yonetim' }), setCreating(true)))}>
                 <Plus aria-hidden />
-                Yeni ekip
+                {tx('Yeni ekip')}
               </Button>
             )}
           </div>
@@ -93,12 +94,12 @@ export function TeamsPage() {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           {canManage ? (
             <Segmented
-              ariaLabel="Görünüm"
+              ariaLabel={tx('Görünüm')}
               value={view}
               onChange={(v) => setParam({ gorunum: v === 'yonetim' ? 'yonetim' : null })}
               options={[
-                { value: 'diyagram', label: <span className="inline-flex items-center gap-1.5"><Network className="size-3.5" aria-hidden />Diyagram</span> },
-                { value: 'yonetim', label: <span className="inline-flex items-center gap-1.5"><Settings2 className="size-3.5" aria-hidden />Yönetim</span> },
+                { value: 'diyagram', label: <span className="inline-flex items-center gap-1.5"><Network className="size-3.5" aria-hidden />{tx('Diyagram')}</span> },
+                { value: 'yonetim', label: <span className="inline-flex items-center gap-1.5"><Settings2 className="size-3.5" aria-hidden />{tx('Yönetim')}</span> },
               ]}
             />
           ) : (
@@ -121,17 +122,17 @@ export function TeamsPage() {
 
       {org.namesUnavailable && (
         <div className="mb-4">
-          <InfoNote>Çalışan dizinine erişilemediği için bazı adlar görünmeyebilir.</InfoNote>
+          <InfoNote>{tx('Çalışan dizinine erişilemediği için bazı adlar görünmeyebilir.')}</InfoNote>
         </div>
       )}
 
       {org.error ? (
         <Panel>
-          <ErrorState title="Ekipler alınamadı" message={errorText(org.error)} onRetry={org.refetch} />
+          <ErrorState title={tx('Ekipler alınamadı')} message={errorText(org.error)} onRetry={org.refetch} />
         </Panel>
       ) : org.isPending ? (
         <Panel className="flex min-h-[420px] flex-col items-center justify-center gap-6 p-8" aria-busy="true">
-          <span className="sr-only">Ekipler yükleniyor</span>
+          <span className="sr-only">{tx('Ekipler yükleniyor')}</span>
           <Skeleton className="h-20 w-60 rounded-2xl" />
           <div className="flex gap-6">
             {[0, 1, 2, 3].map((i) => (

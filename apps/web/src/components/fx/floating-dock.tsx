@@ -16,6 +16,7 @@ import {
   useTransform,
 } from 'motion/react'
 import { cn } from '@/lib/utils'
+import { tx } from '@/lib/i18n'
 
 export type DockItem =
   | {
@@ -34,7 +35,7 @@ export function FloatingDock({ items, className }: { items: DockItem[]; classNam
   const mouseX = useMotionValue(Infinity)
   return (
     <motion.nav
-      aria-label="Hızlı erişim"
+      aria-label={tx('Hızlı erişim')}
       onMouseMove={(e) => mouseX.set(e.pageX)}
       onMouseLeave={() => mouseX.set(Infinity)}
       className={cn(

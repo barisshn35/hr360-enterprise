@@ -1,4 +1,5 @@
 import { apiFetch, qs } from './client'
+import { tx } from '@/lib/i18n'
 
 const BASE = '/api/recruitment'
 
@@ -18,41 +19,41 @@ export type InterviewType = 'Phone' | 'Technical' | 'HR' | 'Final'
 export type InterviewResult = 'Pending' | 'Pass' | 'Fail' | 'NoShow'
 
 export const jobPostingStatusLabels: Record<JobPostingStatus, string> = {
-  Draft: 'Taslak',
-  Published: 'Yayında',
-  OnHold: 'Beklemede',
-  Closed: 'Kapandı',
+  Draft: tx('Taslak'),
+  Published: tx('Yayında'),
+  OnHold: tx('Beklemede'),
+  Closed: tx('Kapandı'),
 }
 
 export const employmentTypeLabels: Record<EmploymentType, string> = {
-  FullTime: 'Tam zamanlı',
-  PartTime: 'Yarı zamanlı',
-  Contract: 'Sözleşmeli',
-  Intern: 'Stajyer',
+  FullTime: tx('Tam zamanlı'),
+  PartTime: tx('Yarı zamanlı'),
+  Contract: tx('Sözleşmeli'),
+  Intern: tx('Stajyer'),
 }
 
 export const applicationStatusLabels: Record<ApplicationStatus, string> = {
-  Applied: 'Başvurdu',
-  Screening: 'Ön eleme',
-  Interview: 'Mülakat',
-  Offer: 'Teklif',
-  Hired: 'İşe alındı',
-  Rejected: 'Reddedildi',
-  Withdrawn: 'Geri çekildi',
+  Applied: tx('Başvurdu'),
+  Screening: tx('Ön eleme'),
+  Interview: tx('Mülakat'),
+  Offer: tx('Teklif'),
+  Hired: tx('İşe alındı'),
+  Rejected: tx('Reddedildi'),
+  Withdrawn: tx('Geri çekildi'),
 }
 
 export const interviewTypeLabels: Record<InterviewType, string> = {
-  Phone: 'Telefon',
-  Technical: 'Teknik',
-  HR: 'İK',
-  Final: 'Final',
+  Phone: tx('Telefon'),
+  Technical: tx('Teknik'),
+  HR: tx('İK'),
+  Final: tx('Final'),
 }
 
 export const interviewResultLabels: Record<InterviewResult, string> = {
-  Pending: 'Bekliyor',
-  Pass: 'Geçti',
-  Fail: 'Kaldı',
-  NoShow: 'Katılmadı',
+  Pending: tx('Bekliyor'),
+  Pass: tx('Geçti'),
+  Fail: tx('Kaldı'),
+  NoShow: tx('Katılmadı'),
 }
 
 /** Huni sırası — aday bu aşamalardan geçer, sıralama anlamlıdır. */

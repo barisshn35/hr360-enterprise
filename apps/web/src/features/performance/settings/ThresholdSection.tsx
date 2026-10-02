@@ -15,12 +15,13 @@ import { cn } from '@/lib/utils'
 import { AnimatedNumber } from '../components/AnimatedNumber'
 import { NumberStepper } from '../components/NumberStepper'
 import { ThresholdTrack, ZONES, thresholdIssues, zoneOf, type TrackDot, type ZoneKey } from '../components/ThresholdTrack'
+import { tx } from '@/lib/i18n'
 
 const INPUTS: { key: keyof Thresholds; field: keyof ScoringConfigInput; label: string; hint: string; zone: ZoneKey }[] = [
-  { key: 'critical', field: 'criticalThreshold', label: 'Kritik eşik', hint: 'Altı → acil aksiyon', zone: 'critical' },
-  { key: 'improvement', field: 'improvementThreshold', label: 'Gelişim eşiği', hint: 'Altı → gelişim planı', zone: 'improvement' },
-  { key: 'recognition', field: 'recognitionThreshold', label: 'Takdir eşiği', hint: 'Üstü → takdir', zone: 'recognition' },
-  { key: 'promotion', field: 'promotionThreshold', label: 'Terfi eşiği', hint: 'Üstü (üst üste) → terfi adayı', zone: 'promotion' },
+  { key: 'critical', field: 'criticalThreshold', label: tx('Kritik eşik'), hint: tx('Altı → acil aksiyon'), zone: 'critical' },
+  { key: 'improvement', field: 'improvementThreshold', label: tx('Gelişim eşiği'), hint: tx('Altı → gelişim planı'), zone: 'improvement' },
+  { key: 'recognition', field: 'recognitionThreshold', label: tx('Takdir eşiği'), hint: tx('Üstü → takdir'), zone: 'recognition' },
+  { key: 'promotion', field: 'promotionThreshold', label: tx('Terfi eşiği'), hint: tx('Üstü (üst üste) → terfi adayı'), zone: 'promotion' },
 ]
 
 export function ThresholdSection({
@@ -60,9 +61,7 @@ export function ThresholdSection({
     <div className="flex flex-col gap-6">
       <div className="rounded-xl border border-border bg-muted/20 px-4 pt-3 pb-2 sm:px-6">
         {dots.length > 0 && (
-          <p className="mb-1 text-[11px] text-muted-foreground">
-            Noktalar: {cycleName ?? 'açık dönem'} puanları ({dots.length} çalışan). Üzerine gelince adı görünür.
-          </p>
+          <p className="mb-1 text-[11px] text-muted-foreground">{tx('Noktalar: {0} puanları ({1} çalışan). Üzerine gelince adı görünür.', [cycleName ?? tx('açık dönem'), dots.length])}</p>
         )}
         <ThresholdTrack value={t} onChange={setAll} dots={dots} compareTo={before} />
       </div>
@@ -82,7 +81,7 @@ export function ThresholdSection({
                 {i.message}
               </li>
             ))}
-            <li className="pl-5 text-[12px] text-muted-foreground">Sıra her zaman kritik &lt; gelişim &lt; takdir &lt; terfi olmalı.</li>
+            <li className="pl-5 text-[12px] text-muted-foreground">{tx('Sıra her zaman kritik < gelişim < takdir < terfi olmalı.')}</li>
           </motion.ul>
         )}
       </AnimatePresence>
@@ -116,7 +115,7 @@ export function ThresholdSection({
 
       {dots.length > 0 && (
         <div>
-          <p className="mb-2 text-[12px] font-semibold text-muted-foreground">Bu eşiklerle {cycleName ?? 'açık dönem'}</p>
+          <p className="mb-2 text-[12px] font-semibold text-muted-foreground">{tx('Bu eşiklerle {0}', [cycleName ?? tx('açık dönem')])}</p>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
             {ZONES.map((z) => {
               const delta = now[z.key] - was[z.key]
@@ -128,7 +127,7 @@ export function ThresholdSection({
                   </p>
                   <p className="mt-0.5 flex items-baseline gap-1.5">
                     <AnimatedNumber value={now[z.key]} className="text-[18px] font-semibold" />
-                    <span className="text-[11px] text-muted-foreground">kişi</span>
+                    <span className="text-[11px] text-muted-foreground">{tx('kişi')}</span>
                     <AnimatePresence>
                       {delta !== 0 && (
                         <motion.span
@@ -146,18 +145,15 @@ export function ThresholdSection({
               )
             })}
           </div>
-          <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
-            "Terfi düzeyi" puanı eşiğin üzerinde olanlardır; terfi adayı sayılmak için eşiğin üst üste {draft.promotionConsecutivePeriods} dönem aşılması
-            gerekir. Kişi sayıları yürürlükteki sürümle hesaplanmış puanlara göredir.
-          </p>
+          <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">{tx('"Terfi düzeyi" puanı eşiğin üzerinde olanlardır; terfi adayı sayılmak için eşiğin üst üste {0} dönem aşılması gerekir. Kişi sayıları yürürlükteki sürümle hesaplanmış puanlara göredir.', [draft.promotionConsecutivePeriods])}</p>
         </div>
       )}
 
       <div className="flex flex-col gap-4 border-t border-border pt-5 sm:flex-row sm:items-center sm:justify-between">
         <div className="max-w-md">
-          <p className="text-[13px] font-medium">Terfi için üst üste dönem sayısı</p>
+          <p className="text-[13px] font-medium">{tx('Terfi için üst üste dönem sayısı')}</p>
           <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">
-            Tek bir iyi dönem terfi önerisi için yetmez. Çalışanın puanı terfi eşiğini art arda bu kadar dönem aşmalı.
+            {tx('Tek bir iyi dönem terfi önerisi için yetmez. Çalışanın puanı terfi eşiğini art arda bu kadar dönem aşmalı.')}
           </p>
         </div>
         <div className="flex items-center gap-4">
@@ -179,8 +175,8 @@ export function ThresholdSection({
             onChange={(n) => onChange('promotionConsecutivePeriods', Math.round(n))}
             min={1}
             max={8}
-            suffix="dön."
-            ariaLabel="Terfi için üst üste dönem sayısı"
+            suffix={tx('dön.')}
+            ariaLabel={tx('Terfi için üst üste dönem sayısı')}
           />
         </div>
       </div>

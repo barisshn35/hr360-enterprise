@@ -20,6 +20,7 @@ import { AnimatedNumber } from '../components/AnimatedNumber'
 import { Chip, Slider } from '../components/controls'
 import { NumberStepper } from '../components/NumberStepper'
 import { ShareBar } from '../components/WeightShare'
+import { tx } from '@/lib/i18n'
 
 export function CategoryWeights({
   draft,
@@ -51,7 +52,7 @@ export function CategoryWeights({
             exit={{ opacity: 0, height: 0 }}
             className="mt-3 overflow-hidden rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-[12px] text-destructive"
           >
-            En az bir kategorinin ağırlığı sıfırdan büyük olmalı; aksi hâlde metrik ayağı hesaplanamaz.
+            {tx('En az bir kategorinin ağırlığı sıfırdan büyük olmalı; aksi hâlde metrik ayağı hesaplanamaz.')}
           </motion.p>
         )}
       </AnimatePresence>
@@ -67,9 +68,9 @@ export function CategoryWeights({
                 <p className="flex flex-wrap items-center gap-1.5 text-[13px] font-medium">
                   <span className="size-2.5 rounded-full" style={{ background: categoryColor[w.category] }} />
                   {categoryLabels[w.category]}
-                  {count !== undefined && <span className="text-[12px] font-normal text-muted-foreground">· {count} metrik</span>}
-                  {excluded && <Chip tone="warning">Hesaba girmez</Chip>}
-                  {!excluded && count === 0 && <Chip tone="warning">Metriği yok — katkı vermez</Chip>}
+                  {count !== undefined && <span className="text-[12px] font-normal text-muted-foreground">{tx('· {0} metrik', [count])}</span>}
+                  {excluded && <Chip tone="warning">{tx('Hesaba girmez')}</Chip>}
+                  {!excluded && count === 0 && <Chip tone="warning">{tx('Metriği yok — katkı vermez')}</Chip>}
                 </p>
                 <p className="mt-0.5 text-[12px] text-muted-foreground">{categoryHints[w.category]}</p>
               </div>
@@ -80,7 +81,7 @@ export function CategoryWeights({
                 min={0}
                 max={5}
                 step={0.5}
-                ariaLabel={`${categoryLabels[w.category]} ağırlığı`}
+                ariaLabel={tx('{0} ağırlığı', [categoryLabels[w.category]])}
                 rangeClassName="opacity-80"
               />
               <NumberStepper
@@ -90,10 +91,10 @@ export function CategoryWeights({
                 max={10}
                 step={0.5}
                 decimals={2}
-                ariaLabel={`${categoryLabels[w.category]} ağırlığı`}
+                ariaLabel={tx('{0} ağırlığı', [categoryLabels[w.category]])}
               />
               <p className="hidden text-right sm:block">
-                <span className="block text-[11px] text-muted-foreground">Pay</span>
+                <span className="block text-[11px] text-muted-foreground">{tx('Pay')}</span>
                 <span className="text-[14px] font-semibold" style={{ color: excluded ? undefined : categoryColor[w.category] }}>
                   {excluded ? '—' : <>%<AnimatedNumber value={Math.round(share)} /></>}
                 </span>
@@ -102,8 +103,7 @@ export function CategoryWeights({
           )
         })}
       </ul>
-      <p className="mt-2 text-[12px] text-muted-foreground sm:hidden">
-        Paylar: {weights.filter((w) => w.weight > 0).map((w) => `${categoryLabels[w.category]} ${formatShare(shareOf(w.weight, total))}`).join(' · ')}
+      <p className="mt-2 text-[12px] text-muted-foreground sm:hidden">{tx('Paylar: {0}', [weights.filter((w) => w.weight > 0).map((w) => `${categoryLabels[w.category]} ${formatShare(shareOf(w.weight, total))}`).join(' · ')])}
       </p>
     </div>
   )

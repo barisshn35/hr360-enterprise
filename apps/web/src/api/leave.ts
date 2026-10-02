@@ -1,4 +1,5 @@
 import { apiFetch, qs } from './client'
+import { tx } from '@/lib/i18n'
 
 const BASE = '/api/leave'
 
@@ -16,21 +17,21 @@ export type LeaveType =
 export type LeaveStatus = 'Draft' | 'Submitted' | 'Approved' | 'Rejected' | 'Cancelled'
 
 export const leaveTypeLabels: Record<LeaveType, string> = {
-  Annual: 'Yıllık izin',
-  Sick: 'Hastalık izni',
-  Unpaid: 'Ücretsiz izin',
-  Maternity: 'Doğum izni',
-  Paternity: 'Babalık izni',
-  Marriage: 'Evlilik izni',
-  Bereavement: 'Vefat izni',
+  Annual: tx('Yıllık izin'),
+  Sick: tx('Hastalık izni'),
+  Unpaid: tx('Ücretsiz izin'),
+  Maternity: tx('Doğum izni'),
+  Paternity: tx('Babalık izni'),
+  Marriage: tx('Evlilik izni'),
+  Bereavement: tx('Vefat izni'),
 }
 
 export const leaveStatusLabels: Record<LeaveStatus, string> = {
-  Draft: 'Taslak',
-  Submitted: 'Onayda',
-  Approved: 'Onaylandı',
-  Rejected: 'Reddedildi',
-  Cancelled: 'İptal edildi',
+  Draft: tx('Taslak'),
+  Submitted: tx('Onayda'),
+  Approved: tx('Onaylandı'),
+  Rejected: tx('Reddedildi'),
+  Cancelled: tx('İptal edildi'),
 }
 
 export interface LeaveBalance {

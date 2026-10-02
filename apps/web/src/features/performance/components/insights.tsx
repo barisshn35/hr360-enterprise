@@ -16,6 +16,7 @@ import { EASE } from '@/motion/primitives'
 import { AnimatedNumber } from './AnimatedNumber'
 import { PersonAvatar } from './people'
 import { scoreColor } from './score'
+import { tx } from '@/lib/i18n'
 
 export function StatTile({ label, value, hint, format = (v: number) => formatScore(v) }: { label: string; value: number | null; hint?: ReactNode; format?: (v: number) => string }) {
   return (
@@ -39,7 +40,7 @@ export function SpreadNote({ note }: { note: string | null }) {
     >
       <Scale className="mt-0.5 size-4.5 shrink-0 text-primary" aria-hidden />
       <div>
-        <p className="text-[13px] font-semibold">Sıralamayı tek başına okumayın</p>
+        <p className="text-[13px] font-semibold">{tx('Sıralamayı tek başına okumayın')}</p>
         <p className="mt-0.5 text-[13px] leading-relaxed text-foreground/80">{note}</p>
       </div>
     </motion.div>
@@ -51,14 +52,14 @@ export function UnscoredList({ people, nameOf }: { people: PersonRef[]; nameOf: 
     <div className="rounded-xl border border-dashed border-border p-4">
       <p className="flex items-center gap-2 text-[13px] font-semibold">
         <UserRoundX className="size-4 text-muted-foreground" aria-hidden />
-        Puanı olmayan üyeler
+        {tx('Puanı olmayan üyeler')}
         <span className="tabular rounded-md bg-muted px-1.5 text-[11px] font-medium text-muted-foreground">{people.length}</span>
       </p>
       {people.length === 0 ? (
-        <p className="mt-1.5 text-[12px] text-muted-foreground">Herkesin en az bir puanı var.</p>
+        <p className="mt-1.5 text-[12px] text-muted-foreground">{tx('Herkesin en az bir puanı var.')}</p>
       ) : (
         <>
-          <p className="mt-0.5 text-[12px] text-muted-foreground">Henüz değerlendirme gönderilmedi; ortalamaya ve sıralamaya dahil değiller.</p>
+          <p className="mt-0.5 text-[12px] text-muted-foreground">{tx('Henüz değerlendirme gönderilmedi; ortalamaya ve sıralamaya dahil değiller.')}</p>
           <ul className="mt-3 flex flex-wrap gap-2">
             {people.map((p) => (
               <li key={p.employeeId} className="inline-flex items-center gap-2 rounded-full border border-border bg-background py-1 pr-3 pl-1 text-[12px]">
@@ -110,7 +111,7 @@ export function RankedMembers({
                 <motion.span className="absolute inset-y-0 left-0 rounded-full" style={{ background: color, opacity: m.isProvisional ? 0.55 : 1 }} initial={{ width: 0 }} animate={{ width: `${m.score}%` }} transition={{ duration: 0.8, ease: EASE, delay: 0.1 + i * 0.02 }} />
               </span>
               <span className="tabular flex w-20 shrink-0 items-center justify-end gap-1 text-[13px] font-semibold" style={{ color }}>
-                {m.isProvisional && <Hourglass className="size-3 text-[hsl(var(--warning))]" aria-label="geçici" />}
+                {m.isProvisional && <Hourglass className="size-3 text-[hsl(var(--warning))]" aria-label={tx('geçici')} />}
                 {formatScore(m.score)}
               </span>
             </button>
@@ -132,7 +133,7 @@ export function MovementList({ title, items, kind, nameOf }: { title: string; it
         <span className="tabular text-[11px] font-medium">{items.length}</span>
       </p>
       {items.length === 0 ? (
-        <p className="mt-2 text-[12px] text-muted-foreground">{kind === 'up' ? 'Belirgin yükselen yok.' : 'Belirgin düşen yok.'}</p>
+        <p className="mt-2 text-[12px] text-muted-foreground">{kind === 'up' ? tx('Belirgin yükselen yok.') : tx('Belirgin düşen yok.')}</p>
       ) : (
         <ul className="mt-2 flex flex-col gap-1">
           {items.map((m, i) => (

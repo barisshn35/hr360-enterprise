@@ -7,6 +7,7 @@ import {
 } from '@/api/types'
 import { formatNumber } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { tx, pct } from '@/lib/i18n'
 
 /**
  * Başvuru hunisi — bu modülün en değerli ekranı.
@@ -78,7 +79,7 @@ export function ApplicationFunnel({ applications }: { applications: Application[
               </span>
 
               <span className="tabular w-14 shrink-0 text-right text-[11px] text-muted-foreground">
-                {conversion === null ? 'başvuru' : `%${conversion}`}
+                {conversion === null ? tx('başvuru') : pct(conversion)}
               </span>
             </li>
           )
@@ -86,11 +87,8 @@ export function ApplicationFunnel({ applications }: { applications: Application[
       </ol>
 
       {rejected > 0 && (
-        <p className="border-t border-border pt-2.5 text-[12px] text-muted-foreground">
-          Ayrıca{' '}
-          <span className="tabular font-semibold text-foreground">{formatNumber(rejected)}</span>{' '}
-          başvuru elendi ya da geri çekildi.
-        </p>
+        <p className="border-t border-border pt-2.5 text-[12px] text-muted-foreground">{tx('Ayrıca', [])}{' '}
+          <span className="tabular font-semibold text-foreground">{formatNumber(rejected)}</span>{' '}{tx('başvuru elendi ya da geri çekildi.', [])}</p>
       )}
     </div>
   )

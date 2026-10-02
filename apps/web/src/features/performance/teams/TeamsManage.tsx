@@ -23,6 +23,7 @@ import { PersonAvatar } from '../components/people'
 import { usePeople, type DeptNode } from '../hooks'
 import { AddMemberDialog, LeadDialog, RemoveMemberDialog, TeamFormDialog } from './TeamDialogs'
 import { walkDepartments, type OrgCompany, type OrgDepartment } from './useOrgTree'
+import { tx, appLocale } from '@/lib/i18n'
 
 type Dialog =
   | { kind: 'create'; departmentId?: string | null }
@@ -53,7 +54,7 @@ export function TeamsManage({
   const [dialog, setDialog] = useState<Dialog | null>(null)
   const people = usePeople()
 
-  const needle = q.trim().toLocaleLowerCase('tr-TR')
+  const needle = q.trim().toLocaleLowerCase(appLocale)
   const allDepts = tree.flatMap((c) => walkDepartments(c.departments))
   const allTeams = allDepts.flatMap((d) => d.teams)
   const pathOf = (id: string | null) => departments.find((d) => d.id === id)?.path ?? null
@@ -64,7 +65,7 @@ export function TeamsManage({
   }
 
   const matches = (d: OrgDepartment): boolean =>
-    !needle || d.teams.some((t) => t.team.name.toLocaleLowerCase('tr-TR').includes(needle)) || d.children.some(matches)
+    !needle || d.teams.some((t) => t.team.name.toLocaleLowerCase(appLocale).includes(needle)) || d.children.some(matches)
 
   const toggle = (id: string) =>
     setCollapsed((s) => {
@@ -76,7 +77,7 @@ export function TeamsManage({
 
   const navDept = (d: OrgDepartment): React.ReactNode => {
     if (!matches(d)) return null
-    const teams = d.teams.filter((t) => !needle || t.team.name.toLocaleLowerCase('tr-TR').includes(needle))
+    const teams = d.teams.filter((t) => !needle || t.team.name.toLocaleLowerCase(appLocale).includes(needle))
     const isCollapsed = collapsed.has(d.id)
     return (
       <div key={d.id} className="mb-0.5">
@@ -88,7 +89,7 @@ export function TeamsManage({
             className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[13px] font-medium hover:bg-muted/60"
           >
             <ChevronDown className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform', isCollapsed && '-rotate-90')} aria-hidden />
-            {d.depth > 0 && <CornerDownRight className="size-3 shrink-0 text-muted-foreground" aria-label="Alt departman" />}
+            {d.depth > 0 && <CornerDownRight className="size-3 shrink-0 text-muted-foreground" aria-label={tx('Alt departman')} />}
             <span className="truncate">{d.name}</span>
             <span className="tabular ml-auto text-[11px] font-normal text-muted-foreground">{d.teamCount}</span>
           </button>
@@ -96,8 +97,8 @@ export function TeamsManage({
             type="button"
             onClick={() => setDialog({ kind: 'create', departmentId: d.id })}
             className="rounded p-1 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-muted focus-visible:opacity-100"
-            aria-label={`${d.name} departmanına ekip ekle`}
-            title="Bu departmana ekip ekle"
+            aria-label={tx('{0} departmanına ekip ekle', [d.name])}
+            title={tx('Bu departmana ekip ekle')}
           >
             <Plus className="size-3.5" />
           </button>
@@ -107,7 +108,7 @@ export function TeamsManage({
             <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden pl-4">
               {d.children.map((c) => navDept(c))}
               <ul>
-                {teams.length === 0 && d.children.length === 0 && <li className="px-2 py-1.5 text-[12px] text-muted-foreground">Ekip yok</li>}
+                {teams.length === 0 && d.children.length === 0 && <li className="px-2 py-1.5 text-[12px] text-muted-foreground">{tx('Ekip yok')}</li>}
                 {teams.map((t) => {
                   const on = t.team.id === selectedId
                   return (
@@ -124,9 +125,9 @@ export function TeamsManage({
                           <motion.span layoutId="team-nav-sel" className="absolute inset-0 rounded-md bg-primary/10 ring-1 ring-primary/25" transition={{ type: 'spring', stiffness: 500, damping: 38 }} />
                         )}
                         <span className={cn('relative truncate', !t.team.isActive && 'line-through decoration-muted-foreground/50')}>{t.team.name}</span>
-                        {!t.team.isActive && <Chip className="relative">Pasif</Chip>}
+                        {!t.team.isActive && <Chip className="relative">{tx('Pasif')}</Chip>}
                         <span className="relative ml-auto flex items-center gap-1 text-[11px]">
-                          {t.lead && <Crown className="size-3 text-[hsl(var(--warning))]" aria-label="Lideri var" />}
+                          {t.lead && <Crown className="size-3 text-[hsl(var(--warning))]" aria-label={tx('Lideri var')} />}
                           <span className="tabular">{t.members.length}</span>
                         </span>
                       </button>
@@ -146,26 +147,26 @@ export function TeamsManage({
       {/* ------------------------------ hiyerarşi gezgini ------------------------------ */}
       <Panel className="lg:sticky lg:top-20">
         <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
-          <p className="text-[13px] font-semibold">Hiyerarşi</p>
+          <p className="text-[13px] font-semibold">{tx('Hiyerarşi')}</p>
           <Button size="xs" onClick={() => setDialog({ kind: 'create' })}>
             <Plus aria-hidden />
-            Yeni ekip
+            {tx('Yeni ekip')}
           </Button>
         </div>
         <div className="flex flex-col gap-3 border-b border-border p-3">
           <label className="relative block">
-            <span className="sr-only">Ekip ara</span>
+            <span className="sr-only">{tx('Ekip ara')}</span>
             <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden />
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Ekip ara"
+              placeholder={tx('Ekip ara')}
               className="h-8 w-full rounded-md border border-input bg-background pr-2 pl-8 text-[12px] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
             />
           </label>
-          <Switch checked={showInactive} onChange={onShowInactive} label={<span className="text-[12px]">Pasif ekipleri göster</span>} />
+          <Switch checked={showInactive} onChange={onShowInactive} label={<span className="text-[12px]">{tx('Pasif ekipleri göster')}</span>} />
         </div>
-        <nav aria-label="Ekipler" className="max-h-[60vh] overflow-y-auto p-2">
+        <nav aria-label={tx('Ekipler')} className="max-h-[60vh] overflow-y-auto p-2">
           {tree.map((c) => (
             <div key={c.id}>
               <p className="px-2 pt-1 pb-2 text-[11px] font-semibold tracking-wide text-muted-foreground">{c.name}</p>
@@ -192,19 +193,19 @@ export function TeamsManage({
           <Panel>
             <EmptyState
               icon={Users}
-              title="Henüz ekip yok — ilk ekibi oluşturun"
-              detail="Ekipler departmanlara bağlıdır. Takım lideri opsiyoneldir; lider atanınca kişi otomatik olarak ekibe üye olur."
+              title={tx('Henüz ekip yok — ilk ekibi oluşturun')}
+              detail={tx('Ekipler departmanlara bağlıdır. Takım lideri opsiyoneldir; lider atanınca kişi otomatik olarak ekibe üye olur.')}
               action={
                 <Button onClick={() => setDialog({ kind: 'create' })}>
                   <Plus aria-hidden />
-                  Yeni ekip
+                  {tx('Yeni ekip')}
                 </Button>
               }
             />
           </Panel>
         ) : (
           <Panel>
-            <EmptyState icon={Network} title="Soldan bir ekip seçin" detail="Seçtiğiniz ekibin lideri, üyeleri ve geçmiş üyelikleri burada görünür." />
+            <EmptyState icon={Network} title={tx('Soldan bir ekip seçin')} detail={tx('Seçtiğiniz ekibin lideri, üyeleri ve geçmiş üyelikleri burada görünür.')} />
           </Panel>
         )}
       </div>
@@ -289,7 +290,7 @@ function TeamDetail({
   if (q.isError || !q.data) {
     return (
       <Panel>
-        <ErrorState title="Ekip alınamadı" message={errorText(q.error)} onRetry={() => void q.refetch()} />
+        <ErrorState title={tx('Ekip alınamadı')} message={errorText(q.error)} onRetry={() => void q.refetch()} />
       </Panel>
     )
   }
@@ -300,7 +301,7 @@ function TeamDetail({
     update.mutate(
       { id: team.id, input: { name: team.name, description: team.description, isActive: !team.isActive } },
       {
-        onSuccess: () => toast.ok(team.isActive ? `«${team.name}» pasife alındı. Üyelik geçmişi korunuyor.` : `«${team.name}» yeniden etkin.`),
+        onSuccess: () => toast.ok(team.isActive ? tx('«{0}» pasife alındı. Üyelik geçmişi korunuyor.', [team.name]) : tx('«{0}» yeniden etkin.', [team.name])),
         onError: (e) => toast.stop(errorText(e)),
       },
     )
@@ -314,32 +315,31 @@ function TeamDetail({
             <p className="text-[12px] font-medium text-primary">{departmentPath(team.departmentId)}</p>
             <h2 className="mt-0.5 flex flex-wrap items-center gap-2 text-[20px] font-semibold tracking-tight">
               {team.name}
-              {team.isActive ? <Chip tone="success">Etkin</Chip> : <Chip>Pasif</Chip>}
+              {team.isActive ? <Chip tone="success">{tx('Etkin')}</Chip> : <Chip>{tx('Pasif')}</Chip>}
             </h2>
             {team.description && <p className="mt-1 max-w-xl text-[13px] text-muted-foreground">{team.description}</p>}
             <p className="tabular mt-2 text-[12px] text-muted-foreground">
-              {active.length} etkin üye · {former.length} eski üye
-            </p>
+              {tx('{0} etkin üye · {1} eski üye', [active.length, former.length])}</p>
           </div>
           <div className="flex shrink-0 flex-wrap gap-2">
             <Button size="sm" variant="ghost" onClick={() => onShowInDiagram(team.id)}>
               <Network aria-hidden />
-              Diyagramda göster
+              {tx('Diyagramda göster')}
             </Button>
             <Button size="sm" variant="outline" onClick={() => onEdit(team)}>
               <Pencil aria-hidden />
-              Düzenle
+              {tx('Düzenle')}
             </Button>
             <Button size="sm" variant="outline" onClick={toggleActive} disabled={update.isPending}>
               <Power aria-hidden />
-              {team.isActive ? 'Pasife al' : 'Etkinleştir'}
+              {team.isActive ? tx('Pasife al') : tx('Etkinleştir')}
             </Button>
           </div>
         </div>
 
         {/* lider */}
         <div className="border-b border-border p-5">
-          <p className="mb-2 text-[12px] font-semibold text-muted-foreground">Takım lideri</p>
+          <p className="mb-2 text-[12px] font-semibold text-muted-foreground">{tx('Takım lideri')}</p>
           {lead ? (
             <div className="flex flex-col gap-3 rounded-xl border border-primary/25 bg-primary/5 p-3 sm:flex-row sm:items-center">
               <PersonAvatar id={lead} name={people.nameOf(lead)} size="lg" />
@@ -348,20 +348,20 @@ function TeamDetail({
                   {people.nameOf(lead)}
                   <Crown className="size-4 text-[hsl(var(--warning))]" aria-hidden />
                 </p>
-                <p className="text-[12px] text-muted-foreground">{people.titleOf(lead) ?? 'Takım lideri'}</p>
+                <p className="text-[12px] text-muted-foreground">{people.titleOf(lead) ?? tx('Takım lideri')}</p>
               </div>
               <Button size="sm" variant="outline" onClick={() => onLead(team, members)} disabled={!team.isActive}>
-                Lideri değiştir
+                {tx('Lideri değiştir')}
               </Button>
             </div>
           ) : (
             <div className="flex flex-col gap-3 rounded-xl border border-dashed border-border p-4 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-[13px] text-muted-foreground">
-                Bu ekibin lideri yok. <span className="text-foreground">Takım lideri opsiyoneldir;</span> atanan kişi otomatik olarak üye olur.
+                {tx('Bu ekibin lideri yok.')}{' '}<span className="text-foreground">{tx('Takım lideri opsiyoneldir;')}</span>{' '}{tx('atanan kişi otomatik olarak üye olur.')}
               </p>
               <Button size="sm" onClick={() => onLead(team, members)} disabled={!team.isActive}>
                 <Crown aria-hidden />
-                Lider ata
+                {tx('Lider ata')}
               </Button>
             </div>
           )}
@@ -370,12 +370,12 @@ function TeamDetail({
         {/* üyeler */}
         <div className="p-5">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-            <p className="text-[13px] font-semibold">Üyeler</p>
+            <p className="text-[13px] font-semibold">{tx('Üyeler')}</p>
             <div className="flex items-center gap-4">
-              <Switch checked={showFormer} onChange={setShowFormer} label={<span className="text-[12px]">Eski üyeleri göster ({former.length})</span>} />
-              <Button size="sm" onClick={() => onAdd(team, members)} disabled={!team.isActive} title={team.isActive ? undefined : 'Pasif ekibe üye eklenemez'}>
+              <Switch checked={showFormer} onChange={setShowFormer} label={<span className="text-[12px]">{tx('Eski üyeleri göster ({0})', [former.length])}</span>} />
+              <Button size="sm" onClick={() => onAdd(team, members)} disabled={!team.isActive} title={team.isActive ? undefined : tx('Pasif ekibe üye eklenemez')}>
                 <UserPlus aria-hidden />
-                Üye ekle
+                {tx('Üye ekle')}
               </Button>
             </div>
           </div>
@@ -383,13 +383,13 @@ function TeamDetail({
           {visible.length === 0 ? (
             <EmptyState
               icon={Users}
-              title="Bu ekipte henüz üye yok"
-              detail="Üye ekleyin ya da bir lider atayın; lider otomatik olarak üye olur."
+              title={tx('Bu ekipte henüz üye yok')}
+              detail={tx('Üye ekleyin ya da bir lider atayın; lider otomatik olarak üye olur.')}
               action={
                 team.isActive ? (
                   <Button size="sm" onClick={() => onAdd(team, members)}>
                     <UserPlus aria-hidden />
-                    Üye ekle
+                    {tx('Üye ekle')}
                   </Button>
                 ) : undefined
               }
@@ -418,29 +418,27 @@ function TeamDetail({
                             {isLead && (
                               <Chip tone="warning">
                                 <Crown className="size-3" aria-hidden />
-                                Lider
+                                {tx('Lider')}
                               </Chip>
                             )}
                             {m.roleInTeam && !isLead && <Chip>{m.roleInTeam}</Chip>}
                           </p>
                           <p className="truncate text-[11px] text-muted-foreground">
-                            {people.titleOf(m.employeeId) ? `${people.titleOf(m.employeeId)} · ` : ''}
-                            {formatDate(m.joinedOn)} tarihinden
-                            {m.leftOn ? ` ${formatDate(m.leftOn)} tarihine kadar` : ' beri'}
+                            {tx('{0}{1} tarihinden{2}', [people.titleOf(m.employeeId) ? `${people.titleOf(m.employeeId)} · ` : '', formatDate(m.joinedOn), m.leftOn ? tx(' {0} tarihine kadar', [formatDate(m.leftOn)]) : tx(' beri')])}
                           </p>
                         </div>
                         {m.leftOn ? (
-                          <Chip>Ayrıldı · {formatDate(m.leftOn)}</Chip>
+                          <Chip>{tx('Ayrıldı · {0}', [formatDate(m.leftOn)])}</Chip>
                         ) : (
                           <Button
                             size="sm"
                             variant="ghost"
                             onClick={() => onRemove(team, m)}
                             className="text-muted-foreground sm:opacity-0 sm:transition-opacity sm:group-focus-within:opacity-100 sm:group-hover:opacity-100"
-                            aria-label={`${name} kişisini ekipten çıkar`}
+                            aria-label={tx('{0} kişisini ekipten çıkar', [name])}
                           >
                             <UserMinus aria-hidden />
-                            <span className="hidden sm:inline">Ekipten çıkar</span>
+                            <span className="hidden sm:inline">{tx('Ekipten çıkar')}</span>
                           </Button>
                         )}
                       </div>
@@ -450,7 +448,7 @@ function TeamDetail({
               </AnimatePresence>
             </ul>
           )}
-          <p className="mt-3 text-[11px] text-muted-foreground">Ekipten çıkarmak kaydı silmez; ayrılma tarihi yazılır ve geçmiş analizler korunur.</p>
+          <p className="mt-3 text-[11px] text-muted-foreground">{tx('Ekipten çıkarmak kaydı silmez; ayrılma tarihi yazılır ve geçmiş analizler korunur.')}</p>
         </div>
       </Panel>
     </motion.div>

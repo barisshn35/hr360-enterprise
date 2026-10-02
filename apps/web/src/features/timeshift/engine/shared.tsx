@@ -16,6 +16,7 @@ import type {
   ShiftPatternDay,
 } from '@/api/timeshift'
 import { cn } from '@/lib/utils'
+import { tx, appLocale } from '@/lib/i18n'
 
 /* ------------------------------------ Tarih ------------------------------------ */
 
@@ -62,17 +63,17 @@ export function dateRange(from: string, to: string): string[] {
   return Array.from({ length: Math.max(0, n + 1) }, (_, i) => addDays(from, i))
 }
 
-const WEEKDAY_SHORT = ['Paz', 'Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt']
+const WEEKDAY_SHORT = [tx('Paz'), tx('Pzt'), tx('Sal'), tx('Çar'), tx('Per'), tx('Cum'), tx('Cmt')]
 export const weekdayShort = (iso: string) => WEEKDAY_SHORT[weekdayOf(iso)]
 
-const dayMonthFmt = new Intl.DateTimeFormat('tr-TR', { day: 'numeric', month: 'short', timeZone: 'UTC' })
-const longFmt = new Intl.DateTimeFormat('tr-TR', {
+const dayMonthFmt = new Intl.DateTimeFormat(appLocale, { day: 'numeric', month: 'short', timeZone: 'UTC' })
+const longFmt = new Intl.DateTimeFormat(appLocale, {
   day: 'numeric',
   month: 'long',
   weekday: 'long',
   timeZone: 'UTC',
 })
-const monthFmt = new Intl.DateTimeFormat('tr-TR', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+const monthFmt = new Intl.DateTimeFormat(appLocale, { month: 'long', year: 'numeric', timeZone: 'UTC' })
 
 export const formatDayMonth = (iso: string) => dayMonthFmt.format(toUtc(iso))
 export const formatLongDay = (iso: string) => longFmt.format(toUtc(iso))
@@ -107,7 +108,7 @@ export function shiftMinutes(start: string | null, end: string | null): number {
 }
 
 export const hoursLabel = (minutes: number) =>
-  `${(minutes / 60).toLocaleString('tr-TR', { maximumFractionDigits: 1 })} sa`
+  `${(minutes / 60).toLocaleString(appLocale, { maximumFractionDigits: 1 })} sa`
 
 /** Vardiya süresi, saat cinsinden ("12 sa", "7,5 sa"). */
 export function durationLabel(start: string | null, end: string | null): string {
@@ -130,28 +131,28 @@ interface DayStyle {
 
 export const DAY_STYLE: Record<RosterDayType, DayStyle> = {
   Day: {
-    label: 'Gündüz',
-    lower: 'gündüz',
+    label: tx('Gündüz'),
+    lower: tx('gündüz'),
     icon: Sun,
     block: 'bg-[hsl(var(--chart-4))]/18 text-[hsl(var(--chart-4))] ring-[hsl(var(--chart-4))]/35',
     dot: 'bg-[hsl(var(--chart-4))]',
   },
   Night: {
-    label: 'Gece',
+    label: tx('Gece'),
     lower: 'gece',
     icon: Moon,
     block: 'bg-[hsl(var(--chart-1))]/18 text-[hsl(var(--chart-1))] ring-[hsl(var(--chart-1))]/35',
     dot: 'bg-[hsl(var(--chart-1))]',
   },
   Off: {
-    label: 'Tatil',
+    label: tx('Tatil'),
     lower: 'tatil',
     icon: BedDouble,
     block: 'bg-muted text-muted-foreground/70 ring-border',
     dot: 'bg-muted-foreground/40',
   },
   Leave: {
-    label: 'İzinli',
+    label: tx('İzinli'),
     lower: 'izinli',
     icon: TreePalm,
     // Çizgili zemin: istisna olduğu renkten başka bir işaretle de anlaşılsın.
@@ -160,16 +161,16 @@ export const DAY_STYLE: Record<RosterDayType, DayStyle> = {
     dot: 'bg-[hsl(var(--success))]',
   },
   Holiday: {
-    label: 'Resmî tatil',
-    lower: 'resmî tatil',
+    label: tx('Resmî tatil'),
+    lower: tx('resmî tatil'),
     icon: Flag,
     block:
       'bg-[hsl(var(--chart-5))]/14 text-[hsl(var(--chart-5))] ring-[hsl(var(--chart-5))]/45 bg-[repeating-linear-gradient(135deg,transparent_0_4px,hsl(var(--chart-5)/0.12)_4px_8px)]',
     dot: 'bg-[hsl(var(--chart-5))]',
   },
   Manual: {
-    label: 'Elle değişiklik',
-    lower: 'elle değişiklik',
+    label: tx('Elle değişiklik'),
+    lower: tx('elle değişiklik'),
     icon: PenLine,
     block:
       'bg-[hsl(var(--chart-2))]/14 text-[hsl(var(--chart-2))] ring-[hsl(var(--chart-2))]/45 bg-[repeating-linear-gradient(135deg,transparent_0_4px,hsl(var(--chart-2)/0.12)_4px_8px)]',
@@ -190,7 +191,7 @@ export const isOverride = (type: string | null) =>
 /** Takvim hücresinin açıklaması (title / ekran okuyucu). Üyeliğin henüz
  * başlamadığı/bittiği günlerde `type` null gelir — boş hücre. */
 export function describeRosterDay(day: RosterDay): string {
-  if (day.type === null) return 'Üyelik dışı'
+  if (day.type === null) return tx('Üyelik dışı')
   const s = styleOf(day.type)
   if (day.startTime) return `${s.label} ${timeRange(day.startTime, day.endTime!)}`
   if (day.note) return `${s.label} · ${day.note}`
@@ -274,7 +275,7 @@ export function PatternStrip({
           key={i}
           type={d.type}
           size={size}
-          title={`${d.dayIndex + 1}. gün · ${DAY_STYLE[d.type].label}${d.startTime ? ` ${timeRange(d.startTime, d.endTime)}` : ''}`}
+          title={tx('{0}. gün · {1}{2}', [d.dayIndex + 1, DAY_STYLE[d.type].label, d.startTime ? ` ${timeRange(d.startTime, d.endTime)}` : ''])}
           className={cn(highlightIndex === d.dayIndex && 'ring-2 ring-foreground/70')}
         />
       ))}

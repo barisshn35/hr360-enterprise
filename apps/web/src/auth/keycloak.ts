@@ -1,5 +1,6 @@
 import Keycloak from 'keycloak-js'
 import { env } from '@/lib/env'
+import { tx } from '@/lib/i18n'
 
 /**
  * Tek Keycloak örneği. hr360-web public client'ı PKCE (S256) zorunlu.
@@ -20,7 +21,7 @@ export const keycloak = new Keycloak({
  * için hata ayıklaması çok pahalı; bu yüzden scope tek sabitte tutuluyor ve
  * init/login/switch yollarının üçü de buradan okuyor.
  */
-export const BASE_SCOPE = 'openid organization'
+export const BASE_SCOPE = tx('openid organization')
 
 /**
  * Platform yöneticisi başka bir kiracıya geçtiğinde talep edilen scope.

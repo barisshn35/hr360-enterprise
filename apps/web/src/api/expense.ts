@@ -1,4 +1,5 @@
 import { apiFetch, qs } from './client'
+import { tx } from '@/lib/i18n'
 
 const BASE = '/api/expense'
 
@@ -18,45 +19,45 @@ export type CasePriority = 'Low' | 'Normal' | 'High' | 'Urgent'
 export type CaseStatus = 'Open' | 'InProgress' | 'WaitingOnEmployee' | 'Resolved' | 'Closed'
 
 export const claimStatusLabels: Record<ClaimStatus, string> = {
-  Draft: 'Taslak',
-  Submitted: 'Onayda',
-  Approved: 'Onaylandı',
-  Rejected: 'Reddedildi',
-  Paid: 'Ödendi',
+  Draft: tx('Taslak'),
+  Submitted: tx('Onayda'),
+  Approved: tx('Onaylandı'),
+  Rejected: tx('Reddedildi'),
+  Paid: tx('Ödendi'),
 }
 
 export const expenseCategoryLabels: Record<ExpenseCategory, string> = {
-  Travel: 'Seyahat',
-  Meal: 'Yemek',
-  Accommodation: 'Konaklama',
-  Transport: 'Ulaşım',
-  Supplies: 'Sarf malzeme',
-  Training: 'Eğitim',
-  Other: 'Diğer',
+  Travel: tx('Seyahat'),
+  Meal: tx('Yemek'),
+  Accommodation: tx('Konaklama'),
+  Transport: tx('Ulaşım'),
+  Supplies: tx('Sarf malzeme'),
+  Training: tx('Eğitim'),
+  Other: tx('Diğer'),
 }
 
 export const caseCategoryLabels: Record<CaseCategory, string> = {
-  Payroll: 'Bordro',
-  Benefits: 'Yan haklar',
-  Policy: 'Politika',
-  Complaint: 'Şikâyet',
-  ITSupport: 'BT desteği',
-  Other: 'Diğer',
+  Payroll: tx('Bordro'),
+  Benefits: tx('Yan haklar'),
+  Policy: tx('Politika'),
+  Complaint: tx('Şikâyet'),
+  ITSupport: tx('BT desteği'),
+  Other: tx('Diğer'),
 }
 
 export const casePriorityLabels: Record<CasePriority, string> = {
-  Low: 'Düşük',
-  Normal: 'Normal',
-  High: 'Yüksek',
-  Urgent: 'Acil',
+  Low: tx('Düşük'),
+  Normal: tx('Normal'),
+  High: tx('Yüksek'),
+  Urgent: tx('Acil'),
 }
 
 export const caseStatusLabels: Record<CaseStatus, string> = {
-  Open: 'Açık',
-  InProgress: 'Sürüyor',
-  WaitingOnEmployee: 'Çalışan bekleniyor',
-  Resolved: 'Çözüldü',
-  Closed: 'Kapandı',
+  Open: tx('Açık'),
+  InProgress: tx('Sürüyor'),
+  WaitingOnEmployee: tx('Çalışan bekleniyor'),
+  Resolved: tx('Çözüldü'),
+  Closed: tx('Kapandı'),
 }
 
 export interface ExpenseItem {
@@ -99,13 +100,13 @@ export interface HrCase {
 export type DocumentType = 'Contract' | 'Payslip' | 'IdCard' | 'Diploma' | 'Certificate' | 'Health' | 'Other'
 
 export const documentTypeLabels: Record<DocumentType, string> = {
-  Contract: 'Sözleşme',
-  Payslip: 'Bordro',
-  IdCard: 'Kimlik',
-  Diploma: 'Diploma',
-  Certificate: 'Sertifika',
-  Health: 'Sağlık raporu',
-  Other: 'Diğer',
+  Contract: tx('Sözleşme'),
+  Payslip: tx('Bordro'),
+  IdCard: tx('Kimlik'),
+  Diploma: tx('Diploma'),
+  Certificate: tx('Sertifika'),
+  Health: tx('Sağlık raporu'),
+  Other: tx('Diğer'),
 }
 
 /** NOT: Önceden `name`/`createdAt` bekleniyordu; backend `fileName`/`uploadedAt`

@@ -32,6 +32,7 @@ import { useCurrentCycle, usePeople } from '../hooks'
 import { CreateGoalDialog, ProgressDialog } from './GoalDialogs'
 import { GoalCard } from './GoalCard'
 import { goalSideScore } from './goalMath'
+import { tx, appLocale } from '@/lib/i18n'
 
 export function GoalsPage() {
   const { can } = useAuth()
@@ -69,10 +70,10 @@ export function GoalsPage() {
 
   const roster = useMemo(() => {
     const members = teamId !== '__all__' ? (team.data?.members ?? []).filter((x) => !x.leftOn).map((x) => x.employeeId) : null
-    const needle = q.trim().toLocaleLowerCase('tr-TR')
+    const needle = q.trim().toLocaleLowerCase(appLocale)
     return people.list
       .filter((p) => !members || members.includes(p.id))
-      .filter((p) => !needle || p.name.toLocaleLowerCase('tr-TR').includes(needle))
+      .filter((p) => !needle || p.name.toLocaleLowerCase(appLocale).includes(needle))
       .map((p) => ({ ...p, goals: byEmployee.get(p.id) ?? [] }))
       .sort((a, b) => Number(b.goals.length > 0) - Number(a.goals.length > 0) || a.name.localeCompare(b.name, 'tr-TR'))
   }, [people.list, teamId, team.data, q, byEmployee])
@@ -96,7 +97,7 @@ export function GoalsPage() {
     return (
       <div className="mx-auto w-full max-w-5xl">
         <Panel>
-          <EmptyState icon={Lock} title="Hesabınıza bağlı çalışan kaydı bulunamadı" detail="Hedeflerinizi görebilmeniz için hesabınızın bir çalışan kaydıyla eşleşmesi gerekiyor. İK yöneticinize başvurun." />
+          <EmptyState icon={Lock} title={tx('Hesabınıza bağlı çalışan kaydı bulunamadı')} detail={tx('Hedeflerinizi görebilmeniz için hesabınızın bir çalışan kaydıyla eşleşmesi gerekiyor. İK yöneticinize başvurun.')} />
         </Panel>
       </div>
     )
@@ -105,18 +106,18 @@ export function GoalsPage() {
   return (
     <div className="mx-auto w-full max-w-7xl">
       <PerfPageHeader
-        eyebrow={manager ? 'Performans kurulumu · 4. adım' : 'Performans'}
-        title={manager ? 'Hedefler' : 'Hedeflerim'}
+        eyebrow={manager ? tx('Performans kurulumu · 4. adım') : tx('Performans')}
+        title={manager ? tx('Hedefler') : tx('Hedeflerim')}
         description={
           manager
-            ? 'Her çalışanın dönem hedeflerini tanımlayın. Ağırlıklar oransaldır; hedef ayağı puanı ilerlemelerin ağırlıklı ortalamasıdır.'
-            : 'Bu dönem için yöneticinizin tanımladığı hedefler ve ilerlemeniz. Hedefler puanınızın hedef ayağını oluşturur.'
+            ? tx('Her çalışanın dönem hedeflerini tanımlayın. Ağırlıklar oransaldır; hedef ayağı puanı ilerlemelerin ağırlıklı ortalamasıdır.')
+            : tx('Bu dönem için yöneticinizin tanımladığı hedefler ve ilerlemeniz. Hedefler puanınızın hedef ayağını oluşturur.')
         }
         actions={
           editable && selected && cycle ? (
             <Button onClick={() => setCreating(true)}>
               <Plus aria-hidden />
-              Yeni hedef
+              {tx('Yeni hedef')}
             </Button>
           ) : undefined
         }
@@ -125,7 +126,7 @@ export function GoalsPage() {
           {manager ? <SetupTrail current="goals" /> : <span />}
           <div className="flex flex-wrap items-end gap-3">
             <CyclePicker className="w-56" cycles={cycles} value={cycleId} onChange={(v) => setParam('donem', v)} includeDraft={manager} />
-            {manager && <TeamSelect className="w-56" value={teamId} onChange={setTeamId} allowAll allLabel="Tüm çalışanlar" />}
+            {manager && <TeamSelect className="w-56" value={teamId} onChange={setTeamId} allowAll allLabel={tx('Tüm çalışanlar')} />}
           </div>
         </div>
       </PerfPageHeader>
@@ -133,20 +134,19 @@ export function GoalsPage() {
       {cycle?.status === 'Closed' && (
         <div className="mb-4">
           <InfoNote>
-            {cycle.name} kapandı; hedefler ve ilerlemeler kapanıştaki hâliyle sabit. Değişiklik yapılamaz.
-          </InfoNote>
+            {tx('{0} kapandı; hedefler ve ilerlemeler kapanıştaki hâliyle sabit. Değişiklik yapılamaz.', [cycle.name])}</InfoNote>
         </div>
       )}
 
       {!cyclesPending && !cycles.length && (
         <Panel>
-          <EmptyState icon={Crosshair} title="Önce bir dönem gerekiyor" detail="Hedefler bir döneme bağlıdır. Dönemler ekranından ilk dönemi oluşturun." />
+          <EmptyState icon={Crosshair} title={tx('Önce bir dönem gerekiyor')} detail={tx('Hedefler bir döneme bağlıdır. Dönemler ekranından ilk dönemi oluşturun.')} />
         </Panel>
       )}
 
       {goalsQ.isError && (
         <Panel>
-          <ErrorState title="Hedefler alınamadı" message={errorText(goalsQ.error)} onRetry={() => void goalsQ.refetch()} />
+          <ErrorState title={tx('Hedefler alınamadı')} message={errorText(goalsQ.error)} onRetry={() => void goalsQ.refetch()} />
         </Panel>
       )}
 
@@ -156,9 +156,9 @@ export function GoalsPage() {
             <Panel className="lg:sticky lg:top-20">
               <div className="border-b border-border p-3">
                 <label className="relative block">
-                  <span className="sr-only">Kişi ara</span>
+                  <span className="sr-only">{tx('Kişi ara')}</span>
                   <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden />
-                  <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Kişi ara" className="h-8 w-full rounded-md border border-input bg-background pr-2 pl-8 text-[12px] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50" />
+                  <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={tx('Kişi ara')} className="h-8 w-full rounded-md border border-input bg-background pr-2 pl-8 text-[12px] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50" />
                 </label>
               </div>
               <ul className="max-h-[62vh] overflow-y-auto p-2">
@@ -169,7 +169,7 @@ export function GoalsPage() {
                       <Skeleton className="h-4 flex-1" />
                     </li>
                   ))}
-                {!goalsQ.isPending && roster.length === 0 && <li className="px-2 py-6 text-center text-[12px] text-muted-foreground">Kişi bulunamadı.</li>}
+                {!goalsQ.isPending && roster.length === 0 && <li className="px-2 py-6 text-center text-[12px] text-muted-foreground">{tx('Kişi bulunamadı.')}</li>}
                 {!goalsQ.isPending &&
                   roster.map((r) => {
                     const on = r.id === selected
@@ -190,10 +190,10 @@ export function GoalsPage() {
                                 <span className="h-1 flex-1 overflow-hidden rounded-full bg-muted">
                                   <motion.span className="block h-full rounded-full bg-primary" initial={{ width: 0 }} animate={{ width: `${s ?? 0}%` }} transition={{ duration: 0.8, ease: EASE }} />
                                 </span>
-                                <span className="tabular text-[11px] text-muted-foreground">{r.goals.length} hedef</span>
+                                <span className="tabular text-[11px] text-muted-foreground">{tx('{0} hedef', [r.goals.length])}</span>
                               </span>
                             ) : (
-                              <span className="block text-[11px] text-muted-foreground">Hedef yok</span>
+                              <span className="block text-[11px] text-muted-foreground">{tx('Hedef yok')}</span>
                             )}
                           </span>
                         </button>
@@ -234,19 +234,17 @@ export function GoalsPage() {
                       </div>
                     </div>
                     <div className="text-left sm:text-right">
-                      <p className="text-[11px] text-muted-foreground">Hedef ayağı</p>
+                      <p className="text-[11px] text-muted-foreground">{tx('Hedef ayağı')}</p>
                       <p className="text-[28px] leading-none font-semibold tracking-tight">
                         {side === null ? '—' : <AnimatedNumber value={side} format={(v) => formatScore(v)} duration={1} />}
                       </p>
-                      <p className="mt-0.5 text-[11px] text-muted-foreground">ilerlemelerin ağırlıklı ortalaması</p>
+                      <p className="mt-0.5 text-[11px] text-muted-foreground">{tx('ilerlemelerin ağırlıklı ortalaması')}</p>
                     </div>
                   </div>
                   {goals.length > 0 && (
                     <div className="mt-4">
                       <ShareBar items={goals.filter((g) => g.status !== 'Cancelled').map((g) => ({ id: g.id, label: g.title, weight: g.weight }))} height={10} showLabels />
-                      <p className="mt-2 text-[11px] text-muted-foreground">
-                        Toplam ağırlık {totalWeight}. Ağırlıklar oransaldır: 60 ve 40 yazmak ile 3 ve 2 yazmak aynı sonucu verir.
-                      </p>
+                      <p className="mt-2 text-[11px] text-muted-foreground">{tx('Toplam ağırlık {0}. Ağırlıklar oransaldır: 60 ve 40 yazmak ile 3 ve 2 yazmak aynı sonucu verir.', [totalWeight])}</p>
                     </div>
                   )}
                 </motion.section>
@@ -255,17 +253,17 @@ export function GoalsPage() {
                   <Panel>
                     <EmptyState
                       icon={Target}
-                      title={manager ? 'Bu dönem için hedef tanımlanmamış' : 'Bu dönem için hedefiniz yok'}
+                      title={manager ? tx('Bu dönem için hedef tanımlanmamış') : tx('Bu dönem için hedefiniz yok')}
                       detail={
                         manager
-                          ? 'Hedef yoksa puanın hedef ayağı boş kalır ve metrik puanı tam ağırlıkla kullanılır.'
-                          : 'Hedefleri yöneticiniz tanımlar. Hedef yoksa puanınız yalnızca metrik değerlendirmelerinden oluşur.'
+                          ? tx('Hedef yoksa puanın hedef ayağı boş kalır ve metrik puanı tam ağırlıkla kullanılır.')
+                          : tx('Hedefleri yöneticiniz tanımlar. Hedef yoksa puanınız yalnızca metrik değerlendirmelerinden oluşur.')
                       }
                       action={
                         editable && cycle ? (
                           <Button onClick={() => setCreating(true)}>
                             <Plus aria-hidden />
-                            İlk hedefi ekle
+                            {tx('İlk hedefi ekle')}
                           </Button>
                         ) : undefined
                       }
@@ -280,11 +278,11 @@ export function GoalsPage() {
                     </AnimatePresence>
                   </div>
                 )}
-                {!manager && <p className="mt-4 text-[12px] text-muted-foreground">Hedeflerinizi ve ilerlemenizi yöneticiniz günceller. Bir güncelleme eksikse yöneticinizle konuşun.</p>}
+                {!manager && <p className="mt-4 text-[12px] text-muted-foreground">{tx('Hedeflerinizi ve ilerlemenizi yöneticiniz günceller. Bir güncelleme eksikse yöneticinizle konuşun.')}</p>}
               </>
             ) : (
               <Panel>
-                <EmptyState icon={Target} title="Soldan bir çalışan seçin" detail="Seçtiğiniz kişinin bu dönemdeki hedefleri burada görünür." />
+                <EmptyState icon={Target} title={tx('Soldan bir çalışan seçin')} detail={tx('Seçtiğiniz kişinin bu dönemdeki hedefleri burada görünür.')} />
               </Panel>
             )}
           </div>

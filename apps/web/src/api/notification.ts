@@ -1,4 +1,5 @@
 import { apiFetch, qs } from './client'
+import { tx } from '@/lib/i18n'
 
 const BASE = '/api/notification'
 
@@ -8,17 +9,17 @@ export type NotificationChannel = 'InApp' | 'Email' | 'Push' | 'Sms'
 export type NotificationStatus = 'Pending' | 'Sent' | 'Failed' | 'Read'
 
 export const notificationChannelLabels: Record<NotificationChannel, string> = {
-  InApp: 'Uygulama içi',
+  InApp: tx('Uygulama içi'),
   Email: 'E-posta',
-  Push: 'Anlık bildirim',
-  Sms: 'SMS',
+  Push: tx('Anlık bildirim'),
+  Sms: tx('SMS'),
 }
 
 export const notificationStatusLabels: Record<NotificationStatus, string> = {
-  Pending: 'Kuyrukta',
-  Sent: 'Gönderildi',
-  Failed: 'Başarısız',
-  Read: 'Okundu',
+  Pending: tx('Kuyrukta'),
+  Sent: tx('Gönderildi'),
+  Failed: tx('Başarısız'),
+  Read: tx('Okundu'),
 }
 
 export interface AppNotification {

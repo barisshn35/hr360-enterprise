@@ -16,10 +16,11 @@ import { governanceApi, type AuditEntry, type AuditFilter } from '@/api/governan
 import { formatDateTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { PlanGate, errMsg } from '@/features/shared/kit'
+import { tx } from '@/lib/i18n'
 
 const ALL = '__all__'
 const actionTone = { Created: 'success', Updated: 'info', Deleted: 'danger' } as const
-const actionLabel: Record<string, string> = { Created: 'Oluşturma', Updated: 'Güncelleme', Deleted: 'Silme', Revealed: 'Görüntüleme', Exported: 'Dışa aktarma', Anonymized: 'Anonimleştirme' }
+const actionLabel: Record<string, string> = { Created: tx('Oluşturma'), Updated: tx('Güncelleme'), Deleted: tx('Silme'), Revealed: tx('Görüntüleme'), Exported: tx('Dışa aktarma'), Anonymized: tx('Anonimleştirme') }
 
 function fmt(v: unknown): string {
   if (v === null || v === undefined) return '∅'
@@ -30,7 +31,7 @@ function fmt(v: unknown): string {
 function Changes({ e }: { e: AuditEntry }) {
   const ch = e.changes ?? {}
   const keys = Object.keys(ch)
-  if (keys.length === 0) return <p className="text-[12px] text-muted-foreground">Ayrıntı yok.</p>
+  if (keys.length === 0) return <p className="text-[12px] text-muted-foreground">{tx('Ayrıntı yok.')}</p>
   return (
     <table className="w-full text-[12px]">
       <tbody>
@@ -64,44 +65,44 @@ export function AuditPage() {
   const pages = list.data ? Math.max(1, Math.ceil(list.data.total / list.data.pageSize)) : 1
   return (
     <PlanGate feature="audit">
-      <PageHeader title="Denetim kaydı" description="Kim, neyi, ne zaman, hangi istekle değiştirdi? Tüm servislerdeki ekleme/güncelleme/silme işlemleri eski → yeni değerleriyle." actions={<Button variant="outline" onClick={() => governanceApi.auditExport(f).catch((e) => toast.stop(errMsg(e)))}><Download className="size-4" /> CSV</Button>} />
+      <PageHeader title={tx('Denetim kaydı')} description={tx('Kim, neyi, ne zaman, hangi istekle değiştirdi? Tüm servislerdeki ekleme/güncelleme/silme işlemleri eski → yeni değerleriyle.')} actions={<Button variant="outline" onClick={() => governanceApi.auditExport(f).catch((e) => toast.stop(errMsg(e)))}><Download className="size-4" />{' '}{tx('CSV')}</Button>} />
       <div className="grid gap-6 xl:grid-cols-[300px_1fr]">
         <div className="space-y-5">
           <Panel>
-            <PanelHead title="Filtre" />
+            <PanelHead title={tx('Filtre')} />
             <PanelBody className="space-y-3">
               <form onSubmit={(e) => { e.preventDefault(); set({ q: q || undefined }) }} className="relative">
                 <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Değer, kişi veya kimlik ara" className="pl-9" />
+                <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={tx('Değer, kişi veya kimlik ara')} className="pl-9" />
               </form>
-              <SelectField label="Servis" value={f.service ?? ALL} onChange={(v) => set({ service: v === ALL ? undefined : v })} options={[{ value: ALL, label: 'Tümü' }, ...(facets.data?.services ?? []).map((s) => ({ value: s.name, label: `${s.name} (${s.count})` }))]} />
-              <SelectField label="Varlık" value={f.entityType ?? ALL} onChange={(v) => set({ entityType: v === ALL ? undefined : v })} options={[{ value: ALL, label: 'Tümü' }, ...(facets.data?.entityTypes ?? []).map((s) => ({ value: s.name, label: `${s.name} (${s.count})` }))]} />
-              <SelectField label="Kullanıcı" value={f.userId ?? ALL} onChange={(v) => set({ userId: v === ALL ? undefined : v })} options={[{ value: ALL, label: 'Tümü' }, ...(facets.data?.users ?? []).filter((u) => u.id).map((u) => ({ value: u.id!, label: `${u.name ?? u.id} (${u.count})` }))]} />
-              <SelectField label="İşlem" value={f.action ?? ALL} onChange={(v) => set({ action: v === ALL ? undefined : v })} options={[{ value: ALL, label: 'Tümü' }, ...Object.entries(actionLabel).map(([k, v]) => ({ value: k, label: v }))]} />
+              <SelectField label={tx('Servis')} value={f.service ?? ALL} onChange={(v) => set({ service: v === ALL ? undefined : v })} options={[{ value: ALL, label: tx('Tümü') }, ...(facets.data?.services ?? []).map((s) => ({ value: s.name, label: `${s.name} (${s.count})` }))]} />
+              <SelectField label={tx('Varlık')} value={f.entityType ?? ALL} onChange={(v) => set({ entityType: v === ALL ? undefined : v })} options={[{ value: ALL, label: tx('Tümü') }, ...(facets.data?.entityTypes ?? []).map((s) => ({ value: s.name, label: `${s.name} (${s.count})` }))]} />
+              <SelectField label={tx('Kullanıcı')} value={f.userId ?? ALL} onChange={(v) => set({ userId: v === ALL ? undefined : v })} options={[{ value: ALL, label: tx('Tümü') }, ...(facets.data?.users ?? []).filter((u) => u.id).map((u) => ({ value: u.id!, label: `${u.name ?? u.id} (${u.count})` }))]} />
+              <SelectField label={tx('İşlem')} value={f.action ?? ALL} onChange={(v) => set({ action: v === ALL ? undefined : v })} options={[{ value: ALL, label: tx('Tümü') }, ...Object.entries(actionLabel).map(([k, v]) => ({ value: k, label: v }))]} />
               <div className="grid grid-cols-2 gap-2">
-                <TextField label="Başlangıç" type="date" value={f.from ?? ''} onChange={(e) => set({ from: e.target.value || undefined })} />
-                <TextField label="Bitiş" type="date" value={f.to ?? ''} onChange={(e) => set({ to: e.target.value || undefined })} />
+                <TextField label={tx('Başlangıç')} type="date" value={f.from ?? ''} onChange={(e) => set({ from: e.target.value || undefined })} />
+                <TextField label={tx('Bitiş')} type="date" value={f.to ?? ''} onChange={(e) => set({ to: e.target.value || undefined })} />
               </div>
-              <Button variant="ghost" size="sm" onClick={() => { setQ(''); setF({ page: 1, pageSize: 50 }) }}>Temizle</Button>
+              <Button variant="ghost" size="sm" onClick={() => { setQ(''); setF({ page: 1, pageSize: 50 }) }}>{tx('Temizle')}</Button>
             </PanelBody>
           </Panel>
           <Panel>
-            <PanelHead title="Son 90 gün" />
+            <PanelHead title={tx('Son 90 gün')} />
             <PanelBody className="h-28 p-2">
               <ResponsiveContainer>
                 <AreaChart data={facets.data?.daily ?? []}>
                   <XAxis dataKey="day" hide />
                   <Tooltip contentStyle={{ background: 'hsl(var(--popover))', border: '1px solid hsl(var(--border))', borderRadius: 12, fontSize: 12 }} />
-                  <Area dataKey="count" name="Kayıt" stroke="hsl(var(--primary))" fill="hsl(var(--primary)/0.2)" />
+                  <Area dataKey="count" name={tx('Kayıt')} stroke="hsl(var(--primary))" fill="hsl(var(--primary)/0.2)" />
                 </AreaChart>
               </ResponsiveContainer>
             </PanelBody>
           </Panel>
         </div>
         <Panel>
-          <PanelHead title={`${list.data?.total ?? 0} kayıt`} note="Satıra tıklayın: alan bazında eski → yeni değer. Hassas alanlar *** olarak tutulur." />
+          <PanelHead title={tx('{0} kayıt', [list.data?.total ?? 0])} note={tx('Satıra tıklayın: alan bazında eski → yeni değer. Hassas alanlar *** olarak tutulur.')} />
           <PanelBody className="p-0">
-            {list.isPending ? <div className="p-5"><RowsSkeleton /></div> : list.isError ? <ErrorState message={(list.error as Error).message} /> : list.data.items.length === 0 ? <EmptyState icon={ScrollText} title="Kayıt yok" /> : (
+            {list.isPending ? <div className="p-5"><RowsSkeleton /></div> : list.isError ? <ErrorState message={(list.error as Error).message} /> : list.data.items.length === 0 ? <EmptyState icon={ScrollText} title={tx('Kayıt yok')} /> : (
               <ul className="divide-y divide-border">
                 {list.data.items.map((e) => (
                   <li key={e.id}>
@@ -120,8 +121,8 @@ export function AuditPage() {
                           <div className="space-y-2 py-3">
                             <Changes e={e} />
                             <div className="flex flex-wrap gap-3 text-[11.5px] text-muted-foreground">
-                              <span>IP: {e.ipAddress ?? '—'}</span>
-                              {e.correlationId && <button onClick={() => setCorr(e.correlationId)} className="flex cursor-pointer items-center gap-1 text-primary hover:underline"><Link2 className="size-3" /> Aynı istekteki tüm değişiklikler ({e.correlationId.slice(0, 10)}…)</button>}
+                              <span>{tx('IP: {0}', [e.ipAddress ?? '—'])}</span>
+                              {e.correlationId && <button onClick={() => setCorr(e.correlationId)} className="flex cursor-pointer items-center gap-1 text-primary hover:underline"><Link2 className="size-3" />{' '}{tx('Aynı istekteki tüm değişiklikler ({0}…)', [e.correlationId.slice(0, 10)])}</button>}
                             </div>
                           </div>
                         </motion.div>
@@ -132,17 +133,17 @@ export function AuditPage() {
               </ul>
             )}
             <div className="flex items-center justify-between border-t border-border px-5 py-2.5 text-[12.5px]">
-              <span className="text-muted-foreground">Sayfa {f.page} / {pages}</span>
+              <span className="text-muted-foreground">{tx('Sayfa {0} / {1}', [f.page, pages])}</span>
               <div className="flex gap-2">
-                <Button size="sm" variant="outline" disabled={(f.page ?? 1) <= 1} onClick={() => setF((x) => ({ ...x, page: (x.page ?? 1) - 1 }))}>Önceki</Button>
-                <Button size="sm" variant="outline" disabled={(f.page ?? 1) >= pages} onClick={() => setF((x) => ({ ...x, page: (x.page ?? 1) + 1 }))}>Sonraki</Button>
+                <Button size="sm" variant="outline" disabled={(f.page ?? 1) <= 1} onClick={() => setF((x) => ({ ...x, page: (x.page ?? 1) - 1 }))}>{tx('Önceki')}</Button>
+                <Button size="sm" variant="outline" disabled={(f.page ?? 1) >= pages} onClick={() => setF((x) => ({ ...x, page: (x.page ?? 1) + 1 }))}>{tx('Sonraki')}</Button>
               </div>
             </div>
           </PanelBody>
         </Panel>
       </div>
       {corr && (
-        <Modal open onClose={() => setCorr(null)} size="lg" title="İstek zinciri" note={`X-Correlation-Id: ${corr}`}>
+        <Modal open onClose={() => setCorr(null)} size="lg" title={tx('İstek zinciri')} note={`X-Correlation-Id: ${corr}`}>
           {chain.isPending ? <RowsSkeleton rows={3} /> : (
             <ol className="relative space-y-4 border-l border-border pl-5">
               {chain.data?.map((e) => (

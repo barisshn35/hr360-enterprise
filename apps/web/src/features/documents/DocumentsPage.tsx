@@ -15,6 +15,7 @@ import { useDocuments } from '@/api/queries'
 import type { HrDocument } from '@/api/types'
 import { formatDateTime } from '@/lib/format'
 import { useEmployeeName } from '@/lib/useEmployeeName'
+import { tx } from '@/lib/i18n'
 
 function NewDocumentModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const toast = useToast()
@@ -35,20 +36,20 @@ function NewDocumentModal({ open, onClose }: { open: boolean; onClose: () => voi
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['expense'] })
-      toast.ok('Doküman kaydedildi')
+      toast.ok(tx('Doküman kaydedildi'))
       onClose()
       setType('')
       setName('')
       setStorageKey('')
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : 'Doküman kaydedilemedi.'),
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Doküman kaydedilemedi.')),
   })
 
   function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (!employeeId) return setError('Çalışan seçilmeli.')
-    if (!type) return setError('Doküman türü zorunlu.')
-    if (name.trim().length < 3) return setError('Doküman adı en az 3 karakter olmalı.')
+    if (!employeeId) return setError(tx('Çalışan seçilmeli.'))
+    if (!type) return setError(tx('Doküman türü zorunlu.'))
+    if (name.trim().length < 3) return setError(tx('Doküman adı en az 3 karakter olmalı.'))
     setError(undefined)
     mutation.mutate()
   }
@@ -57,8 +58,8 @@ function NewDocumentModal({ open, onClose }: { open: boolean; onClose: () => voi
     <Modal
       open={open}
       onClose={onClose}
-      title="Yeni doküman kaydı"
-      note="Dosya yükleme backend'de henüz yok; burada yalnızca kayıt tutulur."
+      title={tx('Yeni doküman kaydı')}
+      note={tx('Dosya yükleme backend\'de henüz yok; burada yalnızca kayıt tutulur.')}
       size="lg"
       footer={
         <>
@@ -68,7 +69,7 @@ function NewDocumentModal({ open, onClose }: { open: boolean; onClose: () => voi
             onClick={onClose}
             disabled={mutation.isPending}
           >
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button
             type="submit"
@@ -77,7 +78,7 @@ function NewDocumentModal({ open, onClose }: { open: boolean; onClose: () => voi
             disabled={mutation.isPending}
           >
             {mutation.isPending && <LoaderCircle className="size-4 animate-spin" />}
-            Kaydet
+            {tx('Kaydet')}
           </Button>
         </>
       }
@@ -92,7 +93,7 @@ function NewDocumentModal({ open, onClose }: { open: boolean; onClose: () => voi
         <div className="grid gap-4 sm:grid-cols-2">
           <SelectField
             id="doc-type"
-            label="Tür"
+            label={tx('Tür')}
             required
             value={type}
             onChange={(v) => setType(v as DocumentType)}
@@ -100,12 +101,12 @@ function NewDocumentModal({ open, onClose }: { open: boolean; onClose: () => voi
               value: t,
               label: documentTypeLabels[t],
             }))}
-            placeholder="Tür seçin"
+            placeholder={tx('Tür seçin')}
             error={error?.includes('türü') ? error : undefined}
           />
           <TextField
             id="doc-name"
-            label="Doküman adı"
+            label={tx('Doküman adı')}
             required
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -114,8 +115,8 @@ function NewDocumentModal({ open, onClose }: { open: boolean; onClose: () => voi
         </div>
         <TextField
           id="doc-key"
-          label="Depolama anahtarı"
-          hint="İsteğe bağlı; dosya deposundaki karşılığı"
+          label={tx('Depolama anahtarı')}
+          hint={tx('İsteğe bağlı; dosya deposundaki karşılığı')}
           value={storageKey}
           onChange={(e) => setStorageKey(e.target.value)}
         />
@@ -132,10 +133,10 @@ function DeleteConfirm({ doc, onClose }: { doc: HrDocument | null; onClose: () =
     mutationFn: () => expenseApi.deleteDocument(doc!.id),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['expense'] })
-      toast.ok('Doküman kaydı silindi')
+      toast.ok(tx('Doküman kaydı silindi'))
       onClose()
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : 'Kayıt silinemedi.'),
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Kayıt silinemedi.')),
   })
 
   if (!doc) return null
@@ -144,7 +145,7 @@ function DeleteConfirm({ doc, onClose }: { doc: HrDocument | null; onClose: () =
     <Modal
       open
       onClose={onClose}
-      title="Doküman kaydını sil"
+      title={tx('Doküman kaydını sil')}
       note={doc.fileName}
       footer={
         <>
@@ -154,7 +155,7 @@ function DeleteConfirm({ doc, onClose }: { doc: HrDocument | null; onClose: () =
             onClick={onClose}
             disabled={mutation.isPending}
           >
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button
             variant="destructive"
@@ -163,14 +164,13 @@ function DeleteConfirm({ doc, onClose }: { doc: HrDocument | null; onClose: () =
             onClick={() => mutation.mutate()}
           >
             {mutation.isPending && <LoaderCircle className="size-4 animate-spin" />}
-            Sil
+            {tx('Sil')}
           </Button>
         </>
       }
     >
       <p className="text-[14px] leading-relaxed text-muted-foreground">
-        Bu kayıt kalıcı olarak silinir ve geri alınamaz. Dosyanın kendisi varsa depoda kalmaya
-        devam eder.
+        {tx('Bu kayıt kalıcı olarak silinir ve geri alınamaz. Dosyanın kendisi varsa depoda kalmaya devam eder.')}
       </p>
     </Modal>
   )
@@ -187,21 +187,21 @@ export function DocumentsPage() {
   const columns: Array<Column<HrDocument>> = [
     {
       id: 'name',
-      header: 'Doküman',
+      header: tx('Doküman'),
       searchText: (d) => `${d.fileName} ${documentTypeLabels[d.type] ?? d.type} ${d.storageKey}`,
       sortValue: (d) => d.fileName,
       cell: (d) => (
         <div className="min-w-0">
           <p className="truncate font-medium text-foreground">{d.fileName}</p>
           <p className="mt-0.5 truncate text-[12px] text-muted-foreground">
-            {d.storageKey || 'dosya bağlı değil'}
+            {d.storageKey || tx('dosya bağlı değil')}
           </p>
         </div>
       ),
     },
     {
       id: 'type',
-      header: 'Tür',
+      header: tx('Tür'),
       hideBelow: 'sm',
       sortValue: (d) => documentTypeLabels[d.type] ?? d.type,
       exportText: (d) => documentTypeLabels[d.type] ?? d.type,
@@ -209,7 +209,7 @@ export function DocumentsPage() {
     },
     {
       id: 'employee',
-      header: 'Çalışan',
+      header: tx('Çalışan'),
       hideBelow: 'md',
       searchText: (d) => nameOf(d.employeeId),
       sortValue: (d) => nameOf(d.employeeId),
@@ -218,7 +218,7 @@ export function DocumentsPage() {
     },
     {
       id: 'createdAt',
-      header: 'Kayıt',
+      header: tx('Kayıt'),
       align: 'right',
       hideBelow: 'lg',
       sortValue: (d) => new Date(d.uploadedAt).getTime(),
@@ -232,12 +232,12 @@ export function DocumentsPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Dokümanlar"
-        description="Çalışan dosyalarına bağlı doküman kayıtları. Bu sayfa yalnızca İK yönetimine açıktır."
+        title={tx('Dokümanlar')}
+        description={tx('Çalışan dosyalarına bağlı doküman kayıtları. Bu sayfa yalnızca İK yönetimine açıktır.')}
         actions={
           <Button className="cursor-pointer" onClick={() => setModalOpen(true)}>
             <Plus className="size-4" />
-            Yeni kayıt
+            {tx('Yeni kayıt')}
           </Button>
         }
       />
@@ -247,7 +247,7 @@ export function DocumentsPage() {
           id="doc-filter-employee"
           value={employeeId}
           onChange={setEmployeeId}
-          hint="Boş bırakılırsa tüm çalışanlar listelenir."
+          hint={tx('Boş bırakılırsa tüm çalışanlar listelenir.')}
         />
       </div>
 
@@ -258,24 +258,23 @@ export function DocumentsPage() {
         isLoading={documents.isPending}
         error={documents.error}
         onRetry={() => void documents.refetch()}
-        searchPlaceholder="Doküman adı, tür veya çalışan"
+        searchPlaceholder={tx('Doküman adı, tür veya çalışan')}
         exportFileName="dokuman-kayitlari"
         pageSize={12}
         initialSort={{ columnId: 'createdAt', dir: 'desc' }}
-        emptyTitle="Doküman kaydı yok"
-        emptyDetail="Bu filtreye uyan kayıt bulunmuyor."
+        emptyTitle={tx('Doküman kaydı yok')}
+        emptyDetail={tx('Bu filtreye uyan kayıt bulunmuyor.')}
         emptyAction={
           <Button size="sm" className="cursor-pointer" onClick={() => setModalOpen(true)}>
-            Yeni kayıt
+            {tx('Yeni kayıt')}
           </Button>
         }
         rowActions={[
-          { label: 'Kaydı sil', destructive: true, onSelect: (d) => setToDelete(d) },
+          { label: tx('Kaydı sil'), destructive: true, onSelect: (d) => setToDelete(d) },
         ]}
         notice={
           <InfoNote>
-            Bu ekran dosyanın kendisini tutmaz — yalnızca hangi çalışanda hangi belgenin
-            bulunduğunu kayda geçirir. Dosya yükleme ucu backend'e eklendiğinde buraya bağlanır.
+            {tx('Bu ekran dosyanın kendisini tutmaz — yalnızca hangi çalışanda hangi belgenin bulunduğunu kayda geçirir. Dosya yükleme ucu backend\'e eklendiğinde buraya bağlanır.')}
           </InfoNote>
         }
       />

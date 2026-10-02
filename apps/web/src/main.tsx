@@ -1,6 +1,6 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { App } from './App'
+import { loadLocale } from './lib/i18n'
 import './styles/index.css'
 // Hareket katmanı ayrı dosyada: index.css devir paketinden geldiği gibi kalıyor.
 import './styles/motion.css'
@@ -33,9 +33,16 @@ if (import.meta.env.PROD && !__MOCK_API__ && 'serviceWorker' in navigator) {
   })
 }
 
+/**
+ * Dil sözlüğü uygulama modüllerinden ÖNCE yüklenir: menü ve durum etiketleri gibi
+ * modül düzeyindeki metinler içe aktarılırken seçili dilde oluşur.
+ */
 void prepare()
   .catch((e: unknown) => console.error('[HR360] Mock katmanı başlatılamadı:', e))
-  .finally(() => {
+  .then(() => loadLocale())
+  .catch((e: unknown) => console.error('[HR360] Dil dosyası yüklenemedi:', e))
+  .then(() => import('./App'))
+  .then(({ App }) => {
     createRoot(container).render(
       <StrictMode>
         <App />

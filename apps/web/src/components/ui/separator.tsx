@@ -1,8 +1,9 @@
-"use client"
+tx('use client')
 
 import * as React from "react"
 import { cn } from "@/lib/utils"
 import { Separator as SeparatorPrimitive } from "radix-ui"
+import { tx } from '@/lib/i18n'
 
 function Separator({
   className,

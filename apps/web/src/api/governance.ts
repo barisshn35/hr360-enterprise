@@ -2,6 +2,7 @@ import { apiFetch, qs } from './client'
 import { getValidToken } from '@/auth/keycloak'
 import { env } from '@/lib/env'
 import { downloadAuthed } from './engagement'
+import { tx } from '@/lib/i18n'
 
 /* ============================== governance-service ==============================
  * Denetim, canlı olaylar, zaman makinesi, KVKK, belge şablonları, kural
@@ -105,7 +106,7 @@ export interface ConsentSummary {
 }
 export type DataRequestKind = 'Access' | 'Rectification' | 'Erasure' | 'Objection'
 export const dataRequestLabels: Record<DataRequestKind, string> = {
-  Access: 'Bilgi/erişim talebi', Rectification: 'Düzeltme', Erasure: 'Silme/yok etme', Objection: 'İtiraz',
+  Access: tx('Bilgi/erişim talebi'), Rectification: tx('Düzeltme'), Erasure: 'Silme/yok etme', Objection: tx('İtiraz'),
 }
 export interface DataRequest {
   id: string
@@ -265,7 +266,7 @@ export async function streamEvents(onEvent: (e: RadarEvent) => void, signal: Abo
     headers: { Authorization: `Bearer ${token}`, Accept: 'text/event-stream' },
     signal,
   })
-  if (!res.ok || !res.body) throw new Error(`Akış açılamadı (HTTP ${res.status})`)
+  if (!res.ok || !res.body) throw new Error(tx('Akış açılamadı (HTTP {0})', [res.status]))
   onOpen?.()
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
@@ -538,7 +539,7 @@ export const governanceApi = {
   invoiceHtml: async (id: string) => {
     const token = await getValidToken()
     const res = await fetch(`${env.apiBase}${BASE}/billing/invoices/${id}/html`, { headers: { Authorization: `Bearer ${token}` } })
-    if (!res.ok) throw new Error('Fatura alınamadı')
+    if (!res.ok) throw new Error(tx('Fatura alınamadı'))
     return res.text()
   },
 

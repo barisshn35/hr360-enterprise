@@ -11,6 +11,7 @@
 
 import { useId, useMemo, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
+import { tx, appLocale } from '@/lib/i18n'
 
 type PathPoint = { x: number; y: number; leftFrac: number; topFrac: number }
 
@@ -52,7 +53,7 @@ function buildLinePath(points: PathPoint[], smoothing: number): string {
   return d
 }
 
-const defaultFormat = (v: number) => v.toLocaleString('tr-TR')
+const defaultFormat = (v: number) => v.toLocaleString(appLocale)
 
 export function Sparkline({
   data,
@@ -65,7 +66,7 @@ export function Sparkline({
   interactive = true,
   format = defaultFormat,
   className,
-  'aria-label': ariaLabel = 'Trend grafiği',
+  'aria-label': ariaLabel = tx('Trend grafiği'),
 }: SparklineProps) {
   const gradientId = useId()
   const [active, setActive] = useState<number | null>(null)

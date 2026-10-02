@@ -4,6 +4,7 @@ import { ShieldOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useAuth } from './useAuth'
 import { primaryRole, roleLabels, hasStandardRole, type Permission, type Role } from './roles'
+import { tx } from '@/lib/i18n'
 
 /**
  * Yetkisiz erişimde boş sayfa yerine ne olduğunu ve ne yapılacağını söyler.
@@ -33,13 +34,10 @@ export function RequirePermission({
         <span className="mb-4 flex size-11 items-center justify-center rounded-full bg-muted">
           <ShieldOff aria-hidden="true" className="size-5 text-muted-foreground" strokeWidth={1.5} />
         </span>
-        <h1 className="text-[22px] leading-tight font-semibold">Bu bölüme erişiminiz yok</h1>
-        <p className="mt-2 text-[14px] leading-relaxed text-muted-foreground">
-          Rolünüz ({roleLabels[primaryRole(roles)]}) bu sayfayı kapsamıyor. Erişim gerekiyorsa
-          İK yöneticinizden rol talep edin.
-        </p>
+        <h1 className="text-[22px] leading-tight font-semibold">{tx('Bu bölüme erişiminiz yok')}</h1>
+        <p className="mt-2 text-[14px] leading-relaxed text-muted-foreground">{tx('Rolünüz ({0}) bu sayfayı kapsamıyor. Erişim gerekiyorsa İK yöneticinizden rol talep edin.', [roleLabels[primaryRole(roles)]])}</p>
         <Button asChild className="mt-6">
-          <Link to="/panel">Genel bakışa dön</Link>
+          <Link to="/panel">{tx('Genel bakışa dön')}</Link>
         </Button>
       </div>
     </div>

@@ -34,6 +34,7 @@ function useCanWriteCompensation() {
   return isHr(roles)
 }
 import { cn } from '@/lib/utils'
+import { tx } from '@/lib/i18n'
 
 type TabKey = 'bantlar' | 'gecmis' | 'simulasyon'
 
@@ -70,7 +71,7 @@ function NewBandModal({
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['compensation'] })
-      toast.ok('Ücret bandı eklendi')
+      toast.ok(tx('Ücret bandı eklendi'))
       onClose()
       setGrade('')
       setTitle('')
@@ -78,15 +79,15 @@ function NewBandModal({
       setMid('')
       setMax('')
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : 'Bant eklenemedi.'),
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Bant eklenemedi.')),
   })
 
   function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (!grade.trim()) return setError('Kademe zorunlu.')
+    if (!grade.trim()) return setError(tx('Kademe zorunlu.'))
     const [lo, mid, hi] = [Number(minAmount), Number(midAmount), Number(maxAmount)]
-    if (!lo || !mid || !hi) return setError('Alt, orta ve üst tutar zorunlu.')
-    if (!(lo <= mid && mid <= hi)) return setError('Tutarlar alt ≤ orta ≤ üst sırasında olmalı.')
+    if (!lo || !mid || !hi) return setError(tx('Alt, orta ve üst tutar zorunlu.'))
+    if (!(lo <= mid && mid <= hi)) return setError(tx('Tutarlar alt ≤ orta ≤ üst sırasında olmalı.'))
     setError(undefined)
     mutation.mutate()
   }
@@ -95,8 +96,8 @@ function NewBandModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="Yeni ücret bandı"
-      note={`${year} yılı`}
+      title={tx('Yeni ücret bandı')}
+      note={tx('{0} yılı', [year])}
       size="lg"
       footer={
         <>
@@ -106,7 +107,7 @@ function NewBandModal({
             onClick={onClose}
             disabled={mutation.isPending}
           >
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button
             type="submit"
@@ -115,7 +116,7 @@ function NewBandModal({
             disabled={mutation.isPending}
           >
             {mutation.isPending && <LoaderCircle className="size-4 animate-spin" />}
-            Bandı ekle
+            {tx('Bandı ekle')}
           </Button>
         </>
       }
@@ -124,7 +125,7 @@ function NewBandModal({
         <div className="grid gap-4 sm:grid-cols-2">
           <TextField
             id="band-grade"
-            label="Kademe"
+            label={tx('Kademe')}
             required
             value={grade}
             onChange={(e) => setGrade(e.target.value)}
@@ -132,8 +133,8 @@ function NewBandModal({
           />
           <TextField
             id="band-title"
-            label="Unvan"
-            hint="İsteğe bağlı"
+            label={tx('Unvan')}
+            hint={tx('İsteğe bağlı')}
             value={title}
             onChange={(e) => setTitle(e.target.value)}
           />
@@ -141,7 +142,7 @@ function NewBandModal({
         <div className="grid gap-4 sm:grid-cols-3">
           <TextField
             id="band-min"
-            label="Alt"
+            label={tx('Alt')}
             type="number"
             min={0}
             required
@@ -151,7 +152,7 @@ function NewBandModal({
           />
           <TextField
             id="band-mid"
-            label="Orta"
+            label={tx('Orta')}
             type="number"
             min={0}
             required
@@ -161,7 +162,7 @@ function NewBandModal({
           />
           <TextField
             id="band-max"
-            label="Üst"
+            label={tx('Üst')}
             type="number"
             min={0}
             required
@@ -233,7 +234,7 @@ function BandsTab({ year, onYearChange }: { year: number; onYearChange: (y: numb
   const columns: Array<Column<CompensationBand>> = [
     {
       id: 'grade',
-      header: 'Kademe',
+      header: tx('Kademe'),
       searchText: (b) => `${b.grade} ${b.title ?? ''}`,
       sortValue: (b) => b.grade,
       exportText: (b) => b.grade,
@@ -246,13 +247,13 @@ function BandsTab({ year, onYearChange }: { year: number; onYearChange: (y: numb
     },
     {
       id: 'span',
-      header: 'Aralık',
+      header: tx('Aralık'),
       hideBelow: 'md',
       cell: (b) => <BandSpan band={b} floor={floor} ceiling={ceiling} />,
     },
     {
       id: 'min',
-      header: 'Alt',
+      header: tx('Alt'),
       align: 'right',
       sortValue: (b) => b.minAmount,
       exportText: (b) => formatMoney(b.minAmount, b.currency),
@@ -262,7 +263,7 @@ function BandsTab({ year, onYearChange }: { year: number; onYearChange: (y: numb
     },
     {
       id: 'mid',
-      header: 'Orta',
+      header: tx('Orta'),
       align: 'right',
       sortValue: (b) => b.midAmount,
       exportText: (b) => formatMoney(b.midAmount, b.currency),
@@ -270,7 +271,7 @@ function BandsTab({ year, onYearChange }: { year: number; onYearChange: (y: numb
     },
     {
       id: 'max',
-      header: 'Üst',
+      header: tx('Üst'),
       align: 'right',
       hideBelow: 'sm',
       sortValue: (b) => b.maxAmount,
@@ -286,7 +287,7 @@ function BandsTab({ year, onYearChange }: { year: number; onYearChange: (y: numb
       <div className="flex flex-wrap items-end justify-between gap-4">
         <TextField
           id="band-year"
-          label="Yıl"
+          label={tx('Yıl')}
           type="number"
           min={2020}
           max={2100}
@@ -297,7 +298,7 @@ function BandsTab({ year, onYearChange }: { year: number; onYearChange: (y: numb
         {canWrite && (
           <Button className="cursor-pointer" onClick={() => setModalOpen(true)}>
             <Plus className="size-4" />
-            Yeni bant
+            {tx('Yeni bant')}
           </Button>
         )}
       </div>
@@ -309,15 +310,15 @@ function BandsTab({ year, onYearChange }: { year: number; onYearChange: (y: numb
         isLoading={bands.isPending}
         error={bands.error}
         onRetry={() => void bands.refetch()}
-        searchPlaceholder="Kademe veya unvan ara"
+        searchPlaceholder={tx('Kademe veya unvan ara')}
         exportFileName={`ucret-bantlari-${year}`}
         initialSort={{ columnId: 'min', dir: 'asc' }}
-        emptyTitle="Bu yıl için bant yok"
-        emptyDetail="Bantlar tanımlanmadan zam simülasyonu bant dışı satırları işaretleyemez."
+        emptyTitle={tx('Bu yıl için bant yok')}
+        emptyDetail={tx('Bantlar tanımlanmadan zam simülasyonu bant dışı satırları işaretleyemez.')}
         emptyAction={
           canWrite ? (
             <Button size="sm" className="cursor-pointer" onClick={() => setModalOpen(true)}>
-              Yeni bant
+              {tx('Yeni bant')}
             </Button>
           ) : undefined
         }
@@ -361,18 +362,18 @@ function NewRecordModal({
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['compensation'] })
-      toast.ok('Ücret kaydı eklendi')
+      toast.ok(tx('Ücret kaydı eklendi'))
       onClose()
       setSalary('')
       setNote('')
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : 'Kayıt eklenemedi.'),
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Kayıt eklenemedi.')),
   })
 
   function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (!Number(baseSalary)) return setError('Taban ücret zorunlu.')
-    if (!effectiveFrom) return setError('Geçerlilik tarihi zorunlu.')
+    if (!Number(baseSalary)) return setError(tx('Taban ücret zorunlu.'))
+    if (!effectiveFrom) return setError(tx('Geçerlilik tarihi zorunlu.'))
     setError(undefined)
     mutation.mutate()
   }
@@ -381,8 +382,8 @@ function NewRecordModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="Yeni ücret kaydı"
-      note="Önceki kayıt otomatik olarak kapanır."
+      title={tx('Yeni ücret kaydı')}
+      note={tx('Önceki kayıt otomatik olarak kapanır.')}
       size="lg"
       footer={
         <>
@@ -392,7 +393,7 @@ function NewRecordModal({
             onClick={onClose}
             disabled={mutation.isPending}
           >
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button
             type="submit"
@@ -401,7 +402,7 @@ function NewRecordModal({
             disabled={mutation.isPending}
           >
             {mutation.isPending && <LoaderCircle className="size-4 animate-spin" />}
-            Kaydet
+            {tx('Kaydet')}
           </Button>
         </>
       }
@@ -410,7 +411,7 @@ function NewRecordModal({
         <div className="grid gap-4 sm:grid-cols-2">
           <TextField
             id="rec-salary"
-            label="Taban ücret"
+            label={tx('Taban ücret')}
             type="number"
             min={0}
             required
@@ -421,8 +422,8 @@ function NewRecordModal({
           />
           <TextField
             id="rec-grade"
-            label="Kademe"
-            hint="İsteğe bağlı"
+            label={tx('Kademe')}
+            hint={tx('İsteğe bağlı')}
             value={grade}
             onChange={(e) => setGrade(e.target.value)}
           />
@@ -430,7 +431,7 @@ function NewRecordModal({
         <div className="grid gap-4 sm:grid-cols-2">
           <SelectField
             id="rec-reason"
-            label="Gerekçe"
+            label={tx('Gerekçe')}
             value={reason}
             onChange={(v) => setReason(v as CompensationChangeReason)}
             options={(Object.keys(compensationReasonLabels) as CompensationChangeReason[]).map(
@@ -439,7 +440,7 @@ function NewRecordModal({
           />
           <TextField
             id="rec-from"
-            label="Geçerlilik başlangıcı"
+            label={tx('Geçerlilik başlangıcı')}
             type="date"
             required
             value={effectiveFrom}
@@ -449,9 +450,9 @@ function NewRecordModal({
         </div>
         <TextAreaField
           id="rec-note"
-          label="Not"
+          label={tx('Not')}
           rows={2}
-          hint="İsteğe bağlı"
+          hint={tx('İsteğe bağlı')}
           value={note}
           onChange={(e) => setNote(e.target.value)}
         />
@@ -480,23 +481,23 @@ function HistoryTab() {
             id="comp-employee"
             value={employeeId}
             onChange={setEmployeeId}
-            hint="Ücret geçmişini görmek için çalışan seçin."
+            hint={tx('Ücret geçmişini görmek için çalışan seçin.')}
           />
         </div>
         {employeeId && canWrite && (
           <Button className="cursor-pointer" onClick={() => setModalOpen(true)}>
             <Plus className="size-4" />
-            Ücret kaydı ekle
+            {tx('Ücret kaydı ekle')}
           </Button>
         )}
       </div>
 
       <Panel>
-        <PanelHead title="Ücret geçmişi" note="En yeni kayıt en üstte" />
+        <PanelHead title={tx('Ücret geçmişi')} note={tx('En yeni kayıt en üstte')} />
         {!employeeId ? (
           <EmptyState
-            title="Çalışan seçilmedi"
-            detail="Ücret verisi hassastır; yalnızca seçilen çalışanın kaydı getirilir."
+            title={tx('Çalışan seçilmedi')}
+            detail={tx('Ücret verisi hassastır; yalnızca seçilen çalışanın kaydı getirilir.')}
           />
         ) : records.isPending ? (
           <RowsSkeleton rows={4} columns={3} />
@@ -507,8 +508,8 @@ function HistoryTab() {
           />
         ) : rows.length === 0 ? (
           <EmptyState
-            title="Ücret kaydı yok"
-            detail="Bu çalışan için henüz bir ücret kaydı girilmemiş."
+            title={tx('Ücret kaydı yok')}
+            detail={tx('Bu çalışan için henüz bir ücret kaydı girilmemiş.')}
           />
         ) : (
           <PanelBody>
@@ -561,8 +562,8 @@ function HistoryTab() {
                     </div>
                     <p className="tabular mt-1 text-[12px] text-muted-foreground">
                       {formatDate(r.effectiveFrom)}
-                      {r.effectiveTo ? ` – ${formatDate(r.effectiveTo)}` : ' – sürüyor'}
-                      {r.grade ? `, kademe ${r.grade}` : ''}
+                      {r.effectiveTo ? ` – ${formatDate(r.effectiveTo)}` : tx(' – sürüyor')}
+                      {r.grade ? tx(', kademe {0}', [r.grade]) : ''}
                     </p>
                     {r.note && (
                       <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
@@ -616,7 +617,7 @@ function SimulationTab({ year }: { year: number }) {
       }),
     onSuccess: (data) => setResult(data),
     onError: (e: unknown) =>
-      toast.stop(e instanceof Error ? e.message : 'Simülasyon çalıştırılamadı.'),
+      toast.stop(e instanceof Error ? e.message : tx('Simülasyon çalıştırılamadı.')),
   })
 
   function toggle(id: string) {
@@ -628,20 +629,20 @@ function SimulationTab({ year }: { year: number }) {
   const lineColumns: Array<Column<Line>> = [
     {
       id: 'employee',
-      header: 'Çalışan',
+      header: tx('Çalışan'),
       searchText: (l) => nameOf(l.employeeId),
       sortValue: (l) => nameOf(l.employeeId),
       exportText: (l) => nameOf(l.employeeId),
       cell: (l) => (
         <div className="min-w-0">
           <p className="truncate font-medium text-foreground">{nameOf(l.employeeId)}</p>
-          {l.grade && <p className="text-[12px] text-muted-foreground">Kademe {l.grade}</p>}
+          {l.grade && <p className="text-[12px] text-muted-foreground">{tx('Kademe {0}', [l.grade])}</p>}
         </div>
       ),
     },
     {
       id: 'current',
-      header: 'Mevcut',
+      header: tx('Mevcut'),
       align: 'right',
       hideBelow: 'sm',
       sortValue: (l) => l.currentSalary,
@@ -650,7 +651,7 @@ function SimulationTab({ year }: { year: number }) {
     },
     {
       id: 'proposed',
-      header: 'Önerilen',
+      header: tx('Önerilen'),
       align: 'right',
       sortValue: (l) => l.proposedSalary,
       exportText: (l) => formatMoney(l.proposedSalary),
@@ -662,7 +663,7 @@ function SimulationTab({ year }: { year: number }) {
     },
     {
       id: 'increase',
-      header: 'Artış',
+      header: tx('Artış'),
       align: 'right',
       hideBelow: 'md',
       sortValue: (l) => l.increaseAmount,
@@ -678,16 +679,15 @@ function SimulationTab({ year }: { year: number }) {
     },
     {
       id: 'band',
-      header: 'Bant',
+      header: tx('Bant'),
       align: 'right',
       sortValue: (l) => (l.withinBand ? 1 : 0),
-      exportText: (l) => (l.withinBand ? 'Bant içi' : 'Bant dışı'),
+      exportText: (l) => (l.withinBand ? tx('Bant içi') : tx('Bant dışı')),
       cell: (l) =>
         l.withinBand ? (
-          <StatusBadge tone="success">Bant içi</StatusBadge>
+          <StatusBadge tone="success">{tx('Bant içi')}</StatusBadge>
         ) : (
-          <StatusBadge tone="danger">
-            Bant dışı{l.bandMax ? `, üst ${formatMoney(l.bandMax)}` : ''}
+          <StatusBadge tone="danger">{tx('Bant dışı{0}', [l.bandMax ? tx(', üst {0}', [formatMoney(l.bandMax)]) : ''])}
           </StatusBadge>
         ),
     },
@@ -697,8 +697,8 @@ function SimulationTab({ year }: { year: number }) {
     <>
       <Panel>
         <PanelHead
-          title="Zam simülasyonu"
-          note="Kaydedilmez; yalnızca bütçe etkisini hesaplar."
+          title={tx('Zam simülasyonu')}
+          note={tx('Kaydedilmez; yalnızca bütçe etkisini hesaplar.')}
           action={
             selected.length > 0 ? (
               <Button
@@ -707,7 +707,7 @@ function SimulationTab({ year }: { year: number }) {
                 className="cursor-pointer"
                 onClick={() => setSelected([])}
               >
-                Seçimi temizle
+                {tx('Seçimi temizle')}
               </Button>
             ) : undefined
           }
@@ -716,24 +716,24 @@ function SimulationTab({ year }: { year: number }) {
           <div className="grid gap-4 sm:grid-cols-[1fr_auto_auto]">
             <TextField
               id="sim-search"
-              label="Çalışan ara"
+              label={tx('Çalışan ara')}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              hint={`${formatNumber(selected.length)} çalışan seçildi`}
+              hint={tx('{0} çalışan seçildi', [formatNumber(selected.length)])}
             />
             <SelectField
               id="sim-mode"
-              label="Artış türü"
+              label={tx('Artış türü')}
               value={mode}
               onChange={(v) => setMode(v as 'percent' | 'flat')}
               options={[
-                { value: 'percent', label: 'Yüzde' },
-                { value: 'flat', label: 'Sabit tutar' },
+                { value: 'percent', label: tx('Yüzde') },
+                { value: 'flat', label: tx('Sabit tutar') },
               ]}
             />
             <TextField
               id="sim-amount"
-              label={mode === 'percent' ? 'Yüzde (%)' : 'Tutar'}
+              label={mode === 'percent' ? tx('Yüzde (%)') : tx('Tutar')}
               type="number"
               min={0}
               className="tabular"
@@ -760,7 +760,7 @@ function SimulationTab({ year }: { year: number }) {
                 ))}
                 {filtered.length === 0 && (
                   <li className="px-3 py-4 text-[13px] text-muted-foreground">
-                    Aramaya uyan çalışan yok.
+                    {tx('Aramaya uyan çalışan yok.')}
                   </li>
                 )}
               </ul>
@@ -774,7 +774,7 @@ function SimulationTab({ year }: { year: number }) {
               onClick={() => mutation.mutate()}
             >
               {mutation.isPending && <LoaderCircle className="size-4 animate-spin" />}
-              Simülasyonu çalıştır
+              {tx('Simülasyonu çalıştır')}
             </Button>
           </div>
         </PanelBody>
@@ -792,31 +792,31 @@ function SimulationTab({ year }: { year: number }) {
           >
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <StatCard
-                label="Kapsanan çalışan"
+                label={tx('Kapsanan çalışan')}
                 value={formatNumber(result.employeeCount)}
-                trend="Simülasyonda"
+                trend={tx('Simülasyonda')}
                 trendDirection="flat"
                 trendSense="neutral"
               />
               <StatCard
-                label="Mevcut toplam"
+                label={tx('Mevcut toplam')}
                 value={formatMoney(result.currentTotal)}
-                trend="Bugünkü bordro"
+                trend={tx('Bugünkü bordro')}
                 trendDirection="flat"
                 trendSense="neutral"
               />
               <StatCard
-                label="Bütçe etkisi"
+                label={tx('Bütçe etkisi')}
                 value={`+${formatMoney(result.budgetImpact)}`}
-                trend={`yeni toplam ${formatMoney(result.proposedTotal)}`}
+                trend={tx('yeni toplam {0}', [formatMoney(result.proposedTotal)])}
                 trendDirection="up"
                 trendSense="negative"
               />
               <StatCard
-                label="Bant dışı"
+                label={tx('Bant dışı')}
                 value={formatNumber(result.outOfBandCount)}
                 trend={
-                  result.outOfBandCount > 0 ? 'kademe üst sınırını aşıyor' : 'tümü bant içinde'
+                  result.outOfBandCount > 0 ? tx('kademe üst sınırını aşıyor') : tx('tümü bant içinde')
                 }
                 trendDirection={result.outOfBandCount > 0 ? 'up' : 'flat'}
                 trendSense="negative"
@@ -825,10 +825,10 @@ function SimulationTab({ year }: { year: number }) {
 
             {result.lines.length === 0 ? (
               <Panel>
-                <PanelHead title="Satır bazında etki" note={`${year} bantlarına göre`} />
+                <PanelHead title={tx('Satır bazında etki')} note={tx('{0} bantlarına göre', [year])} />
                 <EmptyState
-                  title="Satır yok"
-                  detail="Seçilen çalışanların yürürlükteki ücret kaydı bulunamadı."
+                  title={tx('Satır yok')}
+                  detail={tx('Seçilen çalışanların yürürlükteki ücret kaydı bulunamadı.')}
                 />
               </Panel>
             ) : (
@@ -836,11 +836,11 @@ function SimulationTab({ year }: { year: number }) {
                 rows={result.lines}
                 rowKey={(l) => l.employeeId}
                 columns={lineColumns}
-                searchPlaceholder="Çalışan ara"
+                searchPlaceholder={tx('Çalışan ara')}
                 exportFileName={`zam-simulasyonu-${year}`}
                 pageSize={15}
                 rowClassName={(l) => (!l.withinBand ? 'bg-destructive/5' : undefined)}
-                emptyTitle="Satır yok"
+                emptyTitle={tx('Satır yok')}
               />
             )}
           </motion.div>
@@ -857,19 +857,19 @@ export function CompensationPage() {
   const [year, setYear] = useState(new Date().getFullYear())
 
   const TABS: Array<TabDef<TabKey>> = [
-    { key: 'bantlar', label: 'Ücret bantları' },
-    { key: 'gecmis', label: 'Çalışan geçmişi' },
-    { key: 'simulasyon', label: 'Zam simülasyonu' },
+    { key: 'bantlar', label: tx('Ücret bantları') },
+    { key: 'gecmis', label: tx('Çalışan geçmişi') },
+    { key: 'simulasyon', label: tx('Zam simülasyonu') },
   ]
 
   return (
     <div className="sensitive-scope space-y-5">
       <PageHeader
-        title="Ücret"
-        description="Ücret bantları, çalışan ücret geçmişi ve zam simülasyonu. Bu sayfa yalnızca İK yönetimine açıktır."
+        title={tx('Ücret')}
+        description={tx('Ücret bantları, çalışan ücret geçmişi ve zam simülasyonu. Bu sayfa yalnızca İK yönetimine açıktır.')}
       />
 
-      <Tabs tabs={TABS} value={tab} onChange={setTab} label="Ücret görünümü" />
+      <Tabs tabs={TABS} value={tab} onChange={setTab} label={tx('Ücret görünümü')} />
 
       {tab === 'bantlar' && <BandsTab year={year} onYearChange={setYear} />}
       {tab === 'gecmis' && <HistoryTab />}

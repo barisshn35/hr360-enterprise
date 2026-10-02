@@ -53,6 +53,7 @@ import { formatDate, formatNumber, formatRelativeToNow } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { CountUp, EASE } from '@/motion/primitives'
 import { localISODate } from '@/lib/dates'
+import { tx, appLocale } from '@/lib/i18n'
 
 /**
  * Recharts tek başına ~390 kB. Genel bakış ilk açılan ekran olduğu için
@@ -80,10 +81,10 @@ function dailySeries(dates: string[], days: number): SeriesPoint[] {
 
 function greeting(now = new Date()) {
   const h = now.getHours()
-  if (h < 5) return 'İyi geceler'
-  if (h < 12) return 'Günaydın'
-  if (h < 18) return 'İyi günler'
-  return 'İyi akşamlar'
+  if (h < 5) return tx('İyi geceler')
+  if (h < 12) return tx('Günaydın')
+  if (h < 18) return tx('İyi günler')
+  return tx('İyi akşamlar')
 }
 
 /** Saniyede bir ilerleyen saat — karşılama kutusunun canlı köşesi. */
@@ -93,7 +94,7 @@ function LiveClock() {
     const id = setInterval(() => setNow(new Date()), 1000)
     return () => clearInterval(id)
   }, [])
-  const hh = now.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
+  const hh = now.toLocaleTimeString(appLocale, { hour: '2-digit', minute: '2-digit' })
   const ss = String(now.getSeconds()).padStart(2, '0')
   return (
     <span className="tabular font-mono text-[13px] text-muted-foreground">
@@ -187,7 +188,7 @@ export function DashboardPage() {
     canSeeEmployees && {
       key: 'employees',
       to: '/panel/calisanlar',
-      label: 'Çalışan',
+      label: tx('Çalışan'),
       count: employees.data?.length ?? 0,
       icon: Users,
       trend: `${formatNumber(activeCount)} aktif`,
@@ -197,7 +198,7 @@ export function DashboardPage() {
     can('organization:view') && {
       key: 'companies',
       to: '/panel/organizasyon',
-      label: 'Şirket',
+      label: tx('Şirket'),
       count: companies.data?.length ?? 0,
       icon: Building2,
       trend: `${formatNumber(departmentCount)} departman`,
@@ -206,27 +207,27 @@ export function DashboardPage() {
     can('recruitment:view') && {
       key: 'postings',
       to: '/panel/ise-alim',
-      label: 'Yayındaki ilan',
+      label: tx('Yayındaki ilan'),
       count: postings.data?.length ?? 0,
       icon: UserPlus,
-      trend: 'Açık pozisyon',
+      trend: tx('Açık pozisyon'),
       trendSense: 'neutral' as const,
     },
     can('leave:view') && {
       key: 'leave',
       to: '/panel/izin',
-      label: 'Bu ay izin',
+      label: tx('Bu ay izin'),
       count: leaveThisMonth,
       icon: CalendarDays,
-      trend: 'Bu ay başlayan',
+      trend: tx('Bu ay başlayan'),
       trendSense: 'neutral' as const,
     },
   ].filter(Boolean) as Kpi[]
 
   const quickActions = [
-    can('leave:view') && { to: '/panel/izin', label: 'İzin talebi', icon: CalendarDays },
-    can('expense:view') && { to: '/panel/masraf', label: 'Masraf bildir', icon: Wallet },
-    canWorkflow && { to: '/panel/onaylar', label: 'Onay kutusu', icon: Inbox },
+    can('leave:view') && { to: '/panel/izin', label: tx('İzin talebi'), icon: CalendarDays },
+    can('expense:view') && { to: '/panel/masraf', label: tx('Masraf bildir'), icon: Wallet },
+    canWorkflow && { to: '/panel/onaylar', label: tx('Onay kutusu'), icon: Inbox },
   ].filter(Boolean) as Array<{ to: string; label: string; icon: React.ElementType }>
 
   const healthTone = health.isError ? 'danger' : health.data ? 'success' : 'neutral'
@@ -243,33 +244,30 @@ export function DashboardPage() {
             <div className="flex min-w-0 flex-col">
               <div className="flex flex-wrap items-center gap-2.5 text-[12.5px] text-muted-foreground">
                 <span className="first-letter:uppercase">
-                  {new Date().toLocaleDateString('tr-TR', { weekday: 'long', day: 'numeric', month: 'long' })}
+                  {new Date().toLocaleDateString(appLocale, { weekday: 'long', day: 'numeric', month: 'long' })}
                 </span>
                 <span className="text-border">•</span>
                 <LiveClock />
                 <StatusBadge tone={healthTone}>
-                  {health.isError ? 'Servis yanıt vermiyor' : health.data ? 'Sistem çalışıyor' : 'Kontrol ediliyor'}
+                  {health.isError ? tx('Servis yanıt vermiyor') : health.data ? tx('Sistem çalışıyor') : tx('Kontrol ediliyor')}
                 </StatusBadge>
               </div>
 
               <h2 className="mt-5 text-[34px] leading-[1.05] font-semibold tracking-[-0.04em] sm:text-[46px]">
                 <TextReveal text={`${greeting()},`} />
                 <br />
-                <GradientText>{firstName || 'hoş geldiniz'}</GradientText>
+                <GradientText>{firstName || tx('hoş geldiniz')}</GradientText>
               </h2>
 
               <p className="mt-4 max-w-lg text-[14.5px] leading-relaxed text-muted-foreground">
                 {overdueCount > 0 ? (
                   <>
                     <span className="font-medium text-[hsl(var(--warning))]">
-                      {formatNumber(overdueCount)} talebin süresi geçti.
-                    </span>{' '}
-                    Onay kutusunda sıradaki adımlar sizi bekliyor.
-                  </>
+                      {tx('{0} talebin süresi geçti.', [formatNumber(overdueCount)])}</span>{' '}{tx('Onay kutusunda sıradaki adımlar sizi bekliyor.', [])}</>
                 ) : pendingCount > 0 ? (
-                  `${formatNumber(pendingCount)} talep kararınızı bekliyor; hepsi süresinde.`
+                  tx('{0} talep kararınızı bekliyor; hepsi süresinde.', [formatNumber(pendingCount)])
                 ) : (
-                  'Bugün bekleyen bir işiniz yok. Şirketin nabzı aşağıda.'
+                  tx('Bugün bekleyen bir işiniz yok. Şirketin nabzı aşağıda.')
                 )}
               </p>
 
@@ -324,7 +322,7 @@ export function DashboardPage() {
               <Spotlight />
               <div className="flex items-start justify-between">
                 <div>
-                  <p className="text-[13px] font-medium text-muted-foreground">Bekleyen onay</p>
+                  <p className="text-[13px] font-medium text-muted-foreground">{tx('Bekleyen onay')}</p>
                   <p className="tabular mt-2 text-[44px] leading-none font-semibold tracking-[-0.05em]">
                     <CountUp to={pendingCount} format={(v) => formatNumber(Math.round(v))} />
                   </p>
@@ -339,13 +337,13 @@ export function DashboardPage() {
                   labels={last14.map((p) => formatDate(p.date))}
                   height={56}
                   className="mt-5"
-                  aria-label="Son 14 günde açılan talepler"
+                  aria-label={tx('Son 14 günde açılan talepler')}
                 />
               ) : (
                 <div className="mt-5 h-14" />
               )}
               <p className="mt-3 flex items-center gap-1 text-[12.5px] text-muted-foreground">
-                Son 14 günde açılan talepler
+                {tx('Son 14 günde açılan talepler')}
                 <ArrowUpRight className="ml-auto size-4 text-primary opacity-0 transition-opacity group-hover:opacity-100" />
               </p>
             </Card>
@@ -361,11 +359,11 @@ export function DashboardPage() {
             className="block h-full rounded-2xl focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:outline-none"
           >
             <StatCard
-              label="Süresi geçen"
+              label={tx('Süresi geçen')}
               count={overdueCount}
               format={formatNumber}
               icon={overdueCount > 0 ? TriangleAlert : Clock}
-              trend={overdueCount > 0 ? 'Öncelikli' : 'Tümü süresinde'}
+              trend={overdueCount > 0 ? tx('Öncelikli') : tx('Tümü süresinde')}
               trendDirection={overdueCount > 0 ? 'up' : 'flat'}
               trendSense="negative"
               attention={overdueCount > 0}
@@ -395,20 +393,20 @@ export function DashboardPage() {
         <Tile i={7} className="md:col-span-6 xl:col-span-8">
           <Suspense fallback={<div className="surface h-[260px] animate-pulse rounded-2xl" />}>
             <ProgressMetricCard
-              title="Açılan talepler"
+              title={tx('Açılan talepler')}
               size="sm"
               accent="violet"
-              deltaLabel="düne göre"
+              deltaLabel={tx('düne göre')}
               unit="talep"
               loading={allWorkflows.isPending}
               data={requestSeries}
               dateFormatter={(d) => formatDate(d)}
               periodOptions={[
-                { label: 'Son 7 gün', points: 7 },
-                { label: 'Son 14 gün', points: 14 },
-                { label: 'Son 30 gün' },
+                { label: tx('Son 7 gün'), points: 7 },
+                { label: tx('Son 14 gün'), points: 14 },
+                { label: tx('Son 30 gün') },
               ]}
-              period="Son 14 gün"
+              period={tx('Son 14 gün')}
               className="h-full"
             />
           </Suspense>
@@ -423,12 +421,12 @@ export function DashboardPage() {
               <div>
                 <p className="flex items-center gap-2 text-[14.5px] font-semibold tracking-tight">
                   <Zap className="size-4 text-primary" />
-                  Sıradaki talepler
+                  {tx('Sıradaki talepler')}
                 </p>
-                <p className="mt-0.5 text-[12.5px] text-muted-foreground">Süresi geçenler en üstte</p>
+                <p className="mt-0.5 text-[12.5px] text-muted-foreground">{tx('Süresi geçenler en üstte')}</p>
               </div>
               <Link to="/panel/onaylar" className="group inline-flex items-center gap-1 text-[12.5px] font-medium text-primary">
-                Tümü
+                {tx('Tümü')}
                 <ArrowUpRight className="size-3.5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
               </Link>
             </div>
@@ -440,7 +438,7 @@ export function DashboardPage() {
                 onRetry={() => void pending.refetch()}
               />
             ) : queue.length === 0 ? (
-              <EmptyState title="Kuyruk boş" detail="Karar bekleyen talep yok." />
+              <EmptyState title={tx('Kuyruk boş')} detail={tx('Karar bekleyen talep yok.')} />
             ) : (
               <ul className="space-y-2 p-3">
                 <AnimatePresence initial>
@@ -476,7 +474,7 @@ export function DashboardPage() {
                           </span>
                           {w.slaDueAt ? (
                             <StatusBadge tone={late ? 'danger' : 'neutral'}>
-                              {late ? 'Gecikti' : formatRelativeToNow(w.slaDueAt)}
+                              {late ? tx('Gecikti') : formatRelativeToNow(w.slaDueAt)}
                             </StatusBadge>
                           ) : (
                             <WorkflowStatusBadge status={w.status} />
@@ -497,8 +495,8 @@ export function DashboardPage() {
         <Tile i={9} className="md:col-span-6 xl:col-span-4">
           <Card className="h-full gap-0 overflow-hidden py-0">
             <div className="border-b border-border px-5 py-4">
-              <p className="text-[14.5px] font-semibold tracking-tight">Organizasyon</p>
-              <p className="mt-0.5 text-[12.5px] text-muted-foreground">Şirketler ve departmanlar</p>
+              <p className="text-[14.5px] font-semibold tracking-tight">{tx('Organizasyon')}</p>
+              <p className="mt-0.5 text-[12.5px] text-muted-foreground">{tx('Şirketler ve departmanlar')}</p>
             </div>
             {companies.isPending ? (
               <RowsSkeleton rows={3} columns={2} />
@@ -508,7 +506,7 @@ export function DashboardPage() {
                 onRetry={() => void companies.refetch()}
               />
             ) : (companies.data?.length ?? 0) === 0 ? (
-              <EmptyState icon={Building2} title="Şirket kaydı yok" detail="Organizasyon sayfasından ilk şirketi ekleyin." />
+              <EmptyState icon={Building2} title={tx('Şirket kaydı yok')} detail={tx('Organizasyon sayfasından ilk şirketi ekleyin.')} />
             ) : (
               <ul className="p-2">
                 {companies.data!.slice(0, 5).map((c) => (
@@ -522,8 +520,7 @@ export function DashboardPage() {
                       </span>
                       <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium">{c.name}</span>
                       <span className="tabular rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
-                        {formatNumber(c.departments?.length ?? 0)} dept.
-                      </span>
+                        {tx('{0} dept.', [formatNumber(c.departments?.length ?? 0)])}</span>
                       <ChevronRight className="size-4 text-muted-foreground/40 transition-transform group-hover:translate-x-0.5" />
                     </Link>
                   </li>
@@ -538,8 +535,8 @@ export function DashboardPage() {
       <Tile i={10} className={cn('md:col-span-6', can('organization:view') ? 'xl:col-span-4' : 'xl:col-span-8')}>
         <Card className="h-full gap-0 overflow-hidden py-0">
           <div className="border-b border-border px-5 py-4">
-            <p className="text-[14.5px] font-semibold tracking-tight">Modülleriniz</p>
-            <p className="mt-0.5 text-[12.5px] text-muted-foreground">Yetkinize göre açık olan alanlar</p>
+            <p className="text-[14.5px] font-semibold tracking-tight">{tx('Modülleriniz')}</p>
+            <p className="mt-0.5 text-[12.5px] text-muted-foreground">{tx('Yetkinize göre açık olan alanlar')}</p>
           </div>
           <ul className="grid grid-cols-3 gap-1.5 p-3 sm:grid-cols-4">
             {modules.slice(0, 12).map((m, i) => (

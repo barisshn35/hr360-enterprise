@@ -7,6 +7,7 @@ import { TextField } from '@/components/ui/Field'
 import { useToast } from '@/components/ui/Toast'
 import { tenantApi, type Tenant } from '@/api/tenant'
 import { qkt } from '@/api/queries-tenant'
+import { tx } from '@/lib/i18n'
 
 /** Şirket adı düzenleme - tüm planlarda açık. */
 export function CompanyNamePanel({ tenant }: { tenant: Tenant }) {
@@ -20,14 +21,14 @@ export function CompanyNamePanel({ tenant }: { tenant: Tenant }) {
     mutationFn: (n: string) => tenantApi.renameCompany(n),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: qkt.myTenant })
-      toast.ok('Şirket adı güncellendi.')
+      toast.ok(tx('Şirket adı güncellendi.'))
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : 'Güncellenemedi.'),
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Güncellenemedi.')),
   })
 
   return (
     <Panel>
-      <PanelHead title="Şirket adı" />
+      <PanelHead title={tx('Şirket adı')} />
       <PanelBody className="space-y-3">
         <TextField
           id="company-name"
@@ -42,7 +43,7 @@ export function CompanyNamePanel({ tenant }: { tenant: Tenant }) {
           disabled={mutation.isPending || !name.trim() || name === tenant.name}
           onClick={() => mutation.mutate(name.trim())}
         >
-          Kaydet
+          {tx('Kaydet')}
         </Button>
       </PanelBody>
     </Panel>
@@ -72,16 +73,16 @@ export function BrandingPanel({ tenant }: { tenant: Tenant }) {
     mutationFn: (file: File) => tenantApi.uploadLogo(file),
     onSuccess: () => {
       invalidate()
-      toast.ok('Logo yüklendi.')
+      toast.ok(tx('Logo yüklendi.'))
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : 'Yüklenemedi.'),
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Yüklenemedi.')),
   })
 
   const deleteLogoMutation = useMutation({
     mutationFn: () => tenantApi.deleteLogo(),
     onSuccess: () => {
       invalidate()
-      toast.ok('Logo kaldırıldı.')
+      toast.ok(tx('Logo kaldırıldı.'))
     },
   })
 
@@ -89,16 +90,16 @@ export function BrandingPanel({ tenant }: { tenant: Tenant }) {
     mutationFn: (primaryColorHex: string) => tenantApi.updateBranding({ primaryColorHex }),
     onSuccess: () => {
       invalidate()
-      toast.ok('Ana renk güncellendi.')
+      toast.ok(tx('Ana renk güncellendi.'))
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : 'Güncellenemedi.'),
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Güncellenemedi.')),
   })
 
   const resetColorMutation = useMutation({
     mutationFn: () => tenantApi.updateBranding({ primaryColorHex: '' }),
     onSuccess: () => {
       invalidate()
-      toast.ok('Varsayılan renge dönüldü.')
+      toast.ok(tx('Varsayılan renge dönüldü.'))
     },
   })
 
@@ -112,16 +113,16 @@ export function BrandingPanel({ tenant }: { tenant: Tenant }) {
     onSuccess: () => {
       invalidate()
       setSmtpPassword('')
-      toast.ok('SMTP ayarları kaydedildi.')
+      toast.ok(tx('SMTP ayarları kaydedildi.'))
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : 'Kaydedilemedi.'),
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Kaydedilemedi.')),
   })
 
   const removeSmtpMutation = useMutation({
     mutationFn: () => tenantApi.updateBranding({ smtpHost: '' }),
     onSuccess: () => {
       invalidate()
-      toast.ok('Özel SMTP kaldırıldı, varsayılan gönderim kullanılacak.')
+      toast.ok(tx('Özel SMTP kaldırıldı, varsayılan gönderim kullanılacak.'))
     },
   })
 
@@ -129,20 +130,20 @@ export function BrandingPanel({ tenant }: { tenant: Tenant }) {
     <>
       <Panel>
         <PanelHead
-          title="Logo"
-          note="PNG, JPEG veya WebP - en fazla 2 MB"
+          title={tx('Logo')}
+          note={tx('PNG, JPEG veya WebP - en fazla 2 MB')}
         />
         <PanelBody className="space-y-3">
           <div className="flex items-center gap-4">
             {tenant.logoUrl ? (
               <img
                 src={tenant.logoUrl}
-                alt="Şirket logosu"
+                alt={tx('Şirket logosu')}
                 className="h-16 w-16 rounded border border-border object-contain p-1"
               />
             ) : (
               <div className="flex h-16 w-16 items-center justify-center rounded border border-dashed border-border text-[11px] text-muted-foreground">
-                Logo yok
+                {tx('Logo yok')}
               </div>
             )}
             <div className="flex gap-2">
@@ -154,7 +155,7 @@ export function BrandingPanel({ tenant }: { tenant: Tenant }) {
                 onClick={() => fileInputRef.current?.click()}
               >
                 <Upload className="size-3.5" />
-                {tenant.logoUrl ? 'Değiştir' : 'Yükle'}
+                {tenant.logoUrl ? tx('Değiştir') : tx('Yükle')}
               </Button>
               {tenant.logoUrl && (
                 <Button
@@ -164,7 +165,7 @@ export function BrandingPanel({ tenant }: { tenant: Tenant }) {
                   disabled={deleteLogoMutation.isPending}
                   onClick={() => deleteLogoMutation.mutate()}
                 >
-                  Kaldır
+                  {tx('Kaldır')}
                 </Button>
               )}
               <input
@@ -185,8 +186,8 @@ export function BrandingPanel({ tenant }: { tenant: Tenant }) {
 
       <Panel>
         <PanelHead
-          title="Ana renk"
-          note="Arayüzdeki marka rengini şirketinize göre değiştirin"
+          title={tx('Ana renk')}
+          note={tx('Arayüzdeki marka rengini şirketinize göre değiştirin')}
         />
         <PanelBody className="space-y-3">
           <div className="flex items-center gap-3">
@@ -195,7 +196,7 @@ export function BrandingPanel({ tenant }: { tenant: Tenant }) {
               value={color}
               onChange={(e) => setColor(e.target.value)}
               className="h-10 w-16 cursor-pointer rounded border border-border bg-transparent"
-              aria-label="Ana renk seçici"
+              aria-label={tx('Ana renk seçici')}
             />
             <span className="font-mono text-[13px] text-muted-foreground">{color}</span>
           </div>
@@ -207,7 +208,7 @@ export function BrandingPanel({ tenant }: { tenant: Tenant }) {
               onClick={() => colorMutation.mutate(color)}
             >
               <Palette className="size-3.5" />
-              Kaydet
+              {tx('Kaydet')}
             </Button>
             {tenant.primaryColorHex && (
               <Button
@@ -217,7 +218,7 @@ export function BrandingPanel({ tenant }: { tenant: Tenant }) {
                 disabled={resetColorMutation.isPending}
                 onClick={() => resetColorMutation.mutate()}
               >
-                Varsayılana dön
+                {tx('Varsayılana dön')}
               </Button>
             )}
           </div>
@@ -226,38 +227,38 @@ export function BrandingPanel({ tenant }: { tenant: Tenant }) {
 
       <Panel>
         <PanelHead
-          title="Kendi SMTP sunucusu"
+          title={tx('Kendi SMTP sunucusu')}
           note={
             tenant.hasCustomSmtp
-              ? `Şu an ${tenant.smtpFromAddress ?? 'özel sunucu'} üzerinden gönderiliyor`
-              : 'Ayarlanmazsa platformun varsayılan gönderim sunucusu kullanılır'
+              ? tx('Şu an {0} üzerinden gönderiliyor', [tenant.smtpFromAddress ?? tx('özel sunucu')])
+              : tx('Ayarlanmazsa platformun varsayılan gönderim sunucusu kullanılır')
           }
         />
         <PanelBody className="space-y-3">
           <div className="grid gap-3 sm:grid-cols-2">
             <TextField
-              id="smtp-host" label="Sunucu" placeholder="smtp.sirketiniz.com"
+              id="smtp-host" label={tx('Sunucu')} placeholder="smtp.sirketiniz.com"
               value={smtpHost} onChange={(e) => setSmtpHost(e.target.value)}
             />
             <TextField
-              id="smtp-port" label="Port" type="number" placeholder="587"
+              id="smtp-port" label={tx('Port')} type="number" placeholder="587"
               value={smtpPort} onChange={(e) => setSmtpPort(e.target.value)}
             />
             <TextField
-              id="smtp-user" label="Kullanıcı adı"
+              id="smtp-user" label={tx('Kullanıcı adı')}
               value={smtpUser} onChange={(e) => setSmtpUser(e.target.value)}
             />
             <TextField
-              id="smtp-password" label="Şifre" type="password"
-              placeholder={tenant.hasCustomSmtp ? '(değiştirmek için girin)' : ''}
+              id="smtp-password" label={tx('Şifre')} type="password"
+              placeholder={tenant.hasCustomSmtp ? tx('(değiştirmek için girin)') : ''}
               value={smtpPassword} onChange={(e) => setSmtpPassword(e.target.value)}
             />
             <TextField
-              id="smtp-from-address" label="Gönderen e-posta" placeholder="noreply@sirketiniz.com"
+              id="smtp-from-address" label={tx('Gönderen e-posta')} placeholder="noreply@sirketiniz.com"
               value={smtpFromAddress} onChange={(e) => setSmtpFromAddress(e.target.value)}
             />
             <TextField
-              id="smtp-from-name" label="Gönderen adı" placeholder="Şirketiniz"
+              id="smtp-from-name" label={tx('Gönderen adı')} placeholder={tx('Şirketiniz')}
               value={smtpFromName} onChange={(e) => setSmtpFromName(e.target.value)}
             />
           </div>
@@ -268,7 +269,7 @@ export function BrandingPanel({ tenant }: { tenant: Tenant }) {
               disabled={smtpMutation.isPending || !smtpHost.trim()}
               onClick={() => smtpMutation.mutate()}
             >
-              Kaydet
+              {tx('Kaydet')}
             </Button>
             {tenant.hasCustomSmtp && (
               <Button
@@ -278,7 +279,7 @@ export function BrandingPanel({ tenant }: { tenant: Tenant }) {
                 disabled={removeSmtpMutation.isPending}
                 onClick={() => removeSmtpMutation.mutate()}
               >
-                Kaldır
+                {tx('Kaldır')}
               </Button>
             )}
           </div>

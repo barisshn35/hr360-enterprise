@@ -41,6 +41,7 @@ import { motion, useReducedMotion } from 'motion/react'
 import { ApiError } from '@/api/client'
 import { normalizeSearch } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { tx } from '@/lib/i18n'
 
 export type Column<T> = {
   id: string
@@ -171,7 +172,7 @@ export function DataTable<T>({
   isLoading = false,
   error,
   onRetry,
-  emptyTitle = 'Kayıt yok',
+  emptyTitle = tx('Kayıt yok'),
   emptyDetail,
   emptyAction,
   searchPlaceholder = 'Ara',
@@ -290,7 +291,7 @@ export function DataTable<T>({
                   onClick={() => download(`${exportFileName}.csv`, toCsv(sorted, columns))}
                 >
                   <Download />
-                  CSV
+                  {tx('CSV')}
                 </Button>
               )}
 
@@ -301,8 +302,7 @@ export function DataTable<T>({
           {selectable && selected.length > 0 && (
             <div className="flex flex-wrap items-center gap-3 rounded-lg border border-primary/20 bg-primary/[0.06] px-3 py-2">
               <Badge variant="secondary" className="tabular">
-                {selected.length} satır seçili
-              </Badge>
+                {tx('{0} satır seçili', [selected.length])}</Badge>
               {bulkActions?.(selected)}
               <Button
                 variant="ghost"
@@ -310,7 +310,7 @@ export function DataTable<T>({
                 className="ml-auto cursor-pointer"
                 onClick={() => setSelected([])}
               >
-                Seçimi temizle
+                {tx('Seçimi temizle')}
               </Button>
             </div>
           )}
@@ -323,8 +323,8 @@ export function DataTable<T>({
             <ErrorState message={messageOf(error)} onRetry={onRetry} />
           ) : sorted.length === 0 ? (
             <EmptyState
-              title={query ? 'Aramanızla eşleşen kayıt yok' : emptyTitle}
-              detail={query ? 'Farklı bir arama deneyin ya da filtreleri temizleyin.' : emptyDetail}
+              title={query ? tx('Aramanızla eşleşen kayıt yok') : emptyTitle}
+              detail={query ? tx('Farklı bir arama deneyin ya da filtreleri temizleyin.') : emptyDetail}
               action={query ? undefined : emptyAction}
             />
           ) : (
@@ -337,7 +337,7 @@ export function DataTable<T>({
                         <Checkbox
                           checked={allSelected}
                           onCheckedChange={toggleAll}
-                          aria-label="Sayfadaki tüm satırları seç"
+                          aria-label={tx('Sayfadaki tüm satırları seç')}
                         />
                       </TableHead>
                     )}
@@ -380,7 +380,7 @@ export function DataTable<T>({
                     })}
                     {rowActions?.length ? (
                       <TableHead className={cn(HEAD_CLASS, 'w-16 text-right')}>
-                        <span className="sr-only">İşlemler</span>
+                        <span className="sr-only">{tx('İşlemler')}</span>
                       </TableHead>
                     ) : null}
                   </TableRow>
@@ -414,7 +414,7 @@ export function DataTable<T>({
                             <Checkbox
                               checked={selected.includes(key)}
                               onCheckedChange={() => toggleRow(key)}
-                              aria-label="Satırı seç"
+                              aria-label={tx('Satırı seç')}
                             />
                           </TableCell>
                         )}
@@ -440,7 +440,7 @@ export function DataTable<T>({
                                     variant="ghost"
                                     size="icon-sm"
                                     className="cursor-pointer"
-                                    aria-label="Satır işlemleri"
+                                    aria-label={tx('Satır işlemleri')}
                                   >
                                     <MoreHorizontal />
                                   </Button>
@@ -474,9 +474,7 @@ export function DataTable<T>({
           {!isLoading && !error && sorted.length > 0 && (
             <div className="flex flex-col items-center justify-between gap-3 border-t border-border p-4 sm:flex-row">
               <p className="tabular text-[13px] text-muted-foreground">
-                {sorted.length} kayıttan {(safePage - 1) * pageSize + 1}–
-                {Math.min(safePage * pageSize, sorted.length)} arası
-              </p>
+                {tx('{0} kayıttan {1}–{2} arası', [sorted.length, (safePage - 1) * pageSize + 1, Math.min(safePage * pageSize, sorted.length)])}</p>
               {totalPages > 1 && (
                 <div className="flex items-center gap-1">
                   <Button
@@ -485,7 +483,7 @@ export function DataTable<T>({
                     className="cursor-pointer"
                     onClick={() => setPage(Math.max(1, safePage - 1))}
                     disabled={safePage === 1}
-                    aria-label="Önceki sayfa"
+                    aria-label={tx('Önceki sayfa')}
                   >
                     <ChevronLeft />
                   </Button>
@@ -501,7 +499,7 @@ export function DataTable<T>({
                         size="icon-sm"
                         className="tabular cursor-pointer"
                         onClick={() => setPage(entry)}
-                        aria-label={`${entry}. sayfa`}
+                        aria-label={tx('{0}. sayfa', [entry])}
                         aria-current={entry === safePage ? 'page' : undefined}
                       >
                         {entry}
@@ -514,7 +512,7 @@ export function DataTable<T>({
                     className="cursor-pointer"
                     onClick={() => setPage(Math.min(totalPages, safePage + 1))}
                     disabled={safePage === totalPages}
-                    aria-label="Sonraki sayfa"
+                    aria-label={tx('Sonraki sayfa')}
                   >
                     <ChevronRight />
                   </Button>

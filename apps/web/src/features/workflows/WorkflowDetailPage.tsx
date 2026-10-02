@@ -19,6 +19,7 @@ import { cn } from '@/lib/utils'
 import { ApprovalChain, activeStepId } from './ApprovalChain'
 import { DecisionModal } from './DecisionModal'
 import { DelegateModal } from './DelegateModal'
+import { tx } from '@/lib/i18n'
 
 export function WorkflowDetailPage() {
   const { workflowId } = useParams<{ workflowId: string }>()
@@ -60,14 +61,14 @@ export function WorkflowDetailPage() {
       workflowApi.decide(workflowId!, v.stepId, { decision: v.decision, comment: v.comment }),
     onSuccess: (_, v) => {
       invalidate()
-      toast.ok(v.decision === 'Approved' ? 'Adım onaylandı' : 'Adım reddedildi')
+      toast.ok(v.decision === 'Approved' ? tx('Adım onaylandı') : tx('Adım reddedildi'))
       setDecision(null)
     },
     onError: (e: unknown) =>
       toast.stop(
         e instanceof Error
           ? e.message
-          : 'Karar kaydedilemedi. Sayfayı yenileyip tekrar deneyin.',
+          : tx('Karar kaydedilemedi. Sayfayı yenileyip tekrar deneyin.'),
       ),
   })
 
@@ -79,19 +80,19 @@ export function WorkflowDetailPage() {
       }),
     onSuccess: () => {
       invalidate()
-      toast.ok('Adım devredildi')
+      toast.ok(tx('Adım devredildi'))
       setDelegateStep(null)
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : 'Devretme kaydedilemedi.'),
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Devretme kaydedilemedi.')),
   })
 
-  if (workflow.isPending) return <CenteredSpinner label="Talep yükleniyor" />
+  if (workflow.isPending) return <CenteredSpinner label={tx('Talep yükleniyor')} />
 
   if (workflow.isError || !workflow.data) {
     return (
       <Panel>
         <ErrorState
-          title="Talep bulunamadı"
+          title={tx('Talep bulunamadı')}
           message={workflow.error instanceof Error ? workflow.error.message : undefined}
           onRetry={() => void workflow.refetch()}
         />
@@ -121,7 +122,7 @@ export function WorkflowDetailPage() {
       <Button variant="ghost" size="sm" className="-ml-2 cursor-pointer" asChild>
         <Link to="/panel/onaylar">
           <ArrowLeft className="size-4" />
-          Onay kutusu
+          {tx('Onay kutusu')}
         </Link>
       </Button>
 
@@ -129,7 +130,7 @@ export function WorkflowDetailPage() {
         title={title}
         description={
           isOpen && currentStep
-            ? `${currentStep.order}. adımda: ${nameOf(currentStep.approverEmployeeId)} karar veriyor.`
+            ? tx('{0}. adımda: {1} karar veriyor.', [currentStep.order, nameOf(currentStep.approverEmployeeId)])
             : undefined
         }
         actions={<WorkflowStatusBadge status={data.status} />}
@@ -142,28 +143,25 @@ export function WorkflowDetailPage() {
         >
           <p className="flex items-center gap-2 text-[14px] font-semibold text-destructive">
             <TriangleAlert aria-hidden="true" className="size-4" />
-            SLA süresi doldu
+            {tx('SLA süresi doldu')}
           </p>
-          <p className="mt-0.5 text-[13px] text-muted-foreground">
-            Hedef {formatDateTime(data.slaDueAt)} idi, {formatRelativeToNow(data.slaDueAt)}.
-          </p>
+          <p className="mt-0.5 text-[13px] text-muted-foreground">{tx('Hedef {0} idi, {1}.', [formatDateTime(data.slaDueAt), formatRelativeToNow(data.slaDueAt)])}</p>
         </div>
       )}
 
       <div className="grid gap-4 xl:grid-cols-[1.5fr_1fr]">
         <Panel>
           <PanelHead
-            title="Onay zinciri"
-            note="Adımlar sırayla işler; önceki karara bağlanmadan sonraki açılmaz"
+            title={tx('Onay zinciri')}
+            note={tx('Adımlar sırayla işler; önceki karara bağlanmadan sonraki açılmaz')}
             action={
               <span className="tabular text-[12px] text-muted-foreground">
-                {steps.filter((s) => s.decision !== 'Pending').length}/{steps.length} adım
-              </span>
+                {tx('{0}/{1} adım', [steps.filter((s) => s.decision !== 'Pending').length, steps.length])}</span>
             }
           />
           {steps.length === 0 ? (
             <p className="px-4 py-10 text-center text-[13px] text-muted-foreground">
-              Bu talebe onay adımı tanımlanmamış.
+              {tx('Bu talebe onay adımı tanımlanmamış.')}
             </p>
           ) : (
             <ApprovalChain
@@ -180,32 +178,32 @@ export function WorkflowDetailPage() {
 
         <div className="space-y-4">
           <Panel>
-            <PanelHead title="Talep bilgileri" />
+            <PanelHead title={tx('Talep bilgileri')} />
             <PanelBody>
               <dl className="divide-y divide-border">
                 <div className="flex items-baseline justify-between gap-4 pb-2.5">
-                  <dt className="text-[12px] text-muted-foreground">Talep eden</dt>
+                  <dt className="text-[12px] text-muted-foreground">{tx('Talep eden')}</dt>
                   <dd className="text-right text-[13px]">{nameOf(data.requesterEmployeeId)}</dd>
                 </div>
                 <div className="flex items-baseline justify-between gap-4 py-2.5">
-                  <dt className="text-[12px] text-muted-foreground">Tür</dt>
+                  <dt className="text-[12px] text-muted-foreground">{tx('Tür')}</dt>
                   <dd className="text-right text-[13px]">{workflowTypeLabels[data.type]}</dd>
                 </div>
                 <div className="flex items-baseline justify-between gap-4 py-2.5">
-                  <dt className="text-[12px] text-muted-foreground">Açılış</dt>
+                  <dt className="text-[12px] text-muted-foreground">{tx('Açılış')}</dt>
                   <dd className="tabular text-right text-[13px]">
                     {formatDateTime(data.createdAt)}
                   </dd>
                 </div>
                 <div className="flex items-baseline justify-between gap-4 pt-2.5">
-                  <dt className="text-[12px] text-muted-foreground">SLA hedefi</dt>
+                  <dt className="text-[12px] text-muted-foreground">{tx('SLA hedefi')}</dt>
                   <dd
                     className={cn(
                       'tabular text-right text-[13px]',
                       late && 'font-semibold text-destructive',
                     )}
                   >
-                    {data.slaDueAt ? formatDateTime(data.slaDueAt) : 'Tanımlanmamış'}
+                    {data.slaDueAt ? formatDateTime(data.slaDueAt) : tx('Tanımlanmamış')}
                   </dd>
                 </div>
               </dl>
@@ -213,7 +211,7 @@ export function WorkflowDetailPage() {
               {data.slaDueAt && isOpen && (
                 <div className="mt-4 border-t border-border pt-3">
                   <StatusBadge tone={late ? 'danger' : 'neutral'}>
-                    {late ? 'Süresi geçti' : `Kalan süre ${formatRelativeToNow(data.slaDueAt)}`}
+                    {late ? tx('Süresi geçti') : tx('Kalan süre {0}', [formatRelativeToNow(data.slaDueAt)])}
                   </StatusBadge>
                 </div>
               )}
@@ -222,7 +220,7 @@ export function WorkflowDetailPage() {
 
           {data.payload && (
             <Panel>
-              <PanelHead title="Ek veri" />
+              <PanelHead title={tx('Ek veri')} />
               <PanelBody>
                 <pre className="overflow-x-auto rounded-md bg-muted p-3 font-mono text-[11px] whitespace-pre-wrap">
                   {data.payload}

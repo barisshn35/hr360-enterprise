@@ -18,6 +18,7 @@ import { formatDate, formatNumber, fullName } from '@/lib/format'
 import { DepartmentTree } from './DepartmentTree'
 import { NewDepartmentModal } from './NewDepartmentModal'
 import { OrgChart } from './OrgChart'
+import { tx } from '@/lib/i18n'
 
 type View = 'liste' | 'sema'
 
@@ -73,7 +74,7 @@ export function CompanyDetailPage() {
       await deleteMutation.mutateAsync(department.id)
     } catch (err) {
       throw new Error(
-        err instanceof ApiError ? err.message : 'Departman silinemedi. Lütfen tekrar deneyin.',
+        err instanceof ApiError ? err.message : tx('Departman silinemedi. Lütfen tekrar deneyin.'),
       )
     }
   }
@@ -86,13 +87,13 @@ export function CompanyDetailPage() {
     )
   }, [selected, employees.data])
 
-  if (company.isPending) return <CenteredSpinner label="Şirket yükleniyor" />
+  if (company.isPending) return <CenteredSpinner label={tx('Şirket yükleniyor')} />
 
   if (company.isError || !company.data) {
     return (
       <Panel>
         <ErrorState
-          title="Şirket bulunamadı"
+          title={tx('Şirket bulunamadı')}
           message={company.error instanceof Error ? company.error.message : undefined}
           onRetry={() => void company.refetch()}
         />
@@ -108,30 +109,30 @@ export function CompanyDetailPage() {
       <Button variant="ghost" size="sm" className="-ml-2 cursor-pointer" asChild>
         <Link to="/panel/organizasyon">
           <ArrowLeft className="size-4" />
-          Organizasyon
+          {tx('Organizasyon')}
         </Link>
       </Button>
 
       <PageHeader
         title={data.name}
-        description={`${formatNumber(departments.length)} departman, ${formatNumber(rootCount)} kök seviyede. ${formatDate(data.createdAt)} tarihinde oluşturuldu.`}
+        description={tx('{0} departman, {1} kök seviyede. {2} tarihinde oluşturuldu.', [formatNumber(departments.length), formatNumber(rootCount), formatDate(data.createdAt)])}
         actions={
           canCreate && (
             <Button className="cursor-pointer" onClick={() => setModalOpen(true)}>
               <Plus className="size-4" />
-              Yeni departman
+              {tx('Yeni departman')}
             </Button>
           )
         }
       />
 
       <Tabs<View>
-        label="Organizasyon görünümü"
+        label={tx('Organizasyon görünümü')}
         value={view}
         onChange={setView}
         tabs={[
-          { key: 'liste', label: 'Liste' },
-          { key: 'sema', label: 'Şema' },
+          { key: 'liste', label: tx('Liste') },
+          { key: 'sema', label: tx('Şema') },
         ]}
       />
 
@@ -141,12 +142,11 @@ export function CompanyDetailPage() {
       <div className="grid gap-4 lg:grid-cols-[1.35fr_1fr]">
         <Panel>
           <PanelHead
-            title="Departman ağacı"
-            note="Detayını görmek için bir departman seçin"
+            title={tx('Departman ağacı')}
+            note={tx('Detayını görmek için bir departman seçin')}
             action={
               <span className="tabular text-[12px] text-muted-foreground">
-                {formatNumber(departments.length)} kayıt
-              </span>
+                {tx('{0} kayıt', [formatNumber(departments.length)])}</span>
             }
           />
           <DepartmentTree
@@ -163,7 +163,7 @@ export function CompanyDetailPage() {
             emptyAction={
               canCreate ? (
                 <Button size="sm" className="cursor-pointer" onClick={() => setModalOpen(true)}>
-                  İlk departmanı ekle
+                  {tx('İlk departmanı ekle')}
                 </Button>
               ) : undefined
             }
@@ -171,24 +171,24 @@ export function CompanyDetailPage() {
         </Panel>
 
         <Panel>
-          <PanelHead title={selected ? selected.name : 'Departman detayı'} />
+          <PanelHead title={selected ? selected.name : tx('Departman detayı')} />
           {!selected ? (
             <EmptyState
-              title="Departman seçilmedi"
-              detail="Soldaki ağaçtan bir departman seçin; atanmış çalışanlar burada görünür."
+              title={tx('Departman seçilmedi')}
+              detail={tx('Soldaki ağaçtan bir departman seçin; atanmış çalışanlar burada görünür.')}
             />
           ) : (
             <PanelBody className="space-y-5">
               <p className="text-[13px] text-muted-foreground">
                 {selected.parentDepartmentId
-                  ? `Üst departman: ${departments.find((d) => d.id === selected.parentDepartmentId)?.name ?? 'listede yok'}`
-                  : 'Kök seviye departman'}
+                  ? tx('Üst departman: {0}', [departments.find((d) => d.id === selected.parentDepartmentId)?.name ?? tx('listede yok')])
+                  : tx('Kök seviye departman')}
               </p>
 
               {canManage && (
                 <SelectField
                   id="department-head"
-                  label="Departman başı"
+                  label={tx('Departman başı')}
                   value={selected.headEmployeeId ?? ''}
                   onChange={(v) =>
                     headMutation.mutate({
@@ -197,27 +197,25 @@ export function CompanyDetailPage() {
                       headEmployeeId: v || null,
                     })
                   }
-                  placeholder="Departman başı seçin (opsiyonel)"
+                  placeholder={tx('Departman başı seçin (opsiyonel)')}
                   options={members.map((e) => ({ value: e.id, label: fullName(e) }))}
                   disabled={members.length === 0}
                   hint={
                     members.length === 0
-                      ? 'Departman başı seçmek için önce bu departmana bir çalışan atayın.'
-                      : 'Sadece bu departmandaki çalışanlar seçilebilir.'
+                      ? tx('Departman başı seçmek için önce bu departmana bir çalışan atayın.')
+                      : tx('Sadece bu departmandaki çalışanlar seçilebilir.')
                   }
                 />
               )}
 
               {can('employee:viewAll') && (
                 <div>
-                  <p className="mb-2 border-b border-border pb-2 text-[12px] text-muted-foreground">
-                    Atanmış çalışan ({formatNumber(members.length)})
-                  </p>
+                  <p className="mb-2 border-b border-border pb-2 text-[12px] text-muted-foreground">{tx('Atanmış çalışan ({0})', [formatNumber(members.length)])}</p>
                   {employees.isPending ? (
-                    <p className="text-[13px] text-muted-foreground">Yükleniyor</p>
+                    <p className="text-[13px] text-muted-foreground">{tx('Yükleniyor')}</p>
                   ) : members.length === 0 ? (
                     <p className="text-[13px] text-muted-foreground">
-                      Bu departmana atanmış aktif çalışan yok.
+                      {tx('Bu departmana atanmış aktif çalışan yok.')}
                     </p>
                   ) : (
                     <ul className="divide-y divide-border">
@@ -233,7 +231,7 @@ export function CompanyDetailPage() {
                             >
                               <span className="min-w-0 truncate font-medium">{fullName(e)}</span>
                               <span className="shrink-0 truncate text-[12px] text-muted-foreground">
-                                {current?.positionTitle ?? 'Pozisyon yok'}
+                                {current?.positionTitle ?? tx('Pozisyon yok')}
                               </span>
                             </Link>
                           </li>
@@ -245,7 +243,7 @@ export function CompanyDetailPage() {
               )}
 
               <div className="border-t border-border pt-3">
-                <p className="text-[11px] text-muted-foreground">Departman kimliği</p>
+                <p className="text-[11px] text-muted-foreground">{tx('Departman kimliği')}</p>
                 <p className="mt-1 font-mono text-[11px] break-all text-muted-foreground">
                   {selected.id}
                 </p>
@@ -258,7 +256,7 @@ export function CompanyDetailPage() {
                   className="w-full cursor-pointer"
                   onClick={() => setModalOpen(true)}
                 >
-                  Bu departmanın altına ekle
+                  {tx('Bu departmanın altına ekle')}
                 </Button>
               )}
             </PanelBody>

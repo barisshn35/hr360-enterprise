@@ -15,6 +15,7 @@ import { workflowTypeLabels } from '@/api/types'
 import { useAuth } from '@/auth/useAuth'
 import { overviewItem, type NavItemData } from './nav-config'
 import { useNavGroups } from './use-nav'
+import { tx, appLocale } from '@/lib/i18n'
 
 /**
  * ⌘K paleti — dört kaynağı tek arama kutusunda birleştirir:
@@ -61,33 +62,33 @@ export function CommandPalette({
 
     list.push({
       id: 'go',
-      label: 'Git',
+      label: tx('Git'),
       fetch: (q) => {
-        const needle = q.toLocaleLowerCase('tr-TR')
+        const needle = q.toLocaleLowerCase(appLocale)
         return needle
-          ? goItems.filter((i) => i.label.toLocaleLowerCase('tr-TR').includes(needle))
+          ? goItems.filter((i) => i.label.toLocaleLowerCase(appLocale).includes(needle))
           : goItems
       },
-      emptyHint: 'Eşleşen modül yok.',
+      emptyHint: tx('Eşleşen modül yok.'),
     })
 
     /* ------------------------------- Çalışanlar ------------------------------- */
     if (can('employee:viewAll')) {
       list.push({
         id: 'employees',
-        label: 'Çalışanlar',
+        label: tx('Çalışanlar'),
         minQuery: 2,
-        emptyHint: 'Eşleşen çalışan yok.',
+        emptyHint: tx('Eşleşen çalışan yok.'),
         fetch: async (q) => {
           const employees = await qc.fetchQuery({
             queryKey: qk.employees,
             queryFn: ({ signal }) => employeeApi.list(signal),
             staleTime: 60_000,
           })
-          const needle = q.toLocaleLowerCase('tr-TR')
+          const needle = q.toLocaleLowerCase(appLocale)
           return employees
             .filter((e) =>
-              `${e.firstName} ${e.lastName} ${e.email}`.toLocaleLowerCase('tr-TR').includes(needle),
+              `${e.firstName} ${e.lastName} ${e.email}`.toLocaleLowerCase(appLocale).includes(needle),
             )
             .slice(0, 8)
             .map<OmniItem>((e) => ({
@@ -106,24 +107,24 @@ export function CommandPalette({
     if (can('organization:view')) {
       list.push({
         id: 'companies',
-        label: 'Şirketler',
+        label: tx('Şirketler'),
         minQuery: 2,
-        emptyHint: 'Eşleşen şirket yok.',
+        emptyHint: tx('Eşleşen şirket yok.'),
         fetch: async (q) => {
           const companies = await qc.fetchQuery({
             queryKey: qk.companies,
             queryFn: ({ signal }) => organizationApi.listCompanies(signal),
             staleTime: 60_000,
           })
-          const needle = q.toLocaleLowerCase('tr-TR')
+          const needle = q.toLocaleLowerCase(appLocale)
           return companies
-            .filter((c) => c.name.toLocaleLowerCase('tr-TR').includes(needle))
+            .filter((c) => c.name.toLocaleLowerCase(appLocale).includes(needle))
             .slice(0, 6)
             .map<OmniItem>((c) => ({
               id: `co:${c.id}`,
               label: c.name,
               groupId: 'companies',
-              subtitle: `${c.departments?.length ?? 0} departman`,
+              subtitle: tx('{0} departman', [c.departments?.length ?? 0]),
               icon: <Building2 className="size-4" strokeWidth={1.5} />,
               onAction: () => navigate(`/panel/organizasyon/${c.id}`),
             }))
@@ -135,20 +136,20 @@ export function CommandPalette({
     if (can('workflow:view')) {
       list.push({
         id: 'workflows',
-        label: 'Onay talepleri',
+        label: tx('Onay talepleri'),
         minQuery: 2,
-        emptyHint: 'Eşleşen talep yok.',
+        emptyHint: tx('Eşleşen talep yok.'),
         fetch: async (q) => {
           const workflows = await qc.fetchQuery({
             queryKey: qk.workflows({}),
             queryFn: ({ signal }) => workflowApi.list({}, signal),
             staleTime: 30_000,
           })
-          const needle = q.toLocaleLowerCase('tr-TR')
+          const needle = q.toLocaleLowerCase(appLocale)
           return workflows
             .filter((w) =>
               `${w.subject ?? ''} ${workflowTypeLabels[w.type]}`
-                .toLocaleLowerCase('tr-TR')
+                .toLocaleLowerCase(appLocale)
                 .includes(needle),
             )
             .slice(0, 6)
@@ -173,13 +174,13 @@ export function CommandPalette({
       onOpenChange={onOpenChange}
       sources={sources}
       storageKey="hr360.omni.recents"
-      placeholder="Çalışan, şirket, talep ara veya bir modüle git…"
+      placeholder={tx('Çalışan, şirket, talep ara veya bir modüle git…')}
       renderFooter={(active) => (
         <div className="flex items-center justify-between px-3 py-2 text-[11px] text-muted-foreground">
-          <span>↑ ↓ gezin · Esc kapat</span>
+          <span>{tx('↑ ↓ gezin · Esc kapat')}</span>
           <span className="flex items-center gap-1">
             <CornerDownLeft className="size-3" />
-            {active ? 'aç' : 'seç'}
+            {active ? tx('aç') : tx('seç')}
           </span>
         </div>
       )}

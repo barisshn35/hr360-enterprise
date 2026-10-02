@@ -46,6 +46,7 @@ import { SettingsSection } from './SettingsSection'
 import { ThresholdSection } from './ThresholdSection'
 import { VersionConfirmDialog } from './VersionConfirmDialog'
 import { VersionHistory } from './VersionHistory'
+import { tx } from '@/lib/i18n'
 
 const CATEGORY_KEYS = CATEGORIES.map((c) => categoryWeightKey[c])
 const RATER_KEYS = [...REVIEW_TYPES.map((t) => reviewWeightKey[t]), 'minReviewsForValidScore', 'allowSelfOnlyScore'] as FieldKey[]
@@ -95,8 +96,8 @@ export function ScoringSettingsPage() {
   const problems = useMemo(() => {
     if (!draft) return []
     const out: string[] = []
-    if (draft.goalWeightPercent + draft.metricWeightPercent !== 100) out.push('Hedef ve metrik payları toplamı 100 olmalı.')
-    if (CATEGORY_KEYS.every((k) => (draft[k] as number) <= 0)) out.push('En az bir kategorinin ağırlığı sıfırdan büyük olmalı.')
+    if (draft.goalWeightPercent + draft.metricWeightPercent !== 100) out.push(tx('Hedef ve metrik payları toplamı 100 olmalı.'))
+    if (CATEGORY_KEYS.every((k) => (draft[k] as number) <= 0)) out.push(tx('En az bir kategorinin ağırlığı sıfırdan büyük olmalı.'))
     for (const i of thresholdIssues(thresholdsOf(draft))) out.push(i.message)
     return out
   }, [draft])
@@ -117,7 +118,7 @@ export function ScoringSettingsPage() {
     update.mutate(draft, {
       onSuccess: (next) => {
         setConfirmOpen(false)
-        toast.ok(`Sürüm ${next.version} yürürlüğe girdi. Geçmiş dönemlerin puanları değişmedi.`)
+        toast.ok(tx('Sürüm {0} yürürlüğe girdi. Geçmiş dönemlerin puanları değişmedi.', [next.version]))
       },
       onError: (e) => setSaveError(errorText(e)),
     })
@@ -125,7 +126,7 @@ export function ScoringSettingsPage() {
 
   const loadVersion = (v: ScoringConfig) => {
     setDraft(toInput(v))
-    toast.info(`Sürüm ${v.version} değerleri forma yüklendi. Kaydederseniz yeni bir sürüm olarak yürürlüğe girer.`)
+    toast.info(tx('Sürüm {0} değerleri forma yüklendi. Kaydederseniz yeni bir sürüm olarak yürürlüğe girer.', [v.version]))
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
@@ -134,17 +135,16 @@ export function ScoringSettingsPage() {
   return (
     <div className="mx-auto w-full max-w-7xl">
       <PerfPageHeader
-        eyebrow="Performans kurulumu · 2. adım"
-        title="Puanlama ayarı"
-        description="Nihai puanın nasıl hesaplanacağını belirleyin. Her kayıt yeni bir sürüm oluşturur; kapanmış dönemlerin puanları asla değişmez."
+        eyebrow={tx('Performans kurulumu · 2. adım')}
+        title={tx('Puanlama ayarı')}
+        description={tx('Nihai puanın nasıl hesaplanacağını belirleyin. Her kayıt yeni bir sürüm oluşturur; kapanmış dönemlerin puanları asla değişmez.')}
       >
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <SetupTrail current="scoring" />
           {config.data && (
             <p className="flex flex-wrap items-center gap-2 text-[12px] text-muted-foreground">
               <Chip tone="success">
-                <GitCommitVertical className="size-3" aria-hidden />
-                Yürürlükte: Sürüm {config.data.version}
+                <GitCommitVertical className="size-3" aria-hidden />{tx('Yürürlükte: Sürüm {0}', [config.data.version])}
               </Chip>
               {config.data.createdAt && <span>{formatDateTime(config.data.createdAt)}</span>}
               {config.data.createdByName && <span>· {config.data.createdByName}</span>}
@@ -155,13 +155,13 @@ export function ScoringSettingsPage() {
 
       {config.isError && (
         <Panel>
-          <ErrorState title="Puanlama ayarı alınamadı" message={errorText(config.error)} onRetry={() => void config.refetch()} />
+          <ErrorState title={tx('Puanlama ayarı alınamadı')} message={errorText(config.error)} onRetry={() => void config.refetch()} />
         </Panel>
       )}
 
       {config.isPending && (
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]" aria-busy="true">
-          <span className="sr-only">Puanlama ayarı yükleniyor</span>
+          <span className="sr-only">{tx('Puanlama ayarı yükleniyor')}</span>
           <div className="flex flex-col gap-5">
             {[0, 1, 2].map((i) => (
               <Panel key={i} className="p-5">
@@ -185,8 +185,8 @@ export function ScoringSettingsPage() {
               id="pay"
               index={0}
               letter="A"
-              title="Hedef / metrik dağılımı"
-              description="Nihai puanın ne kadarı hedef gerçekleşmesinden, ne kadarı metrik değerlendirmelerinden gelsin? Toplam her zaman 100."
+              title={tx('Hedef / metrik dağılımı')}
+              description={tx('Nihai puanın ne kadarı hedef gerçekleşmesinden, ne kadarı metrik değerlendirmelerinden gelsin? Toplam her zaman 100.')}
               changed={changedIn(['goalWeightPercent'])}
               onReset={() => resetKeys(['goalWeightPercent', 'metricWeightPercent'])}
             >
@@ -197,7 +197,7 @@ export function ScoringSettingsPage() {
                 right="Metrikler"
                 leftColor={GOAL_COLOR}
                 rightColor={METRIC_COLOR}
-                ariaLabel="Hedef payı"
+                ariaLabel={tx('Hedef payı')}
               />
             </SettingsSection>
 
@@ -205,11 +205,10 @@ export function ScoringSettingsPage() {
               id="kategori"
               index={1}
               letter="B"
-              title="Kategori ağırlıkları"
+              title={tx('Kategori ağırlıkları')}
               description={
-                <>
-                  Metrik ayağının kategorilere dağılımı. Ağırlıklar oransaldır: 2,5 ağırlıklı kategori 1 ağırlıklıdan 2,5 kat fazla etkiler.{' '}
-                  <strong className="font-medium text-foreground">Sıfır verilen kategori hesaba hiç girmez.</strong>
+                <>{tx('Metrik ayağının kategorilere dağılımı. Ağırlıklar oransaldır: 2,5 ağırlıklı kategori 1 ağırlıklıdan 2,5 kat fazla etkiler.', [])}{' '}
+                  <strong className="font-medium text-foreground">{tx('Sıfır verilen kategori hesaba hiç girmez.')}</strong>
                 </>
               }
               changed={changedIn(CATEGORY_KEYS)}
@@ -222,8 +221,8 @@ export function ScoringSettingsPage() {
               id="degerlendirici"
               index={2}
               letter="C"
-              title="Değerlendirici katsayıları"
-              description="Aynı metriğe farklı kişilerden gelen puanlar bu katsayılarla ağırlıklı ortalanır. Katsayı 0 olan değerlendirme türü puana katılmaz."
+              title={tx('Değerlendirici katsayıları')}
+              description={tx('Aynı metriğe farklı kişilerden gelen puanlar bu katsayılarla ağırlıklı ortalanır. Katsayı 0 olan değerlendirme türü puana katılmaz.')}
               changed={changedIn(RATER_KEYS)}
               onReset={() => resetKeys(RATER_KEYS)}
             >
@@ -234,8 +233,8 @@ export function ScoringSettingsPage() {
               id="esik"
               index={3}
               letter="D"
-              title="Aksiyon eşikleri"
-              description="Aksiyon önerileri bu eşiklere göre üretilir. Sıra her zaman kritik < gelişim < takdir < terfi olmalı; işaretçileri sürükleyin ya da değer girin."
+              title={tx('Aksiyon eşikleri')}
+              description={tx('Aksiyon önerileri bu eşiklere göre üretilir. Sıra her zaman kritik < gelişim < takdir < terfi olmalı; işaretçileri sürükleyin ya da değer girin.')}
               changed={changedIn(THRESHOLD_KEYS)}
               onReset={() => resetKeys(THRESHOLD_KEYS)}
             >
@@ -254,9 +253,7 @@ export function ScoringSettingsPage() {
                 >
                   <div className="flex flex-col gap-3 rounded-xl border border-primary/30 bg-card/95 p-3 shadow-xl backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:px-4">
                     <div className="min-w-0">
-                      <p className="text-[13px] font-semibold">
-                        Kaydedilmemiş {changes.length} değişiklik
-                        <span className="ml-1 font-normal text-muted-foreground">· kaydedince Sürüm {saved && config.data ? config.data.version + 1 : ''} oluşur</span>
+                      <p className="text-[13px] font-semibold">{tx('Kaydedilmemiş {0} değişiklik', [changes.length])}<span className="ml-1 font-normal text-muted-foreground">{tx('· kaydedince Sürüm {0} oluşur', [saved && config.data ? config.data.version + 1 : ''])}</span>
                       </p>
                       {problems.length > 0 ? (
                         <p className="mt-0.5 flex items-center gap-1.5 text-[12px] text-destructive">
@@ -265,13 +262,13 @@ export function ScoringSettingsPage() {
                           {problems.length > 1 && ` (+${problems.length - 1})`}
                         </p>
                       ) : (
-                        <p className="mt-0.5 text-[12px] text-muted-foreground">Geçmiş dönemlerin puanları değişmez.</p>
+                        <p className="mt-0.5 text-[12px] text-muted-foreground">{tx('Geçmiş dönemlerin puanları değişmez.')}</p>
                       )}
                     </div>
                     <div className="flex shrink-0 gap-2">
                       <Button variant="outline" onClick={() => setDraft(saved)} disabled={update.isPending}>
                         <RotateCcw aria-hidden />
-                        Tümünü geri al
+                        {tx('Tümünü geri al')}
                       </Button>
                       <Button
                         onClick={() => {
@@ -281,7 +278,7 @@ export function ScoringSettingsPage() {
                         disabled={problems.length > 0}
                       >
                         <GitCommitVertical aria-hidden />
-                        Yeni sürüm olarak kaydet
+                        {tx('Yeni sürüm olarak kaydet')}
                       </Button>
                     </div>
                   </div>
@@ -294,8 +291,8 @@ export function ScoringSettingsPage() {
           <aside className="flex flex-col gap-5 xl:sticky xl:top-20">
             <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, ease: EASE, delay: 0.1 }}>
               <Panel className="p-5">
-                <h2 className="text-[14px] font-semibold">Nihai puan nasıl oluşur?</h2>
-                <p className="mt-0.5 mb-4 text-[12px] text-muted-foreground">Formdaki değerlerle canlı hesaplanır.</p>
+                <h2 className="text-[14px] font-semibold">{tx('Nihai puan nasıl oluşur?')}</h2>
+                <p className="mt-0.5 mb-4 text-[12px] text-muted-foreground">{tx('Formdaki değerlerle canlı hesaplanır.')}</p>
                 <CompositionDonut draft={draft} />
               </Panel>
             </motion.div>

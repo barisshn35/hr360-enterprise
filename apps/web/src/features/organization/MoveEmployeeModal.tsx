@@ -4,6 +4,7 @@ import { Modal } from '@/components/ui/Modal'
 import { SelectField, TextField, type SelectOption } from '@/components/ui/Field'
 import { Button } from '@/components/ui/button'
 import { formatDate } from '@/lib/format'
+import { tx } from '@/lib/i18n'
 
 /**
  * Sürükle-bırakın klavye / dokunmatik karşılığı. Sürüklemeden farklı olarak
@@ -37,11 +38,11 @@ export function MoveEmployeeModal({
   const [submitted, setSubmitted] = useState(false)
 
   const errors = {
-    department: !departmentId ? 'Hedef departmanı seçin.' : undefined,
+    department: !departmentId ? tx('Hedef departmanı seçin.') : undefined,
     date: !effectiveFrom
-      ? 'Başlangıç tarihi gerekli.'
+      ? tx('Başlangıç tarihi gerekli.')
       : currentFrom && effectiveFrom < currentFrom
-        ? `Mevcut atama ${formatDate(currentFrom)} tarihinde başlıyor; yeni atama bu tarihten önce başlayamaz.`
+        ? tx('Mevcut atama {0} tarihinde başlıyor; yeni atama bu tarihten önce başlayamaz.', [formatDate(currentFrom)])
         : undefined,
   }
 
@@ -55,36 +56,36 @@ export function MoveEmployeeModal({
     <Modal
       open
       onClose={onClose}
-      title={`${name} · departman değiştir`}
-      note="Yeni atama eklenir, önceki aktif atama bir gün önce kendiliğinden kapanır; aynı gün yapılan taşımada mevcut atama güncellenir. Geçmiş kayıtlar silinmez."
+      title={tx('{0} · departman değiştir', [name])}
+      note={tx('Yeni atama eklenir, önceki aktif atama bir gün önce kendiliğinden kapanır; aynı gün yapılan taşımada mevcut atama güncellenir. Geçmiş kayıtlar silinmez.')}
       footer={
         <>
           <Button variant="outline" onClick={onClose}>
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
-          <Button onClick={submit}>Taşı</Button>
+          <Button onClick={submit}>{tx('Taşı')}</Button>
         </>
       }
     >
       <div className="space-y-4">
         <SelectField
-          label="Yeni departman"
+          label={tx('Yeni departman')}
           required
           value={departmentId}
           onChange={setDepartmentId}
-          options={options.map((o) => (o.value === currentDeptId ? { ...o, label: `${o.label} (şu anki)`, disabled: true } : o))}
-          placeholder="Departman seçin"
+          options={options.map((o) => (o.value === currentDeptId ? { ...o, label: tx('{0} (şu anki)', [o.label]), disabled: true } : o))}
+          placeholder={tx('Departman seçin')}
           error={submitted ? errors.department : undefined}
         />
         <TextField
-          label="Unvan"
+          label={tx('Unvan')}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          hint="Boş bırakılırsa unvansız atanır."
+          hint={tx('Boş bırakılırsa unvansız atanır.')}
           maxLength={120}
         />
         <TextField
-          label="Başlangıç tarihi"
+          label={tx('Başlangıç tarihi')}
           type="date"
           required
           value={effectiveFrom}
@@ -93,8 +94,8 @@ export function MoveEmployeeModal({
           error={submitted || (currentFrom !== null && effectiveFrom < currentFrom) ? errors.date : undefined}
           hint={
             currentFrom && effectiveFrom === currentFrom
-              ? 'Mevcut atamayla aynı gün: yeni kayıt açılmaz, mevcut atamanın departmanı ve unvanı güncellenir.'
-              : 'İleri bir tarih seçerseniz kişi şemada yeni departmanında, başlangıç tarihiyle görünür.'
+              ? tx('Mevcut atamayla aynı gün: yeni kayıt açılmaz, mevcut atamanın departmanı ve unvanı güncellenir.')
+              : tx('İleri bir tarih seçerseniz kişi şemada yeni departmanında, başlangıç tarihiyle görünür.')
           }
           className="sm:w-56"
         />

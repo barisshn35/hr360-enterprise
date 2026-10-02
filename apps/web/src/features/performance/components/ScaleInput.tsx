@@ -17,17 +17,18 @@ import type { MetricScale, ScaleRange } from '@/api/performance'
 import { normalizeToHundred, formatScore } from '@/api/performance'
 import { cn } from '@/lib/utils'
 import { Slider } from './controls'
+import { tx } from '@/lib/i18n'
 
-const FIVE_LABELS = ['Beklentinin çok altında', 'Beklentinin altında', 'Beklentiyi karşılıyor', 'Beklentinin üzerinde', 'Olağanüstü']
+const FIVE_LABELS = [tx('Beklentinin çok altında'), tx('Beklentinin altında'), tx('Beklentiyi karşılıyor'), tx('Beklentinin üzerinde'), tx('Olağanüstü')]
 
 function describe(scale: MetricScale, range: ScaleRange, value: number): string {
   if (scale === 'OneToFive' && range.max - range.min === 4) return FIVE_LABELS[value - range.min] ?? ''
   const n = normalizeToHundred(range, value)
-  if (n < 20) return 'Beklentinin çok altında'
-  if (n < 45) return 'Beklentinin altında'
-  if (n < 70) return 'Beklentiyi karşılıyor'
-  if (n < 90) return 'Beklentinin üzerinde'
-  return 'Olağanüstü'
+  if (n < 20) return tx('Beklentinin çok altında')
+  if (n < 45) return tx('Beklentinin altında')
+  if (n < 70) return tx('Beklentiyi karşılıyor')
+  if (n < 90) return tx('Beklentinin üzerinde')
+  return tx('Olağanüstü')
 }
 
 export interface ScaleInputProps {
@@ -79,7 +80,7 @@ function Caption({ scale, range, value, showNormalized }: Pick<ScaleInputProps, 
       <AnimatePresence mode="wait" initial={false}>
         {value === null ? (
           <motion.span key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-muted-foreground">
-            Henüz puanlanmadı
+            {tx('Henüz puanlanmadı')}
           </motion.span>
         ) : (
           <motion.span
@@ -239,12 +240,12 @@ function PercentInput({ scale, range, value, onChange, disabled, invalid, labell
           onChange={([v]) => onChange(v)}
           min={range.min}
           max={range.max}
-          ariaLabel="Yüzde değeri"
+          ariaLabel={tx('Yüzde değeri')}
           disabled={disabled}
           rangeClassName={value === null ? 'bg-muted-foreground/30' : undefined}
         />
         <label className="relative shrink-0">
-          <span className="sr-only">Yüzde değeri</span>
+          <span className="sr-only">{tx('Yüzde değeri')}</span>
           <input
             type="number"
             inputMode="numeric"
@@ -277,7 +278,7 @@ export function ScaleBadge({ scale, range }: { scale: MetricScale; range?: Scale
   const r = range ?? (scale === 'Percentage' ? { min: 0, max: 100 } : scale === 'OneToTen' ? { min: 1, max: 10 } : { min: 1, max: 5 })
   const label = `${r.min}–${r.max}`
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-1.5 py-0.5 text-[11px] font-medium whitespace-nowrap text-muted-foreground" title={`Ölçek ${label}`}>
+    <span className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-1.5 py-0.5 text-[11px] font-medium whitespace-nowrap text-muted-foreground" title={tx('Ölçek {0}', [label])}>
       {scale === 'OneToFive' && (
         <span aria-hidden className="flex gap-px">
           {Array.from({ length: 5 }).map((_, i) => (
@@ -293,7 +294,7 @@ export function ScaleBadge({ scale, range }: { scale: MetricScale; range?: Scale
         </span>
       )}
       {scale === 'Percentage' && <Percent aria-hidden className="size-3 text-primary/70" />}
-      <span className="tabular">{scale === 'Percentage' ? 'Yüzde' : label}</span>
+      <span className="tabular">{scale === 'Percentage' ? tx('Yüzde') : label}</span>
     </span>
   )
 }

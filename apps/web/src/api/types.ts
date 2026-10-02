@@ -1,3 +1,4 @@
+import { tx } from '@/lib/i18n'
 /* ============================ Organization Service ============================ */
 
 export interface Department {
@@ -40,9 +41,9 @@ export const EmployeeStatus = {
 export type EmployeeStatusValue = (typeof EmployeeStatus)[keyof typeof EmployeeStatus]
 
 export const employeeStatusLabels: Record<EmployeeStatusValue, string> = {
-  0: 'Aktif',
-  1: 'İzinde',
-  2: 'Ayrıldı',
+  0: tx('Aktif'),
+  1: tx('İzinde'),
+  2: tx('Ayrıldı'),
 }
 
 export interface Assignment {
@@ -92,25 +93,25 @@ export type WorkflowStatus = 'Pending' | 'Approved' | 'Rejected' | 'Cancelled'
 export type StepDecision = 'Pending' | 'Approved' | 'Rejected' | 'Delegated'
 
 export const workflowTypeLabels: Record<WorkflowType, string> = {
-  LeaveRequest: 'İzin Talebi',
-  ExpenseClaim: 'Masraf Talebi',
-  PositionChange: 'Pozisyon Değişikliği',
-  AssetRequest: 'Zimmet Talebi',
-  Other: 'Diğer',
+  LeaveRequest: tx('İzin Talebi'),
+  ExpenseClaim: tx('Masraf Talebi'),
+  PositionChange: tx('Pozisyon Değişikliği'),
+  AssetRequest: tx('Zimmet Talebi'),
+  Other: tx('Diğer'),
 }
 
 export const workflowStatusLabels: Record<WorkflowStatus, string> = {
-  Pending: 'Beklemede',
-  Approved: 'Onaylandı',
-  Rejected: 'Reddedildi',
-  Cancelled: 'İptal Edildi',
+  Pending: tx('Beklemede'),
+  Approved: tx('Onaylandı'),
+  Rejected: tx('Reddedildi'),
+  Cancelled: tx('İptal Edildi'),
 }
 
 export const stepDecisionLabels: Record<StepDecision, string> = {
-  Pending: 'Bekliyor',
-  Approved: 'Onaylandı',
-  Rejected: 'Reddedildi',
-  Delegated: 'Devredildi',
+  Pending: tx('Bekliyor'),
+  Approved: tx('Onaylandı'),
+  Rejected: tx('Reddedildi'),
+  Delegated: tx('Devredildi'),
 }
 
 export interface ApprovalStep {

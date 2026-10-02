@@ -18,6 +18,7 @@ import {
 } from '@/api/types'
 import { formatDate, formatRelativeToNow, fullName } from '@/lib/format'
 import { NewWorkflowModal } from './NewWorkflowModal'
+import { tx } from '@/lib/i18n'
 
 type TabKey = WorkflowStatus | 'all' | 'gecikmis'
 
@@ -57,16 +58,16 @@ export function WorkflowInboxPage() {
 
   const tabs: Array<TabDef<TabKey>> = [
     { key: 'Pending', label: workflowStatusLabels.Pending },
-    ...(canSeeOverdue ? [{ key: 'gecikmis' as TabKey, label: 'Süresi geçen' }] : []),
+    ...(canSeeOverdue ? [{ key: 'gecikmis' as TabKey, label: tx('Süresi geçen') }] : []),
     { key: 'Approved', label: workflowStatusLabels.Approved },
     { key: 'Rejected', label: workflowStatusLabels.Rejected },
-    { key: 'all', label: 'Tümü' },
+    { key: 'all', label: tx('Tümü') },
   ]
 
   const columns: Array<Column<Workflow>> = [
     {
       id: 'subject',
-      header: 'Talep',
+      header: tx('Talep'),
       searchText: (w) => `${w.subject ?? ''} ${workflowTypeLabels[w.type]}`,
       sortValue: (w) => w.subject || workflowTypeLabels[w.type],
       cell: (w) => (
@@ -82,7 +83,7 @@ export function WorkflowInboxPage() {
     },
     {
       id: 'requester',
-      header: 'Talep eden',
+      header: tx('Talep eden'),
       hideBelow: 'md',
       searchText: (w) => nameOf(w.requesterEmployeeId),
       sortValue: (w) => nameOf(w.requesterEmployeeId),
@@ -91,7 +92,7 @@ export function WorkflowInboxPage() {
     },
     {
       id: 'createdAt',
-      header: 'Açılış',
+      header: tx('Açılış'),
       hideBelow: 'lg',
       sortValue: (w) => new Date(w.createdAt).getTime(),
       exportText: (w) => formatDate(w.createdAt),
@@ -99,11 +100,11 @@ export function WorkflowInboxPage() {
     },
     {
       id: 'sla',
-      header: 'SLA',
+      header: tx('SLA'),
       hideBelow: 'sm',
       sortValue: (w) => (w.slaDueAt ? new Date(w.slaDueAt).getTime() : Number.MAX_SAFE_INTEGER),
       exportText: (w) =>
-        w.slaDueAt ? formatDate(w.slaDueAt) : 'Tanımsız',
+        w.slaDueAt ? formatDate(w.slaDueAt) : tx('Tanımsız'),
       cell: (w) => {
         if (!w.slaDueAt) return <span className="text-muted-foreground">—</span>
         const late = new Date(w.slaDueAt).getTime() < Date.now()
@@ -111,14 +112,14 @@ export function WorkflowInboxPage() {
           return <span className="tabular text-muted-foreground">{formatDate(w.slaDueAt)}</span>
         return (
           <StatusBadge tone={late ? 'danger' : 'neutral'}>
-            {late ? 'Süresi geçti' : formatRelativeToNow(w.slaDueAt)}
+            {late ? tx('Süresi geçti') : formatRelativeToNow(w.slaDueAt)}
           </StatusBadge>
         )
       },
     },
     {
       id: 'status',
-      header: 'Durum',
+      header: tx('Durum'),
       align: 'right',
       sortValue: (w) => workflowStatusLabels[w.status],
       exportText: (w) => workflowStatusLabels[w.status],
@@ -129,19 +130,19 @@ export function WorkflowInboxPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Onay kutusu"
-        description="İzin, masraf ve pozisyon talepleri tanımlı sırayla ilerler."
+        title={tx('Onay kutusu')}
+        description={tx('İzin, masraf ve pozisyon talepleri tanımlı sırayla ilerler.')}
         actions={
           can('workflow:create') && (
             <Button className="cursor-pointer" onClick={() => setModalOpen(true)}>
               <Plus className="size-4" />
-              Yeni talep
+              {tx('Yeni talep')}
             </Button>
           )
         }
       />
 
-      <Tabs tabs={tabs} value={tab} onChange={setTab} label="Talep durumu" />
+      <Tabs tabs={tabs} value={tab} onChange={setTab} label={tx('Talep durumu')} />
 
       <DataTable
         rows={rows}
@@ -151,20 +152,18 @@ export function WorkflowInboxPage() {
         error={query.error}
         onRetry={() => void query.refetch()}
         onRowClick={(w) => navigate(`/panel/onaylar/${w.id}`)}
-        searchPlaceholder="Talep veya tür ara"
+        searchPlaceholder={tx('Talep veya tür ara')}
         exportFileName="onay-talepleri"
         pageSize={12}
-        emptyTitle={isOverdueTab ? 'Süresi geçen talep yok' : 'Bu durumda talep yok'}
+        emptyTitle={isOverdueTab ? tx('Süresi geçen talep yok') : tx('Bu durumda talep yok')}
         emptyDetail={
           isOverdueTab
-            ? 'Açık taleplerin tümü SLA süresi içinde ilerliyor.'
-            : 'Başka bir durum sekmesine geçerek diğer talepleri görebilirsiniz.'
+            ? tx('Açık taleplerin tümü SLA süresi içinde ilerliyor.')
+            : tx('Başka bir durum sekmesine geçerek diğer talepleri görebilirsiniz.')
         }
         notice={
           <InfoNote>
-            Kararlar bu listeden değil, talebin kendi sayfasındaki onay zincirinden verilir.
-            Bir izin talebi onaylandığında izin kaydı ve bakiye Kafka üzerinden kendiliğinden
-            güncellenir.
+            {tx('Kararlar bu listeden değil, talebin kendi sayfasındaki onay zincirinden verilir. Bir izin talebi onaylandığında izin kaydı ve bakiye Kafka üzerinden kendiliğinden güncellenir.')}
           </InfoNote>
         }
       />

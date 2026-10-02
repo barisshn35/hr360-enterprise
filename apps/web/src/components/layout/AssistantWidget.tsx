@@ -6,10 +6,11 @@ import { governanceApi, type AssistantReply } from '@/api/governance'
 import { usePlan } from '@/lib/plan'
 import { cn } from '@/lib/utils'
 import { MiniMarkdown, errMsg } from '@/features/shared/kit'
+import { tx } from '@/lib/i18n'
 
 type Msg = { role: 'user' | 'bot'; text: string; reply?: AssistantReply }
 
-const QUICK = ['İzin bakiyem', 'Bekleyen taleplerim', 'Sonraki resmî tatil', 'Bugün kim izinde?', 'Uzaktan çalışma politikası']
+const QUICK = [tx('İzin bakiyem'), tx('Bekleyen taleplerim'), tx('Sonraki resmî tatil'), tx('Bugün kim izinde?'), tx('Uzaktan çalışma politikası')]
 
 /**
  * Sağ altta yüzen İK asistanı. Kişisel sorulara (izin bakiyem, taleplerim)
@@ -20,7 +21,7 @@ export function AssistantWidget() {
   const { hasFeature } = usePlan()
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
-  const [msgs, setMsgs] = useState<Msg[]>([{ role: 'bot', text: 'Merhaba! İzin, talepler, tatiller veya şirket politikaları hakkında sorabilirsiniz.' }])
+  const [msgs, setMsgs] = useState<Msg[]>([{ role: 'bot', text: tx('Merhaba! İzin, talepler, tatiller veya şirket politikaları hakkında sorabilirsiniz.') }])
   const [q, setQ] = useState('')
   const [busy, setBusy] = useState(false)
   const end = useRef<HTMLDivElement>(null)
@@ -36,7 +37,7 @@ export function AssistantWidget() {
       const r = await governanceApi.assistant(text)
       setMsgs((m) => [...m, { role: 'bot', text: r.reply, reply: r }])
     } catch (e) {
-      setMsgs((m) => [...m, { role: 'bot', text: errMsg(e, 'Şu an yanıt veremiyorum.') }])
+      setMsgs((m) => [...m, { role: 'bot', text: errMsg(e, tx('Şu an yanıt veremiyorum.')) }])
     } finally {
       setBusy(false)
     }
@@ -46,7 +47,7 @@ export function AssistantWidget() {
     <>
       <motion.button
         type="button"
-        aria-label="İK asistanı"
+        aria-label={tx('İK asistanı')}
         onClick={() => setOpen((o) => !o)}
         whileHover={{ scale: 1.06 }}
         whileTap={{ scale: 0.94 }}
@@ -70,7 +71,7 @@ export function AssistantWidget() {
           >
             <div className="flex items-center gap-2.5 border-b border-border bg-gradient-to-r from-primary/15 to-transparent px-4 py-3">
               <span className="grid size-8 place-items-center rounded-xl bg-primary/15 text-primary"><Sparkles className="size-4" /></span>
-              <div><p className="text-[14px] font-semibold">İK asistanı</p><p className="text-[11px] text-muted-foreground">Verinizden ve İK bilgi bankasından yanıtlar</p></div>
+              <div><p className="text-[14px] font-semibold">{tx('İK asistanı')}</p><p className="text-[11px] text-muted-foreground">{tx('Verinizden ve İK bilgi bankasından yanıtlar')}</p></div>
             </div>
             <div className="flex-1 space-y-3 overflow-y-auto px-4 py-3 text-[13px]">
               {msgs.map((m, i) => (
@@ -78,7 +79,7 @@ export function AssistantWidget() {
                   <div className={cn('max-w-[88%] rounded-2xl px-3.5 py-2.5 leading-relaxed', m.role === 'user' ? 'rounded-br-md bg-primary text-primary-foreground' : 'rounded-bl-md bg-muted')}>
                     <MiniMarkdown text={m.text} />
                     {m.reply?.source === 'llm' && (
-                      <p className="mt-1.5 text-[10.5px] text-muted-foreground">Yapay zekâ yanıtı · bilgi bankasına dayanır{m.reply.related?.length ? ` (${m.reply.related.join(', ')})` : ''}; hatalı olabilir.</p>
+                      <p className="mt-1.5 text-[10.5px] text-muted-foreground">{tx('Yapay zekâ yanıtı · bilgi bankasına dayanır{0}; hatalı olabilir.', [m.reply.related?.length ? ` (${m.reply.related.join(', ')})` : ''])}</p>
                     )}
                     {m.reply?.report?.understood && m.reply.report.rows.length > 0 && (
                       <table className="mt-2 w-full text-[12px]"><tbody>{m.reply.report.rows.slice(0, 8).map((r, j) => <tr key={j} className="border-t border-border/50"><td className="py-1">{String(r[0])}</td><td className="tabular py-1 text-right font-medium">{String(r[1])}</td></tr>)}</tbody></table>
@@ -101,8 +102,8 @@ export function AssistantWidget() {
                 {QUICK.map((s) => <button key={s} onClick={() => void ask(s)} className="shrink-0 cursor-pointer rounded-full border border-border px-2.5 py-1 text-[11.5px] text-muted-foreground hover:border-primary/50 hover:text-foreground">{s}</button>)}
               </div>
               <form onSubmit={(e) => { e.preventDefault(); void ask(q) }} className="flex items-center gap-2 rounded-xl border border-input bg-background/60 px-3 focus-within:ring-2 focus-within:ring-primary/30">
-                <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Bir şey sorun…" className="h-10 flex-1 bg-transparent text-[13.5px] outline-none" />
-                <button type="submit" disabled={!q.trim() || busy} className="cursor-pointer text-primary disabled:opacity-40" aria-label="Gönder"><CornerDownLeft className="size-4" /></button>
+                <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={tx('Bir şey sorun…')} className="h-10 flex-1 bg-transparent text-[13.5px] outline-none" />
+                <button type="submit" disabled={!q.trim() || busy} className="cursor-pointer text-primary disabled:opacity-40" aria-label={tx('Gönder')}><CornerDownLeft className="size-4" /></button>
               </form>
             </div>
           </motion.div>

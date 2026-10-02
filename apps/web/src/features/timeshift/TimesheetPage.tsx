@@ -18,6 +18,7 @@ import { useMyEmployeeId, useTimeEntries, useTimeSummary } from '@/api/queries'
 import type { TimeEntry } from '@/api/types'
 import { formatDate, formatNumber } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { tx, appLocale } from '@/lib/i18n'
 
 /** Dakikayı "7s 30dk" biçimine çevirir. */
 function hm(minutes: number): string {
@@ -34,7 +35,7 @@ function monthRange(year: number, month: number) {
 }
 
 const clockTime = (iso?: string | null) =>
-  iso ? new Date(iso).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : '—'
+  iso ? new Date(iso).toLocaleTimeString(appLocale, { hour: '2-digit', minute: '2-digit' }) : '—'
 
 /**
  * Bugünün durum kartı ve tek eylem düğmesi.
@@ -58,16 +59,16 @@ function TodayCard({ employeeId, today }: { employeeId: string; today?: TimeEntr
     },
     onSuccess: (_, kind) => {
       void queryClient.invalidateQueries({ queryKey: ['timeshift'] })
-      toast.ok(kind === 'in' ? 'Giriş kaydedildi' : 'Çıkış kaydedildi')
+      toast.ok(kind === 'in' ? tx('Giriş kaydedildi') : tx('Çıkış kaydedildi'))
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : 'Kayıt yapılamadı.'),
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Kayıt yapılamadı.')),
   })
 
   return (
     <Panel>
       <PanelHead
-        title="Bugün"
-        note={new Date().toLocaleDateString('tr-TR', { dateStyle: 'long' })}
+        title={tx('Bugün')}
+        note={new Date().toLocaleDateString(appLocale, { dateStyle: 'long' })}
       />
       <PanelBody className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex flex-wrap items-center gap-6">
@@ -94,19 +95,19 @@ function TodayCard({ employeeId, today }: { employeeId: string; today?: TimeEntr
           </span>
 
           <div>
-            <p className="text-[12px] text-muted-foreground">Giriş</p>
+            <p className="text-[12px] text-muted-foreground">{tx('Giriş')}</p>
             <p className="tabular text-[20px] leading-none font-bold">
               {clockTime(today?.clockIn)}
             </p>
           </div>
           <div>
-            <p className="text-[12px] text-muted-foreground">Çıkış</p>
+            <p className="text-[12px] text-muted-foreground">{tx('Çıkış')}</p>
             <p className="tabular text-[20px] leading-none font-bold">
               {clockTime(today?.clockOut)}
             </p>
           </div>
           <div>
-            <p className="text-[12px] text-muted-foreground">Çalışılan</p>
+            <p className="text-[12px] text-muted-foreground">{tx('Çalışılan')}</p>
             <motion.p
               key={today?.workedMinutes ?? 0}
               className="tabular text-[20px] leading-none font-bold"
@@ -118,12 +119,12 @@ function TodayCard({ employeeId, today }: { employeeId: string; today?: TimeEntr
             </motion.p>
           </div>
           {(today?.overtimeMinutes ?? 0) > 0 && (
-            <StatusBadge tone="warning">Fazla mesai {hm(today!.overtimeMinutes)}</StatusBadge>
+            <StatusBadge tone="warning">{tx('Fazla mesai {0}', [hm(today!.overtimeMinutes)])}</StatusBadge>
           )}
         </div>
 
         {closed ? (
-          <StatusBadge tone="success">Gün kapandı</StatusBadge>
+          <StatusBadge tone="success">{tx('Gün kapandı')}</StatusBadge>
         ) : (
           <Button
             className="cursor-pointer"
@@ -131,7 +132,7 @@ function TodayCard({ employeeId, today }: { employeeId: string; today?: TimeEntr
             onClick={() => mutation.mutate(clockedIn ? 'out' : 'in')}
           >
             {mutation.isPending && <LoaderCircle className="size-4 animate-spin" />}
-            {clockedIn ? 'Çıkış yap' : 'Giriş yap'}
+            {clockedIn ? tx('Çıkış yap') : tx('Giriş yap')}
           </Button>
         )}
       </PanelBody>
@@ -187,7 +188,7 @@ export function TimesheetPage() {
   const columns: Array<Column<TimeEntry>> = [
     {
       id: 'date',
-      header: 'Tarih',
+      header: tx('Tarih'),
       searchText: (e) => formatDate(e.date),
       sortValue: (e) => new Date(e.date).getTime(),
       exportText: (e) => formatDate(e.date),
@@ -195,21 +196,21 @@ export function TimesheetPage() {
     },
     {
       id: 'in',
-      header: 'Giriş',
+      header: tx('Giriş'),
       hideBelow: 'sm',
       exportText: (e) => clockTime(e.clockIn),
       cell: (e) => <span className="tabular text-muted-foreground">{clockTime(e.clockIn)}</span>,
     },
     {
       id: 'out',
-      header: 'Çıkış',
+      header: tx('Çıkış'),
       hideBelow: 'sm',
       exportText: (e) => clockTime(e.clockOut),
       cell: (e) => <span className="tabular text-muted-foreground">{clockTime(e.clockOut)}</span>,
     },
     {
       id: 'worked',
-      header: 'Çalışılan',
+      header: tx('Çalışılan'),
       align: 'right',
       sortValue: (e) => e.workedMinutes,
       exportText: (e) => hm(e.workedMinutes),
@@ -217,7 +218,7 @@ export function TimesheetPage() {
     },
     {
       id: 'overtime',
-      header: 'Fazla mesai',
+      header: tx('Fazla mesai'),
       align: 'right',
       hideBelow: 'md',
       sortValue: (e) => e.overtimeMinutes,
@@ -234,8 +235,8 @@ export function TimesheetPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Puantaj"
-        description="Günlük giriş/çıkış kayıtları ve aylık çalışma özeti. 8 saati aşan süre fazla mesai sayılır."
+        title={tx('Puantaj')}
+        description={tx('Günlük giriş/çıkış kayıtları ve aylık çalışma özeti. 8 saati aşan süre fazla mesai sayılır.')}
       />
 
       <div className="grid max-w-2xl gap-4 sm:grid-cols-[1fr_auto_auto]">
@@ -243,16 +244,16 @@ export function TimesheetPage() {
           <EmployeePicker
             value={employeeId}
             onChange={setEmployeeId}
-            hint="Kayıtları görmek için çalışan seçin."
+            hint={tx('Kayıtları görmek için çalışan seçin.')}
           />
         ) : (
           <p className="self-end pb-2 text-[13px] text-muted-foreground">
-            {me.notLinked ? 'Hesabınıza bağlı çalışan kaydı bulunamadı.' : 'Kendi puantajınız'}
+            {me.notLinked ? tx('Hesabınıza bağlı çalışan kaydı bulunamadı.') : tx('Kendi puantajınız')}
           </p>
         )}
         <TextField
           id="timesheet-year"
-          label="Yıl"
+          label={tx('Yıl')}
           type="number"
           min={2020}
           max={2100}
@@ -262,7 +263,7 @@ export function TimesheetPage() {
         />
         <TextField
           id="timesheet-month"
-          label="Ay"
+          label={tx('Ay')}
           type="number"
           min={1}
           max={12}
@@ -281,23 +282,23 @@ export function TimesheetPage() {
       {employeeId && summary.data && (
         <div className="grid gap-3 sm:grid-cols-3">
           <StatCard
-            label="Çalışılan gün"
+            label={tx('Çalışılan gün')}
             value={formatNumber(summary.data.daysWorked)}
             trend={`${month}/${year}`}
             trendDirection="flat"
             trendSense="neutral"
           />
           <StatCard
-            label="Toplam süre"
+            label={tx('Toplam süre')}
             value={hm(summary.data.totalWorkedMinutes)}
-            trend="Ay toplamı"
+            trend={tx('Ay toplamı')}
             trendDirection="flat"
             trendSense="neutral"
           />
           <StatCard
-            label="Fazla mesai"
+            label={tx('Fazla mesai')}
             value={hm(summary.data.totalOvertimeMinutes)}
-            trend={summary.data.totalOvertimeMinutes > 0 ? 'Ek ödeme konusu' : 'Yok'}
+            trend={summary.data.totalOvertimeMinutes > 0 ? tx('Ek ödeme konusu') : tx('Yok')}
             trendDirection={summary.data.totalOvertimeMinutes > 0 ? 'up' : 'flat'}
             trendSense="negative"
           />
@@ -306,10 +307,10 @@ export function TimesheetPage() {
 
       {!employeeId ? (
         <Panel>
-          <PanelHead title="Kayıtlar" />
+          <PanelHead title={tx('Kayıtlar')} />
           <EmptyState
-            title="Çalışan seçilmedi"
-            detail="Puantaj kayıtlarını görmek için yukarıdan bir çalışan seçin."
+            title={tx('Çalışan seçilmedi')}
+            detail={tx('Puantaj kayıtlarını görmek için yukarıdan bir çalışan seçin.')}
           />
         </Panel>
       ) : (
@@ -320,11 +321,11 @@ export function TimesheetPage() {
           isLoading={entries.isPending}
           error={entries.error}
           onRetry={() => void entries.refetch()}
-          searchPlaceholder="Tarih ara"
+          searchPlaceholder={tx('Tarih ara')}
           exportFileName={`puantaj-${year}-${String(month).padStart(2, '0')}`}
           pageSize={15}
-          emptyTitle="Bu ayda kayıt yok"
-          emptyDetail="Seçili ay için giriş/çıkış kaydı bulunmuyor."
+          emptyTitle={tx('Bu ayda kayıt yok')}
+          emptyDetail={tx('Seçili ay için giriş/çıkış kaydı bulunmuyor.')}
         />
       )}
     </div>

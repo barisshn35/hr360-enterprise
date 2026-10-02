@@ -13,6 +13,7 @@
  */
 
 import type { Assignment } from '@/api/types'
+import { tx } from '@/lib/i18n'
 
 export interface AssignmentInput {
   departmentId: string
@@ -45,7 +46,7 @@ export function applyAssignment(assignments: Assignment[], input: AssignmentInpu
   if (active && activeFrom && from < activeFrom) {
     return {
       ok: false,
-      message: `Başlangıç tarihi, mevcut atamanın başlangıcından (${activeFrom.split('-').reverse().join('.')}) önce olamaz.`,
+      message: tx('Başlangıç tarihi, mevcut atamanın başlangıcından ({0}) önce olamaz.', [activeFrom.split('-').reverse().join('.')]),
     }
   }
 

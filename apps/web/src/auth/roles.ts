@@ -1,3 +1,4 @@
+import { tx } from '@/lib/i18n'
 /**
  * Rol ve izin matrisi.
  *
@@ -201,12 +202,12 @@ export function canListEmployees(userRoles: string[]): boolean {
 
 /** Arayüzde gösterilecek Türkçe rol etiketleri. */
 export const roleLabels: Record<Role, string> = {
-  employee: 'Çalışan',
-  manager: 'Yönetici',
-  accounting: 'Muhasebe',
-  'hr-admin': 'İK Yöneticisi',
-  'tenant-admin': 'Şirket Yöneticisi',
-  'platform-admin': 'Platform Yöneticisi',
+  employee: tx('Çalışan'),
+  manager: tx('Yönetici'),
+  accounting: tx('Muhasebe'),
+  'hr-admin': tx('İK Yöneticisi'),
+  'tenant-admin': tx('Şirket Yöneticisi'),
+  'platform-admin': tx('Platform Yöneticisi'),
 };
 
 /** Kullanıcının en yetkili rolü — arayüzde tek etiket göstermek için. */

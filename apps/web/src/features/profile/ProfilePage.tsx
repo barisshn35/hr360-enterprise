@@ -19,10 +19,11 @@ import { useMyEmployeeId } from '@/api/queries'
 import { formatDate } from '@/lib/format'
 import { ChipInput, Initials, errMsg, useAction } from '@/features/shared/kit'
 import { CalendarConnections } from '@/features/shared/Meetings'
+import { tx } from '@/lib/i18n'
 
 type TabKey = 'bilgiler' | 'gizlilik' | 'takvim' | 'guvenlik'
 
-const SKILL_HINTS = ['İletişim', 'Excel', 'Proje yönetimi', 'SQL', 'React', '.NET', 'Satış', 'Liderlik', 'İngilizce']
+const SKILL_HINTS = [tx('İletişim'), tx('Excel'), tx('Proje yönetimi'), tx('SQL'), tx('React'), tx('.NET'), tx('Satış'), tx('Liderlik'), tx('İngilizce')]
 
 function SensitiveField({ label, field, employeeId, masked, has, onChange, value }: {
   label: string; field: 'iban' | 'nationalId'; employeeId: string; masked: string | null; has: boolean; value: string; onChange: (v: string) => void
@@ -45,13 +46,13 @@ function SensitiveField({ label, field, employeeId, masked, has, onChange, value
           <TextField label={label} value={value} onChange={(e) => onChange(e.target.value)} placeholder={has ? (revealed ?? masked ?? '') : field === 'iban' ? 'TR00 0000 0000 0000 0000 0000 00' : '11 haneli'} className="font-mono" />
         </div>
         {has && (
-          <Button type="button" variant="outline" size="icon" onClick={reveal} aria-label={revealed ? 'Gizle' : 'Göster'} title="Göster (denetim kaydına yazılır)">
+          <Button type="button" variant="outline" size="icon" onClick={reveal} aria-label={revealed ? tx('Gizle') : tx('Göster')} title={tx('Göster (denetim kaydına yazılır)')}>
             {revealed ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
           </Button>
         )}
       </div>
       <p className="text-[11.5px] text-muted-foreground">
-        {has ? <>Kayıtlı: <span className="font-mono">{revealed ?? masked}</span> · açık hâli her görüntülemede denetim kaydına yazılır.</> : 'Boş bırakırsanız değişmez.'}
+        {has ? <>{tx('Kayıtlı:')}{' '}<span className="font-mono">{revealed ?? masked}</span>{' '}{tx('· açık hâli her görüntülemede denetim kaydına yazılır.')}</> : tx('Boş bırakırsanız değişmez.')}
       </p>
     </div>
   )
@@ -72,46 +73,46 @@ function InfoTab({ p }: { p: MyProfile }) {
     })
     if ((me.data?.phone ?? '') !== phone) await apiFetch('/api/employee/employees/me/contact', { method: 'PUT', body: { phone } })
     return r
-  }, { success: 'Profiliniz güncellendi', invalidate: [['profile'], ['my-employee-record']], onDone: () => setF((x) => ({ ...x, iban: '', nationalId: '' })) })
+  }, { success: tx('Profiliniz güncellendi'), invalidate: [['profile'], ['my-employee-record']], onDone: () => setF((x) => ({ ...x, iban: '', nationalId: '' })) })
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((x) => ({ ...x, [k]: v }))
 
   return (
     <form onSubmit={(e) => { e.preventDefault(); save.mutate(undefined) }} className="grid gap-5 lg:grid-cols-2">
       <Panel>
-        <PanelHead title="Kişisel bilgiler" note="Ad, e-posta ve işe giriş tarihi İK tarafından yönetilir." />
+        <PanelHead title={tx('Kişisel bilgiler')} note={tx('Ad, e-posta ve işe giriş tarihi İK tarafından yönetilir.')} />
         <PanelBody className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
-            <TextField label="Doğum tarihi" type="date" value={f.birthDate} onChange={(e) => set('birthDate', e.target.value)} />
-            <SelectField label="Hitap" value={f.pronouns || 'none'} onChange={(v) => set('pronouns', v === 'none' ? '' : v)} options={[{ value: 'none', label: 'Belirtmek istemiyorum' }, { value: 'O (kadın)', label: 'O (kadın)' }, { value: 'O (erkek)', label: 'O (erkek)' }]} />
+            <TextField label={tx('Doğum tarihi')} type="date" value={f.birthDate} onChange={(e) => set('birthDate', e.target.value)} />
+            <SelectField label={tx('Hitap')} value={f.pronouns || 'none'} onChange={(v) => set('pronouns', v === 'none' ? '' : v)} options={[{ value: 'none', label: tx('Belirtmek istemiyorum') }, { value: 'O (kadın)', label: tx('O (kadın)') }, { value: 'O (erkek)', label: tx('O (erkek)') }]} />
           </div>
-          <label className="flex items-center gap-2 text-[13px]"><Checkbox checked={f.showBirthday} onCheckedChange={(v) => set('showBirthday', v === true)} /> Doğum günüm kutlamalar sayfasında görünsün (yıl gösterilmez)</label>
-          <TextField label="Telefon" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+90 5xx xxx xx xx" />
-          <TextAreaField label="Hakkımda" rows={3} maxLength={500} value={f.bio} onChange={(e) => set('bio', e.target.value)} />
-          <TextField label="LinkedIn" value={f.linkedInUrl} onChange={(e) => set('linkedInUrl', e.target.value)} placeholder="https://linkedin.com/in/..." />
-          <TextAreaField label="Adres" rows={2} value={f.address} onChange={(e) => set('address', e.target.value)} />
+          <label className="flex items-center gap-2 text-[13px]"><Checkbox checked={f.showBirthday} onCheckedChange={(v) => set('showBirthday', v === true)} />{' '}{tx('Doğum günüm kutlamalar sayfasında görünsün (yıl gösterilmez)')}</label>
+          <TextField label={tx('Telefon')} value={phone} onChange={(e) => setPhone(e.target.value)} placeholder={tx('+90 5xx xxx xx xx')} />
+          <TextAreaField label={tx('Hakkımda')} rows={3} maxLength={500} value={f.bio} onChange={(e) => set('bio', e.target.value)} />
+          <TextField label={tx('LinkedIn')} value={f.linkedInUrl} onChange={(e) => set('linkedInUrl', e.target.value)} placeholder="https://linkedin.com/in/..." />
+          <TextAreaField label={tx('Adres')} rows={2} value={f.address} onChange={(e) => set('address', e.target.value)} />
           <div className="grid gap-4 sm:grid-cols-2">
-            <TextField label="Acil durumda aranacak kişi" value={f.emergencyContactName} onChange={(e) => set('emergencyContactName', e.target.value)} />
-            <TextField label="Acil durum telefonu" value={f.emergencyContactPhone} onChange={(e) => set('emergencyContactPhone', e.target.value)} />
+            <TextField label={tx('Acil durumda aranacak kişi')} value={f.emergencyContactName} onChange={(e) => set('emergencyContactName', e.target.value)} />
+            <TextField label={tx('Acil durum telefonu')} value={f.emergencyContactPhone} onChange={(e) => set('emergencyContactPhone', e.target.value)} />
           </div>
         </PanelBody>
       </Panel>
       <div className="space-y-5">
         <Panel>
-          <PanelHead title="Beceriler ve ilgi alanları" note="Yetenek dizininde ve mentor eşleştirmede kullanılır." />
+          <PanelHead title={tx('Beceriler ve ilgi alanları')} note={tx('Yetenek dizininde ve mentor eşleştirmede kullanılır.')} />
           <PanelBody className="space-y-4">
-            <ChipInput id="skills" label="Beceriler" value={f.skills} onChange={(v) => set('skills', v)} suggestions={SKILL_HINTS} />
-            <ChipInput id="interests" label="İlgi alanları" value={f.interests} onChange={(v) => set('interests', v)} suggestions={['Fotoğraf', 'Koşu', 'Satranç', 'Müzik', 'Gönüllülük']} />
+            <ChipInput id="skills" label={tx('Beceriler')} value={f.skills} onChange={(v) => set('skills', v)} suggestions={SKILL_HINTS} />
+            <ChipInput id="interests" label={tx('İlgi alanları')} value={f.interests} onChange={(v) => set('interests', v)} suggestions={[tx('Fotoğraf'), tx('Koşu'), tx('Satranç'), tx('Müzik'), tx('Gönüllülük')]} />
           </PanelBody>
         </Panel>
         <Panel>
-          <PanelHead title={<span className="flex items-center gap-2"><ShieldCheck className="size-4 text-primary" /> Hassas bilgiler</span>} note="Maskeli gösterilir; yalnızca siz ve İK açık hâlini görebilir." />
+          <PanelHead title={<span className="flex items-center gap-2"><ShieldCheck className="size-4 text-primary" />{' '}{tx('Hassas bilgiler')}</span>} note={tx('Maskeli gösterilir; yalnızca siz ve İK açık hâlini görebilir.')} />
           <PanelBody className="space-y-4">
-            <SensitiveField label="IBAN (maaş hesabı)" field="iban" employeeId={p.employeeId} masked={p.iban} has={p.hasIban} value={f.iban} onChange={(v) => set('iban', v)} />
-            <SensitiveField label="T.C. kimlik no" field="nationalId" employeeId={p.employeeId} masked={p.nationalId} has={p.hasNationalId} value={f.nationalId} onChange={(v) => set('nationalId', v)} />
+            <SensitiveField label={tx('IBAN (maaş hesabı)')} field="iban" employeeId={p.employeeId} masked={p.iban} has={p.hasIban} value={f.iban} onChange={(v) => set('iban', v)} />
+            <SensitiveField label={tx('T.C. kimlik no')} field="nationalId" employeeId={p.employeeId} masked={p.nationalId} has={p.hasNationalId} value={f.nationalId} onChange={(v) => set('nationalId', v)} />
           </PanelBody>
         </Panel>
         <div className="flex justify-end">
-          <Button type="submit" disabled={save.isPending}><Save className="size-4" /> Kaydet</Button>
+          <Button type="submit" disabled={save.isPending}><Save className="size-4" />{' '}{tx('Kaydet')}</Button>
         </div>
       </div>
     </form>
@@ -121,35 +122,35 @@ function InfoTab({ p }: { p: MyProfile }) {
 function PrivacyTab({ employeeId }: { employeeId: string }) {
   const consents = useQuery({ queryKey: ['privacy', 'consents', 'me'], queryFn: ({ signal }) => governanceApi.myConsents(signal) })
   const requests = useQuery({ queryKey: ['privacy', 'requests'], queryFn: ({ signal }) => governanceApi.dataRequests(signal) })
-  const record = useAction(({ type, granted }: { type: string; granted: boolean }) => governanceApi.recordConsent(type, granted), { success: 'Tercihiniz kaydedildi', invalidate: [['privacy']] })
+  const record = useAction(({ type, granted }: { type: string; granted: boolean }) => governanceApi.recordConsent(type, granted), { success: tx('Tercihiniz kaydedildi'), invalidate: [['privacy']] })
   const [kind, setKind] = useState<DataRequestKind>('Access')
   const [details, setDetails] = useState('')
-  const create = useAction(() => governanceApi.createDataRequest(kind, details), { success: 'Başvurunuz alındı; en geç 30 gün içinde yanıtlanır.', invalidate: [['privacy']], onDone: () => setDetails('') })
+  const create = useAction(() => governanceApi.createDataRequest(kind, details), { success: tx('Başvurunuz alındı; en geç 30 gün içinde yanıtlanır.'), invalidate: [['privacy']], onDone: () => setDetails('') })
   const toast = useToast()
   return (
     <div className="grid gap-5 lg:grid-cols-2">
       <Panel>
-        <PanelHead title="Aydınlatma ve açık rıza" note="Rızalarınızı istediğiniz zaman geri alabilirsiniz (KVKK m.5, m.11)." />
+        <PanelHead title={tx('Aydınlatma ve açık rıza')} note={tx('Rızalarınızı istediğiniz zaman geri alabilirsiniz (KVKK m.5, m.11).')} />
         <PanelBody className="space-y-3">
           {consents.isPending ? <RowsSkeleton rows={3} /> : consents.data?.map((c) => (
             <div key={c.type} className="rounded-xl border border-border p-3.5">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-[13.5px] font-medium">{c.title} {c.required && <span className="text-[11px] text-muted-foreground">(bilgilendirme)</span>}</p>
+                  <p className="text-[13.5px] font-medium">{c.title} {c.required && <span className="text-[11px] text-muted-foreground">{tx('(bilgilendirme)')}</span>}</p>
                   <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">{c.text}</p>
                 </div>
-                {c.granted == null ? <StatusBadge tone="warning">Bekliyor</StatusBadge> : c.granted ? <StatusBadge tone="success">{c.required ? 'Okundu' : 'Onaylı'}</StatusBadge> : <StatusBadge>Reddedildi</StatusBadge>}
+                {c.granted == null ? <StatusBadge tone="warning">{tx('Bekliyor')}</StatusBadge> : c.granted ? <StatusBadge tone="success">{c.required ? tx('Okundu') : tx('Onaylı')}</StatusBadge> : <StatusBadge>{tx('Reddedildi')}</StatusBadge>}
               </div>
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 {c.required ? (
-                  <Button size="sm" variant={c.granted ? 'outline' : 'default'} onClick={() => record.mutate({ type: c.type, granted: true })}>Okudum, anladım</Button>
+                  <Button size="sm" variant={c.granted ? 'outline' : 'default'} onClick={() => record.mutate({ type: c.type, granted: true })}>{tx('Okudum, anladım')}</Button>
                 ) : (
                   <>
-                    <Button size="sm" variant={c.granted ? 'default' : 'outline'} onClick={() => record.mutate({ type: c.type, granted: true })}>Onaylıyorum</Button>
-                    <Button size="sm" variant={c.granted === false ? 'default' : 'outline'} onClick={() => record.mutate({ type: c.type, granted: false })}>Onaylamıyorum</Button>
+                    <Button size="sm" variant={c.granted ? 'default' : 'outline'} onClick={() => record.mutate({ type: c.type, granted: true })}>{tx('Onaylıyorum')}</Button>
+                    <Button size="sm" variant={c.granted === false ? 'default' : 'outline'} onClick={() => record.mutate({ type: c.type, granted: false })}>{tx('Onaylamıyorum')}</Button>
                   </>
                 )}
-                {c.recordedAt && <span className="text-[11.5px] text-muted-foreground">Son kayıt {formatDate(c.recordedAt)} · sürüm {c.version}</span>}
+                {c.recordedAt && <span className="text-[11.5px] text-muted-foreground">{tx('Son kayıt {0} · sürüm {1}', [formatDate(c.recordedAt), c.version])}</span>}
               </div>
             </div>
           ))}
@@ -157,17 +158,17 @@ function PrivacyTab({ employeeId }: { employeeId: string }) {
       </Panel>
       <div className="space-y-5">
         <Panel>
-          <PanelHead title="Verilerim" note="HR360'ta sizinle ilgili tutulan tüm kişisel verilerin dökümü." />
+          <PanelHead title={tx('Verilerim')} note={tx('HR360\'ta sizinle ilgili tutulan tüm kişisel verilerin dökümü.')} />
           <PanelBody>
-            <Button onClick={() => governanceApi.exportPersonalData(employeeId).catch((e) => toast.stop(errMsg(e)))}><Download className="size-4" /> Verilerimi indir (JSON)</Button>
+            <Button onClick={() => governanceApi.exportPersonalData(employeeId).catch((e) => toast.stop(errMsg(e)))}><Download className="size-4" />{' '}{tx('Verilerimi indir (JSON)')}</Button>
           </PanelBody>
         </Panel>
         <Panel>
-          <PanelHead title="İlgili kişi başvurusu" note="KVKK m.11 haklarınız için başvuru yapın." />
+          <PanelHead title={tx('İlgili kişi başvurusu')} note={tx('KVKK m.11 haklarınız için başvuru yapın.')} />
           <PanelBody className="space-y-3">
-            <SelectField label="Başvuru türü" value={kind} onChange={(v) => setKind(v as DataRequestKind)} options={(Object.keys(dataRequestLabels) as DataRequestKind[]).map((k) => ({ value: k, label: dataRequestLabels[k] }))} />
-            <TextAreaField label="Açıklama" rows={3} value={details} onChange={(e) => setDetails(e.target.value)} />
-            <Button onClick={() => create.mutate(undefined)} disabled={create.isPending}>Başvur</Button>
+            <SelectField label={tx('Başvuru türü')} value={kind} onChange={(v) => setKind(v as DataRequestKind)} options={(Object.keys(dataRequestLabels) as DataRequestKind[]).map((k) => ({ value: k, label: dataRequestLabels[k] }))} />
+            <TextAreaField label={tx('Açıklama')} rows={3} value={details} onChange={(e) => setDetails(e.target.value)} />
+            <Button onClick={() => create.mutate(undefined)} disabled={create.isPending}>{tx('Başvur')}</Button>
             {(requests.data ?? []).length > 0 && (
               <ul className="mt-2 divide-y divide-border rounded-xl border border-border">
                 {requests.data!.map((r) => (
@@ -175,10 +176,10 @@ function PrivacyTab({ employeeId }: { employeeId: string }) {
                     <div className="flex items-center justify-between">
                       <span>{dataRequestLabels[r.kind]}</span>
                       <StatusBadge tone={r.status === 'Completed' ? 'success' : r.status === 'Rejected' ? 'danger' : r.overdue ? 'danger' : 'warning'}>
-                        {r.status === 'Completed' ? 'Yanıtlandı' : r.status === 'Rejected' ? 'Reddedildi' : `${r.daysLeft} gün içinde`}
+                        {r.status === 'Completed' ? tx('Yanıtlandı') : r.status === 'Rejected' ? tx('Reddedildi') : tx('{0} gün içinde', [r.daysLeft])}
                       </StatusBadge>
                     </div>
-                    {r.response && <p className="mt-1 text-[12.5px] text-muted-foreground">Yanıt: {r.response}</p>}
+                    {r.response && <p className="mt-1 text-[12.5px] text-muted-foreground">{tx('Yanıt: {0}', [r.response])}</p>}
                   </li>
                 ))}
               </ul>
@@ -193,27 +194,27 @@ function PrivacyTab({ employeeId }: { employeeId: string }) {
 function CalendarTab() {
   const toast = useToast()
   const feed = useQuery({ queryKey: ['calendar-feed'], queryFn: ({ signal }) => governanceApi.calendarFeed(signal) })
-  const rotate = useAction(() => governanceApi.rotateCalendarFeed(), { success: 'Yeni bağlantı oluşturuldu; eski bağlantı artık çalışmaz.', invalidate: [['calendar-feed']] })
+  const rotate = useAction(() => governanceApi.rotateCalendarFeed(), { success: tx('Yeni bağlantı oluşturuldu; eski bağlantı artık çalışmaz.'), invalidate: [['calendar-feed']] })
   const url = feed.data ? `${window.location.origin}${feed.data.path}` : ''
   return (
     <div className="max-w-3xl space-y-5">
       <CalendarConnections />
       <Panel>
-      <PanelHead title={<span className="flex items-center gap-2"><CalendarPlus className="size-4 text-primary" /> Takvim aboneliği (.ics)</span>} note="İzinleriniz, ekip izinleri, resmî tatiller, 1:1'ler ve masa rezervasyonlarınız takviminizde." />
+      <PanelHead title={<span className="flex items-center gap-2"><CalendarPlus className="size-4 text-primary" />{' '}{tx('Takvim aboneliği (.ics)')}</span>} note={tx('İzinleriniz, ekip izinleri, resmî tatiller, 1:1\'ler ve masa rezervasyonlarınız takviminizde.')} />
       <PanelBody className="space-y-4">
         {feed.isPending ? <RowsSkeleton rows={1} /> : feed.isError ? <ErrorState message={(feed.error as Error).message} /> : (
           <>
             <div className="flex gap-2">
               <input readOnly value={url} className="h-10 flex-1 rounded-xl border border-input bg-muted/40 px-3 font-mono text-[12px]" onFocus={(e) => e.currentTarget.select()} />
-              <Button variant="outline" onClick={() => navigator.clipboard.writeText(url).then(() => toast.ok('Kopyalandı'))}><Copy className="size-4" /> Kopyala</Button>
-              <Button variant="outline" onClick={() => rotate.mutate(undefined)} title="Bağlantı sızdıysa yenileyin"><RefreshCw className="size-4" /></Button>
+              <Button variant="outline" onClick={() => navigator.clipboard.writeText(url).then(() => toast.ok(tx('Kopyalandı')))}><Copy className="size-4" />{' '}{tx('Kopyala')}</Button>
+              <Button variant="outline" onClick={() => rotate.mutate(undefined)} title={tx('Bağlantı sızdıysa yenileyin')}><RefreshCw className="size-4" /></Button>
             </div>
             <ul className="space-y-1.5 text-[13px] text-muted-foreground">
-              <li><b className="text-foreground">Google Takvim:</b> Diğer takvimler → URL ile ekle → bağlantıyı yapıştırın.</li>
-              <li><b className="text-foreground">Outlook:</b> Takvim ekle → İnternetten abone ol.</li>
-              <li><b className="text-foreground">Apple Takvim:</b> Dosya → Yeni takvim aboneliği.</li>
+              <li><b className="text-foreground">{tx('Google Takvim:')}</b>{' '}{tx('Diğer takvimler → URL ile ekle → bağlantıyı yapıştırın.')}</li>
+              <li><b className="text-foreground">{tx('Outlook:')}</b>{' '}{tx('Takvim ekle → İnternetten abone ol.')}</li>
+              <li><b className="text-foreground">{tx('Apple Takvim:')}</b>{' '}{tx('Dosya → Yeni takvim aboneliği.')}</li>
             </ul>
-            <InfoNote>Bağlantı size özeldir ve oturum gerektirmez; kimseyle paylaşmayın. Sızdığını düşünüyorsanız yenileyin.</InfoNote>
+            <InfoNote>{tx('Bağlantı size özeldir ve oturum gerektirmez; kimseyle paylaşmayın. Sızdığını düşünüyorsanız yenileyin.')}</InfoNote>
           </>
         )}
       </PanelBody>
@@ -226,16 +227,16 @@ function SecurityTab() {
   const { accountUrl } = useAuth()
   return (
     <Panel className="max-w-3xl">
-      <PanelHead title={<span className="flex items-center gap-2"><Fingerprint className="size-4 text-primary" /> İki adımlı doğrulama</span>} note="Parolanıza ek olarak telefonunuzdaki doğrulayıcı uygulamanın kodu istenir." />
+      <PanelHead title={<span className="flex items-center gap-2"><Fingerprint className="size-4 text-primary" />{' '}{tx('İki adımlı doğrulama')}</span>} note={tx('Parolanıza ek olarak telefonunuzdaki doğrulayıcı uygulamanın kodu istenir.')} />
       <PanelBody className="space-y-4">
         <ol className="list-decimal space-y-1.5 pl-5 text-[13px] text-muted-foreground">
-          <li>Telefonunuza Google Authenticator, Microsoft Authenticator veya FreeOTP kurun.</li>
-          <li>Aşağıdaki düğmeyle hesap güvenliği sayfasına gidin ve “Doğrulayıcı uygulama” ekleyin.</li>
-          <li>Ekrandaki QR kodu uygulamayla okutun ve üretilen 6 haneli kodu girin.</li>
+          <li>{tx('Telefonunuza Google Authenticator, Microsoft Authenticator veya FreeOTP kurun.')}</li>
+          <li>{tx('Aşağıdaki düğmeyle hesap güvenliği sayfasına gidin ve “Doğrulayıcı uygulama” ekleyin.')}</li>
+          <li>{tx('Ekrandaki QR kodu uygulamayla okutun ve üretilen 6 haneli kodu girin.')}</li>
         </ol>
         <div className="flex flex-wrap gap-2">
-          <Button asChild><a href={`${accountUrl}#/account-security/signing-in`} target="_blank" rel="noreferrer"><KeyRound className="size-4" /> Hesap güvenliğini aç</a></Button>
-          <Button asChild variant="outline"><a href={`${accountUrl}#/account-security/device-activity`} target="_blank" rel="noreferrer">Açık oturumlarım</a></Button>
+          <Button asChild><a href={`${accountUrl}#/account-security/signing-in`} target="_blank" rel="noreferrer"><KeyRound className="size-4" />{' '}{tx('Hesap güvenliğini aç')}</a></Button>
+          <Button asChild variant="outline"><a href={`${accountUrl}#/account-security/device-activity`} target="_blank" rel="noreferrer">{tx('Açık oturumlarım')}</a></Button>
         </div>
       </PanelBody>
     </Panel>
@@ -249,24 +250,24 @@ export function ProfilePage() {
   const p = q.data
   return (
     <>
-      <PageHeader title="Profilim" description="Kişisel bilgilerinizi, gizlilik tercihlerinizi ve takvim aboneliğinizi tek yerden yönetin." eyebrow={['Hesabım']} />
+      <PageHeader title={tx('Profilim')} description={tx('Kişisel bilgilerinizi, gizlilik tercihlerinizi ve takvim aboneliğinizi tek yerden yönetin.')} eyebrow={[tx('Hesabım')]} />
       {notLinked ? (
-        <EmptyState title="Çalışan kaydınız yok" detail="Hesabınız bir çalışan kaydına bağlı değil (ör. yönetici hesabı). İK sizi çalışan olarak eklediğinde profil burada açılır." />
+        <EmptyState title={tx('Çalışan kaydınız yok')} detail={tx('Hesabınız bir çalışan kaydına bağlı değil (ör. yönetici hesabı). İK sizi çalışan olarak eklediğinde profil burada açılır.')} />
       ) : q.isPending ? <RowsSkeleton /> : q.isError || !p ? (
-        <EmptyState title="Çalışan kaydınız yok" detail={q.error instanceof Error ? q.error.message : 'Hesabınız bir çalışan kaydına bağlı değil (ör. platform yöneticisi). İK sizi çalışan olarak eklediğinde profil burada açılır.'} />
+        <EmptyState title={tx('Çalışan kaydınız yok')} detail={q.error instanceof Error ? q.error.message : tx('Hesabınız bir çalışan kaydına bağlı değil (ör. platform yöneticisi). İK sizi çalışan olarak eklediğinde profil burada açılır.')} />
       ) : (
         <>
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="surface mb-6 flex flex-wrap items-center gap-4 rounded-3xl border border-border p-5">
             <Initials name={p.name} size={64} />
             <div className="min-w-0 flex-1">
               <h2 className="text-[20px] font-semibold tracking-tight">{p.name}</h2>
-              <p className="text-[13.5px] text-muted-foreground">{p.position ?? 'Pozisyon atanmamış'} · {p.department ?? 'Departman yok'}</p>
-              <p className="mt-0.5 text-[12.5px] text-muted-foreground">{p.email} · işe giriş {formatDate(p.hireDate)}</p>
+              <p className="text-[13.5px] text-muted-foreground">{p.position ?? tx('Pozisyon atanmamış')} · {p.department ?? tx('Departman yok')}</p>
+              <p className="mt-0.5 text-[12.5px] text-muted-foreground">{tx('{0} · işe giriş {1}', [p.email, formatDate(p.hireDate)])}</p>
             </div>
             <div className="flex flex-wrap gap-1.5">{p.skills.slice(0, 6).map((s) => <span key={s} className="rounded-full bg-primary/10 px-2.5 py-0.5 text-[12px] text-primary">{s}</span>)}</div>
           </motion.div>
           <div className="mb-5">
-            <Tabs label="Profil bölümleri" value={tab} onChange={setTab} tabs={[{ key: 'bilgiler', label: 'Bilgilerim' }, { key: 'gizlilik', label: 'Gizlilik (KVKK)' }, { key: 'takvim', label: 'Takvim' }, { key: 'guvenlik', label: 'Güvenlik' }]} />
+            <Tabs label={tx('Profil bölümleri')} value={tab} onChange={setTab} tabs={[{ key: 'bilgiler', label: tx('Bilgilerim') }, { key: 'gizlilik', label: tx('Gizlilik (KVKK)') }, { key: 'takvim', label: tx('Takvim') }, { key: 'guvenlik', label: tx('Güvenlik') }]} />
           </div>
           {tab === 'bilgiler' && <InfoTab key={p.updatedAt ?? 'new'} p={p} />}
           {tab === 'gizlilik' && <PrivacyTab employeeId={p.employeeId} />}

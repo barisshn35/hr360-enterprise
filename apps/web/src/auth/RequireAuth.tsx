@@ -2,6 +2,7 @@ import { type ReactNode } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import { AppShellSkeleton } from '@/components/ui/AppShellSkeleton'
 import { useAuth } from './useAuth'
+import { tx } from '@/lib/i18n'
 
 /**
  * Panel rotalarını korur.
@@ -21,5 +22,5 @@ export function RequireAuth({ children }: { children: ReactNode }) {
     return <Navigate to={`/giris?devam=${next}`} replace />
   }
 
-  return <AppShellSkeleton label="Oturum doğrulanıyor" />
+  return <AppShellSkeleton label={tx('Oturum doğrulanıyor')} />
 }

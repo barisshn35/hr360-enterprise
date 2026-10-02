@@ -5,6 +5,7 @@ import { Panel } from '@/components/ui/Panel'
 import { Button } from '@/components/ui/button'
 import { EASE } from '@/motion/primitives'
 import { Chip } from '../components/controls'
+import { tx } from '@/lib/i18n'
 
 /** Ayar bölümü: harfli rozet, başlık, açıklama; değiştiyse "değişti" işareti ve geri alma. */
 export function SettingsSection({
@@ -62,11 +63,11 @@ export function SettingsSection({
           <AnimatePresence>
             {changed && (
               <motion.div initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 8 }} className="flex items-center gap-1.5">
-                <Chip tone="primary">Değişti</Chip>
+                <Chip tone="primary">{tx('Değişti')}</Chip>
                 {onReset && (
                   <Button size="xs" variant="ghost" onClick={onReset}>
                     <RotateCcw aria-hidden />
-                    Geri al
+                    {tx('Geri al')}
                   </Button>
                 )}
               </motion.div>

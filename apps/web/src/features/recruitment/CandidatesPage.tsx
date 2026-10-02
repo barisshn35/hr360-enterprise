@@ -14,6 +14,7 @@ import { recruitmentApi } from '@/api/recruitment'
 import { useCandidates } from '@/api/queries'
 import type { Candidate } from '@/api/types'
 import { formatDate, formatNumber } from '@/lib/format'
+import { tx } from '@/lib/i18n'
 
 function NewCandidateModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const toast = useToast()
@@ -36,7 +37,7 @@ function NewCandidateModal({ open, onClose }: { open: boolean; onClose: () => vo
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['recruitment'] })
-      toast.ok('Aday kaydedildi')
+      toast.ok(tx('Aday kaydedildi'))
       onClose()
       setFirstName('')
       setLastName('')
@@ -44,15 +45,15 @@ function NewCandidateModal({ open, onClose }: { open: boolean; onClose: () => vo
       setPhone('')
       setSource('')
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : 'Aday kaydedilemedi.'),
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Aday kaydedilemedi.')),
   })
 
   function submit(e: React.FormEvent) {
     e.preventDefault()
     if (firstName.trim().length < 2 || lastName.trim().length < 2)
-      return setError('Ad ve soyad en az 2 karakter olmalı.')
+      return setError(tx('Ad ve soyad en az 2 karakter olmalı.'))
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim()))
-      return setError('Geçerli bir e-posta adresi girin.')
+      return setError(tx('Geçerli bir e-posta adresi girin.'))
     setError(undefined)
     mutation.mutate()
   }
@@ -61,8 +62,8 @@ function NewCandidateModal({ open, onClose }: { open: boolean; onClose: () => vo
     <Modal
       open={open}
       onClose={onClose}
-      title="Yeni aday"
-      note="Aday havuzuna eklenir; başvuruyu ilan sayfasından bağlarsınız."
+      title={tx('Yeni aday')}
+      note={tx('Aday havuzuna eklenir; başvuruyu ilan sayfasından bağlarsınız.')}
       size="lg"
       footer={
         <>
@@ -72,7 +73,7 @@ function NewCandidateModal({ open, onClose }: { open: boolean; onClose: () => vo
             onClick={onClose}
             disabled={mutation.isPending}
           >
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button
             type="submit"
@@ -81,7 +82,7 @@ function NewCandidateModal({ open, onClose }: { open: boolean; onClose: () => vo
             disabled={mutation.isPending}
           >
             {mutation.isPending && <LoaderCircle className="size-4 animate-spin" />}
-            Adayı kaydet
+            {tx('Adayı kaydet')}
           </Button>
         </>
       }
@@ -90,7 +91,7 @@ function NewCandidateModal({ open, onClose }: { open: boolean; onClose: () => vo
         <div className="grid gap-4 sm:grid-cols-2">
           <TextField
             id="cand-first"
-            label="Ad"
+            label={tx('Ad')}
             required
             value={firstName}
             onChange={(e) => setFirstName(e.target.value)}
@@ -98,7 +99,7 @@ function NewCandidateModal({ open, onClose }: { open: boolean; onClose: () => vo
           />
           <TextField
             id="cand-last"
-            label="Soyad"
+            label={tx('Soyad')}
             required
             value={lastName}
             onChange={(e) => setLastName(e.target.value)}
@@ -118,16 +119,16 @@ function NewCandidateModal({ open, onClose }: { open: boolean; onClose: () => vo
         <div className="grid gap-4 sm:grid-cols-2">
           <TextField
             id="cand-phone"
-            label="Telefon"
+            label={tx('Telefon')}
             type="tel"
-            hint="İsteğe bağlı"
+            hint={tx('İsteğe bağlı')}
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
           />
           <TextField
             id="cand-source"
-            label="Kaynak"
-            hint="Örn. LinkedIn, referans"
+            label={tx('Kaynak')}
+            hint={tx('Örn. LinkedIn, referans')}
             value={source}
             onChange={(e) => setSource(e.target.value)}
           />
@@ -148,7 +149,7 @@ export function CandidatesPage() {
   const columns: Array<Column<Candidate>> = [
     {
       id: 'name',
-      header: 'Aday',
+      header: tx('Aday'),
       searchText: (c) => `${c.firstName} ${c.lastName} ${c.email}`,
       sortValue: (c) => `${c.firstName} ${c.lastName}`,
       exportText: (c) => `${c.firstName} ${c.lastName}`,
@@ -163,7 +164,7 @@ export function CandidatesPage() {
     },
     {
       id: 'phone',
-      header: 'Telefon',
+      header: tx('Telefon'),
       hideBelow: 'lg',
       searchText: (c) => c.phone ?? '',
       exportText: (c) => c.phone ?? '—',
@@ -171,7 +172,7 @@ export function CandidatesPage() {
     },
     {
       id: 'source',
-      header: 'Kaynak',
+      header: tx('Kaynak'),
       hideBelow: 'md',
       searchText: (c) => c.source ?? '',
       sortValue: (c) => c.source ?? '',
@@ -180,7 +181,7 @@ export function CandidatesPage() {
     },
     {
       id: 'applications',
-      header: 'Başvuru',
+      header: tx('Başvuru'),
       sortValue: (c) => c.applications?.length ?? 0,
       exportText: (c) => String(c.applications?.length ?? 0),
       cell: (c) =>
@@ -201,7 +202,7 @@ export function CandidatesPage() {
     },
     {
       id: 'createdAt',
-      header: 'Kayıt',
+      header: tx('Kayıt'),
       align: 'right',
       hideBelow: 'sm',
       sortValue: (c) => new Date(c.createdAt).getTime(),
@@ -215,20 +216,18 @@ export function CandidatesPage() {
       <Button variant="ghost" size="sm" className="-ml-2 cursor-pointer" asChild>
         <Link to="/panel/ise-alim">
           <ArrowLeft className="size-4" />
-          İşe alım
+          {tx('İşe alım')}
         </Link>
       </Button>
 
       <PageHeader
-        title="Adaylar"
-        description={`Aday havuzu ve başvuru geçmişleri.${
-          candidates.data ? ` ${formatNumber(candidates.data.length)} kayıt.` : ''
-        }`}
+        title={tx('Adaylar')}
+        description={tx('Aday havuzu ve başvuru geçmişleri.{0}', [candidates.data ? tx(' {0} kayıt.', [formatNumber(candidates.data.length)]) : ''])}
         actions={
           canManage && (
             <Button className="cursor-pointer" onClick={() => setModalOpen(true)}>
               <Plus className="size-4" />
-              Yeni aday
+              {tx('Yeni aday')}
             </Button>
           )
         }
@@ -241,16 +240,16 @@ export function CandidatesPage() {
         isLoading={candidates.isPending}
         error={candidates.error}
         onRetry={() => void candidates.refetch()}
-        searchPlaceholder="Ad, soyad, e-posta veya kaynak"
+        searchPlaceholder={tx('Ad, soyad, e-posta veya kaynak')}
         exportFileName="adaylar"
         pageSize={12}
         initialSort={{ columnId: 'createdAt', dir: 'desc' }}
-        emptyTitle="Aday kaydı yok"
-        emptyDetail="İlk adayı ekleyerek havuzu oluşturmaya başlayın."
+        emptyTitle={tx('Aday kaydı yok')}
+        emptyDetail={tx('İlk adayı ekleyerek havuzu oluşturmaya başlayın.')}
         emptyAction={
           canManage ? (
             <Button size="sm" className="cursor-pointer" onClick={() => setModalOpen(true)}>
-              Yeni aday
+              {tx('Yeni aday')}
             </Button>
           ) : undefined
         }

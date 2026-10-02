@@ -1,5 +1,6 @@
 import { getValidToken, keycloak } from '@/auth/keycloak'
 import { env } from '@/lib/env'
+import { translateServerData, tx } from '@/lib/i18n'
 
 /**
  * `?optional=true` ile çağrılan `/me` uçları, hesaba bağlı çalışan kaydı yoksa
@@ -8,7 +9,7 @@ import { env } from '@/lib/env'
  * burada aynı hataya çevrilir.
  */
 export function requireLinked<T>(v: T | undefined): T {
-  if (v === undefined || v === null) throw new ApiError(404, 'Bu hesaba bağlı çalışan kaydı bulunamadı')
+  if (v === undefined || v === null) throw new ApiError(404, tx('Bu hesaba bağlı çalışan kaydı bulunamadı'))
   return v
 }
 
@@ -65,16 +66,16 @@ async function toApiError(res: Response): Promise<ApiError> {
 
   if (!message) {
     const byStatus: Record<number, string> = {
-      400: 'İstek geçersiz. Girdiğiniz bilgileri kontrol edin.',
-      401: 'Oturumunuzun süresi doldu. Lütfen yeniden giriş yapın.',
-      403: 'Bu işlem için yetkiniz yok.',
-      404: 'Kayıt bulunamadı.',
-      409: 'İşlem mevcut durumla çakışıyor.',
-      500: 'Sunucu hatası oluştu. Lütfen daha sonra tekrar deneyin.',
-      502: 'Servise ulaşılamıyor (gateway).',
-      503: 'Servis geçici olarak kullanılamıyor.',
+      400: tx('İstek geçersiz. Girdiğiniz bilgileri kontrol edin.'),
+      401: tx('Oturumunuzun süresi doldu. Lütfen yeniden giriş yapın.'),
+      403: tx('Bu işlem için yetkiniz yok.'),
+      404: tx('Kayıt bulunamadı.'),
+      409: tx('İşlem mevcut durumla çakışıyor.'),
+      500: tx('Sunucu hatası oluştu. Lütfen daha sonra tekrar deneyin.'),
+      502: tx('Servise ulaşılamıyor (gateway).'),
+      503: tx('Servis geçici olarak kullanılamıyor.'),
     }
-    message = byStatus[res.status] ?? `Beklenmeyen hata (HTTP ${res.status}).`
+    message = byStatus[res.status] ?? tx('Beklenmeyen hata (HTTP {0}).', [res.status])
   }
 
   return new ApiError(res.status, message, detail)
@@ -97,7 +98,7 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
     const token = await getValidToken()
     if (!token) {
       // Refresh başarısız — oturumu yenilemek için Keycloak'a yönlendir.
-      throw new ApiError(401, 'Oturumunuzun süresi doldu. Lütfen yeniden giriş yapın.')
+      throw new ApiError(401, tx('Oturumunuzun süresi doldu. Lütfen yeniden giriş yapın.'))
     }
     headers.Authorization = `Bearer ${token}`
   }
@@ -113,7 +114,7 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
 
   if (res.status === 401 && !anonymous) {
     keycloak.clearToken()
-    throw new ApiError(401, 'Oturumunuzun süresi doldu. Lütfen yeniden giriş yapın.')
+    throw new ApiError(401, tx('Oturumunuzun süresi doldu. Lütfen yeniden giriş yapın.'))
   }
 
   if (!res.ok) throw await toApiError(res)
@@ -129,13 +130,13 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
   if (contentType.includes('text/html')) {
     throw new ApiError(
       503,
-      'Servis bu adreste yanıt vermiyor. Gateway yönlendirmesi tanımlı olmayabilir.',
+      tx('Servis bu adreste yanıt vermiyor. Gateway yönlendirmesi tanımlı olmayabilir.'),
       { path },
     )
   }
 
   const text = await res.text()
-  return (text ? JSON.parse(text) : undefined) as T
+  return (text ? translateServerData(JSON.parse(text)) : undefined) as T
 }
 
 /**
@@ -164,7 +165,7 @@ export async function apiUploadFile<T>(
 ): Promise<T> {
   const token = await getValidToken()
   if (!token) {
-    throw new ApiError(401, 'Oturumunuzun süresi doldu. Lütfen yeniden giriş yapın.')
+    throw new ApiError(401, tx('Oturumunuzun süresi doldu. Lütfen yeniden giriş yapın.'))
   }
 
   const formData = new FormData()
@@ -178,14 +179,14 @@ export async function apiUploadFile<T>(
 
   if (res.status === 401) {
     keycloak.clearToken()
-    throw new ApiError(401, 'Oturumunuzun süresi doldu. Lütfen yeniden giriş yapın.')
+    throw new ApiError(401, tx('Oturumunuzun süresi doldu. Lütfen yeniden giriş yapın.'))
   }
 
   const text = await res.text()
   const data = text ? JSON.parse(text) : undefined
 
   if (!res.ok) {
-    throw new ApiError(res.status, (data as { message?: string })?.message ?? 'İstek başarısız', data)
+    throw new ApiError(res.status, (data as { message?: string })?.message ?? tx('İstek başarısız'), data)
   }
 
   return data as T

@@ -8,18 +8,19 @@ import { EmptyState, ErrorState, RowsSkeleton } from '@/components/ui/States'
 import { engagementApi } from '@/api/engagement'
 import { Initials, PlanGate } from '@/features/shared/kit'
 import { cn } from '@/lib/utils'
+import { tx, appLocale } from '@/lib/i18n'
 
 export function DirectoryPage() {
   const [q, setQ] = useState('')
   const term = useDeferredValue(q)
   const res = useQuery({ queryKey: ['directory-skills', term], queryFn: ({ signal }) => engagementApi.directory(term, signal), placeholderData: (p) => p })
-  const hl = (s: string) => term && s.toLocaleLowerCase('tr-TR').includes(term.toLocaleLowerCase('tr-TR'))
+  const hl = (s: string) => term && s.toLocaleLowerCase(appLocale).includes(term.toLocaleLowerCase(appLocale))
   return (
     <PlanGate feature="profile">
-      <PageHeader title="Yetenek dizini" description="“Kubernetes bilen kim?”, “Almanca konuşan var mı?” — beceri ve ilgi alanına göre çalışma arkadaşı bulun." />
+      <PageHeader title={tx('Yetenek dizini')} description={tx('“Kubernetes bilen kim?”, “Almanca konuşan var mı?” — beceri ve ilgi alanına göre çalışma arkadaşı bulun.')} />
       <div className="relative mb-5 max-w-xl">
         <Search className="absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Beceri, ad, departman veya pozisyon ara" className="h-11 rounded-2xl pl-10" autoFocus />
+        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={tx('Beceri, ad, departman veya pozisyon ara')} className="h-11 rounded-2xl pl-10" autoFocus />
       </div>
       {res.data && res.data.topSkills.length > 0 && (
         <div className="mb-6 flex flex-wrap gap-1.5">
@@ -31,7 +32,7 @@ export function DirectoryPage() {
         </div>
       )}
       {res.isPending ? <RowsSkeleton /> : res.isError ? <ErrorState message={(res.error as Error).message} /> : res.data.people.length === 0 ? (
-        <EmptyState icon={UserSearch} title="Eşleşen kimse yok" detail="Çalışanlar becerilerini Profilim sayfasından ekler." />
+        <EmptyState icon={UserSearch} title={tx('Eşleşen kimse yok')} detail={tx('Çalışanlar becerilerini Profilim sayfasından ekler.')} />
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {res.data.people.map((p, i) => (
@@ -48,7 +49,7 @@ export function DirectoryPage() {
               <div className="mt-3 flex flex-wrap gap-1">
                 {p.skills.map((s) => <span key={s} className={cn('rounded-full px-2 py-0.5 text-[11.5px]', hl(s) ? 'bg-primary text-primary-foreground' : 'bg-primary/10 text-primary')}>{s}</span>)}
                 {p.interests.map((s) => <span key={s} className={cn('rounded-full px-2 py-0.5 text-[11.5px]', hl(s) ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground')}>{s}</span>)}
-                {p.skills.length + p.interests.length === 0 && <span className="text-[12px] text-muted-foreground">Henüz beceri eklenmemiş</span>}
+                {p.skills.length + p.interests.length === 0 && <span className="text-[12px] text-muted-foreground">{tx('Henüz beceri eklenmemiş')}</span>}
               </div>
             </motion.div>
           ))}

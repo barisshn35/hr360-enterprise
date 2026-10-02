@@ -13,6 +13,7 @@ import { claimStatusLabels, type ClaimStatus, type ExpenseClaim } from '@/api/ty
 import { formatDate, formatMoney, formatNumber } from '@/lib/format'
 import { useEmployeeName } from '@/lib/useEmployeeName'
 import { NewClaimModal } from './NewClaimModal'
+import { tx } from '@/lib/i18n'
 
 const ALL = '__all__'
 
@@ -32,11 +33,11 @@ export function ExpensePage() {
   const filters: TableFilter[] = [
     {
       id: 'status',
-      label: 'Durum',
+      label: tx('Durum'),
       value: status,
       onChange: setStatus,
       options: [
-        { value: ALL, label: 'Tüm durumlar' },
+        { value: ALL, label: tx('Tüm durumlar') },
         ...(Object.keys(claimStatusLabels) as ClaimStatus[]).map((s) => ({
           value: s,
           label: claimStatusLabels[s],
@@ -48,21 +49,21 @@ export function ExpensePage() {
   const columns: Array<Column<ExpenseClaim>> = [
     {
       id: 'title',
-      header: 'Başlık',
+      header: tx('Başlık'),
       searchText: (c) => c.title,
       sortValue: (c) => c.title,
       cell: (c) => (
         <div className="min-w-0">
           <p className="truncate font-medium text-foreground">{c.title}</p>
           <p className="mt-0.5 truncate text-[12px] text-muted-foreground">
-            {c.items?.length ? `${formatNumber(c.items.length)} kalem` : 'kalem yok'}
+            {c.items?.length ? tx('{0} kalem', [formatNumber(c.items.length)]) : tx('kalem yok')}
           </p>
         </div>
       ),
     },
     {
       id: 'employee',
-      header: 'Çalışan',
+      header: tx('Çalışan'),
       hideBelow: 'md',
       searchText: (c) => nameOf(c.employeeId),
       sortValue: (c) => nameOf(c.employeeId),
@@ -71,7 +72,7 @@ export function ExpensePage() {
     },
     {
       id: 'createdAt',
-      header: 'Tarih',
+      header: tx('Tarih'),
       hideBelow: 'lg',
       sortValue: (c) => new Date(c.createdAt).getTime(),
       exportText: (c) => formatDate(c.createdAt),
@@ -79,7 +80,7 @@ export function ExpensePage() {
     },
     {
       id: 'amount',
-      header: 'Tutar',
+      header: tx('Tutar'),
       align: 'right',
       sortValue: (c) => c.totalAmount,
       exportText: (c) => formatMoney(c.totalAmount, c.currency),
@@ -89,7 +90,7 @@ export function ExpensePage() {
     },
     {
       id: 'status',
-      header: 'Durum',
+      header: tx('Durum'),
       align: 'right',
       sortValue: (c) => claimStatusLabels[c.status] ?? '',
       exportText: (c) => claimStatusLabels[c.status] ?? '',
@@ -100,13 +101,13 @@ export function ExpensePage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Masraf"
-        description="Masraf talepleri ve durumları."
+        title={tx('Masraf')}
+        description={tx('Masraf talepleri ve durumları.')}
         actions={
           can('expense:create') && (
             <Button className="cursor-pointer" onClick={() => setModalOpen(true)}>
               <Plus className="size-4" />
-              Yeni talep
+              {tx('Yeni talep')}
             </Button>
           )
         }
@@ -117,8 +118,8 @@ export function ExpensePage() {
           id="claim-filter-employee"
           value={employeeId}
           onChange={setEmployeeId}
-          label="Çalışan"
-          hint="Boş bırakılırsa tüm çalışanlar listelenir."
+          label={tx('Çalışan')}
+          hint={tx('Boş bırakılırsa tüm çalışanlar listelenir.')}
         />
       </div>
 
@@ -131,22 +132,21 @@ export function ExpensePage() {
         error={claims.error}
         onRetry={() => void claims.refetch()}
         onRowClick={(c) => navigate(`/panel/masraf/${c.id}`)}
-        searchPlaceholder="Başlık veya çalışan ara"
+        searchPlaceholder={tx('Başlık veya çalışan ara')}
         exportFileName="masraf-talepleri"
         initialSort={{ columnId: 'createdAt', dir: 'desc' }}
-        emptyTitle="Masraf talebi yok"
-        emptyDetail="Bu filtreye uyan talep bulunmuyor."
+        emptyTitle={tx('Masraf talebi yok')}
+        emptyDetail={tx('Bu filtreye uyan talep bulunmuyor.')}
         emptyAction={
           can('expense:create') ? (
             <Button size="sm" className="cursor-pointer" onClick={() => setModalOpen(true)}>
-              Yeni talep
+              {tx('Yeni talep')}
             </Button>
           ) : undefined
         }
         notice={
           <InfoNote>
-            Onay akışı <em>Onay kutusu</em> üzerinden yürür; onaylanan talebin durumu buraya
-            kendiliğinden yansır. Bu ekranda karar verilmez.
+            {tx('Onay akışı')}{' '}<em>{tx('Onay kutusu')}</em>{' '}{tx('üzerinden yürür; onaylanan talebin durumu buraya kendiliğinden yansır. Bu ekranda karar verilmez.')}
           </InfoNote>
         }
       />

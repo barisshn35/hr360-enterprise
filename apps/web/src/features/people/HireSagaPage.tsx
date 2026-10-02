@@ -12,9 +12,10 @@ import { EmptyState, ErrorState, InfoNote, RowsSkeleton } from '@/components/ui/
 import { governanceApi, type HireSaga } from '@/api/governance'
 import { cn } from '@/lib/utils'
 import { PlanGate, isoDate, useAction } from '@/features/shared/kit'
+import { tx } from '@/lib/i18n'
 
 const stageLabel: Record<HireSaga['stage'], string> = {
-  Offer: 'Teklif aşamasında', AwaitingEmployee: 'Çalışan kaydı bekliyor', AwaitingOnboarding: 'Onboarding bekliyor', Completed: 'Tamamlandı',
+  Offer: tx('Teklif aşamasında'), AwaitingEmployee: tx('Çalışan kaydı bekliyor'), AwaitingOnboarding: tx('Onboarding bekliyor'), Completed: tx('Tamamlandı'),
 }
 
 function Steps({ s }: { s: HireSaga }) {
@@ -38,26 +39,26 @@ export function HireSagaPage() {
   const [adv, setAdv] = useState<HireSaga | null>(null)
   const [start, setStart] = useState(isoDate(new Date(Date.now() + 14 * 86400000)))
   const [log, setLog] = useState<string[] | null>(null)
-  const advance = useAction(() => governanceApi.advanceSaga(adv!.applicationId, start), { success: 'Saga ilerletildi', invalidate: [['sagas']], onDone: (r) => { setLog(r.log); setAdv(null) } })
+  const advance = useAction(() => governanceApi.advanceSaga(adv!.applicationId, start), { success: tx('Saga ilerletildi'), invalidate: [['sagas']], onDone: (r) => { setLog(r.log); setAdv(null) } })
   const stuck = (q.data ?? []).filter((s) => s.stuck).length
   return (
     <PlanGate feature="sagas">
-      <PageHeader title="Teklif → işe giriş" description="İşe alım (recruitment) → çalışan kaydı (employee) → onboarding planı adımlarının uçtan uca takibi. Takılan başvuruyu tek tıkla ilerletin." />
-      <div className="mb-5"><InfoNote>Her adım idempotenttir: önce sonucun zaten var olup olmadığı kontrol edilir, yoksa ilgili servisin API'si sizin yetkinizle çağrılır. Başarısız adım tekrar denenebilir.</InfoNote></div>
+      <PageHeader title={tx('Teklif → işe giriş')} description={tx('İşe alım (recruitment) → çalışan kaydı (employee) → onboarding planı adımlarının uçtan uca takibi. Takılan başvuruyu tek tıkla ilerletin.')} />
+      <div className="mb-5"><InfoNote>{tx('Her adım idempotenttir: önce sonucun zaten var olup olmadığı kontrol edilir, yoksa ilgili servisin API\'si sizin yetkinizle çağrılır. Başarısız adım tekrar denenebilir.')}</InfoNote></div>
       {log && <div className="mb-5 rounded-2xl border border-[hsl(var(--success))]/30 bg-[hsl(var(--success))]/10 p-4 text-[13px]">{log.map((l) => <p key={l}>✓ {l}</p>)}</div>}
       {q.isPending ? <RowsSkeleton /> : q.isError ? <ErrorState message={(q.error as Error).message} /> : q.data.length === 0 ? (
-        <EmptyState icon={Route} title="Teklif veya işe alım aşamasında aday yok" detail="Adaylar İşe alım ekranında “Teklif” ve “İşe alındı” aşamasına geldiğinde burada izlenir." />
+        <EmptyState icon={Route} title={tx('Teklif veya işe alım aşamasında aday yok')} detail={tx('Adaylar İşe alım ekranında “Teklif” ve “İşe alındı” aşamasına geldiğinde burada izlenir.')} />
       ) : (
         <Panel>
-          <PanelHead title="Süreçler" note={stuck ? `${stuck} başvuru 2 günden uzun süredir bekliyor` : 'Takılan süreç yok'} />
+          <PanelHead title={tx('Süreçler')} note={stuck ? tx('{0} başvuru 2 günden uzun süredir bekliyor', [stuck]) : tx('Takılan süreç yok')} />
           <PanelBody className="p-0">
             <ul className="divide-y divide-border">
               {q.data.map((s) => (
                 <li key={s.applicationId} className="flex flex-wrap items-center gap-4 px-5 py-4">
                   <div className="min-w-48 flex-1"><p className="text-[14px] font-medium">{s.candidate}</p><p className="text-[12px] text-muted-foreground">{s.posting} · {s.email}</p></div>
                   <Steps s={s} />
-                  <StatusBadge tone={s.stage === 'Completed' ? 'success' : s.stuck ? 'danger' : 'warning'}>{s.stuck && <TriangleAlert className="size-3" />} {stageLabel[s.stage]}{s.stage !== 'Completed' ? ` · ${s.daysInStage} gün` : ''}</StatusBadge>
-                  {(s.stage === 'AwaitingEmployee' || s.stage === 'AwaitingOnboarding') && <Button size="sm" onClick={() => setAdv(s)}>İlerlet</Button>}
+                  <StatusBadge tone={s.stage === 'Completed' ? 'success' : s.stuck ? 'danger' : 'warning'}>{s.stuck && <TriangleAlert className="size-3" />} {stageLabel[s.stage]}{s.stage !== 'Completed' ? tx(' · {0} gün', [s.daysInStage]) : ''}</StatusBadge>
+                  {(s.stage === 'AwaitingEmployee' || s.stage === 'AwaitingOnboarding') && <Button size="sm" onClick={() => setAdv(s)}>{tx('İlerlet')}</Button>}
                 </li>
               ))}
             </ul>
@@ -65,9 +66,9 @@ export function HireSagaPage() {
         </Panel>
       )}
       {adv && (
-        <Modal open onClose={() => setAdv(null)} title={`${adv.candidate} — süreci ilerlet`} note="Eksik adımlar sırayla tamamlanır: çalışan kaydı → onboarding planı."
-          footer={<><Button variant="outline" onClick={() => setAdv(null)}>Vazgeç</Button><Button onClick={() => advance.mutate(undefined)} disabled={advance.isPending}>Çalıştır</Button></>}>
-          <TextField label="İşe başlama tarihi" type="date" value={start} onChange={(e) => setStart(e.target.value)} />
+        <Modal open onClose={() => setAdv(null)} title={tx('{0} — süreci ilerlet', [adv.candidate])} note={tx('Eksik adımlar sırayla tamamlanır: çalışan kaydı → onboarding planı.')}
+          footer={<><Button variant="outline" onClick={() => setAdv(null)}>{tx('Vazgeç')}</Button><Button onClick={() => advance.mutate(undefined)} disabled={advance.isPending}>{tx('Çalıştır')}</Button></>}>
+          <TextField label={tx('İşe başlama tarihi')} type="date" value={start} onChange={(e) => setStart(e.target.value)} />
         </Modal>
       )}
     </PlanGate>

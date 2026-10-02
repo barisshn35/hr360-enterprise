@@ -1,5 +1,6 @@
 import type { TenantPlan } from '@/api/tenant'
 import { tenantPlanLabels, tenantPlanQuota } from '@/api/tenant'
+import { tx } from '@/lib/i18n'
 
 /**
  * Plan kataloğu. Hem landing'deki plan bölümü hem kayıt sihirbazının 3. adımı
@@ -24,41 +25,41 @@ export const PLANS: PlanInfo[] = [
   {
     id: 'Trial',
     name: tenantPlanLabels.Trial,
-    tagline: 'Ekibinizle deneyin, kurulum gerektirmez.',
+    tagline: tx('Ekibinizle deneyin, kurulum gerektirmez.'),
     maxEmployees: tenantPlanQuota.Trial,
     features: [
-      'Çalışan ve organizasyon yönetimi',
-      'İzin talepleri ve onay akışı',
-      'Puantaj ve masraf beyanı',
-      'E-posta bildirimleri',
+      tx('Çalışan ve organizasyon yönetimi'),
+      tx('İzin talepleri ve onay akışı'),
+      tx('Puantaj ve masraf beyanı'),
+      tx('E-posta bildirimleri'),
     ],
   },
   {
     id: 'Standard',
     name: tenantPlanLabels.Standard,
-    tagline: 'Büyüyen şirketler için tüm modüller açık.',
+    tagline: tx('Büyüyen şirketler için tüm modüller açık.'),
     maxEmployees: tenantPlanQuota.Standard,
     highlighted: true,
     features: [
-      'Deneme planındaki her şey',
-      'İşe alım, onboarding ve zimmet',
-      'Performans ve eğitim modülleri',
-      'Ücret bandı yönetimi',
-      'Çok adımlı onay zincirleri',
-      'Dışa aktarma (CSV)',
+      tx('Deneme planındaki her şey'),
+      tx('İşe alım, onboarding ve zimmet'),
+      tx('Performans ve eğitim modülleri'),
+      tx('Ücret bandı yönetimi'),
+      tx('Çok adımlı onay zincirleri'),
+      tx('Dışa aktarma (CSV)'),
     ],
   },
   {
     id: 'Enterprise',
     name: tenantPlanLabels.Enterprise,
-    tagline: 'Çok şirketli yapılar ve kurumsal kimlik entegrasyonu.',
+    tagline: tx('Çok şirketli yapılar ve kurumsal kimlik entegrasyonu.'),
     maxEmployees: tenantPlanQuota.Enterprise,
     features: [
-      'Standart plandaki her şey',
-      'Kurumsal kimlik sağlayıcı federasyonu',
-      'Ayrılmış kaynak havuzu',
-      'Öncelikli destek ve SLA',
-      'Denetim kayıtları',
+      tx('Standart plandaki her şey'),
+      tx('Kurumsal kimlik sağlayıcı federasyonu'),
+      tx('Ayrılmış kaynak havuzu'),
+      tx('Öncelikli destek ve SLA'),
+      tx('Denetim kayıtları'),
     ],
   },
 ]

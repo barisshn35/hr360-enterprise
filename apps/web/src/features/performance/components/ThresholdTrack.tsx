@@ -19,22 +19,23 @@ import { Slider as SliderPrimitive } from 'radix-ui'
 import type { Thresholds } from '@/api/performance'
 import { formatScore } from '@/api/performance'
 import { cn } from '@/lib/utils'
+import { tx, appLocale } from '@/lib/i18n'
 
 export type ZoneKey = 'critical' | 'improvement' | 'normal' | 'recognition' | 'promotion'
 
 export const ZONES: { key: ZoneKey; label: string; color: string }[] = [
-  { key: 'critical', label: 'Acil aksiyon', color: 'hsl(var(--destructive))' },
-  { key: 'improvement', label: 'Gelişim planı', color: 'hsl(var(--warning))' },
-  { key: 'normal', label: 'Beklenen aralık', color: 'hsl(var(--muted-foreground) / 0.35)' },
-  { key: 'recognition', label: 'Takdir', color: 'hsl(var(--success))' },
-  { key: 'promotion', label: 'Terfi düzeyi', color: 'hsl(var(--primary))' },
+  { key: 'critical', label: tx('Acil aksiyon'), color: 'hsl(var(--destructive))' },
+  { key: 'improvement', label: tx('Gelişim planı'), color: 'hsl(var(--warning))' },
+  { key: 'normal', label: tx('Beklenen aralık'), color: 'hsl(var(--muted-foreground) / 0.35)' },
+  { key: 'recognition', label: tx('Takdir'), color: 'hsl(var(--success))' },
+  { key: 'promotion', label: tx('Terfi düzeyi'), color: 'hsl(var(--primary))' },
 ]
 
 const MARKERS: { key: keyof Thresholds; label: string; short: string; from: string }[] = [
-  { key: 'critical', label: 'Kritik eşik', short: 'Kritik', from: 'kritik eşikten' },
-  { key: 'improvement', label: 'Gelişim eşiği', short: 'Gelişim', from: 'gelişim eşiğinden' },
-  { key: 'recognition', label: 'Takdir eşiği', short: 'Takdir', from: 'takdir eşiğinden' },
-  { key: 'promotion', label: 'Terfi eşiği', short: 'Terfi', from: 'terfi eşiğinden' },
+  { key: 'critical', label: tx('Kritik eşik'), short: tx('Kritik'), from: tx('kritik eşikten') },
+  { key: 'improvement', label: tx('Gelişim eşiği'), short: tx('Gelişim'), from: tx('gelişim eşiğinden') },
+  { key: 'recognition', label: tx('Takdir eşiği'), short: tx('Takdir'), from: tx('takdir eşiğinden') },
+  { key: 'promotion', label: tx('Terfi eşiği'), short: tx('Terfi'), from: tx('terfi eşiğinden') },
 ]
 
 export function zoneOf(score: number, t: Thresholds): ZoneKey {
@@ -54,12 +55,12 @@ export function thresholdIssues(t: Thresholds): { keys: (keyof Thresholds)[]; me
     if (!(t[b.key] > t[a.key])) {
       out.push({
         keys: [a.key, b.key],
-        message: `${b.label} (${t[b.key]}), ${a.from} (${t[a.key]}) büyük olmalı.`,
+        message: tx('{0} ({1}), {2} ({3}) büyük olmalı.', [b.label, t[b.key], a.from, t[a.key]]),
       })
     }
   }
   for (const m of MARKERS) {
-    if (t[m.key] < 0 || t[m.key] > 100) out.push({ keys: [m.key], message: `${m.label} 0 ile 100 arasında olmalı.` })
+    if (t[m.key] < 0 || t[m.key] > 100) out.push({ keys: [m.key], message: tx('{0} 0 ile 100 arasında olmalı.', [m.label]) })
   }
   return out
 }
@@ -145,7 +146,7 @@ export function ThresholdTrack({
                   aria-hidden
                   className="absolute inset-y-0 w-0.5 -translate-x-1/2 bg-foreground/40"
                   style={{ left: `${compareTo[m.key]}%` }}
-                  title={`Kayıtlı ${m.label.toLocaleLowerCase('tr-TR')}: ${compareTo[m.key]}`}
+                  title={tx('Kayıtlı {0}: {1}', [m.label.toLocaleLowerCase(appLocale), compareTo[m.key]])}
                 />
               ) : null,
             )}
@@ -160,7 +161,7 @@ export function ThresholdTrack({
             max={100}
             step={1}
             minStepsBetweenThumbs={1}
-            aria-label="Aksiyon eşikleri"
+            aria-label={tx('Aksiyon eşikleri')}
             className="absolute inset-x-0 bottom-[-10px] flex h-8 touch-none items-center"
           >
             <SliderPrimitive.Track className="relative h-3 w-full grow">

@@ -12,6 +12,7 @@ import {
   type SeriesPoint,
 } from './metric-chart';
 import { PeriodSelect, ViewToggle, type PeriodOption } from './metric-controls';
+import { tx } from '@/lib/i18n'
 
 // Ré-export des types pour que les consommateurs n'importent que ce fichier.
 export type { SeriesPoint, MetricSeries, MetricAccent, ChartView, PeriodOption };
@@ -47,9 +48,9 @@ export interface ProgressMetricCardProps {
 }
 
 const DEFAULT_PERIODS: PeriodOption[] = [
-  { label: 'Son 7 gün', points: 4 },
-  { label: 'Son 14 gün', points: 7 },
-  { label: 'Son 30 gün' },
+  { label: tx('Son 7 gün'), points: 4 },
+  { label: tx('Son 14 gün'), points: 7 },
+  { label: tx('Son 30 gün') },
 ];
 
 // Part de la card (depuis la droite) occupée par le graphe.
@@ -79,11 +80,11 @@ export default function ProgressMetricCard({
   title,
   total,
   delta,
-  deltaLabel = 'bugün',
+  deltaLabel = tx('bugün'),
   percent,
   trend,
   unit,
-  period = 'Son 30 gün',
+  period = tx('Son 30 gün'),
   periodOptions,
   onPeriodChange,
   defaultView = 'curve',
@@ -206,9 +207,9 @@ export default function ProgressMetricCard({
         <div className={`flex flex-1 flex-col ${sz.pad}`}>
           <h3 className={`${sz.title} font-semibold tracking-tight text-foreground`}>{title}</h3>
           <div className="flex flex-1 flex-col items-center justify-center gap-1 py-10 text-center">
-            <p className="text-sm font-medium text-foreground">Henüz veri yok</p>
+            <p className="text-sm font-medium text-foreground">{tx('Henüz veri yok')}</p>
             <p className="text-xs text-muted-foreground">
-              Veri geldiğinde metrikler burada görünecek.
+              {tx('Veri geldiğinde metrikler burada görünecek.')}
             </p>
           </div>
         </div>
@@ -310,19 +311,17 @@ export default function ProgressMetricCard({
         {showStats && (
           <div className="flex items-center gap-2.5 text-[12px] text-muted-foreground">
             <span>
-              <span className="font-medium text-foreground/80">{fmtCompact(stats.peak)}</span> en yüksek
+              <span className="font-medium text-foreground/80">{fmtCompact(stats.peak)}</span>{' '}{tx('en yüksek')}
             </span>
             <span className="opacity-40">·</span>
             <span>
-              <span className="font-medium text-foreground/80">{fmtCompact(stats.low)}</span> en düşük
+              <span className="font-medium text-foreground/80">{fmtCompact(stats.low)}</span>{' '}{tx('en düşük')}
             </span>
             <span className="opacity-40">·</span>
             <span>
               <span className="font-medium text-foreground/80">
                 {fmtCompact(Math.round(stats.avg))}
-              </span>{' '}
-              ortalama
-            </span>
+              </span>{' '}{tx('ortalama', [])}</span>
           </div>
         )}
       </div>

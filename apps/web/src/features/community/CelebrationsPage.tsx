@@ -11,18 +11,19 @@ import { engagementApi, type Celebration } from '@/api/engagement'
 import { formatDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { Initials, PlanGate, useAction } from '@/features/shared/kit'
+import { tx } from '@/lib/i18n'
 
 const KIND: Record<Celebration['kind'], { label: string; icon: React.ElementType; color: string }> = {
-  birthday: { label: 'Doğum günü', icon: Cake, color: 'text-pink-400 bg-pink-400/10' },
-  anniversary: { label: 'İş yıl dönümü', icon: Trophy, color: 'text-amber-400 bg-amber-400/10' },
-  newcomer: { label: 'Aramıza katıldı', icon: Sparkles, color: 'text-primary bg-primary/10' },
+  birthday: { label: tx('Doğum günü'), icon: Cake, color: 'text-pink-400 bg-pink-400/10' },
+  anniversary: { label: tx('İş yıl dönümü'), icon: Trophy, color: 'text-amber-400 bg-amber-400/10' },
+  newcomer: { label: tx('Aramıza katıldı'), icon: Sparkles, color: 'text-primary bg-primary/10' },
 }
 
 function when(c: Celebration) {
-  if (c.kind === 'newcomer') return c.inDays === 0 ? 'bugün başladı' : `${-c.inDays} gün önce başladı`
-  if (c.inDays === 0) return 'bugün 🎉'
-  if (c.inDays === 1) return 'yarın'
-  return `${c.inDays} gün sonra`
+  if (c.kind === 'newcomer') return c.inDays === 0 ? tx('bugün başladı') : tx('{0} gün önce başladı', [-c.inDays])
+  if (c.inDays === 0) return tx('bugün 🎉')
+  if (c.inDays === 1) return tx('yarın')
+  return tx('{0} gün sonra', [c.inDays])
 }
 
 /** Konfeti: hafif, CSS/motion parçacıkları — kütüphane yok. */
@@ -62,15 +63,15 @@ export function CelebrationList({ days = 30, compact = false, kind }: { days?: n
   const [burst, setBurst] = useState(0)
   const send = useAction((c: Celebration) => engagementApi.sendKudos({
     toEmployeeId: c.employeeId, badge: 'thanks',
-    message: c.kind === 'birthday' ? 'Doğum günün kutlu olsun! 🎂' : c.kind === 'anniversary' ? `${c.years}. yılın kutlu olsun, iyi ki buradasın! 🏆` : 'Aramıza hoş geldin! 👋',
-  }), { success: 'Tebrik gönderildi', invalidate: [['kudos']], onDone: () => setBurst((b) => b + 1) })
+    message: c.kind === 'birthday' ? tx('Doğum günün kutlu olsun! 🎂') : c.kind === 'anniversary' ? tx('{0}. yılın kutlu olsun, iyi ki buradasın! 🏆', [c.years]) : tx('Aramıza hoş geldin! 👋'),
+  }), { success: tx('Tebrik gönderildi'), invalidate: [['kudos']], onDone: () => setBurst((b) => b + 1) })
 
   if (q.isPending) return <RowsSkeleton rows={3} columns={2} />
   if (q.isError) return <ErrorState message={(q.error as Error).message} onRetry={() => q.refetch()} />
   const items = q.data.filter((c) => !kind || c.kind === kind)
   if (items.length === 0)
-    return compact ? <p className="px-2 py-3 text-[13px] text-muted-foreground">Önümüzdeki günlerde kutlama yok.</p> : (
-      <EmptyState icon={PartyPopper} title="Yaklaşan kutlama yok" detail="Doğum günleri, çalışanların profilinde paylaşmayı seçtiği tarihlerden gelir." />
+    return compact ? <p className="px-2 py-3 text-[13px] text-muted-foreground">{tx('Önümüzdeki günlerde kutlama yok.')}</p> : (
+      <EmptyState icon={PartyPopper} title={tx('Yaklaşan kutlama yok')} detail={tx('Doğum günleri, çalışanların profilinde paylaşmayı seçtiği tarihlerden gelir.')} />
     )
   return (
     <>
@@ -97,13 +98,13 @@ export function CelebrationList({ days = 30, compact = false, kind }: { days?: n
                 <p className="truncate text-[13.5px] font-medium">{c.name}</p>
                 <p className="truncate text-[12px] text-muted-foreground">
                   {K.label}
-                  {c.years ? ` · ${c.years}. yıl` : ''} · {when(c)}
+                  {c.years ? tx(' · {0}. yıl', [c.years]) : ''} · {when(c)}
                   {!compact && c.department ? ` · ${c.department}` : ''}
                 </p>
               </div>
               {!compact && (
                 <Button size="sm" variant="outline" onClick={() => send.mutate(c)} disabled={send.isPending}>
-                  Tebrik et
+                  {tx('Tebrik et')}
                 </Button>
               )}
               {compact && <span className="text-[11.5px] text-muted-foreground">{formatDate(c.date)}</span>}
@@ -119,22 +120,22 @@ export function CelebrationsPage() {
   const [tab, setTab] = useState<'all' | Celebration['kind']>('all')
   return (
     <PlanGate feature="celebrations">
-      <PageHeader title="Kutlamalar" description="Doğum günleri, iş yıl dönümleri ve aramıza yeni katılanlar. Bir tıkla tebrik gönderin." />
+      <PageHeader title={tx('Kutlamalar')} description={tx('Doğum günleri, iş yıl dönümleri ve aramıza yeni katılanlar. Bir tıkla tebrik gönderin.')} />
       <div className="mb-5">
         <Tabs
-          label="Kutlama türü"
+          label={tx('Kutlama türü')}
           value={tab}
           onChange={setTab}
           tabs={[
-            { key: 'all', label: 'Tümü' },
-            { key: 'birthday', label: 'Doğum günleri' },
-            { key: 'anniversary', label: 'Yıl dönümleri' },
-            { key: 'newcomer', label: 'Yeni katılanlar' },
+            { key: 'all', label: tx('Tümü') },
+            { key: 'birthday', label: tx('Doğum günleri') },
+            { key: 'anniversary', label: tx('Yıl dönümleri') },
+            { key: 'newcomer', label: tx('Yeni katılanlar') },
           ]}
         />
       </div>
       <Panel>
-        <PanelHead title="Önümüzdeki 60 gün" note="Doğum günü yalnızca kişi profilinde paylaşmayı seçtiyse görünür." />
+        <PanelHead title={tx('Önümüzdeki 60 gün')} note={tx('Doğum günü yalnızca kişi profilinde paylaşmayı seçtiyse görünür.')} />
         <PanelBody>
           <CelebrationList days={60} kind={tab === 'all' ? undefined : tab} />
         </PanelBody>

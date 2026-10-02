@@ -14,6 +14,7 @@ import { useGoals, useMetrics, useScoringConfig } from '@/api/performance'
 import { cn } from '@/lib/utils'
 import { EASE } from '@/motion/primitives'
 import { useCurrentCycle } from '../hooks'
+import { tx } from '@/lib/i18n'
 
 export function PerfPageHeader({
   eyebrow,
@@ -87,10 +88,10 @@ export function PerfPageHeader({
 type StepKey = 'metrics' | 'scoring' | 'cycles' | 'goals'
 
 const STEPS: { key: StepKey; label: string; to: string }[] = [
-  { key: 'metrics', label: 'Metrikler', to: '/panel/performans/metrikler' },
-  { key: 'scoring', label: 'Puanlama ayarı', to: '/panel/performans/ayarlar' },
-  { key: 'cycles', label: 'Dönem', to: '/panel/performans/donemler' },
-  { key: 'goals', label: 'Hedefler', to: '/panel/performans/hedefler' },
+  { key: 'metrics', label: tx('Metrikler'), to: '/panel/performans/metrikler' },
+  { key: 'scoring', label: tx('Puanlama ayarı'), to: '/panel/performans/ayarlar' },
+  { key: 'cycles', label: tx('Dönem'), to: '/panel/performans/donemler' },
+  { key: 'goals', label: tx('Hedefler'), to: '/panel/performans/hedefler' },
 ]
 
 export function SetupTrail({ current }: { current: StepKey }) {
@@ -108,7 +109,7 @@ export function SetupTrail({ current }: { current: StepKey }) {
   }
 
   return (
-    <nav aria-label="Kurulum adımları" className="no-scrollbar -mx-1 overflow-x-auto px-1 py-0.5">
+    <nav aria-label={tx('Kurulum adımları')} className="no-scrollbar -mx-1 overflow-x-auto px-1 py-0.5">
       <ol className="flex min-w-max items-center gap-1.5">
         {STEPS.map((s, i) => {
           const isCurrent = s.key === current

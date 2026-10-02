@@ -7,8 +7,9 @@ import { motion } from 'motion/react'
 import type { ReviewCycle } from '@/api/performance'
 import { cn } from '@/lib/utils'
 import { EASE } from '@/motion/primitives'
+import { tx } from '@/lib/i18n'
 
-const MONTHS = ['Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz', 'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara']
+const MONTHS = [tx('Oca'), tx('Şub'), tx('Mar'), tx('Nis'), tx('May'), tx('Haz'), tx('Tem'), tx('Ağu'), tx('Eyl'), tx('Eki'), tx('Kas'), tx('Ara')]
 
 function lanesOf(cycles: ReviewCycle[]) {
   const lanes: ReviewCycle[][] = []
@@ -59,7 +60,7 @@ export function CycleTimeline({
           ))}
         </div>
 
-        {lanes.length === 0 && <p className="relative py-4 text-center text-[12px] text-muted-foreground">{year} için tanımlı dönem yok.</p>}
+        {lanes.length === 0 && <p className="relative py-4 text-center text-[12px] text-muted-foreground">{tx('{0} için tanımlı dönem yok.', [year])}</p>}
 
         {lanes.map((lane, li) => (
           <div key={li} className="relative h-9">
@@ -102,7 +103,7 @@ export function CycleTimeline({
             style={{ left: `${todayPct}%` }}
           >
             <span className="absolute -top-5 left-1/2 -translate-x-1/2 rounded bg-destructive px-1 text-[9px] font-semibold whitespace-nowrap text-destructive-foreground">
-              Bugün
+              {tx('Bugün')}
             </span>
           </motion.div>
         )}

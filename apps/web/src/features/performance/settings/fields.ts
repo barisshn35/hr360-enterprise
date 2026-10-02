@@ -6,6 +6,7 @@
  */
 
 import { formatWeight, type ScoringConfig, type ScoringConfigInput } from '@/api/performance'
+import { tx, pct } from '@/lib/i18n'
 
 export type FieldKey = keyof ScoringConfigInput
 
@@ -15,31 +16,30 @@ interface FieldMeta {
   format: (v: number | boolean) => string
 }
 
-const pct = (v: number | boolean) => `%${v}`
 const weight = (v: number | boolean) => formatWeight(v as number)
 const plain = (v: number | boolean) => String(v)
-const onOff = (v: number | boolean) => (v ? 'Açık' : 'Kapalı')
+const onOff = (v: number | boolean) => (v ? tx('Açık') : tx('Kapalı'))
 
 export const FIELDS: Record<FieldKey, FieldMeta> = {
-  goalWeightPercent: { label: 'Hedef payı', group: 'split', format: pct },
-  metricWeightPercent: { label: 'Metrik payı', group: 'split', format: pct },
-  technicalWeight: { label: 'Teknik kategori ağırlığı', group: 'category', format: weight },
-  behavioralWeight: { label: 'Davranışsal kategori ağırlığı', group: 'category', format: weight },
-  leadershipWeight: { label: 'Liderlik kategori ağırlığı', group: 'category', format: weight },
-  deliveryWeight: { label: 'Teslimat kategori ağırlığı', group: 'category', format: weight },
-  customWeight: { label: 'Özel kategori ağırlığı', group: 'category', format: weight },
-  selfReviewWeight: { label: 'Öz değerlendirme katsayısı', group: 'rater', format: weight },
-  managerReviewWeight: { label: 'Yönetici katsayısı', group: 'rater', format: weight },
-  teamLeadReviewWeight: { label: 'Takım lideri katsayısı', group: 'rater', format: weight },
-  peerReviewWeight: { label: 'Ekip arkadaşı katsayısı', group: 'rater', format: weight },
-  upwardReviewWeight: { label: 'Yukarı yönlü katsayı', group: 'rater', format: weight },
-  minReviewsForValidScore: { label: 'Geçerli puan için en az değerlendirme', group: 'validity', format: plain },
-  allowSelfOnlyScore: { label: 'Yalnızca öz değerlendirmeyle puan', group: 'validity', format: onOff },
-  criticalThreshold: { label: 'Kritik eşik', group: 'threshold', format: plain },
-  improvementThreshold: { label: 'Gelişim eşiği', group: 'threshold', format: plain },
-  recognitionThreshold: { label: 'Takdir eşiği', group: 'threshold', format: plain },
-  promotionThreshold: { label: 'Terfi eşiği', group: 'threshold', format: plain },
-  promotionConsecutivePeriods: { label: 'Terfi için üst üste dönem', group: 'threshold', format: plain },
+  goalWeightPercent: { label: tx('Hedef payı'), group: 'split', format: pct },
+  metricWeightPercent: { label: tx('Metrik payı'), group: 'split', format: pct },
+  technicalWeight: { label: tx('Teknik kategori ağırlığı'), group: 'category', format: weight },
+  behavioralWeight: { label: tx('Davranışsal kategori ağırlığı'), group: 'category', format: weight },
+  leadershipWeight: { label: tx('Liderlik kategori ağırlığı'), group: 'category', format: weight },
+  deliveryWeight: { label: tx('Teslimat kategori ağırlığı'), group: 'category', format: weight },
+  customWeight: { label: tx('Özel kategori ağırlığı'), group: 'category', format: weight },
+  selfReviewWeight: { label: tx('Öz değerlendirme katsayısı'), group: 'rater', format: weight },
+  managerReviewWeight: { label: tx('Yönetici katsayısı'), group: 'rater', format: weight },
+  teamLeadReviewWeight: { label: tx('Takım lideri katsayısı'), group: 'rater', format: weight },
+  peerReviewWeight: { label: tx('Ekip arkadaşı katsayısı'), group: 'rater', format: weight },
+  upwardReviewWeight: { label: tx('Yukarı yönlü katsayı'), group: 'rater', format: weight },
+  minReviewsForValidScore: { label: tx('Geçerli puan için en az değerlendirme'), group: 'validity', format: plain },
+  allowSelfOnlyScore: { label: tx('Yalnızca öz değerlendirmeyle puan'), group: 'validity', format: onOff },
+  criticalThreshold: { label: tx('Kritik eşik'), group: 'threshold', format: plain },
+  improvementThreshold: { label: tx('Gelişim eşiği'), group: 'threshold', format: plain },
+  recognitionThreshold: { label: tx('Takdir eşiği'), group: 'threshold', format: plain },
+  promotionThreshold: { label: tx('Terfi eşiği'), group: 'threshold', format: plain },
+  promotionConsecutivePeriods: { label: tx('Terfi için üst üste dönem'), group: 'threshold', format: plain },
 }
 
 export const FIELD_KEYS = Object.keys(FIELDS) as FieldKey[]
@@ -69,7 +69,7 @@ export function diff(before: ScoringConfigInput, after: ScoringConfigInput): Fie
     const meta = FIELDS[key]
     out.push({
       key,
-      label: key === 'goalWeightPercent' ? 'Hedef / metrik payı' : meta.label,
+      label: key === 'goalWeightPercent' ? tx('Hedef / metrik payı') : meta.label,
       from: key === 'goalWeightPercent' ? `${a}/${100 - (a as number)}` : meta.format(a),
       to: key === 'goalWeightPercent' ? `${b}/${100 - (b as number)}` : meta.format(b),
       direction: typeof a === 'boolean' ? 'toggle' : (b as number) > (a as number) ? 'up' : 'down',

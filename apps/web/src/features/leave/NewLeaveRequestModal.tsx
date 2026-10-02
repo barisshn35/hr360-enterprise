@@ -11,6 +11,7 @@ import { useLeaveBalances, useLeaveHolidays, useMyEmployeeId } from '@/api/queri
 import { useAuth } from '@/auth/useAuth'
 import { leaveTypeLabels, type LeaveType } from '@/api/types'
 import { formatNumber } from '@/lib/format'
+import { tx, appLocale } from '@/lib/i18n'
 
 interface Errors {
   employeeId?: string
@@ -104,24 +105,24 @@ export function NewLeaveRequestModal({
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['leave'] })
-      toast.ok('İzin talebi oluşturuldu, onay zincirine gönderildi')
+      toast.ok(tx('İzin talebi oluşturuldu, onay zincirine gönderildi'))
       onClose()
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : 'Talep oluşturulamadı.'),
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Talep oluşturulamadı.')),
   })
 
   function validate(overrideEmployeeId?: string): Errors {
     const next: Errors = {}
-    if (!(overrideEmployeeId ?? employeeId)) next.employeeId = 'Çalışan seçilmeli.'
+    if (!(overrideEmployeeId ?? employeeId)) next.employeeId = tx('Çalışan seçilmeli.')
     if (!startDate || !endDate) {
-      next.dates = 'Başlangıç ve bitiş tarihi zorunlu.'
+      next.dates = tx('Başlangıç ve bitiş tarihi zorunlu.')
     } else if (new Date(endDate) < new Date(startDate)) {
-      next.dates = 'Bitiş tarihi başlangıçtan önce olamaz.'
+      next.dates = tx('Bitiş tarihi başlangıçtan önce olamaz.')
     } else if (days <= 0) {
       // Yalnızca tarihler doluyken ve aralık ters değilken anlamlı - aksi
       // halde yukarıdaki iki kural zaten aynı kök sebep (eksik/geçersiz
       // tarih) için ikinci, gereksiz bir hata satırı daha üretiyordu.
-      next.days = 'Gün sayısı hesaplanamadı, tarihleri kontrol edin.'
+      next.days = tx('Gün sayısı hesaplanamadı, tarihleri kontrol edin.')
     }
     return next
   }
@@ -155,8 +156,8 @@ export function NewLeaveRequestModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="Yeni izin talebi"
-      note="Talep gönderilince onay zinciri başlar."
+      title={tx('Yeni izin talebi')}
+      note={tx('Talep gönderilince onay zinciri başlar.')}
       size="lg"
       footer={
         <>
@@ -166,7 +167,7 @@ export function NewLeaveRequestModal({
             onClick={onClose}
             disabled={mutation.isPending}
           >
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button
             type="submit"
@@ -175,7 +176,7 @@ export function NewLeaveRequestModal({
             disabled={mutation.isPending || blockedByBalance}
           >
             {mutation.isPending && <LoaderCircle className="size-4 animate-spin" />}
-            Talebi gönder
+            {tx('Talebi gönder')}
           </Button>
         </>
       }
@@ -193,14 +194,14 @@ export function NewLeaveRequestModal({
         ) : (
           <p className="text-[13px] text-muted-foreground">
             {me.notLinked
-              ? 'Hesabınıza bağlı çalışan kaydı bulunamadı; izin talebi açamazsınız.'
-              : 'Talep sizin adınıza oluşturulacak.'}
+              ? tx('Hesabınıza bağlı çalışan kaydı bulunamadı; izin talebi açamazsınız.')
+              : tx('Talep sizin adınıza oluşturulacak.')}
           </p>
         )}
 
         <SelectField
           id="leave-type"
-          label="İzin türü"
+          label={tx('İzin türü')}
           required
           value={type}
           onChange={(v) => setType(v as LeaveType)}
@@ -213,7 +214,7 @@ export function NewLeaveRequestModal({
         <div className="grid gap-4 sm:grid-cols-2">
           <TextField
             id="leave-start"
-            label="Başlangıç"
+            label={tx('Başlangıç')}
             type="date"
             required
             value={startDate}
@@ -223,7 +224,7 @@ export function NewLeaveRequestModal({
           />
           <TextField
             id="leave-end"
-            label="Bitiş"
+            label={tx('Bitiş')}
             type="date"
             required
             value={endDate}
@@ -236,34 +237,26 @@ export function NewLeaveRequestModal({
         {employeeId && (
           <div className="rounded-md border border-border bg-muted/40 p-3">
             {balances.isPending ? (
-              <p className="text-[13px] text-muted-foreground">Bakiye yükleniyor</p>
+              <p className="text-[13px] text-muted-foreground">{tx('Bakiye yükleniyor')}</p>
             ) : !balance ? (
               <p
                 role="alert"
                 className="border-l-2 border-[hsl(var(--warning))] pl-3 text-[13px] leading-relaxed"
               >
-                {year} yılı için {leaveTypeLabels[type].toLocaleLowerCase('tr-TR')} bakiyesi tanımlı
-                değil.{' '}
-                {type === 'Annual'
-                  ? 'Yıllık izin bakiye tanımı olmadan talep edilemez; İK ile iletişime geçin.'
-                  : 'Bu izin türü bakiyesiz de talep edilebilir.'}
+                {tx('{0} yılı için {1} bakiyesi tanımlı değil. {2}', [year, leaveTypeLabels[type].toLocaleLowerCase(appLocale), type === 'Annual'
+                  ? tx('Yıllık izin bakiye tanımı olmadan talep edilemez; İK ile iletişime geçin.')
+                  : tx('Bu izin türü bakiyesiz de talep edilebilir.')])}
               </p>
             ) : (
               <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-[13px]">
-                <span className="text-muted-foreground">
-                  Kalan bakiye{' '}
+                <span className="text-muted-foreground">{tx('Kalan bakiye', [])}{' '}
                   <span className="tabular font-semibold text-foreground">
                     {formatNumber(balance.remainingDays)}
-                  </span>{' '}
-                  gün
-                </span>
-                <span className="text-muted-foreground">
-                  Bu talep{' '}
+                  </span>{' '}{tx('gün', [])}</span>
+                <span className="text-muted-foreground">{tx('Bu talep', [])}{' '}
                   <span className="tabular font-semibold text-foreground">
                     {formatNumber(days)}
-                  </span>{' '}
-                  gün
-                </span>
+                  </span>{' '}{tx('gün', [])}</span>
               </div>
             )}
 
@@ -271,21 +264,18 @@ export function NewLeaveRequestModal({
               <p
                 role="alert"
                 className="mt-2 border-l-2 border-[hsl(var(--warning))] pl-3 text-[12px] leading-relaxed"
-              >
-                Bakiyeniz {shortfall} gün yetersiz; bu talep gönderilemez. Tarihleri kısaltın ya da
-                İK ile iletişime geçin.
-              </p>
+              >{tx('Bakiyeniz {0} gün yetersiz; bu talep gönderilemez. Tarihleri kısaltın ya da İK ile iletişime geçin.', [shortfall])}</p>
             )}
           </div>
         )}
 
         <TextAreaField
           id="leave-reason"
-          label="Gerekçe"
+          label={tx('Gerekçe')}
           rows={3}
           value={reason}
           maxLength={500}
-          hint="İsteğe bağlı. Onaycıya görünür."
+          hint={tx('İsteğe bağlı. Onaycıya görünür.')}
           onChange={(e) => setReason(e.target.value)}
         />
       </form>

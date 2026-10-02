@@ -58,6 +58,7 @@ import { AvatarStack, PersonAvatar } from '@/features/performance/components/peo
 import { errorText } from '@/features/performance/components/controls'
 import { MoveEmployeeModal } from './MoveEmployeeModal'
 import { activeAssignment, ancestorsOf, buildChart, type ChartDept, type ChartModel, type ChartPerson } from './orgChartModel'
+import { tx, appLocale } from '@/lib/i18n'
 import './orgchart.css'
 
 /** Kutu başına ilk açılışta görünen kart sayısı. */
@@ -73,7 +74,7 @@ const todayIso = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-const norm = (s: string) => s.toLocaleLowerCase('tr-TR')
+const norm = (s: string) => s.toLocaleLowerCase(appLocale)
 
 /* ------------------------------------ Bağlam ------------------------------------ */
 
@@ -151,23 +152,23 @@ function PersonCard({ person, deptId, isHead }: { person: ChartPerson; deptId: s
           >
             {person.name}
           </Link>
-          {isHead && <Crown aria-label="Departman başı" className="size-3.5 shrink-0 text-[hsl(var(--warning))]" />}
+          {isHead && <Crown aria-label={tx('Departman başı')} className="size-3.5 shrink-0 text-[hsl(var(--warning))]" />}
         </span>
         <span className="block truncate text-[11px] text-muted-foreground">
-          {isHead ? 'Departman başı' : (person.title ?? 'Unvan yok')}
+          {isHead ? tx('Departman başı') : (person.title ?? tx('Unvan yok'))}
           {isHead && person.title ? ` · ${person.title}` : ''}
-          {person.future && person.since ? ` · ${formatDate(person.since)} itibarıyla` : ''}
+          {person.future && person.since ? tx(' · {0} itibarıyla', [formatDate(person.since)]) : ''}
         </span>
       </span>
       {busy ? (
-        <LoaderCircle aria-label="Kaydediliyor" className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
+        <LoaderCircle aria-label={tx('Kaydediliyor')} className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
       ) : (
         canMove && (
           <button
             type="button"
             onClick={() => openMove(person.id)}
-            aria-label={`${person.name} için departman değiştir`}
-            title="Başka departmana taşı"
+            aria-label={tx('{0} için departman değiştir', [person.name])}
+            title={tx('Başka departmana taşı')}
             className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity group-hover/card:opacity-100 hover:bg-muted hover:text-foreground focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
           >
             <ArrowRightLeft className="size-3.5" />
@@ -234,10 +235,10 @@ function DeptBox({ node }: { node: ChartDept }) {
           </p>
           <p className="tabular text-[11px] text-muted-foreground">
             {c.peopleKnown
-              ? `${formatNumber(members.length)} kişi${children.length > 0 ? ` · ${children.length} alt departman · toplam ${formatNumber(node.total)}` : ''}`
+              ? tx('{0} kişi{1}', [formatNumber(members.length), children.length > 0 ? tx(' · {0} alt departman · toplam {1}', [children.length, formatNumber(node.total)]) : ''])
               : children.length > 0
-                ? `${children.length} alt departman`
-                : 'Departman'}
+                ? tx('{0} alt departman', [children.length])
+                : tx('Departman')}
           </p>
         </div>
         {children.length > 0 && (
@@ -247,8 +248,8 @@ function DeptBox({ node }: { node: ChartDept }) {
             className="size-7"
             onClick={() => c.toggleKids(dept.id)}
             aria-expanded={!kidsHidden}
-            aria-label={kidsHidden ? `${dept.name} alt departmanlarını göster` : `${dept.name} alt departmanlarını gizle`}
-            title={kidsHidden ? 'Alt departmanları göster' : 'Alt departmanları gizle'}
+            aria-label={kidsHidden ? tx('{0} alt departmanlarını göster', [dept.name]) : tx('{0} alt departmanlarını gizle', [dept.name])}
+            title={kidsHidden ? tx('Alt departmanları göster') : tx('Alt departmanları gizle')}
           >
             <GitFork className={cn('size-3.5', kidsHidden && 'text-primary')} />
           </Button>
@@ -260,7 +261,7 @@ function DeptBox({ node }: { node: ChartDept }) {
             className="size-7"
             onClick={() => c.toggleOpen(dept.id)}
             aria-expanded={open}
-            aria-label={open ? `${dept.name} çalışanlarını gizle` : `${dept.name} çalışanlarını göster`}
+            aria-label={open ? tx('{0} çalışanlarını gizle', [dept.name]) : tx('{0} çalışanlarını göster', [dept.name])}
           >
             {open ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
           </Button>
@@ -271,15 +272,15 @@ function DeptBox({ node }: { node: ChartDept }) {
         <p className="flex items-center gap-1.5 border-b border-border py-1.5 pr-2 pl-3.5 text-[11px] text-muted-foreground">
           <Crown className="size-3.5 shrink-0 text-[hsl(var(--warning))]" aria-hidden />
           <span className="truncate">
-            Başı: <span className="font-medium text-foreground">{c.nameOf(headId)}</span>
-            {c.peopleKnown && ' (başka departmanda kayıtlı)'}
+            {tx('Başı:')}{' '}<span className="font-medium text-foreground">{c.nameOf(headId)}</span>
+            {c.peopleKnown && tx(' (başka departmanda kayıtlı)')}
           </span>
         </p>
       )}
 
       {!c.peopleKnown ? null : members.length === 0 ? (
         <p className="py-2.5 pr-2 pl-3.5 text-[12px] text-muted-foreground">
-          {over ? 'Bırakın, buraya atansın.' : 'Bu departmanda çalışan yok.'}
+          {over ? tx('Bırakın, buraya atansın.') : tx('Bu departmanda çalışan yok.')}
         </p>
       ) : open ? (
         <div className="space-y-1 p-2 pl-3">
@@ -292,7 +293,7 @@ function DeptBox({ node }: { node: ChartDept }) {
               onClick={() => c.toggleShowAll(dept.id)}
               className="w-full rounded-md py-1 text-[12px] font-medium text-primary hover:bg-primary/5"
             >
-              {all ? 'Daha az göster' : `+${formatNumber(rest)} kişi daha`}
+              {all ? tx('Daha az göster') : tx('+{0} kişi daha', [formatNumber(rest)])}
             </button>
           )}
         </div>
@@ -303,14 +304,12 @@ function DeptBox({ node }: { node: ChartDept }) {
           className="flex w-full items-center gap-2 py-2 pr-2 pl-3.5 text-left hover:bg-muted/50"
         >
           <AvatarStack people={members} max={5} />
-          <span className="text-[12px] text-muted-foreground">Çalışanları göster</span>
+          <span className="text-[12px] text-muted-foreground">{tx('Çalışanları göster')}</span>
         </button>
       )}
 
       {over && (
-        <p className="border-t border-primary/30 bg-primary/10 py-1.5 pr-2 pl-3.5 text-[11px] font-medium text-primary">
-          Bırakınca {c.nameOf(c.drag!.employeeId)} bu departmana atanır
-        </p>
+        <p className="border-t border-primary/30 bg-primary/10 py-1.5 pr-2 pl-3.5 text-[11px] font-medium text-primary">{tx('Bırakınca {0} bu departmana atanır', [c.nameOf(c.drag!.employeeId)])}</p>
       )}
     </div>
   )
@@ -357,7 +356,7 @@ export function OrgChart({ companyId, companyName }: { companyId: string; compan
     const names = new Map<string, string>()
     for (const d of directory.data ?? []) names.set(d.id, d.fullName || `${d.firstName} ${d.lastName}`.trim())
     for (const e of employees.data ?? []) names.set(e.id, `${e.firstName} ${e.lastName}`.trim())
-    return (id: string) => names.get(id) ?? 'Bilinmeyen çalışan'
+    return (id: string) => names.get(id) ?? tx('Bilinmeyen çalışan')
   }, [directory.data, employees.data])
 
   const pathOf = (deptId: string) =>
@@ -421,21 +420,21 @@ export function OrgChart({ companyId, companyName }: { companyId: string; compan
       { employeeId, input },
       {
         onSuccess: () => {
-          toast.ok(`${name} artık ${toName} departmanında.`)
+          toast.ok(tx('{0} artık {1} departmanında.', [name, toName]))
           // Backend eski departmanın başını kendisi temizler (best-effort). Departmanlar bu noktada
           // yeniden çekilmiş olur; uyarı yalnızca temizleme gerçekleşmediyse çıkar.
           if (wasHeadOf) {
             const fresh = qc.getQueryData<Department[]>(qk.departments(companyId))
             if (fresh?.find((d) => d.id === wasHeadOf.id)?.headEmployeeId === employeeId) {
-              toast.info(`${name} hâlâ ${wasHeadOf.name} departmanının başı olarak kayıtlı. Departman başını ayrıca güncelleyin.`)
+              toast.info(tx('{0} hâlâ {1} departmanının başı olarak kayıtlı. Departman başını ayrıca güncelleyin.', [name, wasHeadOf.name]))
             }
           }
         },
         onError: (error) => {
           if (error instanceof ApiError && error.status === 403) {
-            toast.stop('Departman değiştirme yetkiniz yok. Bu işlemi yalnızca İK yöneticisi yapabilir; değişiklik geri alındı.')
+            toast.stop(tx('Departman değiştirme yetkiniz yok. Bu işlemi yalnızca İK yöneticisi yapabilir; değişiklik geri alındı.'))
           } else {
-            toast.stop(`${name} taşınamadı, eski departmanına geri alındı. ${errorText(error)}`)
+            toast.stop(tx('{0} taşınamadı, eski departmanına geri alındı. {1}', [name, errorText(error)]))
           }
         },
         onSettled: () =>
@@ -583,7 +582,7 @@ export function OrgChart({ companyId, companyName }: { companyId: string; compan
   if (model.roots.length === 0) {
     return (
       <Panel>
-        <EmptyState icon={Building2} title="Henüz departman yok" detail="Şemayı görmek için önce bir departman ekleyin." />
+        <EmptyState icon={Building2} title={tx('Henüz departman yok')} detail={tx('Şemayı görmek için önce bir departman ekleyin.')} />
       </Panel>
     )
   }
@@ -618,23 +617,19 @@ export function OrgChart({ companyId, companyName }: { companyId: string; compan
     <Ctx.Provider value={ctx}>
       <div className="space-y-3">
         {!canSeePeople ? (
-          <InfoNote>Şema yalnızca departmanları gösteriyor. Çalışanları görmek için yönetici yetkisi gerekir.</InfoNote>
+          <InfoNote>{tx('Şema yalnızca departmanları gösteriyor. Çalışanları görmek için yönetici yetkisi gerekir.')}</InfoNote>
         ) : canMove ? (
-          <InfoNote>
-            Bir çalışan kartını tutup başka bir departman kutusuna bırakın; atama bugünden itibaren değişir. Tarih ya
-            da unvan değiştirmek, klavye veya dokunmatik ekranla taşımak için kartın üzerindeki{' '}
-            <ArrowRightLeft className="inline size-3.5 align-[-2px]" aria-label="taşı" /> düğmesini kullanın.
+          <InfoNote>{tx('Bir çalışan kartını tutup başka bir departman kutusuna bırakın; atama bugünden itibaren değişir. Tarih ya da unvan değiştirmek, klavye veya dokunmatik ekranla taşımak için kartın üzerindeki', [])}{' '}
+            <ArrowRightLeft className="inline size-3.5 align-[-2px]" aria-label={tx('taşı')} />{' '}{tx('düğmesini kullanın.')}
           </InfoNote>
         ) : (
-          <InfoNote>Departman değişikliğini yalnızca İK yöneticisi yapabilir; şema sizin için salt okunur.</InfoNote>
+          <InfoNote>{tx('Departman değişikliğini yalnızca İK yöneticisi yapabilir; şema sizin için salt okunur.')}</InfoNote>
         )}
 
         {model.cycleCount > 0 && (
           <p role="alert" className="flex items-start gap-2 rounded-lg border border-[hsl(var(--warning))]/35 bg-[hsl(var(--warning))]/8 px-3 py-2 text-[13px]">
             <TriangleAlert className="mt-0.5 size-4 shrink-0 text-[hsl(var(--warning))]" aria-hidden />
-            {model.cycleCount} departmanın üst departman zinciri kendi içinde döngüye giriyor; bu departmanlar kök
-            seviyede gösterildi. Üst departman bilgisini düzeltmek gerekir.
-          </p>
+            {tx('{0} departmanın üst departman zinciri kendi içinde döngüye giriyor; bu departmanlar kök seviyede gösterildi. Üst departman bilgisini düzeltmek gerekir.', [model.cycleCount])}</p>
         )}
 
         <div className="overflow-hidden rounded-xl border border-border bg-card">
@@ -643,19 +638,19 @@ export function OrgChart({ companyId, companyName }: { companyId: string; compan
             {canSeePeople ? (
               <div className="flex items-center gap-2">
                 <label className="relative block w-full sm:w-72">
-                  <span className="sr-only">Çalışan ara</span>
+                  <span className="sr-only">{tx('Çalışan ara')}</span>
                   <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
                   <input
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
-                    placeholder="Çalışan ara"
+                    placeholder={tx('Çalışan ara')}
                     className="h-9 w-full rounded-md border border-input bg-background pr-8 pl-9 text-[13px] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                   />
                   {query && (
                     <button
                       type="button"
                       onClick={() => setQuery('')}
-                      aria-label="Aramayı temizle"
+                      aria-label={tx('Aramayı temizle')}
                       className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:bg-muted"
                     >
                       <X className="size-3.5" />
@@ -664,7 +659,7 @@ export function OrgChart({ companyId, companyName }: { companyId: string; compan
                 </label>
                 {q.length >= 2 && (
                   <span className="shrink-0 text-[12px] text-muted-foreground" aria-live="polite">
-                    {highlight.size ? `${highlight.size} eşleşme` : 'Eşleşme yok'}
+                    {highlight.size ? tx('{0} eşleşme', [highlight.size]) : tx('Eşleşme yok')}
                   </span>
                 )}
               </div>
@@ -673,28 +668,28 @@ export function OrgChart({ companyId, companyName }: { companyId: string; compan
             )}
             <div className="flex flex-wrap items-center gap-2">
               <span className="tabular text-[12px] text-muted-foreground">
-                {formatNumber(model.byId.size)} departman
-                {canSeePeople && ` · ${formatNumber(personCount)} kişi`}
+                {formatNumber(model.byId.size)}{' '}{tx('departman')}
+                {canSeePeople && tx(' · {0} kişi', [formatNumber(personCount)])}
               </span>
               {canSeePeople && (
                 <>
                   <Button size="sm" variant="outline" onClick={() => setOpenSet(new Set(model.byId.keys()))}>
-                    Tümünü aç
+                    {tx('Tümünü aç')}
                   </Button>
                   <Button size="sm" variant="outline" onClick={() => setOpenSet(new Set())}>
-                    Özet
+                    {tx('Özet')}
                   </Button>
                 </>
               )}
               <div className="flex items-center rounded-md border border-border">
-                <Button size="icon-sm" variant="ghost" onClick={() => setZoom((z) => Math.max(0.4, +(z - 0.1).toFixed(2)))} aria-label="Uzaklaştır">
+                <Button size="icon-sm" variant="ghost" onClick={() => setZoom((z) => Math.max(0.4, +(z - 0.1).toFixed(2)))} aria-label={tx('Uzaklaştır')}>
                   <Minus aria-hidden />
                 </Button>
                 <span className="tabular w-11 text-center text-[12px] font-medium">%{Math.round(zoom * 100)}</span>
-                <Button size="icon-sm" variant="ghost" onClick={() => setZoom((z) => Math.min(1.5, +(z + 0.1).toFixed(2)))} aria-label="Yakınlaştır">
+                <Button size="icon-sm" variant="ghost" onClick={() => setZoom((z) => Math.min(1.5, +(z + 0.1).toFixed(2)))} aria-label={tx('Yakınlaştır')}>
                   <Plus aria-hidden />
                 </Button>
-                <Button size="icon-sm" variant="ghost" onClick={fit} aria-label="Ekrana sığdır" title="Ekrana sığdır">
+                <Button size="icon-sm" variant="ghost" onClick={fit} aria-label={tx('Ekrana sığdır')} title={tx('Ekrana sığdır')}>
                   <Maximize2 aria-hidden />
                 </Button>
               </div>
@@ -720,8 +715,7 @@ export function OrgChart({ companyId, companyName }: { companyId: string; compan
                   <span>
                     <span className="block text-[14px] font-semibold">{companyName}</span>
                     <span className="tabular block text-[11px] text-muted-foreground">
-                      {model.roots.length} kök departman
-                    </span>
+                      {tx('{0} kök departman', [model.roots.length])}</span>
                   </span>
                 </div>
                 <ul className="dept-root">
@@ -738,11 +732,10 @@ export function OrgChart({ companyId, companyName }: { companyId: string; compan
           <div className="rounded-xl border border-dashed border-border bg-card p-3">
             <p className="mb-2 flex items-center gap-1.5 text-[13px] font-semibold">
               <UserRoundX className="size-4 text-muted-foreground" aria-hidden />
-              Atanmamış
+              {tx('Atanmamış')}
               <span className="tabular font-normal text-muted-foreground">{model.unassigned.length}</span>
             </p>
-            <p className="mb-2.5 text-[12px] text-muted-foreground">
-              Aktif departman ataması olmayan çalışanlar{canMove ? '. Bir departman kutusuna sürükleyerek atayabilirsiniz.' : '.'}
+            <p className="mb-2.5 text-[12px] text-muted-foreground">{tx('Aktif departman ataması olmayan çalışanlar{0}', [canMove ? tx('. Bir departman kutusuna sürükleyerek atayabilirsiniz.') : '.'])}
             </p>
             <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-4">
               {model.unassigned.map((p) => (

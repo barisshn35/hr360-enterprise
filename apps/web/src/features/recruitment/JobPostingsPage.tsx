@@ -21,15 +21,16 @@ import {
   type JobPostingStatus,
 } from '@/api/types'
 import { formatDate, formatNumber } from '@/lib/format'
+import { tx } from '@/lib/i18n'
 
 type TabKey = JobPostingStatus | 'all'
 
 const TABS: Array<TabDef<TabKey>> = [
-  { key: 'Published', label: 'Yayında' },
-  { key: 'Draft', label: 'Taslak' },
-  { key: 'OnHold', label: 'Beklemede' },
-  { key: 'Closed', label: 'Kapandı' },
-  { key: 'all', label: 'Tümü' },
+  { key: 'Published', label: tx('Yayında') },
+  { key: 'Draft', label: tx('Taslak') },
+  { key: 'OnHold', label: tx('Beklemede') },
+  { key: 'Closed', label: tx('Kapandı') },
+  { key: 'all', label: tx('Tümü') },
 ]
 
 interface Errors {
@@ -61,8 +62,8 @@ function NewPostingModal({ open, onClose }: { open: boolean; onClose: () => void
 
   function validate(overrideDepartmentId?: string): Errors {
     const next: Errors = {}
-    if (title.trim().length < 3) next.title = 'Başlık en az 3 karakter olmalı.'
-    if (!(overrideDepartmentId ?? departmentId)) next.departmentId = 'Departman seçilmeli.'
+    if (title.trim().length < 3) next.title = tx('Başlık en az 3 karakter olmalı.')
+    if (!(overrideDepartmentId ?? departmentId)) next.departmentId = tx('Departman seçilmeli.')
     // GUVENLIK/VERI BUTUNLUGU: onceki hali "Number(headcount) || 1" idi -
     // bu, "0" veya bos degeri sessizce 1'e ceviriyordu (kullaniciya hicbir
     // bildirim yapmadan) ama NEGATIF degerleri (orn. "-5") YAKALAMIYORDU,
@@ -70,7 +71,7 @@ function NewPostingModal({ open, onClose }: { open: boolean; onClose: () => void
     // doner. Simdi acik bir hata gosteriliyor, sessiz "duzeltme" yok.
     const hc = Number(headcount)
     if (!headcount || Number.isNaN(hc) || hc < 1)
-      next.headcount = 'Kişi sayısı en az 1 olmalı.'
+      next.headcount = tx('Kişi sayısı en az 1 olmalı.')
     return next
   }
 
@@ -85,7 +86,7 @@ function NewPostingModal({ open, onClose }: { open: boolean; onClose: () => void
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['recruitment'] })
-      toast.ok('İlan oluşturuldu')
+      toast.ok(tx('İlan oluşturuldu'))
       onClose()
       setTitle('')
       setDescription('')
@@ -93,7 +94,7 @@ function NewPostingModal({ open, onClose }: { open: boolean; onClose: () => void
       setErrors({})
       setSubmitted(false)
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : 'İlan oluşturulamadı.'),
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('İlan oluşturulamadı.')),
   })
 
   function handleSubmit(e: React.FormEvent) {
@@ -116,8 +117,8 @@ function NewPostingModal({ open, onClose }: { open: boolean; onClose: () => void
     <Modal
       open={open}
       onClose={onClose}
-      title="Yeni ilan"
-      note="İlan taslak olarak açılır, yayına almak ayrı bir adım."
+      title={tx('Yeni ilan')}
+      note={tx('İlan taslak olarak açılır, yayına almak ayrı bir adım.')}
       footer={
         <>
           <Button
@@ -126,7 +127,7 @@ function NewPostingModal({ open, onClose }: { open: boolean; onClose: () => void
             onClick={onClose}
             disabled={mutation.isPending}
           >
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button
             type="submit"
@@ -135,7 +136,7 @@ function NewPostingModal({ open, onClose }: { open: boolean; onClose: () => void
             disabled={mutation.isPending}
           >
             {mutation.isPending && <LoaderCircle className="size-4 animate-spin" />}
-            İlanı oluştur
+            {tx('İlanı oluştur')}
           </Button>
         </>
       }
@@ -145,7 +146,7 @@ function NewPostingModal({ open, onClose }: { open: boolean; onClose: () => void
 
         <TextField
           id="posting-title"
-          label="Pozisyon başlığı"
+          label={tx('Pozisyon başlığı')}
           required
           value={title}
           maxLength={200}
@@ -156,7 +157,7 @@ function NewPostingModal({ open, onClose }: { open: boolean; onClose: () => void
 
         <SelectField
           id="posting-department"
-          label="Departman"
+          label={tx('Departman')}
           required
           value={departmentId}
           onChange={(v) => {
@@ -164,10 +165,10 @@ function NewPostingModal({ open, onClose }: { open: boolean; onClose: () => void
             if (submitted) setErrors(validate(v))
           }}
           options={departments}
-          placeholder="Departman seçin"
+          placeholder={tx('Departman seçin')}
           hint={
             departments.length === 0 && !companies.isPending
-              ? 'Önce Organizasyon bölümünden departman tanımlamalısınız.'
+              ? tx('Önce Organizasyon bölümünden departman tanımlamalısınız.')
               : undefined
           }
           error={errors.departmentId}
@@ -176,7 +177,7 @@ function NewPostingModal({ open, onClose }: { open: boolean; onClose: () => void
         <div className="grid gap-4 sm:grid-cols-2">
           <SelectField
             id="posting-type"
-            label="Çalışma şekli"
+            label={tx('Çalışma şekli')}
             value={employmentType}
             onChange={(v) => setEmploymentType(v as EmploymentType)}
             options={(Object.keys(employmentTypeLabels) as EmploymentType[]).map((t) => ({
@@ -187,7 +188,7 @@ function NewPostingModal({ open, onClose }: { open: boolean; onClose: () => void
 
           <TextField
             id="posting-headcount"
-            label="Kişi sayısı"
+            label={tx('Kişi sayısı')}
             type="number"
             min={1}
             className="tabular"
@@ -200,11 +201,11 @@ function NewPostingModal({ open, onClose }: { open: boolean; onClose: () => void
 
         <TextAreaField
           id="posting-description"
-          label="Açıklama"
+          label={tx('Açıklama')}
           rows={4}
           value={description}
           maxLength={4000}
-          hint="İsteğe bağlı."
+          hint={tx('İsteğe bağlı.')}
           onChange={(e) => setDescription(e.target.value)}
         />
       </form>
@@ -224,7 +225,7 @@ export function JobPostingsPage() {
   const columns: Array<Column<JobPosting>> = [
     {
       id: 'title',
-      header: 'İlan',
+      header: tx('İlan'),
       searchText: (p) => p.title,
       sortValue: (p) => p.title,
       cell: (p) => (
@@ -238,7 +239,7 @@ export function JobPostingsPage() {
     },
     {
       id: 'headcount',
-      header: 'Kişi',
+      header: tx('Kişi'),
       align: 'right',
       hideBelow: 'sm',
       sortValue: (p) => p.headcount,
@@ -247,7 +248,7 @@ export function JobPostingsPage() {
     },
     {
       id: 'applications',
-      header: 'Başvuru',
+      header: tx('Başvuru'),
       align: 'right',
       hideBelow: 'md',
       sortValue: (p) => p.applications?.length ?? 0,
@@ -256,7 +257,7 @@ export function JobPostingsPage() {
     },
     {
       id: 'createdAt',
-      header: 'Açılış',
+      header: tx('Açılış'),
       align: 'right',
       hideBelow: 'lg',
       sortValue: (p) => new Date(p.createdAt).getTime(),
@@ -265,7 +266,7 @@ export function JobPostingsPage() {
     },
     {
       id: 'status',
-      header: 'Durum',
+      header: tx('Durum'),
       align: 'right',
       sortValue: (p) => jobPostingStatusLabels[p.status] ?? '',
       exportText: (p) => jobPostingStatusLabels[p.status] ?? '',
@@ -276,27 +277,27 @@ export function JobPostingsPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="İşe alım"
-        description="Açık ilanlar, başvurular ve mülakat süreci."
+        title={tx('İşe alım')}
+        description={tx('Açık ilanlar, başvurular ve mülakat süreci.')}
         actions={
           <>
             <Button variant="outline" className="cursor-pointer" asChild>
               <Link to="/panel/ise-alim/adaylar">
                 <Users className="size-4" />
-                Adaylar
+                {tx('Adaylar')}
               </Link>
             </Button>
             {canManage && (
               <Button className="cursor-pointer" onClick={() => setModalOpen(true)}>
                 <Plus className="size-4" />
-                Yeni ilan
+                {tx('Yeni ilan')}
               </Button>
             )}
           </>
         }
       />
 
-      <Tabs tabs={TABS} value={tab} onChange={setTab} label="İlan durumu" />
+      <Tabs tabs={TABS} value={tab} onChange={setTab} label={tx('İlan durumu')} />
 
       <DataTable
         rows={postings.data}
@@ -306,14 +307,14 @@ export function JobPostingsPage() {
         error={postings.error}
         onRetry={() => void postings.refetch()}
         onRowClick={(p) => navigate(`/panel/ise-alim/${p.id}`)}
-        searchPlaceholder="İlan başlığı ara"
+        searchPlaceholder={tx('İlan başlığı ara')}
         exportFileName="ilanlar"
-        emptyTitle="Bu durumda ilan yok"
-        emptyDetail="Başka bir durum sekmesi seçin ya da yeni bir ilan açın."
+        emptyTitle={tx('Bu durumda ilan yok')}
+        emptyDetail={tx('Başka bir durum sekmesi seçin ya da yeni bir ilan açın.')}
         emptyAction={
           canManage ? (
             <Button size="sm" className="cursor-pointer" onClick={() => setModalOpen(true)}>
-              Yeni ilan
+              {tx('Yeni ilan')}
             </Button>
           ) : undefined
         }

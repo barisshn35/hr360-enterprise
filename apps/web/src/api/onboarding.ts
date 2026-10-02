@@ -1,4 +1,5 @@
 import { apiFetch, qs } from './client'
+import { tx } from '@/lib/i18n'
 
 const BASE = '/api/onboarding'
 
@@ -11,43 +12,43 @@ export type AssetType = 'Laptop' | 'Phone' | 'Monitor' | 'AccessCard' | 'Vehicle
 export type AssetStatus = 'Available' | 'Assigned' | 'Maintenance' | 'Retired' | 'Lost'
 
 export const planStatusLabels: Record<PlanStatus, string> = {
-  NotStarted: 'Başlamadı',
-  InProgress: 'Sürüyor',
-  Completed: 'Tamamlandı',
-  Cancelled: 'İptal edildi',
+  NotStarted: tx('Başlamadı'),
+  InProgress: tx('Sürüyor'),
+  Completed: tx('Tamamlandı'),
+  Cancelled: tx('İptal edildi'),
 }
 
 export const taskCategoryLabels: Record<TaskCategory, string> = {
-  IT: 'Bilgi teknolojileri',
-  HR: 'İnsan kaynakları',
-  Facility: 'İdari işler',
-  Training: 'Eğitim',
-  Legal: 'Hukuk',
-  Other: 'Diğer',
+  IT: tx('Bilgi teknolojileri'),
+  HR: tx('İnsan kaynakları'),
+  Facility: tx('İdari işler'),
+  Training: tx('Eğitim'),
+  Legal: tx('Hukuk'),
+  Other: tx('Diğer'),
 }
 
 export const onboardingTaskStatusLabels: Record<OnboardingTaskStatus, string> = {
-  Pending: 'Bekliyor',
-  InProgress: 'Sürüyor',
-  Done: 'Tamamlandı',
-  Blocked: 'Engellendi',
+  Pending: tx('Bekliyor'),
+  InProgress: tx('Sürüyor'),
+  Done: tx('Tamamlandı'),
+  Blocked: tx('Engellendi'),
 }
 
 export const assetTypeLabels: Record<AssetType, string> = {
-  Laptop: 'Dizüstü bilgisayar',
-  Phone: 'Telefon',
-  Monitor: 'Monitör',
-  AccessCard: 'Giriş kartı',
-  Vehicle: 'Araç',
-  Other: 'Diğer',
+  Laptop: tx('Dizüstü bilgisayar'),
+  Phone: tx('Telefon'),
+  Monitor: tx('Monitör'),
+  AccessCard: tx('Giriş kartı'),
+  Vehicle: tx('Araç'),
+  Other: tx('Diğer'),
 }
 
 export const assetStatusLabels: Record<AssetStatus, string> = {
-  Available: 'Boşta',
-  Assigned: 'Zimmetli',
-  Maintenance: 'Bakımda',
-  Retired: 'Hurdaya ayrıldı',
-  Lost: 'Kayıp',
+  Available: tx('Boşta'),
+  Assigned: tx('Zimmetli'),
+  Maintenance: tx('Bakımda'),
+  Retired: tx('Hurdaya ayrıldı'),
+  Lost: tx('Kayıp'),
 }
 
 export interface OnboardingTask {

@@ -12,6 +12,7 @@ import { formatMoney } from '@/lib/format'
 import { MONTHS_TR, PARAMS_2026, grossToNetYear, netToGrossYear } from '@/lib/payroll'
 import { cn } from '@/lib/utils'
 import { Metric, PlanGate } from '@/features/shared/kit'
+import { tx } from '@/lib/i18n'
 
 const TT = { background: 'hsl(var(--popover))', border: '1px solid hsl(var(--border))', borderRadius: 12, fontSize: 12 }
 const tl = (n: number) => formatMoney(n)
@@ -31,40 +32,40 @@ export function PayrollSimPage() {
 
   return (
     <PlanGate feature="payroll-sim">
-      <PageHeader title="Bordro simülasyonu" description="Brütten nete veya netten brüte; 12 aylık kümülatif gelir vergisi, asgari ücret istisnası, SGK tavanı ve işveren maliyetiyle." />
+      <PageHeader title={tx('Bordro simülasyonu')} description={tx('Brütten nete veya netten brüte; 12 aylık kümülatif gelir vergisi, asgari ücret istisnası, SGK tavanı ve işveren maliyetiyle.')} />
       <div className="grid gap-6 xl:grid-cols-[340px_1fr]">
         <div className="space-y-5">
           <Panel>
-            <PanelHead title={<span className="flex items-center gap-2"><Calculator className="size-4 text-primary" /> Hesap</span>} />
+            <PanelHead title={<span className="flex items-center gap-2"><Calculator className="size-4 text-primary" />{' '}{tx('Hesap')}</span>} />
             <PanelBody className="space-y-4">
-              <Tabs label="Yön" value={mode} onChange={setMode} tabs={[{ key: 'brut', label: 'Brütten nete' }, { key: 'net', label: 'Netten brüte' }]} />
-              <TextField label={mode === 'brut' ? 'Aylık brüt ücret (TL)' : 'Hedef aylık net (TL)'} inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
-              <label className="flex items-center gap-2 text-[13px]"><Checkbox checked={discount} onCheckedChange={(v) => setDiscount(v === true)} /> İşverene 5 puanlık SGK teşviki</label>
+              <Tabs label={tx('Yön')} value={mode} onChange={setMode} tabs={[{ key: 'brut', label: tx('Brütten nete') }, { key: 'net', label: tx('Netten brüte') }]} />
+              <TextField label={mode === 'brut' ? tx('Aylık brüt ücret (TL)') : tx('Hedef aylık net (TL)')} inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
+              <label className="flex items-center gap-2 text-[13px]"><Checkbox checked={discount} onCheckedChange={(v) => setDiscount(v === true)} />{' '}{tx('İşverene 5 puanlık SGK teşviki')}</label>
               <details className="text-[12.5px]">
-                <summary className="cursor-pointer text-muted-foreground">Parametreler (2026)</summary>
+                <summary className="cursor-pointer text-muted-foreground">{tx('Parametreler (2026)')}</summary>
                 <div className="mt-3 space-y-3">
-                  <TextField label="Brüt asgari ücret" value={minWage} onChange={(e) => setMinWage(e.target.value)} hint="SGK tavanı = asgari ücret × 9" />
+                  <TextField label={tx('Brüt asgari ücret')} value={minWage} onChange={(e) => setMinWage(e.target.value)} hint={tx('SGK tavanı = asgari ücret × 9')} />
                   <ul className="space-y-0.5 text-muted-foreground">
-                    <li>SGK işçi %14 + işsizlik %1 · işveren %21,75 + %2</li>
-                    <li>SGK tavanı {tl(params.sgkCeiling)}</li>
-                    <li>GV dilimleri: 190.000 / 400.000 / 1.500.000 / 5.300.000 TL → %15/20/27/35/40</li>
-                    <li>Damga vergisi binde 7,59</li>
+                    <li>{tx('SGK işçi %14 + işsizlik %1 · işveren %21,75 + %2')}</li>
+                    <li>{tx('SGK tavanı {0}', [tl(params.sgkCeiling)])}</li>
+                    <li>{tx('GV dilimleri: 190.000 / 400.000 / 1.500.000 / 5.300.000 TL → %15/20/27/35/40')}</li>
+                    <li>{tx('Damga vergisi binde 7,59')}</li>
                   </ul>
                 </div>
               </details>
             </PanelBody>
           </Panel>
-          <InfoNote><Info className="mr-1 inline size-3.5" /> Simülasyondur. Engellilik indirimi, BES, sendika aidatı, yan haklar ve kıst ay hesabı dahil değildir.</InfoNote>
+          <InfoNote><Info className="mr-1 inline size-3.5" />{' '}{tx('Simülasyondur. Engellilik indirimi, BES, sendika aidatı, yan haklar ve kıst ay hesabı dahil değildir.')}</InfoNote>
         </div>
         <div className="min-w-0 space-y-5">
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <Metric label={mode === 'brut' ? 'Ocak net' : 'Ocak brüt'} value={tl(mode === 'brut' ? jan.net : jan.gross)} />
-            <Metric label={mode === 'brut' ? 'Aralık net' : 'Aralık brüt'} value={tl(mode === 'brut' ? dec.net : dec.gross)} hint={`Dilim %${Math.round(dec.bracketRate * 100)}`} tone={mode === 'brut' && dec.net < jan.net ? 'warn' : undefined} />
-            <Metric label="Yıllık net" value={tl(sum('net'))} />
-            <Metric label="Yıllık işveren maliyeti" value={tl(sum('employerCost'))} />
+            <Metric label={mode === 'brut' ? tx('Ocak net') : tx('Ocak brüt')} value={tl(mode === 'brut' ? jan.net : jan.gross)} />
+            <Metric label={mode === 'brut' ? tx('Aralık net') : tx('Aralık brüt')} value={tl(mode === 'brut' ? dec.net : dec.gross)} hint={tx('Dilim %{0}', [Math.round(dec.bracketRate * 100)])} tone={mode === 'brut' && dec.net < jan.net ? 'warn' : undefined} />
+            <Metric label={tx('Yıllık net')} value={tl(sum('net'))} />
+            <Metric label={tx('Yıllık işveren maliyeti')} value={tl(sum('employerCost'))} />
           </div>
           <Panel>
-            <PanelHead title="Aylık dağılım" note="Kümülatif matrah arttıkça vergi dilimi yükselir; net ücret yıl içinde azalabilir." />
+            <PanelHead title={tx('Aylık dağılım')} note={tx('Kümülatif matrah arttıkça vergi dilimi yükselir; net ücret yıl içinde azalabilir.')} />
             <PanelBody className="h-72">
               <ResponsiveContainer>
                 <BarChart data={chart}>
@@ -81,12 +82,12 @@ export function PayrollSimPage() {
             </PanelBody>
           </Panel>
           <Panel>
-            <PanelHead title="12 aylık bordro" />
+            <PanelHead title={tx('12 aylık bordro')} />
             <PanelBody className="overflow-x-auto p-0">
               <table className="w-full min-w-[980px] text-[12.5px]">
                 <thead>
                   <tr className="border-b border-border text-right text-[11px] text-muted-foreground">
-                    {['Ay', 'Brüt', 'SGK %14', 'İşsizlik %1', 'GV matrahı', 'Kümülatif', 'Hesaplanan GV', 'AÜ istisnası', 'Ödenecek GV', 'Damga', 'Net', 'İşveren maliyeti'].map((h, i) => <th key={h} className={cn('px-3 py-2 font-medium', i === 0 && 'text-left')}>{h}</th>)}
+                    {[tx('Ay'), tx('Brüt'), tx('SGK %14'), tx('İşsizlik %1'), tx('GV matrahı'), tx('Kümülatif'), tx('Hesaplanan GV'), tx('AÜ istisnası'), tx('Ödenecek GV'), tx('Damga'), tx('Net'), tx('İşveren maliyeti')].map((h, i) => <th key={h} className={cn('px-3 py-2 font-medium', i === 0 && 'text-left')}>{h}</th>)}
                   </tr>
                 </thead>
                 <tbody>
@@ -101,7 +102,7 @@ export function PayrollSimPage() {
                     </motion.tr>
                   ))}
                   <tr className="tabular border-t-2 border-border text-right font-semibold">
-                    <td className="px-3 py-2 text-left">Toplam</td>
+                    <td className="px-3 py-2 text-left">{tx('Toplam')}</td>
                     {(['gross', 'sgk', 'unemployment', 'taxBase'] as const).map((k) => <td key={k} className="px-3">{tl(sum(k))}</td>)}
                     <td />
                     {(['incomeTax', 'incomeTaxExemption', 'incomeTaxPayable', 'stampPayable', 'net', 'employerCost'] as const).map((k) => <td key={k} className="px-3">{tl(sum(k))}</td>)}

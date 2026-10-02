@@ -23,6 +23,7 @@ import { CountUp, EASE } from '@/motion/primitives'
 import { errorText } from '../components/controls'
 import { PersonAvatar } from '../components/people'
 import { usePeople } from '../hooks'
+import { tx, appLocale } from '@/lib/i18n'
 
 export function CloseCycleDialog({ cycle, onClose }: { cycle: ReviewCycle; onClose: () => void }) {
   const readiness = useCycleReadiness(cycle.id)
@@ -36,11 +37,11 @@ export function CloseCycleDialog({ cycle, onClose }: { cycle: ReviewCycle; onClo
 
   const r = readiness.data
   const list = useMemo(() => {
-    const needle = q.trim().toLocaleLowerCase('tr-TR')
+    const needle = q.trim().toLocaleLowerCase(appLocale)
     return (r?.employees ?? [])
       .filter((e) => showAll || e.isProvisional)
       .map((e) => ({ ...e, displayName: people.nameOf(e.employeeId, e.name) }))
-      .filter((e) => !needle || e.displayName.toLocaleLowerCase('tr-TR').includes(needle))
+      .filter((e) => !needle || e.displayName.toLocaleLowerCase(appLocale).includes(needle))
   }, [r, showAll, q, people])
 
   const confirm = () => {
@@ -54,7 +55,7 @@ export function CloseCycleDialog({ cycle, onClose }: { cycle: ReviewCycle; onClo
   if (done) {
     const n = done.finalizedEmployeeCount ?? r?.readyCount ?? 0
     return (
-      <Modal open onClose={onClose} title={`${cycle.name} kapandı`} footer={<Button onClick={onClose}>Tamam</Button>}>
+      <Modal open onClose={onClose} title={tx('{0} kapandı', [cycle.name])} footer={<Button onClick={onClose}>{tx('Tamam')}</Button>}>
         <div className="flex flex-col items-center py-4 text-center">
           <motion.span
             initial={{ scale: 0, rotate: -30 }}
@@ -67,17 +68,17 @@ export function CloseCycleDialog({ cycle, onClose }: { cycle: ReviewCycle; onClo
           </motion.span>
           <p className="mt-4 text-[15px]">
             <CountUp to={n} duration={1} className="text-[28px] font-semibold" />
-            <span className="ml-1.5 font-medium">çalışanın nihai puanı sabitlendi.</span>
+            <span className="ml-1.5 font-medium">{tx('çalışanın nihai puanı sabitlendi.')}</span>
           </p>
           <p className="mt-1 max-w-sm text-[13px] text-muted-foreground">
-            Bu puanlar artık değişmez; puanlama ayarı değişse bile dönem, kapandığı sürümle hesaplanmış olarak kalır.
+            {tx('Bu puanlar artık değişmez; puanlama ayarı değişse bile dönem, kapandığı sürümle hesaplanmış olarak kalır.')}
           </p>
           <div className="mt-5 flex flex-wrap justify-center gap-2">
             <Button asChild variant="outline" size="sm">
-              <Link to={`/panel/performans/analiz?sekme=donem&donem=${cycle.id}`}>Dönem sonuçlarını gör</Link>
+              <Link to={`/panel/performans/analiz?sekme=donem&donem=${cycle.id}`}>{tx('Dönem sonuçlarını gör')}</Link>
             </Button>
             <Button asChild variant="outline" size="sm">
-              <Link to="/panel/performans/oneriler">Aksiyon önerileri</Link>
+              <Link to="/panel/performans/oneriler">{tx('Aksiyon önerileri')}</Link>
             </Button>
           </div>
         </div>
@@ -90,16 +91,16 @@ export function CloseCycleDialog({ cycle, onClose }: { cycle: ReviewCycle; onClo
       open
       onClose={() => !close.isPending && onClose()}
       size="lg"
-      title={`${cycle.name} kapatılsın mı?`}
-      note="Kapanıştan önce kimin puanının hazır, kimin geçici kalacağını gözden geçirin."
+      title={tx('{0} kapatılsın mı?', [cycle.name])}
+      note={tx('Kapanıştan önce kimin puanının hazır, kimin geçici kalacağını gözden geçirin.')}
       footer={
         <>
           <Button variant="outline" onClick={onClose} disabled={close.isPending}>
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button variant="destructive" onClick={confirm} disabled={!ack || close.isPending || !r}>
             <Lock aria-hidden />
-            {close.isPending ? 'Kapatılıyor…' : 'Dönemi kalıcı olarak kapat'}
+            {close.isPending ? tx('Kapatılıyor…') : tx('Dönemi kalıcı olarak kapat')}
           </Button>
         </>
       }
@@ -117,15 +118,15 @@ export function CloseCycleDialog({ cycle, onClose }: { cycle: ReviewCycle; onClo
         </div>
       )}
 
-      {readiness.isError && <ErrorState title="Hazırlık bilgisi alınamadı" message={errorText(readiness.error)} onRetry={() => void readiness.refetch()} />}
+      {readiness.isError && <ErrorState title={tx('Hazırlık bilgisi alınamadı')} message={errorText(readiness.error)} onRetry={() => void readiness.refetch()} />}
 
       {r && (
         <div className="flex flex-col gap-5">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             {[
-              { icon: UserCheck, label: 'Puanı hazır', value: r.readyCount, tone: 'hsl(var(--success))', hint: 'Nihai puanı sabitlenecek' },
-              { icon: Hourglass, label: 'Geçici kalacak', value: r.provisionalCount, tone: 'hsl(var(--warning))', hint: 'Yetersiz değerlendirme' },
-              { icon: ClipboardList, label: 'Bekleyen değerlendirme', value: r.pendingReviewTotal, tone: 'hsl(var(--primary))', hint: 'Kapanıştan sonra gönderilemez' },
+              { icon: UserCheck, label: tx('Puanı hazır'), value: r.readyCount, tone: 'hsl(var(--success))', hint: tx('Nihai puanı sabitlenecek') },
+              { icon: Hourglass, label: tx('Geçici kalacak'), value: r.provisionalCount, tone: 'hsl(var(--warning))', hint: tx('Yetersiz değerlendirme') },
+              { icon: ClipboardList, label: tx('Bekleyen değerlendirme'), value: r.pendingReviewTotal, tone: 'hsl(var(--primary))', hint: tx('Kapanıştan sonra gönderilemez') },
             ].map((s, i) => (
               <motion.div
                 key={s.label}
@@ -149,23 +150,23 @@ export function CloseCycleDialog({ cycle, onClose }: { cycle: ReviewCycle; onClo
           <div>
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <p className="text-[13px] font-semibold">
-                {showAll ? 'Tüm çalışanlar' : r.provisionalCount ? 'Puanı geçici kalacaklar ve nedeni' : 'Geçici kalacak kimse yok'}
+                {showAll ? tx('Tüm çalışanlar') : r.provisionalCount ? tx('Puanı geçici kalacaklar ve nedeni') : tx('Geçici kalacak kimse yok')}
               </p>
               <div className="flex items-center gap-2">
                 <label className="relative">
-                  <span className="sr-only">Kişi ara</span>
+                  <span className="sr-only">{tx('Kişi ara')}</span>
                   <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden />
-                  <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ara" className="h-8 w-32 rounded-md border border-input bg-background pr-2 pl-7 text-[12px] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50" />
+                  <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={tx('Ara')} className="h-8 w-32 rounded-md border border-input bg-background pr-2 pl-7 text-[12px] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50" />
                 </label>
                 <button type="button" onClick={() => setShowAll((v) => !v)} className="text-[12px] font-medium text-primary hover:underline">
-                  {showAll ? 'Yalnızca geçici kalacaklar' : `Herkesi göster (${r.employees.length})`}
+                  {showAll ? tx('Yalnızca geçici kalacaklar') : tx('Herkesi göster ({0})', [r.employees.length])}
                 </button>
               </div>
             </div>
             <ul className="max-h-64 divide-y divide-border overflow-y-auto rounded-xl border border-border">
               {list.length === 0 && (
                 <li className="px-4 py-6 text-center text-[13px] text-muted-foreground">
-                  {r.provisionalCount === 0 && !showAll ? 'Tüm çalışanların puanı yeterli değerlendirmeye dayanıyor.' : 'Eşleşen kişi yok.'}
+                  {r.provisionalCount === 0 && !showAll ? tx('Tüm çalışanların puanı yeterli değerlendirmeye dayanıyor.') : tx('Eşleşen kişi yok.')}
                 </li>
               )}
               {list.map((e, i) => (
@@ -183,17 +184,17 @@ export function CloseCycleDialog({ cycle, onClose }: { cycle: ReviewCycle; onClo
                       {e.isProvisional ? (
                         <span className="inline-flex items-center gap-1 rounded-md bg-[hsl(var(--warning))]/12 px-1.5 py-0.5 text-[11px] text-[hsl(var(--warning))]">
                           <Hourglass className="size-3" aria-hidden />
-                          geçici kalacak
+                          {tx('geçici kalacak')}
                         </span>
                       ) : (
-                        <span className="rounded-md bg-[hsl(var(--success))]/12 px-1.5 py-0.5 text-[11px] text-[hsl(var(--success))]">hazır</span>
+                        <span className="rounded-md bg-[hsl(var(--success))]/12 px-1.5 py-0.5 text-[11px] text-[hsl(var(--success))]">{tx('hazır')}</span>
                       )}
                     </p>
                     {e.reason && <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">{e.reason}</p>}
                   </div>
                   <span className="tabular shrink-0 text-right text-[11px] text-muted-foreground">
-                    {e.reviewCount !== undefined && <span className="block">{e.reviewCount} değerlendirme</span>}
-                    {e.pendingReviews ? <span className="block text-primary">{e.pendingReviews} bekliyor</span> : null}
+                    {e.reviewCount !== undefined && <span className="block">{tx('{0} değerlendirme', [e.reviewCount])}</span>}
+                    {e.pendingReviews ? <span className="block text-primary">{tx('{0} bekliyor', [e.pendingReviews])}</span> : null}
                   </span>
                 </motion.li>
               ))}
@@ -203,16 +204,11 @@ export function CloseCycleDialog({ cycle, onClose }: { cycle: ReviewCycle; onClo
           <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4">
             <p className="flex items-center gap-2 text-[14px] font-semibold text-destructive">
               <ShieldAlert className="size-4.5" aria-hidden />
-              Kapanan dönem yeniden açılamaz.
+              {tx('Kapanan dönem yeniden açılamaz.')}
             </p>
-            <p className="mt-1 text-[13px] leading-relaxed text-foreground/80">
-              Kapanışta {r.readyCount} çalışanın puanı nihai olarak sabitlenir; {r.provisionalCount > 0 ? `${r.provisionalCount} çalışanın puanı geçici olarak kalır. ` : ''}
-              Bu dönem için yeni değerlendirme gönderilemez, hedef ilerlemesi güncellenemez.
-            </p>
+            <p className="mt-1 text-[13px] leading-relaxed text-foreground/80">{tx('Kapanışta {0} çalışanın puanı nihai olarak sabitlenir; {1}Bu dönem için yeni değerlendirme gönderilemez, hedef ilerlemesi güncellenemez.', [r.readyCount, r.provisionalCount > 0 ? tx('{0} çalışanın puanı geçici olarak kalır. ', [r.provisionalCount]) : ''])}</p>
             <label className={cn('mt-3 flex cursor-pointer items-center gap-2.5 text-[13px] font-medium', ack && 'text-destructive')}>
-              <Checkbox checked={ack} onCheckedChange={(v) => setAck(v === true)} />
-              Anladım, {cycle.name} dönemini kalıcı olarak kapat.
-            </label>
+              <Checkbox checked={ack} onCheckedChange={(v) => setAck(v === true)} />{tx('Anladım, {0} dönemini kalıcı olarak kapat.', [cycle.name])}</label>
           </div>
 
           <AnimatePresence>

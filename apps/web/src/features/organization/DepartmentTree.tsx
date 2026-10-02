@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import type { Department } from '@/api/types'
+import { tx } from '@/lib/i18n'
 
 interface TreeNode extends Department {
   children: TreeNode[]
@@ -97,8 +98,8 @@ function TreeItem({
             aria-expanded={expanded}
             aria-label={
               expanded
-                ? `${node.name} alt departmanlarını gizle`
-                : `${node.name} alt departmanlarını göster`
+                ? tx('{0} alt departmanlarını gizle', [node.name])
+                : tx('{0} alt departmanlarını göster', [node.name])
             }
             className="flex size-7 shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground"
           >
@@ -144,7 +145,7 @@ function TreeItem({
         {hasChildren && (
           <span
             className="tabular shrink-0 text-[11px] text-muted-foreground"
-            title={`${countDescendants(node)} alt departman`}
+            title={tx('{0} alt departman', [countDescendants(node)])}
           >
             {countDescendants(node)}
           </span>
@@ -155,7 +156,7 @@ function TreeItem({
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                aria-label={`${node.name} için işlemler`}
+                aria-label={tx('{0} için işlemler', [node.name])}
                 className="flex size-7 shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
                 onClick={(e) => e.stopPropagation()}
               >
@@ -171,7 +172,7 @@ function TreeItem({
                   }}
                 >
                   <Pencil aria-hidden="true" className="mr-2 size-3.5" />
-                  Adını değiştir
+                  {tx('Adını değiştir')}
                 </DropdownMenuItem>
               )}
               {onDelete && (
@@ -180,7 +181,7 @@ function TreeItem({
                   className="text-destructive focus:text-destructive"
                 >
                   <Trash2 aria-hidden="true" className="mr-2 size-3.5" />
-                  Sil
+                  {tx('Sil')}
                 </DropdownMenuItem>
               )}
             </DropdownMenuContent>
@@ -248,7 +249,7 @@ export function DepartmentTree({
     } catch (err) {
       // Backend'in 409 mesajı ("önce şu kayıtların taşınması gerekiyor...")
       // olduğu gibi gösterilir - dialog kapanmaz, kullanıcı okuyup kapatır.
-      setDeleteError(err instanceof Error ? err.message : 'Departman silinemedi.')
+      setDeleteError(err instanceof Error ? err.message : tx('Departman silinemedi.'))
     } finally {
       setDeleting(false)
     }
@@ -257,8 +258,8 @@ export function DepartmentTree({
   if (tree.length === 0) {
     return (
       <EmptyState
-        title="Departman yok"
-        detail="Bu şirket için henüz departman tanımlanmamış."
+        title={tx('Departman yok')}
+        detail={tx('Bu şirket için henüz departman tanımlanmamış.')}
         action={emptyAction}
       />
     )
@@ -266,7 +267,7 @@ export function DepartmentTree({
 
   return (
     <div>
-      <ul aria-label="Departman hiyerarşisi" className="py-1">
+      <ul aria-label={tx('Departman hiyerarşisi')} className="py-1">
         {tree.map((node) => (
           <TreeItem
             key={node.id}
@@ -291,10 +292,9 @@ export function DepartmentTree({
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Departmanı sil</DialogTitle>
+            <DialogTitle>{tx('Departmanı sil')}</DialogTitle>
             <DialogDescription>
-              <strong>{pendingDelete?.name}</strong> departmanını silmek üzeresiniz. Bu işlem
-              geri alınamaz.
+              <strong>{pendingDelete?.name}</strong>{' '}{tx('departmanını silmek üzeresiniz. Bu işlem geri alınamaz.')}
             </DialogDescription>
           </DialogHeader>
 
@@ -310,7 +310,7 @@ export function DepartmentTree({
               onClick={() => setPendingDelete(null)}
               className="cursor-pointer rounded-md border border-border px-3.5 py-2 text-[13px] font-medium transition-colors hover:bg-muted"
             >
-              Vazgeç
+              {tx('Vazgeç')}
             </button>
             <button
               type="button"
@@ -318,7 +318,7 @@ export function DepartmentTree({
               disabled={deleting}
               className="cursor-pointer rounded-md bg-destructive px-3.5 py-2 text-[13px] font-medium text-destructive-foreground transition-colors hover:opacity-90 disabled:opacity-50"
             >
-              {deleting ? 'Siliniyor…' : 'Evet, sil'}
+              {deleting ? tx('Siliniyor…') : tx('Evet, sil')}
             </button>
           </DialogFooter>
         </DialogContent>

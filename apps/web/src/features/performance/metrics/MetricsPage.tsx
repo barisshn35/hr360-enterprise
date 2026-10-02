@@ -43,8 +43,9 @@ import { CategorySection } from './CategorySection'
 import { MetricDialog, type MetricDialogMode } from './MetricDialog'
 import type { Scope } from './share'
 import { TemplatePicker } from './TemplatePicker'
+import { tx, appLocale } from '@/lib/i18n'
 
-const normalize = (s: string) => s.toLocaleLowerCase('tr-TR')
+const normalize = (s: string) => s.toLocaleLowerCase(appLocale)
 
 export function MetricsPage() {
   const toast = useToast()
@@ -108,8 +109,8 @@ export function MetricsPage() {
         const added = created.filter((m) => !before.has(m.id))
         toast.ok(
           added.length
-            ? `${templateInfo[t].title} şablonundan ${added.length} metrik eklendi. Dilediğiniz gibi düzenleyebilirsiniz.`
-            : 'Şablondaki metriklerin hepsi zaten tanımlı; yeni metrik eklenmedi.',
+            ? tx('{0} şablonundan {1} metrik eklendi. Dilediğiniz gibi düzenleyebilirsiniz.', [templateInfo[t].title, added.length])
+            : tx('Şablondaki metriklerin hepsi zaten tanımlı; yeni metrik eklenmedi.'),
         )
         flashRecent(added.map((m) => m.id))
         setTemplateOpen(false)
@@ -124,12 +125,12 @@ export function MetricsPage() {
       onSuccess: () => {
         createMetric.mutate(input, {
           onSuccess: (created) => {
-            toast.ok(`«${metric.name}» arşivlendi; yeni ölçekle yeniden oluşturuldu.`)
+            toast.ok(tx('«{0}» arşivlendi; yeni ölçekle yeniden oluşturuldu.', [metric.name]))
             flashRecent([created.id])
             setDialog(null)
           },
           onError: (e) => {
-            toast.stop(`Eski metrik arşivlendi ama yenisi oluşturulamadı: ${errorText(e)}`)
+            toast.stop(tx('Eski metrik arşivlendi ama yenisi oluşturulamadı: {0}', [errorText(e)]))
             setDialog({ kind: 'create', preset: input })
           },
         })
@@ -142,21 +143,20 @@ export function MetricsPage() {
   const noMetrics = !loading && !metrics.isError && active.length === 0
 
   const stats = [
-    { label: 'Etkin metrik', value: active.length },
-    { label: 'Zorunlu', value: active.filter((m) => m.isRequired).length },
-    { label: 'Kategori', value: new Set(active.map((m) => m.category)).size },
-    { label: 'Arşivde', value: archived.length },
+    { label: tx('Etkin metrik'), value: active.length },
+    { label: tx('Zorunlu'), value: active.filter((m) => m.isRequired).length },
+    { label: tx('Kategori'), value: new Set(active.map((m) => m.category)).size },
+    { label: tx('Arşivde'), value: archived.length },
   ]
 
   return (
     <div className="mx-auto w-full max-w-6xl">
       <PerfPageHeader
-        eyebrow="Performans kurulumu · 1. adım"
-        title="Metrikler"
+        eyebrow={tx('Performans kurulumu · 1. adım')}
+        title={tx('Metrikler')}
         description={
           <>
-            Çalışanların neye göre değerlendirileceğini tanımlayın. Ağırlıklar <strong className="font-medium text-foreground">oransaldır</strong>, yüzde
-            değil: her metriğin payı kategorisindeki diğer metriklere göre hesaplanır.
+            {tx('Çalışanların neye göre değerlendirileceğini tanımlayın. Ağırlıklar')}{' '}<strong className="font-medium text-foreground">{tx('oransaldır')}</strong>{tx(', yüzde değil: her metriğin payı kategorisindeki diğer metriklere göre hesaplanır.')}
           </>
         }
         actions={
@@ -164,11 +164,11 @@ export function MetricsPage() {
             <>
               <Button variant="outline" onClick={() => setTemplateOpen(true)} disabled={loading}>
                 <LayoutTemplate aria-hidden />
-                Şablondan ekle
+                {tx('Şablondan ekle')}
               </Button>
               <Button onClick={() => setDialog({ kind: 'create' })} disabled={loading}>
                 <Plus aria-hidden />
-                Yeni metrik
+                {tx('Yeni metrik')}
               </Button>
             </>
           )
@@ -194,14 +194,14 @@ export function MetricsPage() {
       {/* ----------------------------------- hata ----------------------------------- */}
       {metrics.isError && (
         <Panel>
-          <ErrorState title="Metrikler alınamadı" message={errorText(metrics.error)} onRetry={() => void metrics.refetch()} />
+          <ErrorState title={tx('Metrikler alınamadı')} message={errorText(metrics.error)} onRetry={() => void metrics.refetch()} />
         </Panel>
       )}
 
       {/* --------------------------------- yükleniyor -------------------------------- */}
       {loading && (
         <div className="flex flex-col gap-4" aria-busy="true">
-          <span className="sr-only">Metrikler yükleniyor</span>
+          <span className="sr-only">{tx('Metrikler yükleniyor')}</span>
           {[0, 1, 2].map((i) => (
             <Panel key={i} className="p-4">
               <div className="flex items-center gap-3">
@@ -237,15 +237,14 @@ export function MetricsPage() {
               <Sparkles className="size-5" aria-hidden />
             </span>
             <h2 id="template-title" className="text-[18px] font-semibold">
-              Henüz metrik tanımlanmamış — bir şablonla başlayın
+              {tx('Henüz metrik tanımlanmamış — bir şablonla başlayın')}
             </h2>
             <p className="mx-auto mt-1 max-w-xl text-[13px] leading-relaxed text-muted-foreground">
-              Şablon, rolünüze uygun beş metriği kategori ve ağırlıklarıyla birlikte ekler. Beş dakikada değerlendirmeye hazır olursunuz.
+              {tx('Şablon, rolünüze uygun beş metriği kategori ve ağırlıklarıyla birlikte ekler. Beş dakikada değerlendirmeye hazır olursunuz.')}
             </p>
             {archived.length > 0 && (
               <p className="mt-2 text-[12px] text-muted-foreground">
-                {archived.length} arşivlenmiş metrik var; geçmiş değerlendirmelerde puanları korunuyor.
-              </p>
+                {tx('{0} arşivlenmiş metrik var; geçmiş değerlendirmelerde puanları korunuyor.', [archived.length])}</p>
             )}
           </div>
           <TemplatePicker onApply={runTemplate} pending={pendingTemplate} onStartBlank={() => setDialog({ kind: 'create' })} />
@@ -258,12 +257,12 @@ export function MetricsPage() {
           <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
             <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-end">
               <label className="relative block w-full sm:max-w-xs">
-                <span className="sr-only">Metrik ara</span>
+                <span className="sr-only">{tx('Metrik ara')}</span>
                 <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Ad, kod ya da açıklama ara"
+                  placeholder={tx('Ad, kod ya da açıklama ara')}
                   className="h-9 w-full rounded-md border border-input bg-background pr-8 pl-9 text-[13px] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                 />
                 {query && (
@@ -271,7 +270,7 @@ export function MetricsPage() {
                     type="button"
                     onClick={() => setQuery('')}
                     className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:bg-muted"
-                    aria-label="Aramayı temizle"
+                    aria-label={tx('Aramayı temizle')}
                   >
                     <X className="size-3.5" />
                   </button>
@@ -279,13 +278,13 @@ export function MetricsPage() {
               </label>
               <div className="w-full sm:w-56">
                 <SelectField
-                  label="Kapsam"
+                  label={tx('Kapsam')}
                   value={scope}
                   onChange={(v) => setScope(v)}
                   options={[
-                    { value: 'all', label: 'Tüm metrikler' },
-                    { value: 'global', label: 'Yalnızca genel metrikler' },
-                    ...depts.list.map((d) => ({ value: d.id, label: `${d.path} çalışanları` })),
+                    { value: 'all', label: tx('Tüm metrikler') },
+                    { value: 'global', label: tx('Yalnızca genel metrikler') },
+                    ...depts.list.map((d) => ({ value: d.id, label: tx('{0} çalışanları', [d.path]) })),
                   ]}
                 />
               </div>
@@ -296,11 +295,10 @@ export function MetricsPage() {
               onChange={setShowArchived}
               label={
                 <span className="inline-flex items-center gap-1.5">
-                  <Archive className="size-3.5 text-muted-foreground" aria-hidden />
-                  Arşivi göster{archived.length ? ` (${archived.length})` : ''}
+                  <Archive className="size-3.5 text-muted-foreground" aria-hidden />{tx('Arşivi göster{0}', [archived.length ? ` (${archived.length})` : ''])}
                 </span>
               }
-              hint="Arşivdeki metrikler yeni değerlendirmede sorulmaz."
+              hint={tx('Arşivdeki metrikler yeni değerlendirmede sorulmaz.')}
             />
           </div>
 
@@ -313,8 +311,8 @@ export function MetricsPage() {
                 className="mb-4 overflow-hidden text-[13px] text-muted-foreground"
               >
                 {scope === 'global'
-                  ? 'Tüm departmanlara uygulanan metrikler gösteriliyor. Paylar yalnızca bu metriklere göre hesaplandı.'
-                  : `${depts.nameOf(scope)} çalışanları bu metriklerle değerlendirilir. Paylar bu kümeye göre hesaplandı.`}
+                  ? tx('Tüm departmanlara uygulanan metrikler gösteriliyor. Paylar yalnızca bu metriklere göre hesaplandı.')
+                  : tx('{0} çalışanları bu metriklerle değerlendirilir. Paylar bu kümeye göre hesaplandı.', [depts.nameOf(scope)])}
               </motion.p>
             )}
           </AnimatePresence>
@@ -322,8 +320,8 @@ export function MetricsPage() {
           {shownCategories.length === 0 ? (
             <Panel>
               <div className="px-4 py-12 text-center">
-                <p className="text-[15px] font-semibold">Aramanızla eşleşen metrik yok</p>
-                <p className="mt-1 text-[13px] text-muted-foreground">Farklı bir kelime deneyin ya da kapsamı genişletin.</p>
+                <p className="text-[15px] font-semibold">{tx('Aramanızla eşleşen metrik yok')}</p>
+                <p className="mt-1 text-[13px] text-muted-foreground">{tx('Farklı bir kelime deneyin ya da kapsamı genişletin.')}</p>
                 <Button
                   variant="outline"
                   size="sm"
@@ -333,7 +331,7 @@ export function MetricsPage() {
                     setScope('all')
                   }}
                 >
-                  Filtreleri temizle
+                  {tx('Filtreleri temizle')}
                 </Button>
               </div>
             </Panel>
@@ -370,7 +368,7 @@ export function MetricsPage() {
               transition={{ delay: 0.35 }}
               className="mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-dashed border-border px-4 py-3"
             >
-              <span className="text-[13px] text-muted-foreground">Metriği olmayan kategoriler:</span>
+              <span className="text-[13px] text-muted-foreground">{tx('Metriği olmayan kategoriler:')}</span>
               {emptyCategories.map((c) => {
                 const w = catWeight(c)
                 return (
@@ -379,11 +377,11 @@ export function MetricsPage() {
                     type="button"
                     onClick={() => setDialog({ kind: 'create', preset: { category: c } })}
                     className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background px-2.5 py-1 text-[12px] font-medium transition-colors hover:border-primary/40"
-                    title={w && w > 0 ? 'Puanlama ayarında ağırlığı var ama metriği yok — bu kategori puana katkı vermiyor.' : undefined}
+                    title={w && w > 0 ? tx('Puanlama ayarında ağırlığı var ama metriği yok — bu kategori puana katkı vermiyor.') : undefined}
                   >
                     <span className="size-2 rounded-full" style={{ background: categoryColor[c] }} />
                     {categoryLabels[c]}
-                    {w !== null && w > 0 && <span className="text-[hsl(var(--warning))]">· ağırlığı var, metriği yok</span>}
+                    {w !== null && w > 0 && <span className="text-[hsl(var(--warning))]">{tx('· ağırlığı var, metriği yok')}</span>}
                     <Plus className="size-3 text-muted-foreground" aria-hidden />
                   </button>
                 )
@@ -412,8 +410,8 @@ export function MetricsPage() {
         open={templateOpen}
         onClose={() => setTemplateOpen(false)}
         size="xl"
-        title="Şablondan metrik ekle"
-        note="Şablondaki metriklerden sizde henüz olmayanlar eklenir; mevcut metrikleriniz değişmez."
+        title={tx('Şablondan metrik ekle')}
+        note={tx('Şablondaki metriklerden sizde henüz olmayanlar eklenir; mevcut metrikleriniz değişmez.')}
       >
         <TemplatePicker onApply={runTemplate} pending={pendingTemplate} compact />
       </Modal>

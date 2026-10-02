@@ -8,6 +8,7 @@ import { EmployeePicker } from '@/components/ui/EmployeePicker'
 import { useToast } from '@/components/ui/Toast'
 import { leaveApi } from '@/api/leave'
 import { leaveTypeLabels, type LeaveType } from '@/api/types'
+import { tx } from '@/lib/i18n'
 
 /**
  * Yıllık izin bakiyesi tanımlama.
@@ -57,17 +58,17 @@ export function NewBalanceModal({
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['leave'] })
-      toast.ok('Bakiye tanımlandı')
+      toast.ok(tx('Bakiye tanımlandı'))
       onClose()
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : 'Bakiye tanımlanamadı.'),
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Bakiye tanımlanamadı.')),
   })
 
   function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (!employeeId) return setError('Çalışan seçilmeli.')
-    if (!Number(year)) return setError('Yıl zorunlu.')
-    if (!(Number(entitledDays) > 0)) return setError('Hak edilen gün sıfırdan büyük olmalı.')
+    if (!employeeId) return setError(tx('Çalışan seçilmeli.'))
+    if (!Number(year)) return setError(tx('Yıl zorunlu.'))
+    if (!(Number(entitledDays) > 0)) return setError(tx('Hak edilen gün sıfırdan büyük olmalı.'))
     setError(undefined)
     mutation.mutate()
   }
@@ -76,8 +77,8 @@ export function NewBalanceModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="İzin bakiyesi tanımla"
-      note="Aynı çalışan, yıl ve tür için bakiye zaten varsa mevcut bakiye güncellenir."
+      title={tx('İzin bakiyesi tanımla')}
+      note={tx('Aynı çalışan, yıl ve tür için bakiye zaten varsa mevcut bakiye güncellenir.')}
       footer={
         <>
           <Button
@@ -86,7 +87,7 @@ export function NewBalanceModal({
             onClick={onClose}
             disabled={mutation.isPending}
           >
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button
             type="submit"
@@ -95,7 +96,7 @@ export function NewBalanceModal({
             disabled={mutation.isPending}
           >
             {mutation.isPending && <LoaderCircle className="size-4 animate-spin" />}
-            Bakiyeyi tanımla
+            {tx('Bakiyeyi tanımla')}
           </Button>
         </>
       }
@@ -110,7 +111,7 @@ export function NewBalanceModal({
 
         <SelectField
           id="balance-type"
-          label="İzin türü"
+          label={tx('İzin türü')}
           required
           value={type}
           onChange={(v) => setType(v as LeaveType)}
@@ -123,7 +124,7 @@ export function NewBalanceModal({
         <div className="grid gap-4 sm:grid-cols-2">
           <TextField
             id="balance-year"
-            label="Yıl"
+            label={tx('Yıl')}
             type="number"
             min={2020}
             max={2100}
@@ -135,7 +136,7 @@ export function NewBalanceModal({
           />
           <TextField
             id="balance-days"
-            label="Hak edilen gün"
+            label={tx('Hak edilen gün')}
             type="number"
             min={1}
             max={365}

@@ -31,6 +31,7 @@ import {
 import { formatDate, formatNumber } from '@/lib/format'
 import { useEmployeeName } from '@/lib/useEmployeeName'
 import { cn } from '@/lib/utils'
+import { tx } from '@/lib/i18n'
 
 type TabKey = 'katalog' | 'sertifikalar' | 'suresi-dolan' | 'uyum'
 
@@ -59,18 +60,18 @@ function NewCourseModal({ open, onClose }: { open: boolean; onClose: () => void 
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['learning'] })
-      toast.ok('Eğitim eklendi')
+      toast.ok(tx('Eğitim eklendi'))
       onClose()
       setTitle('')
       setDescription('')
       setProvider('')
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : 'Eğitim eklenemedi.'),
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Eğitim eklenemedi.')),
   })
 
   function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (title.trim().length < 3) return setError('Eğitim adı en az 3 karakter olmalı.')
+    if (title.trim().length < 3) return setError(tx('Eğitim adı en az 3 karakter olmalı.'))
     setError(undefined)
     mutation.mutate()
   }
@@ -79,8 +80,8 @@ function NewCourseModal({ open, onClose }: { open: boolean; onClose: () => void 
     <Modal
       open={open}
       onClose={onClose}
-      title="Yeni eğitim"
-      note="Zorunlu işaretlenen eğitimler uyum raporunda takip edilir."
+      title={tx('Yeni eğitim')}
+      note={tx('Zorunlu işaretlenen eğitimler uyum raporunda takip edilir.')}
       size="lg"
       footer={
         <>
@@ -90,7 +91,7 @@ function NewCourseModal({ open, onClose }: { open: boolean; onClose: () => void 
             onClick={onClose}
             disabled={mutation.isPending}
           >
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button
             type="submit"
@@ -99,7 +100,7 @@ function NewCourseModal({ open, onClose }: { open: boolean; onClose: () => void 
             disabled={mutation.isPending}
           >
             {mutation.isPending && <LoaderCircle className="size-4 animate-spin" />}
-            Eğitimi ekle
+            {tx('Eğitimi ekle')}
           </Button>
         </>
       }
@@ -107,7 +108,7 @@ function NewCourseModal({ open, onClose }: { open: boolean; onClose: () => void 
       <form id="new-course" onSubmit={submit} noValidate className="space-y-4">
         <TextField
           id="course-title"
-          label="Eğitim adı"
+          label={tx('Eğitim adı')}
           required
           value={title}
           maxLength={200}
@@ -116,16 +117,16 @@ function NewCourseModal({ open, onClose }: { open: boolean; onClose: () => void 
         />
         <TextAreaField
           id="course-desc"
-          label="Açıklama"
+          label={tx('Açıklama')}
           rows={3}
-          hint="İsteğe bağlı"
+          hint={tx('İsteğe bağlı')}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
         />
         <div className="grid gap-4 sm:grid-cols-3">
           <SelectField
             id="course-category"
-            label="Kategori"
+            label={tx('Kategori')}
             value={category}
             onChange={(v) => setCategory(v as CourseCategory)}
             options={(Object.keys(courseCategoryLabels) as CourseCategory[]).map((c) => ({
@@ -135,7 +136,7 @@ function NewCourseModal({ open, onClose }: { open: boolean; onClose: () => void 
           />
           <TextField
             id="course-duration"
-            label="Süre (saat)"
+            label={tx('Süre (saat)')}
             type="number"
             min={1}
             className="tabular"
@@ -144,8 +145,8 @@ function NewCourseModal({ open, onClose }: { open: boolean; onClose: () => void 
           />
           <TextField
             id="course-provider"
-            label="Sağlayıcı"
-            hint="İsteğe bağlı"
+            label={tx('Sağlayıcı')}
+            hint={tx('İsteğe bağlı')}
             value={provider}
             onChange={(e) => setProvider(e.target.value)}
           />
@@ -157,9 +158,9 @@ function NewCourseModal({ open, onClose }: { open: boolean; onClose: () => void 
             className="mt-0.5"
           />
           <span className="text-[13px]">
-            Zorunlu eğitim
+            {tx('Zorunlu eğitim')}
             <span className="block text-[12px] text-muted-foreground">
-              Uyum raporunda takip edilir.
+              {tx('Uyum raporunda takip edilir.')}
             </span>
           </span>
         </label>
@@ -186,11 +187,11 @@ function EnrollModal({
     mutationFn: () => learningApi.enroll(courseId!, employeeId),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['learning'] })
-      toast.ok('Kayıt oluşturuldu')
+      toast.ok(tx('Kayıt oluşturuldu'))
       onClose()
       setEmployeeId('')
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : 'Kayıt oluşturulamadı.'),
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Kayıt oluşturulamadı.')),
   })
 
   if (!courseId) return null
@@ -199,7 +200,7 @@ function EnrollModal({
     <Modal
       open
       onClose={onClose}
-      title="Eğitime kaydol"
+      title={tx('Eğitime kaydol')}
       note={courseTitle}
       footer={
         <>
@@ -209,15 +210,15 @@ function EnrollModal({
             onClick={onClose}
             disabled={mutation.isPending}
           >
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button
             className="cursor-pointer"
             disabled={mutation.isPending}
-            onClick={() => (employeeId ? mutation.mutate() : setError('Çalışan seçilmeli.'))}
+            onClick={() => (employeeId ? mutation.mutate() : setError(tx('Çalışan seçilmeli.')))}
           >
             {mutation.isPending && <LoaderCircle className="size-4 animate-spin" />}
-            Kaydol
+            {tx('Kaydol')}
           </Button>
         </>
       }
@@ -255,7 +256,7 @@ function NewCertificationModal({ open, onClose }: { open: boolean; onClose: () =
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['learning'] })
-      toast.ok('Sertifika kaydedildi')
+      toast.ok(tx('Sertifika kaydedildi'))
       onClose()
       setName('')
       setIssuer('')
@@ -264,14 +265,14 @@ function NewCertificationModal({ open, onClose }: { open: boolean; onClose: () =
       setExpires('')
     },
     onError: (e: unknown) =>
-      toast.stop(e instanceof Error ? e.message : 'Sertifika kaydedilemedi.'),
+      toast.stop(e instanceof Error ? e.message : tx('Sertifika kaydedilemedi.')),
   })
 
   function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (!employeeId) return setError('Çalışan seçilmeli.')
-    if (name.trim().length < 2) return setError('Sertifika adı en az 2 karakter olmalı.')
-    if (!issuedOn) return setError('Veriliş tarihi zorunlu.')
+    if (!employeeId) return setError(tx('Çalışan seçilmeli.'))
+    if (name.trim().length < 2) return setError(tx('Sertifika adı en az 2 karakter olmalı.'))
+    if (!issuedOn) return setError(tx('Veriliş tarihi zorunlu.'))
     setError(undefined)
     mutation.mutate()
   }
@@ -280,8 +281,8 @@ function NewCertificationModal({ open, onClose }: { open: boolean; onClose: () =
     <Modal
       open={open}
       onClose={onClose}
-      title="Yeni sertifika"
-      note="Geçerlilik bitişi girilirse süresi dolanlar sekmesinde takip edilir."
+      title={tx('Yeni sertifika')}
+      note={tx('Geçerlilik bitişi girilirse süresi dolanlar sekmesinde takip edilir.')}
       size="lg"
       footer={
         <>
@@ -291,7 +292,7 @@ function NewCertificationModal({ open, onClose }: { open: boolean; onClose: () =
             onClick={onClose}
             disabled={mutation.isPending}
           >
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button
             type="submit"
@@ -300,7 +301,7 @@ function NewCertificationModal({ open, onClose }: { open: boolean; onClose: () =
             disabled={mutation.isPending}
           >
             {mutation.isPending && <LoaderCircle className="size-4 animate-spin" />}
-            Kaydet
+            {tx('Kaydet')}
           </Button>
         </>
       }
@@ -314,7 +315,7 @@ function NewCertificationModal({ open, onClose }: { open: boolean; onClose: () =
         />
         <TextField
           id="cert-name"
-          label="Sertifika adı"
+          label={tx('Sertifika adı')}
           required
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -323,15 +324,15 @@ function NewCertificationModal({ open, onClose }: { open: boolean; onClose: () =
         <div className="grid gap-4 sm:grid-cols-2">
           <TextField
             id="cert-issuer"
-            label="Veren kurum"
-            hint="İsteğe bağlı"
+            label={tx('Veren kurum')}
+            hint={tx('İsteğe bağlı')}
             value={issuer}
             onChange={(e) => setIssuer(e.target.value)}
           />
           <TextField
             id="cert-credential"
-            label="Belge no"
-            hint="İsteğe bağlı"
+            label={tx('Belge no')}
+            hint={tx('İsteğe bağlı')}
             value={credentialId}
             onChange={(e) => setCredential(e.target.value)}
           />
@@ -339,7 +340,7 @@ function NewCertificationModal({ open, onClose }: { open: boolean; onClose: () =
         <div className="grid gap-4 sm:grid-cols-2">
           <TextField
             id="cert-issued"
-            label="Veriliş tarihi"
+            label={tx('Veriliş tarihi')}
             type="date"
             required
             value={issuedOn}
@@ -348,9 +349,9 @@ function NewCertificationModal({ open, onClose }: { open: boolean; onClose: () =
           />
           <TextField
             id="cert-expires"
-            label="Geçerlilik bitişi"
+            label={tx('Geçerlilik bitişi')}
             type="date"
-            hint="Boş bırakılırsa süresiz"
+            hint={tx('Boş bırakılırsa süresiz')}
             value={expiresOn}
             onChange={(e) => setExpires(e.target.value)}
           />
@@ -381,11 +382,11 @@ function ExpiringRow({ cert }: { cert: Certification }) {
         <span className="block truncate text-[14px] font-medium">{cert.name}</span>
         <span className="mt-0.5 block text-[12px] text-muted-foreground">
           {nameOf(cert.employeeId)}, {cert.issuer ? `${cert.issuer}, ` : ''}
-          {cert.expiresOn ? `bitiş ${formatDate(cert.expiresOn)}` : 'süresiz'}
+          {cert.expiresOn ? tx('bitiş {0}', [formatDate(cert.expiresOn)]) : tx('süresiz')}
         </span>
       </span>
       <StatusBadge tone={expired ? 'danger' : days <= 30 ? 'warning' : 'neutral'}>
-        {expired ? `${Math.abs(days)} gün önce doldu` : `${days} gün kaldı`}
+        {expired ? tx('{0} gün önce doldu', [Math.abs(days)]) : tx('{0} gün kaldı', [days])}
       </StatusBadge>
     </li>
   )
@@ -414,22 +415,22 @@ export function LearningPage() {
   const nameOf = useEmployeeName()
 
   const tabs: Array<TabDef<TabKey>> = [
-    { key: 'katalog', label: 'Katalog' },
-    { key: 'sertifikalar', label: 'Sertifikalar' },
+    { key: 'katalog', label: tx('Katalog') },
+    { key: 'sertifikalar', label: tx('Sertifikalar') },
     ...(canSeeExpiring
-      ? [{ key: 'suresi-dolan' as TabKey, label: 'Süresi dolanlar', count: expiring.data?.length }]
+      ? [{ key: 'suresi-dolan' as TabKey, label: tx('Süresi dolanlar'), count: expiring.data?.length }]
       : []),
-    ...(canManage ? [{ key: 'uyum' as TabKey, label: 'Zorunlu eğitim uyumu' }] : []),
+    ...(canManage ? [{ key: 'uyum' as TabKey, label: tx('Zorunlu eğitim uyumu') }] : []),
   ]
 
   const courseFilters: TableFilter[] = [
     {
       id: 'category',
-      label: 'Kategori',
+      label: tx('Kategori'),
       value: category,
       onChange: setCategory,
       options: [
-        { value: ALL, label: 'Tüm kategoriler' },
+        { value: ALL, label: tx('Tüm kategoriler') },
         ...(Object.keys(courseCategoryLabels) as CourseCategory[]).map((c) => ({
           value: c,
           label: courseCategoryLabels[c],
@@ -441,7 +442,7 @@ export function LearningPage() {
   const courseColumns: Array<Column<Course>> = [
     {
       id: 'title',
-      header: 'Eğitim',
+      header: tx('Eğitim'),
       searchText: (c) => `${c.title} ${c.description ?? ''} ${c.provider ?? ''}`,
       sortValue: (c) => c.title,
       exportText: (c) => c.title,
@@ -458,7 +459,7 @@ export function LearningPage() {
     },
     {
       id: 'category',
-      header: 'Kategori',
+      header: tx('Kategori'),
       hideBelow: 'sm',
       sortValue: (c) => courseCategoryLabels[c.category] ?? '',
       exportText: (c) => courseCategoryLabels[c.category] ?? '',
@@ -468,7 +469,7 @@ export function LearningPage() {
     },
     {
       id: 'provider',
-      header: 'Sağlayıcı',
+      header: tx('Sağlayıcı'),
       hideBelow: 'lg',
       searchText: (c) => c.provider ?? '',
       exportText: (c) => c.provider ?? '—',
@@ -476,7 +477,7 @@ export function LearningPage() {
     },
     {
       id: 'duration',
-      header: 'Süre',
+      header: tx('Süre'),
       align: 'right',
       hideBelow: 'md',
       sortValue: (c) => c.durationHours,
@@ -485,13 +486,13 @@ export function LearningPage() {
     },
     {
       id: 'mandatory',
-      header: 'Zorunlu',
+      header: tx('Zorunlu'),
       align: 'right',
       sortValue: (c) => (c.isMandatory ? 1 : 0),
-      exportText: (c) => (c.isMandatory ? 'Evet' : 'Hayır'),
+      exportText: (c) => (c.isMandatory ? 'Evet' : tx('Hayır')),
       cell: (c) =>
         c.isMandatory ? (
-          <StatusBadge tone="warning">Zorunlu</StatusBadge>
+          <StatusBadge tone="warning">{tx('Zorunlu')}</StatusBadge>
         ) : (
           <span className="text-muted-foreground">—</span>
         ),
@@ -501,7 +502,7 @@ export function LearningPage() {
   const certColumns: Array<Column<Certification>> = [
     {
       id: 'name',
-      header: 'Sertifika',
+      header: tx('Sertifika'),
       searchText: (c) => `${c.name} ${c.issuer ?? ''} ${c.credentialId ?? ''}`,
       sortValue: (c) => c.name,
       exportText: (c) => c.name,
@@ -509,15 +510,15 @@ export function LearningPage() {
         <div className="min-w-0">
           <p className="truncate font-medium text-foreground">{c.name}</p>
           <p className="mt-0.5 truncate text-[12px] text-muted-foreground">
-            {c.issuer ?? 'kurum belirtilmemiş'}
-            {c.credentialId ? `, belge no ${c.credentialId}` : ''}
+            {c.issuer ?? tx('kurum belirtilmemiş')}
+            {c.credentialId ? tx(', belge no {0}', [c.credentialId]) : ''}
           </p>
         </div>
       ),
     },
     {
       id: 'employee',
-      header: 'Çalışan',
+      header: tx('Çalışan'),
       hideBelow: 'sm',
       searchText: (c) => nameOf(c.employeeId),
       sortValue: (c) => nameOf(c.employeeId),
@@ -526,7 +527,7 @@ export function LearningPage() {
     },
     {
       id: 'validity',
-      header: 'Geçerlilik',
+      header: tx('Geçerlilik'),
       align: 'right',
       hideBelow: 'md',
       sortValue: (c) => new Date(c.issuedOn).getTime(),
@@ -544,27 +545,27 @@ export function LearningPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Eğitim"
-        description="Eğitim kataloğu, kayıtlar ve sertifika takibi."
+        title={tx('Eğitim')}
+        description={tx('Eğitim kataloğu, kayıtlar ve sertifika takibi.')}
         actions={
           <>
 {canManage && (
                           <Button variant="outline" className="cursor-pointer" onClick={() => setCertModal(true)}>
                 <Plus className="size-4" />
-                Sertifika ekle
+                {tx('Sertifika ekle')}
               </Button>
             )}
             {canManage && (
               <Button className="cursor-pointer" onClick={() => setCourseModal(true)}>
                 <Plus className="size-4" />
-                Yeni eğitim
+                {tx('Yeni eğitim')}
               </Button>
             )}
           </>
         }
       />
 
-      <Tabs tabs={tabs} value={tab} onChange={setTab} label="Eğitim görünümü" />
+      <Tabs tabs={tabs} value={tab} onChange={setTab} label={tx('Eğitim görünümü')} />
 
       {tab === 'katalog' && (
         <DataTable
@@ -575,14 +576,14 @@ export function LearningPage() {
           isLoading={courses.isPending}
           error={courses.error}
           onRetry={() => void courses.refetch()}
-          searchPlaceholder="Eğitim adı, açıklama veya sağlayıcı"
+          searchPlaceholder={tx('Eğitim adı, açıklama veya sağlayıcı')}
           exportFileName="egitim-katalogu"
-          emptyTitle="Eğitim yok"
-          emptyDetail="Bu filtreye uyan eğitim bulunmuyor."
+          emptyTitle={tx('Eğitim yok')}
+          emptyDetail={tx('Bu filtreye uyan eğitim bulunmuyor.')}
           emptyAction={
             canManage ? (
               <Button size="sm" className="cursor-pointer" onClick={() => setCourseModal(true)}>
-                Yeni eğitim
+                {tx('Yeni eğitim')}
               </Button>
             ) : undefined
           }
@@ -592,14 +593,14 @@ export function LearningPage() {
                 checked={mandatoryOnly}
                 onCheckedChange={(v) => setMandatoryOnly(v === true)}
               />
-              <span className="text-[13px] whitespace-nowrap">Yalnızca zorunlu</span>
+              <span className="text-[13px] whitespace-nowrap">{tx('Yalnızca zorunlu')}</span>
             </label>
           }
           rowActions={
             can('learning:enroll')
               ? [
                   {
-                    label: 'Bu eğitime kaydol',
+                    label: tx('Bu eğitime kaydol'),
                     onSelect: (c) => setEnrollFor({ id: c.id, title: c.title }),
                   },
                 ]
@@ -616,13 +617,13 @@ export function LearningPage() {
           isLoading={certifications.isPending}
           error={certifications.error}
           onRetry={() => void certifications.refetch()}
-          searchPlaceholder="Sertifika, kurum, belge no veya çalışan"
+          searchPlaceholder={tx('Sertifika, kurum, belge no veya çalışan')}
           exportFileName="sertifikalar"
-          emptyTitle="Sertifika kaydı yok"
-          emptyDetail="Çalışanların aldığı sertifikaları buraya ekleyin."
+          emptyTitle={tx('Sertifika kaydı yok')}
+          emptyDetail={tx('Çalışanların aldığı sertifikaları buraya ekleyin.')}
           emptyAction={
             <Button size="sm" className="cursor-pointer" onClick={() => setCertModal(true)}>
-              Sertifika ekle
+              {tx('Sertifika ekle')}
             </Button>
           }
         />
@@ -631,8 +632,8 @@ export function LearningPage() {
       {tab === 'suresi-dolan' && (
         <Panel>
           <PanelHead
-            title="Süresi dolan sertifikalar"
-            note="Önümüzdeki 90 gün ve süresi geçmiş olanlar"
+            title={tx('Süresi dolan sertifikalar')}
+            note={tx('Önümüzdeki 90 gün ve süresi geçmiş olanlar')}
           />
           {expiring.isPending ? (
             <RowsSkeleton rows={3} columns={2} />
@@ -643,8 +644,8 @@ export function LearningPage() {
             />
           ) : (expiring.data?.length ?? 0) === 0 ? (
             <EmptyState
-              title="Yaklaşan bitiş yok"
-              detail="Önümüzdeki 90 gün içinde süresi dolacak sertifika bulunmuyor."
+              title={tx('Yaklaşan bitiş yok')}
+              detail={tx('Önümüzdeki 90 gün içinde süresi dolacak sertifika bulunmuyor.')}
             />
           ) : (
             <ul className="divide-y divide-border">
@@ -660,7 +661,7 @@ export function LearningPage() {
 
       {tab === 'uyum' && (
         <Panel>
-          <PanelHead title="Zorunlu eğitim uyumu" note="Her eğitim için tamamlama oranı" />
+          <PanelHead title={tx('Zorunlu eğitim uyumu')} note={tx('Her eğitim için tamamlama oranı')} />
           {compliance.isPending ? (
             <RowsSkeleton rows={3} columns={2} />
           ) : compliance.isError ? (
@@ -670,8 +671,8 @@ export function LearningPage() {
             />
           ) : (compliance.data?.length ?? 0) === 0 ? (
             <EmptyState
-              title="Zorunlu eğitim yok"
-              detail="Zorunlu işaretlenmiş bir eğitim olmadığı için takip edilecek uyum da yok."
+              title={tx('Zorunlu eğitim yok')}
+              detail={tx('Zorunlu işaretlenmiş bir eğitim olmadığı için takip edilecek uyum da yok.')}
             />
           ) : (
             <PanelBody>
@@ -681,8 +682,7 @@ export function LearningPage() {
                     <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
                       <span className="text-[14px] font-medium">{row.courseTitle}</span>
                       <span className="tabular text-[12px] text-muted-foreground">
-                        {formatNumber(row.completedCount)}/{formatNumber(row.requiredCount)} kişi, %
-                        {Math.round(row.compliancePercent)}
+                        {tx('{0}/{1} kişi, %{2}', [formatNumber(row.completedCount), formatNumber(row.requiredCount), Math.round(row.compliancePercent)])}
                       </span>
                     </div>
                     <div className="mt-2">
@@ -696,7 +696,7 @@ export function LearningPage() {
                               ? 'warning'
                               : 'danger'
                         }
-                        label={`${row.courseTitle} uyum oranı`}
+                        label={tx('{0} uyum oranı', [row.courseTitle])}
                       />
                     </div>
                   </li>

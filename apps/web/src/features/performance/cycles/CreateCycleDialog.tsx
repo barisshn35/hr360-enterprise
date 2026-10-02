@@ -15,6 +15,7 @@ import { formatDate } from '@/lib/format'
 import { Segmented, errorText } from '../components/controls'
 import { NumberStepper } from '../components/NumberStepper'
 import { defaultsFor, nextSuggestion, overlapping } from './cycleDefaults'
+import { tx } from '@/lib/i18n'
 
 export function CreateCycleDialog({ cycles, onClose }: { cycles: ReviewCycle[]; onClose: () => void }) {
   const toast = useToast()
@@ -46,7 +47,7 @@ export function CreateCycleDialog({ cycles, onClose }: { cycles: ReviewCycle[]; 
       { name: form.name.trim(), year, period, startDate: form.startDate, endDate: form.endDate },
       {
         onSuccess: (c) => {
-          toast.ok(`«${c.name}» taslak olarak oluşturuldu. Hazır olduğunuzda açın.`)
+          toast.ok(tx('«{0}» taslak olarak oluşturuldu. Hazır olduğunuzda açın.', [c.name]))
           onClose()
         },
         onError: (e) => setError(errorText(e)),
@@ -59,16 +60,16 @@ export function CreateCycleDialog({ cycles, onClose }: { cycles: ReviewCycle[]; 
       open
       onClose={onClose}
       size="lg"
-      title="Yeni değerlendirme dönemi"
-      note="Dönem taslak olarak oluşturulur. Açıldığında hedefler ve değerlendirmeler bu döneme bağlanır."
+      title={tx('Yeni değerlendirme dönemi')}
+      note={tx('Dönem taslak olarak oluşturulur. Açıldığında hedefler ve değerlendirmeler bu döneme bağlanır.')}
       footer={
         <>
           <Button variant="outline" onClick={onClose} disabled={create.isPending}>
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button onClick={submit} disabled={create.isPending || invalidDates || !form.name.trim()}>
             <CalendarPlus aria-hidden />
-            {create.isPending ? 'Oluşturuluyor…' : 'Dönemi oluştur'}
+            {create.isPending ? tx('Oluşturuluyor…') : tx('Dönemi oluştur')}
           </Button>
         </>
       }
@@ -91,7 +92,7 @@ export function CreateCycleDialog({ cycles, onClose }: { cycles: ReviewCycle[]; 
       <div className="flex flex-col gap-5">
         <div className="flex flex-wrap items-end gap-4">
           <div>
-            <p className="mb-1.5 text-[13px] font-medium">Yıl</p>
+            <p className="mb-1.5 text-[13px] font-medium">{tx('Yıl')}</p>
             <NumberStepper
               value={year}
               onChange={(v) => {
@@ -100,38 +101,38 @@ export function CreateCycleDialog({ cycles, onClose }: { cycles: ReviewCycle[]; 
               }}
               min={2000}
               max={2100}
-              ariaLabel="Yıl"
+              ariaLabel={tx('Yıl')}
             />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="mb-1.5 text-[13px] font-medium">Dönem türü</p>
+            <p className="mb-1.5 text-[13px] font-medium">{tx('Dönem türü')}</p>
             <Segmented
-              ariaLabel="Dönem türü"
+              ariaLabel={tx('Dönem türü')}
               value={period}
               onChange={(p) => {
                 setPeriod(p)
                 apply(year, p)
               }}
-              options={CYCLE_PERIODS.map((p) => ({ value: p, label: p === 'Annual' ? 'Yıllık' : p, title: cyclePeriodLabels[p] }))}
+              options={CYCLE_PERIODS.map((p) => ({ value: p, label: p === 'Annual' ? tx('Yıllık') : p, title: cyclePeriodLabels[p] }))}
               size="sm"
             />
           </div>
         </div>
 
         <TextField
-          label="Ad"
+          label={tx('Ad')}
           value={form.name}
           onChange={(e) => {
             setForm((f) => ({ ...f, name: e.target.value }))
             setEdited((x) => ({ ...x, name: true }))
           }}
-          hint="Listelerde ve raporlarda bu adla görünür."
+          hint={tx('Listelerde ve raporlarda bu adla görünür.')}
           required
         />
 
         <div className="grid gap-4 sm:grid-cols-2">
           <TextField
-            label="Başlangıç"
+            label={tx('Başlangıç')}
             type="date"
             value={form.startDate}
             onChange={(e) => {
@@ -140,14 +141,14 @@ export function CreateCycleDialog({ cycles, onClose }: { cycles: ReviewCycle[]; 
             }}
           />
           <TextField
-            label="Bitiş"
+            label={tx('Bitiş')}
             type="date"
             value={form.endDate}
             onChange={(e) => {
               setForm((f) => ({ ...f, endDate: e.target.value }))
               setEdited((x) => ({ ...x, dates: true }))
             }}
-            error={invalidDates ? 'Bitiş tarihi başlangıçtan sonra olmalı.' : undefined}
+            error={invalidDates ? tx('Bitiş tarihi başlangıçtan sonra olmalı.') : undefined}
           />
         </div>
 
@@ -159,12 +160,12 @@ export function CreateCycleDialog({ cycles, onClose }: { cycles: ReviewCycle[]; 
                 <span>
                   {duplicate && (
                     <>
-                      {year} yılı için bu türde bir dönem zaten var: <strong className="font-medium">{duplicate.name}</strong>.{' '}
+                      {tx('{0} yılı için bu türde bir dönem zaten var:', [year])}{' '}<strong className="font-medium">{duplicate.name}</strong>.{' '}
                     </>
                   )}
                   {clash.length > 0 && (
                     <>
-                      Bu tarihler şu dönemlerle çakışıyor:{' '}
+                      {tx('Bu tarihler şu dönemlerle çakışıyor:')}{' '}
                       {clash.map((c, i) => (
                         <span key={c.id}>
                           {i > 0 && ', '}

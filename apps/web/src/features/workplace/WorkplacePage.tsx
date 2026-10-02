@@ -15,6 +15,7 @@ import { isHr } from '@/auth/roles'
 import { useMyEmployeeId } from '@/api/queries'
 import { cn } from '@/lib/utils'
 import { Initials, Metric, PlanGate, isoDate, minutesToHHMM, useAction } from '@/features/shared/kit'
+import { tx, appLocale } from '@/lib/i18n'
 
 const MODE_STYLE: Record<PresenceMode, { cls: string; icon: React.ElementType }> = {
   Office: { cls: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30', icon: Building2 },
@@ -24,7 +25,7 @@ const MODE_STYLE: Record<PresenceMode, { cls: string; icon: React.ElementType }>
   Leave: { cls: 'bg-amber-500/15 text-amber-400 border-amber-500/30', icon: Plane },
   Unknown: { cls: 'border-dashed border-border text-muted-foreground', icon: MapPin },
 }
-const DAY = new Intl.DateTimeFormat('tr-TR', { weekday: 'short', day: 'numeric', month: 'short' })
+const DAY = new Intl.DateTimeFormat(appLocale, { weekday: 'short', day: 'numeric', month: 'short' })
 
 function startOfWeek(d: Date) {
   const x = new Date(d)
@@ -46,19 +47,19 @@ function PresenceBoard() {
     <div className="space-y-5">
       <div className="grid gap-3 sm:grid-cols-4">
         {(['Office', 'Remote', 'Leave', 'Unknown'] as PresenceMode[]).map((m) => (
-          <Metric key={m} label={`Bugün ${presenceLabels[m].toLocaleLowerCase('tr-TR')}`} value={q.data?.today[m] ?? '—'} />
+          <Metric key={m} label={tx('Bugün {0}', [presenceLabels[m].toLocaleLowerCase(appLocale)])} value={q.data?.today[m] ?? '—'} />
         ))}
       </div>
       {employeeId && (
         <Panel>
-          <PanelHead title="Bu hafta nerede çalışıyorum?" note="Bir güne tıklayıp çalışma yerinizi seçin. Masa ayırırsanız otomatik “Ofiste” olur." />
+          <PanelHead title={tx('Bu hafta nerede çalışıyorum?')} note={tx('Bir güne tıklayıp çalışma yerinizi seçin. Masa ayırırsanız otomatik “Ofiste” olur.')} />
           <PanelBody className="grid gap-3 sm:grid-cols-5">
             {q.data?.days.map((d) => {
               const cur = mine?.days.find((x) => x.date === d)?.mode ?? 'Unknown'
               return (
                 <div key={d} className={cn('rounded-2xl border p-3', d === today ? 'border-primary/50 bg-primary/5' : 'border-border')}>
                   <p className="mb-2 text-[12.5px] font-medium">{DAY.format(new Date(d))}</p>
-                  {cur === 'Leave' ? <p className="text-[12.5px] text-amber-400">İzinli</p> : (
+                  {cur === 'Leave' ? <p className="text-[12.5px] text-amber-400">{tx('İzinli')}</p> : (
                     <div className="grid grid-cols-2 gap-1">
                       {(['Office', 'Remote', 'Travel', 'Off'] as PresenceMode[]).map((m) => {
                         const I = MODE_STYLE[m].icon
@@ -79,12 +80,12 @@ function PresenceBoard() {
       )}
       <Panel>
         <PanelHead
-          title="Kim nerede?"
+          title={tx('Kim nerede?')}
           action={
             <div className="flex items-center gap-1">
-              <Button size="icon" variant="ghost" aria-label="Önceki hafta" onClick={() => setAnchor(new Date(anchor.getTime() - 7 * 86400000))}><ChevronLeft className="size-4" /></Button>
-              <Button size="sm" variant="outline" onClick={() => setAnchor(startOfWeek(new Date()))}>Bu hafta</Button>
-              <Button size="icon" variant="ghost" aria-label="Sonraki hafta" onClick={() => setAnchor(new Date(anchor.getTime() + 7 * 86400000))}><ChevronRight className="size-4" /></Button>
+              <Button size="icon" variant="ghost" aria-label={tx('Önceki hafta')} onClick={() => setAnchor(new Date(anchor.getTime() - 7 * 86400000))}><ChevronLeft className="size-4" /></Button>
+              <Button size="sm" variant="outline" onClick={() => setAnchor(startOfWeek(new Date()))}>{tx('Bu hafta')}</Button>
+              <Button size="icon" variant="ghost" aria-label={tx('Sonraki hafta')} onClick={() => setAnchor(new Date(anchor.getTime() + 7 * 86400000))}><ChevronRight className="size-4" /></Button>
             </div>
           }
         />
@@ -93,7 +94,7 @@ function PresenceBoard() {
             <table className="w-full min-w-[720px] text-[13px]">
               <thead>
                 <tr className="border-b border-border text-left text-[11.5px] text-muted-foreground">
-                  <th className="px-5 py-2.5 font-medium">Çalışan</th>
+                  <th className="px-5 py-2.5 font-medium">{tx('Çalışan')}</th>
                   {q.data.days.map((d) => <th key={d} className={cn('px-2 py-2.5 font-medium', d === today && 'text-primary')}>{DAY.format(new Date(d))}</th>)}
                 </tr>
               </thead>
@@ -131,9 +132,9 @@ function BookingBoard() {
   const [date, setDate] = useState(isoDate())
   const desks = useQuery({ queryKey: ['desks'], queryFn: ({ signal }) => engagementApi.desks(signal) })
   const bookings = useQuery({ queryKey: ['bookings', date], queryFn: ({ signal }) => engagementApi.bookings(date, signal) })
-  const sample = useAction(() => engagementApi.sampleDesks(), { success: 'Örnek ofis planı oluşturuldu', invalidate: [['desks']] })
+  const sample = useAction(() => engagementApi.sampleDesks(), { success: tx('Örnek ofis planı oluşturuldu'), invalidate: [['desks']] })
   const [booking, setBooking] = useState<Desk | null>(null)
-  const cancel = useAction((id: string) => engagementApi.cancelBooking(id), { success: 'Rezervasyon iptal edildi', invalidate: [['bookings'], ['presence']] })
+  const cancel = useAction((id: string) => engagementApi.cancelBooking(id), { success: tx('Rezervasyon iptal edildi'), invalidate: [['bookings'], ['presence']] })
 
   const byDesk = useMemo(() => {
     const m = new Map<string, Booking[]>()
@@ -144,7 +145,7 @@ function BookingBoard() {
   if (desks.isPending) return <RowsSkeleton />
   if (desks.isError) return <ErrorState message={(desks.error as Error).message} />
   if (desks.data.length === 0)
-    return <EmptyState icon={Armchair} title="Ofis planı tanımlı değil" detail="İK, masa ve toplantı odalarını “Ofis planı” sekmesinden ekler." action={isHr(roles) && <Button onClick={() => sample.mutate(undefined)}>Örnek plan oluştur</Button>} />
+    return <EmptyState icon={Armchair} title={tx('Ofis planı tanımlı değil')} detail={tx('İK, masa ve toplantı odalarını “Ofis planı” sekmesinden ekler.')} action={isHr(roles) && <Button onClick={() => sample.mutate(undefined)}>{tx('Örnek plan oluştur')}</Button>} />
 
   const floors = [...new Set(desks.data.filter((d) => d.kind === 'Desk').map((d) => d.floor ?? '—'))]
   const rooms = desks.data.filter((d) => d.kind === 'Room')
@@ -153,13 +154,13 @@ function BookingBoard() {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-end gap-3">
-        <div className="w-48"><TextField label="Tarih" type="date" value={date} min={isoDate()} onChange={(e) => setDate(e.target.value)} /></div>
+        <div className="w-48"><TextField label={tx('Tarih')} type="date" value={date} min={isoDate()} onChange={(e) => setDate(e.target.value)} /></div>
         {myBookings.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {myBookings.map((b) => (
               <span key={b.id} className="inline-flex items-center gap-2 rounded-full border border-primary/40 bg-primary/10 px-3 py-1.5 text-[12.5px]">
                 {desks.data.find((d) => d.id === b.deskId)?.name} · {minutesToHHMM(b.startMinute)}–{minutesToHHMM(b.endMinute)}
-                <button className="cursor-pointer text-muted-foreground hover:text-destructive" onClick={() => cancel.mutate(b.id)} aria-label="İptal"><Trash2 className="size-3.5" /></button>
+                <button className="cursor-pointer text-muted-foreground hover:text-destructive" onClick={() => cancel.mutate(b.id)} aria-label={tx('İptal')}><Trash2 className="size-3.5" /></button>
               </span>
             ))}
           </div>
@@ -168,7 +169,7 @@ function BookingBoard() {
       <div className="grid gap-5 xl:grid-cols-[1fr_1.1fr]">
         {floors.map((floor) => (
           <Panel key={floor}>
-            <PanelHead title={<span className="flex items-center gap-2"><Armchair className="size-4 text-primary" /> {floor} — masalar</span>} note="Yeşil boş, kırmızı dolu, mavi sizin." />
+            <PanelHead title={<span className="flex items-center gap-2"><Armchair className="size-4 text-primary" /> {tx('{0} — masalar', [floor])}</span>} note={tx('Yeşil boş, kırmızı dolu, mavi sizin.')} />
             <PanelBody className="grid grid-cols-3 gap-3 sm:grid-cols-6 xl:grid-cols-3 2xl:grid-cols-6">
               {desks.data.filter((d) => d.kind === 'Desk' && (d.floor ?? '—') === floor).map((d, i) => {
                 const bs = byDesk.get(d.id) ?? []
@@ -201,7 +202,7 @@ function BookingBoard() {
         ))}
         {rooms.length > 0 && (
           <Panel>
-            <PanelHead title={<span className="flex items-center gap-2"><DoorOpen className="size-4 text-primary" /> Toplantı odaları</span>} note="Boş zaman dilimine tıklayın." />
+            <PanelHead title={<span className="flex items-center gap-2"><DoorOpen className="size-4 text-primary" />{' '}{tx('Toplantı odaları')}</span>} note={tx('Boş zaman dilimine tıklayın.')} />
             <PanelBody className="space-y-4 overflow-x-auto">
               <div className="ml-28 flex min-w-[520px] text-[10.5px] text-muted-foreground">{HOURS.map((h) => <span key={h} className="flex-1">{h}:00</span>)}</div>
               {rooms.map((r) => (
@@ -238,15 +239,15 @@ function BookModal({ desk, date, onClose }: { desk: Desk; date: string; onClose:
   const [title, setTitle] = useState('')
   const toMin = (s: string) => Number(s.slice(0, 2)) * 60 + Number(s.slice(3, 5))
   const book = useAction(() => engagementApi.book({ deskId: desk.id, date, startMinute: toMin(start), endMinute: toMin(end), title: title || undefined }), {
-    success: `${desk.name} ayrıldı`, invalidate: [['bookings'], ['presence']], onDone: onClose,
+    success: tx('{0} ayrıldı', [desk.name]), invalidate: [['bookings'], ['presence']], onDone: onClose,
   })
   return (
-    <Modal open onClose={onClose} title={`${desk.name} — ${desk.kind === 'Desk' ? 'masa' : 'oda'} ayır`} note={[desk.floor, desk.zone, ...desk.features].filter(Boolean).join(' · ')}
-      footer={<><Button variant="outline" onClick={onClose}>Vazgeç</Button><Button onClick={() => book.mutate(undefined)} disabled={book.isPending}>Ayır</Button></>}>
+    <Modal open onClose={onClose} title={tx('{0} — {1} ayır', [desk.name, desk.kind === 'Desk' ? tx('masa') : tx('oda')])} note={[desk.floor, desk.zone, ...desk.features].filter(Boolean).join(' · ')}
+      footer={<><Button variant="outline" onClick={onClose}>{tx('Vazgeç')}</Button><Button onClick={() => book.mutate(undefined)} disabled={book.isPending}>{tx('Ayır')}</Button></>}>
       <div className="grid gap-4 sm:grid-cols-2">
-        <TextField label="Başlangıç" type="time" value={start} onChange={(e) => setStart(e.target.value)} />
-        <TextField label="Bitiş" type="time" value={end} onChange={(e) => setEnd(e.target.value)} />
-        {desk.kind === 'Room' && <div className="sm:col-span-2"><TextField label="Toplantı adı" value={title} onChange={(e) => setTitle(e.target.value)} /></div>}
+        <TextField label={tx('Başlangıç')} type="time" value={start} onChange={(e) => setStart(e.target.value)} />
+        <TextField label={tx('Bitiş')} type="time" value={end} onChange={(e) => setEnd(e.target.value)} />
+        {desk.kind === 'Room' && <div className="sm:col-span-2"><TextField label={tx('Toplantı adı')} value={title} onChange={(e) => setTitle(e.target.value)} /></div>}
       </div>
     </Modal>
   )
@@ -256,31 +257,31 @@ function OfficePlan() {
   const desks = useQuery({ queryKey: ['desks'], queryFn: ({ signal }) => engagementApi.desks(signal) })
   const [f, setF] = useState({ code: '', name: '', kind: 'Desk', floor: '1. kat', zone: '', capacity: '1', features: '' })
   const create = useAction(() => engagementApi.createDesk({ code: f.code, name: f.name, kind: f.kind as Desk['kind'], floor: f.floor, zone: f.zone || null, capacity: Number(f.capacity) || 1, features: f.features.split(',').map((s) => s.trim()).filter(Boolean) }), {
-    success: 'Eklendi', invalidate: [['desks']], onDone: () => setF((x) => ({ ...x, code: '', name: '' })),
+    success: tx('Eklendi'), invalidate: [['desks']], onDone: () => setF((x) => ({ ...x, code: '', name: '' })),
   })
-  const del = useAction((id: string) => engagementApi.deleteDesk(id), { success: 'Kaldırıldı', invalidate: [['desks']] })
-  const sample = useAction(() => engagementApi.sampleDesks(), { success: 'Örnek plan oluşturuldu', invalidate: [['desks']] })
+  const del = useAction((id: string) => engagementApi.deleteDesk(id), { success: tx('Kaldırıldı'), invalidate: [['desks']] })
+  const sample = useAction(() => engagementApi.sampleDesks(), { success: tx('Örnek plan oluşturuldu'), invalidate: [['desks']] })
   return (
     <div className="grid gap-5 lg:grid-cols-[360px_1fr]">
       <Panel>
-        <PanelHead title="Yeni masa / oda" />
+        <PanelHead title={tx('Yeni masa / oda')} />
         <PanelBody className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
-            <TextField label="Kod" value={f.code} onChange={(e) => setF({ ...f, code: e.target.value })} />
-            <SelectField label="Tür" value={f.kind} onChange={(v) => setF({ ...f, kind: v })} options={[{ value: 'Desk', label: 'Masa' }, { value: 'Room', label: 'Toplantı odası' }]} />
+            <TextField label={tx('Kod')} value={f.code} onChange={(e) => setF({ ...f, code: e.target.value })} />
+            <SelectField label={tx('Tür')} value={f.kind} onChange={(v) => setF({ ...f, kind: v })} options={[{ value: 'Desk', label: tx('Masa') }, { value: 'Room', label: tx('Toplantı odası') }]} />
           </div>
-          <TextField label="Ad" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
+          <TextField label={tx('Ad')} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
           <div className="grid grid-cols-2 gap-3">
-            <TextField label="Kat" value={f.floor} onChange={(e) => setF({ ...f, floor: e.target.value })} />
-            <TextField label="Kapasite" type="number" min={1} value={f.capacity} onChange={(e) => setF({ ...f, capacity: e.target.value })} />
+            <TextField label={tx('Kat')} value={f.floor} onChange={(e) => setF({ ...f, floor: e.target.value })} />
+            <TextField label={tx('Kapasite')} type="number" min={1} value={f.capacity} onChange={(e) => setF({ ...f, capacity: e.target.value })} />
           </div>
-          <TextField label="Bölge" value={f.zone} onChange={(e) => setF({ ...f, zone: e.target.value })} />
-          <TextField label="Özellikler (virgülle)" value={f.features} onChange={(e) => setF({ ...f, features: e.target.value })} />
-          <Button onClick={() => create.mutate(undefined)} disabled={!f.code || !f.name}><Plus className="size-4" /> Ekle</Button>
+          <TextField label={tx('Bölge')} value={f.zone} onChange={(e) => setF({ ...f, zone: e.target.value })} />
+          <TextField label={tx('Özellikler (virgülle)')} value={f.features} onChange={(e) => setF({ ...f, features: e.target.value })} />
+          <Button onClick={() => create.mutate(undefined)} disabled={!f.code || !f.name}><Plus className="size-4" />{' '}{tx('Ekle')}</Button>
         </PanelBody>
       </Panel>
       <Panel>
-        <PanelHead title="Ofis envanteri" action={(desks.data?.length ?? 0) === 0 && <Button size="sm" variant="outline" onClick={() => sample.mutate(undefined)}>Örnek plan</Button>} />
+        <PanelHead title={tx('Ofis envanteri')} action={(desks.data?.length ?? 0) === 0 && <Button size="sm" variant="outline" onClick={() => sample.mutate(undefined)}>{tx('Örnek plan')}</Button>} />
         <PanelBody className="p-0">
           <ul className="divide-y divide-border">
             {desks.data?.map((d) => (
@@ -289,7 +290,7 @@ function OfficePlan() {
                 <span className="w-24 font-mono text-[12px]">{d.code}</span>
                 <span className="flex-1">{d.name} <span className="text-muted-foreground">· {d.floor} {d.zone ? `· ${d.zone}` : ''}</span></span>
                 <span className="text-muted-foreground">{d.features.join(', ')}</span>
-                <Button size="icon" variant="ghost" aria-label="Kaldır" onClick={() => del.mutate(d.id)}><Trash2 className="size-4" /></Button>
+                <Button size="icon" variant="ghost" aria-label={tx('Kaldır')} onClick={() => del.mutate(d.id)}><Trash2 className="size-4" /></Button>
               </li>
             ))}
           </ul>
@@ -305,9 +306,9 @@ export function WorkplacePage() {
   const [tab, setTab] = useTabParam<'kim-nerede' | 'rezervasyon' | 'plan'>('sekme', 'kim-nerede')
   return (
     <PlanGate feature="workplace">
-      <PageHeader title="Ofis ve masa" description="Hibrit çalışmada kimin nerede olduğunu görün, masa ve toplantı odası ayırın." />
+      <PageHeader title={tx('Ofis ve masa')} description={tx('Hibrit çalışmada kimin nerede olduğunu görün, masa ve toplantı odası ayırın.')} />
       <div className="mb-5">
-        <Tabs label="Ofis" value={tab} onChange={setTab} tabs={[{ key: 'kim-nerede', label: 'Kim nerede' }, { key: 'rezervasyon', label: 'Masa & oda' }, ...(hr ? [{ key: 'plan' as const, label: 'Ofis planı' }] : [])]} />
+        <Tabs label={tx('Ofis')} value={tab} onChange={setTab} tabs={[{ key: 'kim-nerede', label: tx('Kim nerede') }, { key: 'rezervasyon', label: tx('Masa & oda') }, ...(hr ? [{ key: 'plan' as const, label: tx('Ofis planı') }] : [])]} />
       </div>
       {tab === 'kim-nerede' && <PresenceBoard />}
       {tab === 'rezervasyon' && <BookingBoard />}

@@ -33,11 +33,12 @@ import { Switch, errorText } from '../components/controls'
 import { PersonAvatar, PersonPicker } from '../components/people'
 import { usePeople } from '../hooks'
 import { FeedbackCard, REASON_ICON, SENTIMENT_COLOR } from './FeedbackCard'
+import { tx } from '@/lib/i18n'
 
 const SENTIMENT_HINT: Record<FeedbackSentiment, string> = {
-  Positive: 'Takdir, teşekkür, iyi giden bir şey',
-  Neutral: 'Bilgi, gözlem, yönlendirme',
-  Constructive: 'Geliştirilecek bir alan — gerekçe zorunlu',
+  Positive: tx('Takdir, teşekkür, iyi giden bir şey'),
+  Neutral: tx('Bilgi, gözlem, yönlendirme'),
+  Constructive: tx('Geliştirilecek bir alan — gerekçe zorunlu'),
 }
 
 export function FeedbackComposer({
@@ -72,8 +73,8 @@ export function FeedbackComposer({
   const needsDetail = sentiment === 'Constructive'
   const errs = {
     to: !to ? 'Geri bildirimin kime yazıldığını seçin.' : undefined,
-    detail: needsDetail && !reasonDetail.trim() ? 'Yapıcı eleştiride gerekçe zorunlu: somut bir olay ya da gözlem yazın.' : undefined,
-    body: body.trim().length < 10 ? 'En az 10 karakter yazın.' : undefined,
+    detail: needsDetail && !reasonDetail.trim() ? tx('Yapıcı eleştiride gerekçe zorunlu: somut bir olay ya da gözlem yazın.') : undefined,
+    body: body.trim().length < 10 ? tx('En az 10 karakter yazın.') : undefined,
   }
   const invalid = Object.values(errs).some(Boolean)
   const metric = metrics.data?.find((m) => m.id === metricId)
@@ -106,7 +107,7 @@ export function FeedbackComposer({
       },
       {
         onSuccess: () => {
-          toast.ok(`Geri bildiriminiz ${people.nameOf(to)} kişisine gönderildi.`)
+          toast.ok(tx('Geri bildiriminiz {0} kişisine gönderildi.', [people.nameOf(to)]))
           reset()
           onClose()
         },
@@ -135,8 +136,8 @@ export function FeedbackComposer({
     <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
       <SheetContent className="w-full gap-0 overflow-y-auto sm:max-w-4xl">
         <SheetHeader className="border-b border-border p-5">
-          <SheetTitle className="text-[18px]">Geri bildirim yaz</SheetTitle>
-          <SheetDescription className="text-[13px]">Somut, zamanında ve davranışa odaklı geri bildirim en çok işe yarayanıdır.</SheetDescription>
+          <SheetTitle className="text-[18px]">{tx('Geri bildirim yaz')}</SheetTitle>
+          <SheetDescription className="text-[13px]">{tx('Somut, zamanında ve davranışa odaklı geri bildirim en çok işe yarayanıdır.')}</SheetDescription>
         </SheetHeader>
 
         <div className="grid gap-6 p-5 lg:grid-cols-[minmax(0,1fr)_320px]">
@@ -144,8 +145,8 @@ export function FeedbackComposer({
             <div className="flex items-center gap-3 rounded-xl border border-primary/25 bg-primary/5 px-3.5 py-3">
               <PersonAvatar id={me} name={people.nameOf(me)} />
               <p className="text-[13px] leading-relaxed">
-                <span className="font-semibold">{people.nameOf(me)}</span> olarak yazıyorsunuz.{' '}
-                <span className="text-foreground/80">Geri bildirim anonim değildir; alıcı kimin yazdığını görür.</span>
+                <span className="font-semibold">{people.nameOf(me)}</span>{' '}{tx('olarak yazıyorsunuz.', [])}{' '}
+                <span className="text-foreground/80">{tx('Geri bildirim anonim değildir; alıcı kimin yazdığını görür.')}</span>
               </p>
             </div>
 
@@ -161,14 +162,14 @@ export function FeedbackComposer({
             {/* Kime */}
             <div>
               <p className="mb-2 text-[13px] font-medium">
-                Kime <span className="font-normal text-muted-foreground">zorunlu</span>
+                {tx('Kime')}{' '}<span className="font-normal text-muted-foreground">{tx('zorunlu')}</span>
               </p>
               {to && !picking ? (
                 <div className="flex items-center gap-3 rounded-lg border border-border p-2.5">
                   <PersonAvatar id={to} name={people.nameOf(to)} />
                   <span className="flex-1 text-[13px] font-medium">{people.nameOf(to)}</span>
                   <Button size="sm" variant="ghost" onClick={() => setPicking(true)}>
-                    Değiştir
+                    {tx('Değiştir')}
                   </Button>
                 </div>
               ) : (
@@ -189,7 +190,7 @@ export function FeedbackComposer({
 
             {/* Neden */}
             <fieldset>
-              <legend className="mb-2 text-[13px] font-medium">Neden</legend>
+              <legend className="mb-2 text-[13px] font-medium">{tx('Neden')}</legend>
               <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
                 {REASONS.map((r) => {
                   const Icon = REASON_ICON[r]
@@ -214,7 +215,7 @@ export function FeedbackComposer({
 
             {/* Ton */}
             <fieldset>
-              <legend className="mb-2 text-[13px] font-medium">Ton</legend>
+              <legend className="mb-2 text-[13px] font-medium">{tx('Ton')}</legend>
               <div className="grid gap-2 sm:grid-cols-3">
                 {SENTIMENTS.map((s) => {
                   const on = sentiment === s
@@ -249,7 +250,7 @@ export function FeedbackComposer({
             {/* Gerekçe */}
             <div>
               <label htmlFor="fb-detail" className="mb-1.5 flex items-center gap-2 text-[13px] font-medium">
-                Gerekçe
+                {tx('Gerekçe')}
                 <AnimatePresence mode="wait" initial={false}>
                   <motion.span
                     key={needsDetail ? 'req' : 'opt'}
@@ -258,7 +259,7 @@ export function FeedbackComposer({
                     exit={{ opacity: 0, y: -4 }}
                     className={cn('rounded px-1.5 py-0.5 text-[11px] font-medium', needsDetail ? 'bg-[hsl(var(--warning))]/15 text-[hsl(var(--warning))]' : 'font-normal text-muted-foreground')}
                   >
-                    {needsDetail ? 'zorunlu — yapıcı eleştiri' : 'opsiyonel'}
+                    {needsDetail ? tx('zorunlu — yapıcı eleştiri') : 'opsiyonel'}
                   </motion.span>
                 </AnimatePresence>
               </label>
@@ -266,7 +267,7 @@ export function FeedbackComposer({
                 id="fb-detail"
                 value={reasonDetail}
                 onChange={(e) => setReasonDetail(e.target.value)}
-                placeholder="Somut olay ya da gözlem: ne oldu, ne zaman? (ör. Sprint 34 ve 35’te tahminler %40 saptı.)"
+                placeholder={tx('Somut olay ya da gözlem: ne oldu, ne zaman? (ör. Sprint 34 ve 35’te tahminler %40 saptı.)')}
                 aria-invalid={touched && Boolean(errs.detail)}
                 className={cn(
                   'min-h-16 w-full rounded-md border bg-background px-3 py-2 text-[13px] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
@@ -281,26 +282,26 @@ export function FeedbackComposer({
             <div>
               <label htmlFor="fb-body" className="mb-1.5 flex items-center justify-between text-[13px] font-medium">
                 <span>
-                  Metin <span className="font-normal text-muted-foreground">zorunlu</span>
+                  {tx('Metin')}{' '}<span className="font-normal text-muted-foreground">{tx('zorunlu')}</span>
                 </span>
-                <span className={cn('tabular text-[11px] font-normal', body.trim().length < 10 ? 'text-muted-foreground' : 'text-[hsl(var(--success))]')}>{body.trim().length} karakter</span>
+                <span className={cn('tabular text-[11px] font-normal', body.trim().length < 10 ? 'text-muted-foreground' : 'text-[hsl(var(--success))]')}>{tx('{0} karakter', [body.trim().length])}</span>
               </label>
               <textarea
                 id="fb-body"
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
-                placeholder="Ne gördünüz, etkisi ne oldu, bundan sonrası için öneriniz ne?"
+                placeholder={tx('Ne gördünüz, etkisi ne oldu, bundan sonrası için öneriniz ne?')}
                 className={cn('min-h-28 w-full rounded-md border border-input bg-background px-3 py-2 text-[13px] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50', touched && errs.body && 'border-destructive')}
               />
               {touched && errs.body && <p className="mt-1 text-[12px] text-destructive">{errs.body}</p>}
             </div>
 
             <SelectField
-              label="İlgili metrik"
+              label={tx('İlgili metrik')}
               value={metricId}
               onChange={setMetricId}
-              options={[{ value: '__none__', label: 'Metrik yok' }, ...(metrics.data ?? []).filter((m) => m.isActive).map((m) => ({ value: m.id, label: m.name }))]}
-              hint="Opsiyonel. Seçerseniz geri bildirim o metriğe bağlanır."
+              options={[{ value: '__none__', label: tx('Metrik yok') }, ...(metrics.data ?? []).filter((m) => m.isActive).map((m) => ({ value: m.id, label: m.name }))]}
+              hint={tx('Opsiyonel. Seçerseniz geri bildirim o metriğe bağlanır.')}
             />
 
             {manager && (
@@ -308,8 +309,8 @@ export function FeedbackComposer({
                 <Switch
                   checked={visible}
                   onChange={setVisible}
-                  label="Çalışan görebilsin"
-                  hint={visible ? 'Alıcı bu geri bildirimi kendi ekranında görür.' : undefined}
+                  label={tx('Çalışan görebilsin')}
+                  hint={visible ? tx('Alıcı bu geri bildirimi kendi ekranında görür.') : undefined}
                 />
                 <AnimatePresence>
                   {!visible && (
@@ -322,7 +323,7 @@ export function FeedbackComposer({
                       className="flex items-start gap-2 overflow-hidden rounded-lg border border-[hsl(var(--warning))]/40 bg-[hsl(var(--warning))]/10 px-3 py-2.5 text-[13px] font-medium"
                     >
                       <EyeOff className="mt-0.5 size-4 shrink-0 text-[hsl(var(--warning))]" aria-hidden />
-                      Bu not çalışana gösterilmez, yalnızca yöneticiler görür.
+                      {tx('Bu not çalışana gösterilmez, yalnızca yöneticiler görür.')}
                     </motion.p>
                   )}
                 </AnimatePresence>
@@ -334,24 +335,23 @@ export function FeedbackComposer({
           <aside className="lg:sticky lg:top-4 lg:self-start">
             <p className="mb-2 flex items-center gap-1.5 text-[12px] font-semibold text-muted-foreground">
               <UserRoundCheck className="size-3.5" aria-hidden />
-              {manager && !visible ? 'Yöneticiler böyle görecek' : 'Alıcı böyle görecek'}
+              {manager && !visible ? tx('Yöneticiler böyle görecek') : tx('Alıcı böyle görecek')}
             </p>
             <div className="relative">
               <FeedbackCard feedback={previewFeedback} perspective={manager && !visible ? 'manager' : 'received'} nameOf={people.nameOf} preview />
               {manager && !visible && (
                 <p className="mt-2 flex items-center gap-1.5 text-[11px] text-muted-foreground">
                   <X className="size-3" aria-hidden />
-                  {to ? people.nameOf(to) : 'Çalışan'} bu kartı hiç görmez.
-                </p>
+                  {tx('{0} bu kartı hiç görmez.', [to ? people.nameOf(to) : tx('Çalışan')])}</p>
               )}
             </div>
             <div className="mt-5 flex gap-2">
               <Button variant="outline" onClick={onClose} disabled={create.isPending} className="flex-1">
-                Vazgeç
+                {tx('Vazgeç')}
               </Button>
               <Button onClick={submit} disabled={create.isPending || (touched && invalid)} className="flex-1">
                 <Send aria-hidden />
-                {create.isPending ? 'Gönderiliyor…' : 'Gönder'}
+                {create.isPending ? tx('Gönderiliyor…') : tx('Gönder')}
               </Button>
             </div>
           </aside>

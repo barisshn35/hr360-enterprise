@@ -1,4 +1,5 @@
 import { apiFetch, apiUploadFile, qs } from './client'
+import { tx } from '@/lib/i18n'
 
 /* ================================ Tenant Service ================================
  * Çok kiracılılığın backend karşılığı. Diğer 14 modülden farklı olarak
@@ -11,16 +12,16 @@ export type TenantStatus = 'Pending' | 'Active' | 'Suspended' | 'Cancelled'
 export type TenantPlan = 'Trial' | 'Standard' | 'Enterprise'
 
 export const tenantStatusLabels: Record<TenantStatus, string> = {
-  Pending: 'Hazırlanıyor',
-  Active: 'Aktif',
-  Suspended: 'Askıda',
-  Cancelled: 'İptal edildi',
+  Pending: tx('Hazırlanıyor'),
+  Active: tx('Aktif'),
+  Suspended: tx('Askıda'),
+  Cancelled: tx('İptal edildi'),
 }
 
 export const tenantPlanLabels: Record<TenantPlan, string> = {
-  Trial: 'Deneme',
-  Standard: 'Standart',
-  Enterprise: 'Kurumsal',
+  Trial: tx('Deneme'),
+  Standard: tx('Standart'),
+  Enterprise: tx('Kurumsal'),
 }
 
 /** Plan başına çalışan kotası — kayıt sihirbazı ve plan değişikliği bunu kullanır. */

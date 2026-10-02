@@ -16,6 +16,7 @@ import { useExpenseClaim, useMyEmployeeId } from '@/api/queries'
 import { expenseCategoryLabels } from '@/api/types'
 import { formatDate, formatDateTime, formatMoney, formatNumber } from '@/lib/format'
 import { useEmployeeName } from '@/lib/useEmployeeName'
+import { tx } from '@/lib/i18n'
 
 export function ExpenseClaimPage() {
   const { claimId } = useParams<{ claimId: string }>()
@@ -33,21 +34,21 @@ export function ExpenseClaimPage() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['expense'] })
       void queryClient.invalidateQueries({ queryKey: ['workflows'] })
-      toast.ok('Talep onaya gönderildi')
+      toast.ok(tx('Talep onaya gönderildi'))
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : 'Talep gönderilemedi.'),
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Talep gönderilemedi.')),
   })
 
   const markPaid = useMutation({
     mutationFn: () => expenseApi.markPaid(claimId!),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['expense'] })
-      toast.ok('Talep ödendi olarak işaretlendi')
+      toast.ok(tx('Talep ödendi olarak işaretlendi'))
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : 'Talep işaretlenemedi.'),
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Talep işaretlenemedi.')),
   })
 
-  if (claim.isPending) return <CenteredSpinner label="Masraf talebi yükleniyor" />
+  if (claim.isPending) return <CenteredSpinner label={tx('Masraf talebi yükleniyor')} />
 
   if (claim.isError) {
     return (
@@ -63,7 +64,7 @@ export function ExpenseClaimPage() {
   if (!claim.data) {
     return (
       <Panel>
-        <EmptyState title="Talep bulunamadı" detail="Bu masraf talebi silinmiş olabilir." />
+        <EmptyState title={tx('Talep bulunamadı')} detail={tx('Bu masraf talebi silinmiş olabilir.')} />
       </Panel>
     )
   }
@@ -76,13 +77,13 @@ export function ExpenseClaimPage() {
       <Button variant="ghost" size="sm" className="-ml-2 cursor-pointer" asChild>
         <Link to="/panel/masraf">
           <ArrowLeft className="size-4" />
-          Masraf
+          {tx('Masraf')}
         </Link>
       </Button>
 
       <PageHeader
         title={c.title}
-        description={`${nameOf(c.employeeId)}, ${formatNumber(items.length)} kalem`}
+        description={tx('{0}, {1} kalem', [nameOf(c.employeeId), formatNumber(items.length)])}
         actions={
           <>
             <ClaimStatusBadge status={c.status} />
@@ -94,7 +95,7 @@ export function ExpenseClaimPage() {
                 onClick={() => submit.mutate()}
               >
                 {submit.isPending && <LoaderCircle className="size-4 animate-spin" />}
-                Onaya gönder
+                {tx('Onaya gönder')}
               </Button>
             )}
             {c.status === 'Approved' && can('expense:markPaid') && (
@@ -104,7 +105,7 @@ export function ExpenseClaimPage() {
                 onClick={() => markPaid.mutate()}
               >
                 {markPaid.isPending && <LoaderCircle className="size-4 animate-spin" />}
-                Ödendi işaretle
+                {tx('Ödendi işaretle')}
               </Button>
             )}
           </>
@@ -114,7 +115,7 @@ export function ExpenseClaimPage() {
       <Panel>
         <PanelBody className="flex flex-wrap items-end justify-between gap-6">
           <div>
-            <span className="block text-[12px] text-muted-foreground">Toplam</span>
+            <span className="block text-[12px] text-muted-foreground">{tx('Toplam')}</span>
             <motion.span
               className="tabular mt-1 block text-[34px] leading-none font-bold"
               initial={reduced ? false : { opacity: 0, y: 6 }}
@@ -128,9 +129,9 @@ export function ExpenseClaimPage() {
       </Panel>
 
       <Panel>
-        <PanelHead title="Kalemler" note={`${formatNumber(items.length)} kalem`} />
+        <PanelHead title={tx('Kalemler')} note={tx('{0} kalem', [formatNumber(items.length)])} />
         {items.length === 0 ? (
-          <EmptyState title="Kalem yok" detail="Bu talebe kalem eklenmemiş." />
+          <EmptyState title={tx('Kalem yok')} detail={tx('Bu talebe kalem eklenmemiş.')} />
         ) : (
           <ul className="divide-y divide-border">
             {items.map((item, i) => (
@@ -162,23 +163,22 @@ export function ExpenseClaimPage() {
       </Panel>
 
       <Panel>
-        <PanelHead title="Talep bilgisi" />
+        <PanelHead title={tx('Talep bilgisi')} />
         <PanelBody className="space-y-4">
           <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-3">
-            <DataField label="Talep sahibi">{nameOf(c.employeeId)}</DataField>
-            <DataField label="Oluşturulma">{formatDateTime(c.createdAt)}</DataField>
-            <DataField label="Onay akışı">
+            <DataField label={tx('Talep sahibi')}>{nameOf(c.employeeId)}</DataField>
+            <DataField label={tx('Oluşturulma')}>{formatDateTime(c.createdAt)}</DataField>
+            <DataField label={tx('Onay akışı')}>
               {c.workflowRequestId ? (
-                <StatusBadge tone="info">Onay kutusuna düştü</StatusBadge>
+                <StatusBadge tone="info">{tx('Onay kutusuna düştü')}</StatusBadge>
               ) : (
-                <span className="text-muted-foreground">Henüz gönderilmedi</span>
+                <span className="text-muted-foreground">{tx('Henüz gönderilmedi')}</span>
               )}
             </DataField>
           </dl>
           {c.status === 'Submitted' && (
             <InfoNote>
-              Talep onay kutusunda bekliyor. Onay verildiğinde durum arka planda kendiliğinden
-              güncellenir; burada ayrıca bir işlem yapmanız gerekmez.
+              {tx('Talep onay kutusunda bekliyor. Onay verildiğinde durum arka planda kendiliğinden güncellenir; burada ayrıca bir işlem yapmanız gerekmez.')}
             </InfoNote>
           )}
         </PanelBody>

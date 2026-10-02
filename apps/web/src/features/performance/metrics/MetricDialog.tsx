@@ -42,13 +42,14 @@ import { Switch, errorText } from '../components/controls'
 import { ScaleInput, ScaleBadge } from '../components/ScaleInput'
 import { ShareBar } from '../components/WeightShare'
 import { basisFor, type Scope } from './share'
+import { tx, appLocale } from '@/lib/i18n'
 
 export type MetricDialogMode = { kind: 'create'; preset?: Partial<MetricInput> } | { kind: 'edit'; metric: Metric }
 
 /** Backend'in `code` türetmesinin önizlemesi — gönderilmez, yalnızca gösterilir. */
 export function codeFromName(name: string): string {
   return name
-    .toLocaleLowerCase('tr-TR')
+    .toLocaleLowerCase(appLocale)
     .replace(/ç/g, 'c').replace(/ğ/g, 'g').replace(/ı/g, 'i')
     .replace(/ö/g, 'o').replace(/ş/g, 's').replace(/ü/g, 'u')
     .replace(/[^a-z0-9]+/g, '-')
@@ -130,10 +131,10 @@ export function MetricDialog({
 
   const weight = parseNum(draft.weight)
   const errors = {
-    name: !draft.name.trim() ? 'Metriğe bir ad verin.' : draft.name.trim().length > 80 ? 'En fazla 80 karakter.' : undefined,
+    name: !draft.name.trim() ? tx('Metriğe bir ad verin.') : draft.name.trim().length > 80 ? tx('En fazla 80 karakter.') : undefined,
     weight:
-      weight === null ? 'Ağırlık girin (ör. 1 ya da 2,5).' : weight <= 0 ? 'Ağırlık sıfırdan büyük olmalı.' : weight > 100 ? 'En fazla 100.' : undefined,
-    sortOrder: draft.sortOrder.trim() && parseNum(draft.sortOrder) === null ? 'Sayı girin.' : undefined,
+      weight === null ? tx('Ağırlık girin (ör. 1 ya da 2,5).') : weight <= 0 ? tx('Ağırlık sıfırdan büyük olmalı.') : weight > 100 ? tx('En fazla 100.') : undefined,
+    sortOrder: draft.sortOrder.trim() && parseNum(draft.sortOrder) === null ? tx('Sayı girin.') : undefined,
   }
   const invalid = Object.values(errors).some(Boolean)
 
@@ -147,7 +148,7 @@ export function MetricDialog({
     return {
       items: [
         ...others.map((m) => ({ id: m.id, label: m.name, weight: m.weight })),
-        { id: '__this__', label: draft.name.trim() || 'Bu metrik', weight: w, color: categoryColor[draft.category] },
+        { id: '__this__', label: draft.name.trim() || tx('Bu metrik'), weight: w, color: categoryColor[draft.category] },
       ],
       share: shareOf(w, total),
       count: others.length,
@@ -183,7 +184,7 @@ export function MetricDialog({
         { id: editing.id, input },
         {
           onSuccess: () => {
-            toast.ok(`«${input.name}» güncellendi.`)
+            toast.ok(tx('«{0}» güncellendi.', [input.name]))
             onClose()
           },
           onError,
@@ -192,7 +193,7 @@ export function MetricDialog({
     } else {
       create.mutate(input, {
         onSuccess: () => {
-          toast.ok(`«${input.name}» eklendi.`)
+          toast.ok(tx('«{0}» eklendi.', [input.name]))
           onClose()
         },
         onError,
@@ -207,15 +208,15 @@ export function MetricDialog({
       open
       onClose={onClose}
       size="xl"
-      title={editing ? 'Metriği düzenle' : 'Yeni metrik'}
-      note="Çalışanlar dönem boyunca bu metriklerle değerlendirilir. Ağırlık oransaldır; payı kategorideki diğer metriklere göre hesaplanır."
+      title={editing ? tx('Metriği düzenle') : tx('Yeni metrik')}
+      note={tx('Çalışanlar dönem boyunca bu metriklerle değerlendirilir. Ağırlık oransaldır; payı kategorideki diğer metriklere göre hesaplanır.')}
       footer={
         <>
           <Button variant="outline" onClick={onClose} disabled={pending}>
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button onClick={submit} disabled={pending || (touched && invalid)}>
-            {pending ? 'Kaydediliyor…' : editing ? 'Değişiklikleri kaydet' : 'Metriği ekle'}
+            {pending ? tx('Kaydediliyor…') : editing ? tx('Değişiklikleri kaydet') : tx('Metriği ekle')}
           </Button>
         </>
       }
@@ -238,10 +239,9 @@ export function MetricDialog({
                   </p>
                   {serverError.scaleLocked && editing && (
                     <div className="mt-3 rounded-md border border-border bg-background p-3">
-                      <p className="text-[13px] font-medium">Önerilen yol: arşivleyip yenisini oluşturun</p>
-                      <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
-                        «{editing.name}» arşivlenir; geçmiş değerlendirmelerdeki puanları olduğu gibi kalır. Aynı ad ve ayarlarla,{' '}
-                        <strong className="font-medium text-foreground">{scaleLabels[draft.scale]}</strong> ölçekli yeni bir metrik oluşturulur.
+                      <p className="text-[13px] font-medium">{tx('Önerilen yol: arşivleyip yenisini oluşturun')}</p>
+                      <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">{tx('«{0}» arşivlenir; geçmiş değerlendirmelerdeki puanları olduğu gibi kalır. Aynı ad ve ayarlarla,', [editing.name])}{' '}
+                        <strong className="font-medium text-foreground">{scaleLabels[draft.scale]}</strong>{' '}{tx('ölçekli yeni bir metrik oluşturulur.')}
                       </p>
                       <Button
                         size="sm"
@@ -250,7 +250,7 @@ export function MetricDialog({
                         onClick={() => onArchiveAndRecreate(editing, toInput())}
                       >
                         <Archive aria-hidden />
-                        Arşivle ve yeni ölçekle oluştur
+                        {tx('Arşivle ve yeni ölçekle oluştur')}
                       </Button>
                     </div>
                   )}
@@ -261,34 +261,34 @@ export function MetricDialog({
 
           <div>
             <TextField
-              label="Ad"
+              label={tx('Ad')}
               value={draft.name}
               onChange={(e) => set('name', e.target.value)}
               error={touched ? errors.name : undefined}
-              placeholder="ör. Kod kalitesi"
+              placeholder={tx('ör. Kod kalitesi')}
               maxLength={80}
               autoFocus={!editing}
               required
             />
             <p className="mt-1.5 flex items-center gap-1.5 text-[12px] text-muted-foreground">
               {editing && <Lock className="size-3" aria-hidden />}
-              Kod:
+              {tx('Kod:')}
               <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground">{code || '—'}</code>
-              {editing ? 'değiştirilemez' : 'addan otomatik türetilir, sonradan değişmez'}
+              {editing ? tx('değiştirilemez') : tx('addan otomatik türetilir, sonradan değişmez')}
             </p>
           </div>
 
           <TextAreaField
-            label="Açıklama"
+            label={tx('Açıklama')}
             value={draft.description}
             onChange={(e) => set('description', e.target.value)}
-            placeholder="Değerlendiren kişi neye bakmalı? Kısa ve somut yazın."
-            hint="Değerlendirme formunda metriğin altında görünür."
+            placeholder={tx('Değerlendiren kişi neye bakmalı? Kısa ve somut yazın.')}
+            hint={tx('Değerlendirme formunda metriğin altında görünür.')}
           />
 
           {/* Kategori */}
           <fieldset>
-            <legend className="mb-2 text-[13px] font-medium">Kategori</legend>
+            <legend className="mb-2 text-[13px] font-medium">{tx('Kategori')}</legend>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {CATEGORIES.map((c) => {
                 const on = draft.category === c
@@ -325,7 +325,7 @@ export function MetricDialog({
 
           {/* Ölçek */}
           <fieldset>
-            <legend className="mb-2 text-[13px] font-medium">Ölçek</legend>
+            <legend className="mb-2 text-[13px] font-medium">{tx('Ölçek')}</legend>
             <div className="grid gap-2 sm:grid-cols-3">
               {SCALES.map((s) => {
                 const on = draft.scale === s
@@ -369,7 +369,7 @@ export function MetricDialog({
                   className="mt-2 flex items-start gap-1.5 overflow-hidden text-[12px] leading-relaxed text-[hsl(var(--warning))]"
                 >
                   <TriangleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-                  Metrik daha önce değerlendirmelerde kullanıldıysa ölçeği değiştirilemez; kaydederken sistem kontrol eder.
+                  {tx('Metrik daha önce değerlendirmelerde kullanıldıysa ölçeği değiştirilemez; kaydederken sistem kontrol eder.')}
                 </motion.p>
               )}
             </AnimatePresence>
@@ -377,20 +377,20 @@ export function MetricDialog({
 
           <div className="grid gap-4 sm:grid-cols-2">
             <TextField
-              label="Ağırlık"
+              label={tx('Ağırlık')}
               inputMode="decimal"
               value={draft.weight}
               onChange={(e) => set('weight', e.target.value)}
               error={touched ? errors.weight : undefined}
-              hint="Oransal: 2, ağırlığı 1 olan metriğin iki katı sayılır."
+              hint={tx('Oransal: 2, ağırlığı 1 olan metriğin iki katı sayılır.')}
               className="tabular"
             />
             <SelectField
-              label="Departman"
+              label={tx('Departman')}
               value={draft.departmentId || '__all__'}
               onChange={(v) => set('departmentId', v === '__all__' ? '' : v)}
-              options={[{ value: '__all__', label: 'Tüm departmanlar' }, ...departments.map((d) => ({ value: d.id, label: d.path ?? d.name }))]}
-              hint="Seçerseniz yalnızca o departmanın çalışanları bu metrikle değerlendirilir."
+              options={[{ value: '__all__', label: tx('Tüm departmanlar') }, ...departments.map((d) => ({ value: d.id, label: d.path ?? d.name }))]}
+              hint={tx('Seçerseniz yalnızca o departmanın çalışanları bu metrikle değerlendirilir.')}
             />
           </div>
 
@@ -398,16 +398,16 @@ export function MetricDialog({
             <Switch
               checked={draft.isRequired}
               onChange={(v) => set('isRequired', v)}
-              label="Zorunlu metrik"
-              hint="Puanlanmadan değerlendirme gönderilemez."
+              label={tx('Zorunlu metrik')}
+              hint={tx('Puanlanmadan değerlendirme gönderilemez.')}
             />
             <TextField
-              label="Sıra"
+              label={tx('Sıra')}
               inputMode="numeric"
               value={draft.sortOrder}
               onChange={(e) => set('sortOrder', e.target.value)}
               error={touched ? errors.sortOrder : undefined}
-              hint="Boş bırakırsanız kategorinin sonuna eklenir."
+              hint={tx('Boş bırakırsanız kategorinin sonuna eklenir.')}
               className="tabular"
             />
           </div>
@@ -416,10 +416,10 @@ export function MetricDialog({
         {/* ---------------------------- canlı önizleme ---------------------------- */}
         <aside className="flex flex-col gap-4 lg:border-l lg:border-border lg:pl-6">
           <div>
-            <p className="text-[12px] font-semibold text-muted-foreground">Değerlendirmede böyle görünür</p>
+            <p className="text-[12px] font-semibold text-muted-foreground">{tx('Değerlendirmede böyle görünür')}</p>
             <div className="mt-2 rounded-lg border border-border bg-muted/30 p-3">
               <p className="text-[13px] font-medium">
-                {draft.name.trim() || 'Metrik adı'}
+                {draft.name.trim() || tx('Metrik adı')}
                 {draft.isRequired && <span className="ml-1 text-destructive" aria-label="zorunlu">*</span>}
               </p>
               {draft.description.trim() && (
@@ -432,12 +432,12 @@ export function MetricDialog({
           </div>
 
           <div>
-            <p className="text-[12px] font-semibold text-muted-foreground">Kategorideki payı</p>
+            <p className="text-[12px] font-semibold text-muted-foreground">{tx('Kategorideki payı')}</p>
             <div className="mt-2 rounded-lg border border-border p-3">
               <p className="text-[13px] leading-snug">
-                Bu ağırlıkla{' '}
-                {shareView.deptName ? <>{shareView.deptName} çalışanlarında </> : null}
-                <span className="font-medium">{categoryLabels[draft.category]}</span> kategorisinin{' '}
+                {tx('Bu ağırlıkla')}{' '}
+                {shareView.deptName ? <>{tx('{0} çalışanlarında', [shareView.deptName])}{' '}</> : null}
+                <span className="font-medium">{categoryLabels[draft.category]}</span>{' '}{tx('kategorisinin', [])}{' '}
                 <motion.span
                   key={Math.round(shareView.share)}
                   initial={{ opacity: 0.3, y: 3 }}
@@ -446,14 +446,12 @@ export function MetricDialog({
                   style={{ color: categoryColor[draft.category] }}
                 >
                   {formatShareOf(shareView.share)}
-                </motion.span>{' '}
-                olur.
-              </p>
+                </motion.span>{' '}{tx('olur.', [])}</p>
               <ShareBar className="mt-3" items={shareView.items} color={categoryColor[draft.category]} highlightId="__this__" height={10} />
               <p className="mt-2 text-[11px] text-muted-foreground">
                 {shareView.count === 0
-                  ? 'Kategoride başka metrik yok; tek başına %100 sayılır.'
-                  : `Kategoride ${shareView.count} metrik daha var.`}
+                  ? tx('Kategoride başka metrik yok; tek başına %100 sayılır.')
+                  : tx('Kategoride {0} metrik daha var.', [shareView.count])}
               </p>
             </div>
           </div>

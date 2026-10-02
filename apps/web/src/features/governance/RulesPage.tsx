@@ -15,6 +15,7 @@ import { governanceApi, type Rule, type RuleAction, type RuleCatalog, type RuleC
 import { formatDateTime, formatRelativeToNow } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { PlanGate, useAction } from '@/features/shared/kit'
+import { tx } from '@/lib/i18n'
 
 const ACTION_ICON: Record<string, React.ElementType> = { notify: Bell, slack: MessageSquare, teams: MessageSquare, webhook: Webhook }
 type Draft = Omit<Rule, 'id' | 'fireCount' | 'lastFiredAt' | 'createdAt'>
@@ -25,58 +26,58 @@ function RuleEditor({ rule, catalog, onClose }: { rule?: Rule; catalog: RuleCata
   const fields = catalog.events.find((e) => e.type === d.trigger)?.fields ?? []
   const [sample, setSample] = useState('')
   const samplePayload = useMemo(() => {
-    try { return sample ? JSON.parse(sample) : Object.fromEntries(fields.map((f) => [f, f === 'Days' ? 7 : f.endsWith('Id') ? '00000000-0000-0000-0000-000000000000' : `örnek ${f}`])) } catch { return null }
+    try { return sample ? JSON.parse(sample) : Object.fromEntries(fields.map((f) => [f, f === 'Days' ? 7 : f.endsWith('Id') ? '00000000-0000-0000-0000-000000000000' : tx('örnek {0}', [f])])) } catch { return null }
   }, [sample, fields])
   const [test, setTest] = useState<{ matched: boolean; reason: string; actions: Array<{ type: string; message: string }> | null } | null>(null)
-  const save = useAction(() => (rule ? governanceApi.updateRule(rule.id, d) : governanceApi.createRule(d)), { success: 'Kural kaydedildi', invalidate: [['rules']], onDone: onClose })
+  const save = useAction(() => (rule ? governanceApi.updateRule(rule.id, d) : governanceApi.createRule(d)), { success: tx('Kural kaydedildi'), invalidate: [['rules']], onDone: onClose })
   const runTest = useAction(() => governanceApi.testRule({ conditions: d.conditions, actions: d.actions, payload: samplePayload ?? {} }), { onDone: setTest })
   const updC = (i: number, p: Partial<RuleCondition>) => setD({ ...d, conditions: d.conditions.map((c, j) => (j === i ? { ...c, ...p } : c)) })
   const updA = (i: number, p: Partial<RuleAction>) => setD({ ...d, actions: d.actions.map((a, j) => (j === i ? { ...a, ...p } : a)) })
   return (
-    <Modal open onClose={onClose} size="xl" title={rule ? 'Kuralı düzenle' : 'Yeni kural'} note="Olay → koşullar (hepsi sağlanmalı) → eylemler. Mesajlarda {{Alan}} ve {{ozet}} kullanılabilir."
-      footer={<><Button variant="outline" onClick={onClose}>Vazgeç</Button><Button variant="outline" onClick={() => runTest.mutate(undefined)}><FlaskConical className="size-4" /> Dene</Button><Button disabled={!d.name.trim() || save.isPending} onClick={() => save.mutate(undefined)}>Kaydet</Button></>}>
+    <Modal open onClose={onClose} size="xl" title={rule ? tx('Kuralı düzenle') : tx('Yeni kural')} note={tx('Olay → koşullar (hepsi sağlanmalı) → eylemler. Mesajlarda {{Alan}} ve {{ozet}} kullanılabilir.')}
+      footer={<><Button variant="outline" onClick={onClose}>{tx('Vazgeç')}</Button><Button variant="outline" onClick={() => runTest.mutate(undefined)}><FlaskConical className="size-4" />{' '}{tx('Dene')}</Button><Button disabled={!d.name.trim() || save.isPending} onClick={() => save.mutate(undefined)}>{tx('Kaydet')}</Button></>}>
       <div className="grid gap-6 lg:grid-cols-[1.3fr_1fr]">
         <div className="space-y-5">
           <div className="grid gap-3 sm:grid-cols-2">
-            <TextField label="Kural adı" value={d.name} onChange={(e) => setD({ ...d, name: e.target.value })} />
-            <SelectField label="Olduğunda (tetikleyici)" value={d.trigger} onChange={(v) => setD({ ...d, trigger: v, conditions: [] })} options={catalog.events.map((e) => ({ value: e.type, label: e.label }))} />
+            <TextField label={tx('Kural adı')} value={d.name} onChange={(e) => setD({ ...d, name: e.target.value })} />
+            <SelectField label={tx('Olduğunda (tetikleyici)')} value={d.trigger} onChange={(v) => setD({ ...d, trigger: v, conditions: [] })} options={catalog.events.map((e) => ({ value: e.type, label: e.label }))} />
           </div>
           <div>
-            <div className="mb-2 flex items-center justify-between"><p className="text-[13.5px] font-medium">Koşullar</p><Button size="xs" variant="outline" onClick={() => setD({ ...d, conditions: [...d.conditions, { field: fields[0] ?? '', op: 'eq', value: '' }] })}><Plus className="size-3" /> Koşul</Button></div>
-            {d.conditions.length === 0 && <p className="text-[12.5px] text-muted-foreground">Koşul yok — her olayda çalışır.</p>}
+            <div className="mb-2 flex items-center justify-between"><p className="text-[13.5px] font-medium">{tx('Koşullar')}</p><Button size="xs" variant="outline" onClick={() => setD({ ...d, conditions: [...d.conditions, { field: fields[0] ?? '', op: 'eq', value: '' }] })}><Plus className="size-3" />{' '}{tx('Koşul')}</Button></div>
+            {d.conditions.length === 0 && <p className="text-[12.5px] text-muted-foreground">{tx('Koşul yok — her olayda çalışır.')}</p>}
             {d.conditions.map((c, i) => (
               <div key={i} className="mb-2 grid grid-cols-[1fr_130px_1fr_auto] items-end gap-2">
-                {fields.length ? <SelectField label="Alan" value={c.field} onChange={(v) => updC(i, { field: v })} options={fields.map((f) => ({ value: f, label: f }))} /> : <TextField label="Alan" value={c.field} onChange={(e) => updC(i, { field: e.target.value })} />}
-                <SelectField label="İşlem" value={c.op} onChange={(v) => updC(i, { op: v })} options={catalog.operators.map((o) => ({ value: o.op, label: o.label }))} />
-                <TextField label="Değer" value={c.value} onChange={(e) => updC(i, { value: e.target.value })} />
-                <Button size="icon" variant="ghost" aria-label="Sil" onClick={() => setD({ ...d, conditions: d.conditions.filter((_, j) => j !== i) })}><Trash2 className="size-4" /></Button>
+                {fields.length ? <SelectField label={tx('Alan')} value={c.field} onChange={(v) => updC(i, { field: v })} options={fields.map((f) => ({ value: f, label: f }))} /> : <TextField label={tx('Alan')} value={c.field} onChange={(e) => updC(i, { field: e.target.value })} />}
+                <SelectField label={tx('İşlem')} value={c.op} onChange={(v) => updC(i, { op: v })} options={catalog.operators.map((o) => ({ value: o.op, label: o.label }))} />
+                <TextField label={tx('Değer')} value={c.value} onChange={(e) => updC(i, { value: e.target.value })} />
+                <Button size="icon" variant="ghost" aria-label={tx('Sil')} onClick={() => setD({ ...d, conditions: d.conditions.filter((_, j) => j !== i) })}><Trash2 className="size-4" /></Button>
               </div>
             ))}
           </div>
           <div>
-            <div className="mb-2 flex items-center justify-between"><p className="text-[13.5px] font-medium">Eylemler</p><Button size="xs" variant="outline" onClick={() => setD({ ...d, actions: [...d.actions, { type: 'slack', message: '{{ozet}}' }] })}><Plus className="size-3" /> Eylem</Button></div>
+            <div className="mb-2 flex items-center justify-between"><p className="text-[13.5px] font-medium">{tx('Eylemler')}</p><Button size="xs" variant="outline" onClick={() => setD({ ...d, actions: [...d.actions, { type: 'slack', message: '{{ozet}}' }] })}><Plus className="size-3" />{' '}{tx('Eylem')}</Button></div>
             {d.actions.map((a, i) => (
               <div key={i} className="mb-3 space-y-2 rounded-xl border border-border p-3">
                 <div className="grid grid-cols-[150px_1fr_auto] items-end gap-2">
-                  <SelectField label="Tür" value={a.type} onChange={(v) => updA(i, { type: v as RuleAction['type'], target: v === 'notify' ? 'employee' : '' })} options={catalog.actions.map((x) => ({ value: x.type, label: x.label }))} />
+                  <SelectField label={tx('Tür')} value={a.type} onChange={(v) => updA(i, { type: v as RuleAction['type'], target: v === 'notify' ? 'employee' : '' })} options={catalog.actions.map((x) => ({ value: x.type, label: x.label }))} />
                   {a.type === 'notify' ? (
-                    <SelectField label="Alıcı" value={a.target ?? 'employee'} onChange={(v) => updA(i, { target: v })} options={[{ value: 'employee', label: 'Olaydaki çalışan' }, { value: 'requester', label: 'Talep sahibi' }, { value: 'approver', label: 'Onaylayan' }]} />
-                  ) : <TextField label={a.type === 'webhook' ? 'URL' : 'Gelen webhook URL (boş: tanımlı kanallar)'} value={a.target ?? ''} onChange={(e) => updA(i, { target: e.target.value })} />}
-                  <Button size="icon" variant="ghost" aria-label="Sil" onClick={() => setD({ ...d, actions: d.actions.filter((_, j) => j !== i) })} disabled={d.actions.length === 1}><Trash2 className="size-4" /></Button>
+                    <SelectField label={tx('Alıcı')} value={a.target ?? 'employee'} onChange={(v) => updA(i, { target: v })} options={[{ value: 'employee', label: tx('Olaydaki çalışan') }, { value: 'requester', label: tx('Talep sahibi') }, { value: 'approver', label: tx('Onaylayan') }]} />
+                  ) : <TextField label={a.type === 'webhook' ? tx('URL') : tx('Gelen webhook URL (boş: tanımlı kanallar)')} value={a.target ?? ''} onChange={(e) => updA(i, { target: e.target.value })} />}
+                  <Button size="icon" variant="ghost" aria-label={tx('Sil')} onClick={() => setD({ ...d, actions: d.actions.filter((_, j) => j !== i) })} disabled={d.actions.length === 1}><Trash2 className="size-4" /></Button>
                 </div>
-                <TextField label="Mesaj" value={a.message} onChange={(e) => updA(i, { message: e.target.value })} />
+                <TextField label={tx('Mesaj')} value={a.message} onChange={(e) => updA(i, { message: e.target.value })} />
               </div>
             ))}
           </div>
-          <label className="flex items-center gap-2 text-[13px]"><Checkbox checked={d.isEnabled} onCheckedChange={(v) => setD({ ...d, isEnabled: v === true })} /> Etkin</label>
+          <label className="flex items-center gap-2 text-[13px]"><Checkbox checked={d.isEnabled} onCheckedChange={(v) => setD({ ...d, isEnabled: v === true })} />{' '}{tx('Etkin')}</label>
         </div>
         <div className="space-y-3">
-          <p className="text-[13.5px] font-medium">Deneme yükü</p>
-          <TextAreaField label="" aria-label="Örnek olay JSON" rows={9} className="font-mono text-[11.5px]" value={sample || JSON.stringify(samplePayload ?? {}, null, 2)} onChange={(e) => setSample(e.target.value)} />
-          {!samplePayload && <p className="text-[12px] text-destructive">Geçersiz JSON</p>}
+          <p className="text-[13.5px] font-medium">{tx('Deneme yükü')}</p>
+          <TextAreaField label="" aria-label={tx('Örnek olay JSON')} rows={9} className="font-mono text-[11.5px]" value={sample || JSON.stringify(samplePayload ?? {}, null, 2)} onChange={(e) => setSample(e.target.value)} />
+          {!samplePayload && <p className="text-[12px] text-destructive">{tx('Geçersiz JSON')}</p>}
           {test && (
             <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className={cn('rounded-xl border p-3 text-[13px]', test.matched ? 'border-[hsl(var(--success))]/40 bg-[hsl(var(--success))]/10' : 'border-border bg-muted/40')}>
-              <p className="font-medium">{test.matched ? '✓ Kural tetiklenir' : '✗ Tetiklenmez'}</p>
+              <p className="font-medium">{test.matched ? tx('✓ Kural tetiklenir') : '✗ Tetiklenmez'}</p>
               <p className="text-muted-foreground">{test.reason}</p>
               {test.actions?.map((a, i) => <p key={i} className="mt-1">→ <b>{a.type}</b>: {a.message}</p>)}
             </motion.div>
@@ -90,7 +91,7 @@ function RuleEditor({ rule, catalog, onClose }: { rule?: Rule; catalog: RuleCata
 function Flow({ r }: { r: Rule }) {
   const steps = [
     { icon: Zap, text: r.trigger },
-    { icon: Workflow, text: r.conditions.length ? r.conditions.map((c) => `${c.field} ${c.op} ${c.value}`).join(' ve ') : 'koşulsuz' },
+    { icon: Workflow, text: r.conditions.length ? r.conditions.map((c) => `${c.field} ${c.op} ${c.value}`).join(' ve ') : tx('koşulsuz') },
     ...r.actions.map((a) => ({ icon: ACTION_ICON[a.type] ?? Bell, text: a.type })),
   ]
   return (
@@ -111,17 +112,17 @@ export function RulesPage() {
   const rules = useQuery({ queryKey: ['rules'], queryFn: ({ signal }) => governanceApi.rules(signal) })
   const runs = useQuery({ queryKey: ['rules', 'runs'], queryFn: ({ signal }) => governanceApi.ruleRuns(undefined, signal), enabled: tab === 'calismalar', refetchInterval: 15_000 })
   const [edit, setEdit] = useState<Rule | null | undefined>(undefined)
-  const samples = useAction(() => governanceApi.sampleRules(), { success: 'Örnek kurallar eklendi', invalidate: [['rules']] })
+  const samples = useAction(() => governanceApi.sampleRules(), { success: tx('Örnek kurallar eklendi'), invalidate: [['rules']] })
   const toggle = useAction((r: Rule) => governanceApi.updateRule(r.id, { name: r.name, description: r.description, trigger: r.trigger, conditions: r.conditions, actions: r.actions, isEnabled: !r.isEnabled }), { invalidate: [['rules']] })
-  const del = useAction((id: string) => governanceApi.deleteRule(id), { success: 'Silindi', invalidate: [['rules']] })
+  const del = useAction((id: string) => governanceApi.deleteRule(id), { success: tx('Silindi'), invalidate: [['rules']] })
   return (
     <PlanGate feature="rules">
-      <PageHeader title="Kural motoru" description="“5 günden uzun izin onaylanınca İK kanalına yaz”, “ayrılışta webhook tetikle”… Kod yazmadan olay tabanlı otomasyonlar." actions={catalog.data && <Button onClick={() => setEdit(null)}><Plus className="size-4" /> Yeni kural</Button>} />
-      <div className="mb-4"><InfoNote>Kurallar Kafka olay akışında değerlendirilir (governance-service). Her tetiklenme “Çalışmalar” sekmesine sonucuyla yazılır.</InfoNote></div>
-      <div className="mb-5"><Tabs label="Kural motoru" value={tab} onChange={setTab} tabs={[{ key: 'kurallar', label: 'Kurallar', count: rules.data?.length }, { key: 'calismalar', label: 'Çalışmalar' }]} /></div>
+      <PageHeader title={tx('Kural motoru')} description={tx('“5 günden uzun izin onaylanınca İK kanalına yaz”, “ayrılışta webhook tetikle”… Kod yazmadan olay tabanlı otomasyonlar.')} actions={catalog.data && <Button onClick={() => setEdit(null)}><Plus className="size-4" />{' '}{tx('Yeni kural')}</Button>} />
+      <div className="mb-4"><InfoNote>{tx('Kurallar Kafka olay akışında değerlendirilir (governance-service). Her tetiklenme “Çalışmalar” sekmesine sonucuyla yazılır.')}</InfoNote></div>
+      <div className="mb-5"><Tabs label={tx('Kural motoru')} value={tab} onChange={setTab} tabs={[{ key: 'kurallar', label: tx('Kurallar'), count: rules.data?.length }, { key: 'calismalar', label: tx('Çalışmalar') }]} /></div>
       {tab === 'kurallar' ? (
         rules.isPending ? <RowsSkeleton /> : (rules.data ?? []).length === 0 ? (
-          <EmptyState icon={Workflow} title="Henüz kural yok" detail="Örnek kurallarla başlayın veya kendi kuralınızı oluşturun." action={<Button onClick={() => samples.mutate(undefined)}>Örnek kurallar ekle</Button>} />
+          <EmptyState icon={Workflow} title={tx('Henüz kural yok')} detail={tx('Örnek kurallarla başlayın veya kendi kuralınızı oluşturun.')} action={<Button onClick={() => samples.mutate(undefined)}>{tx('Örnek kurallar ekle')}</Button>} />
         ) : (
           <div className="grid gap-4 lg:grid-cols-2">
             {rules.data!.map((r, i) => (
@@ -129,22 +130,22 @@ export function RulesPage() {
                 <div className="flex items-start justify-between gap-2">
                   <div><h3 className="text-[15px] font-semibold">{r.name}</h3>{r.description && <p className="text-[12.5px] text-muted-foreground">{r.description}</p>}</div>
                   <div className="flex items-center gap-1">
-                    <Checkbox checked={r.isEnabled} onCheckedChange={() => toggle.mutate(r)} aria-label="Etkin" />
-                    <Button size="icon" variant="ghost" aria-label="Düzenle" onClick={() => setEdit(r)}><Pencil className="size-4" /></Button>
-                    <Button size="icon" variant="ghost" aria-label="Sil" onClick={() => del.mutate(r.id)}><Trash2 className="size-4" /></Button>
+                    <Checkbox checked={r.isEnabled} onCheckedChange={() => toggle.mutate(r)} aria-label={tx('Etkin')} />
+                    <Button size="icon" variant="ghost" aria-label={tx('Düzenle')} onClick={() => setEdit(r)}><Pencil className="size-4" /></Button>
+                    <Button size="icon" variant="ghost" aria-label={tx('Sil')} onClick={() => del.mutate(r.id)}><Trash2 className="size-4" /></Button>
                   </div>
                 </div>
                 <div className="mt-3"><Flow r={r} /></div>
-                <p className="mt-3 text-[12px] text-muted-foreground">{r.fireCount} kez tetiklendi{r.lastFiredAt ? ` · son ${formatRelativeToNow(r.lastFiredAt)}` : ''}</p>
+                <p className="mt-3 text-[12px] text-muted-foreground">{tx('{0} kez tetiklendi{1}', [r.fireCount, r.lastFiredAt ? tx(' · son {0}', [formatRelativeToNow(r.lastFiredAt)]) : ''])}</p>
               </motion.div>
             ))}
           </div>
         )
       ) : (
         <Panel>
-          <PanelHead title="Son 100 çalışma" />
+          <PanelHead title={tx('Son 100 çalışma')} />
           <PanelBody className="p-0">
-            {runs.isPending ? <div className="p-5"><RowsSkeleton /></div> : (runs.data ?? []).length === 0 ? <p className="p-5 text-[13px] text-muted-foreground">Henüz tetiklenme yok.</p> : (
+            {runs.isPending ? <div className="p-5"><RowsSkeleton /></div> : (runs.data ?? []).length === 0 ? <p className="p-5 text-[13px] text-muted-foreground">{tx('Henüz tetiklenme yok.')}</p> : (
               <ul className="divide-y divide-border">{runs.data!.map((x) => (
                 <li key={x.id} className="flex flex-wrap items-center gap-3 px-5 py-2.5 text-[13px]">
                   <span className="tabular w-36 text-[12px] text-muted-foreground">{formatDateTime(x.occurredAt)}</span>

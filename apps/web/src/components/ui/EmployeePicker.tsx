@@ -4,6 +4,7 @@ import { useAuth } from '@/auth/useAuth'
 import { canListEmployees } from '@/auth/roles'
 import { SelectField } from './Field'
 import { fullName } from '@/lib/format'
+import { tx } from '@/lib/i18n'
 
 /**
  * Çalışan seçici.
@@ -17,7 +18,7 @@ import { fullName } from '@/lib/format'
 export function EmployeePicker({
   value,
   onChange,
-  label = 'Çalışan',
+  label = tx('Çalışan'),
   hint,
   id = 'employee-picker',
   includeAllOption = false,
@@ -40,7 +41,7 @@ export function EmployeePicker({
     const list = [...(employees.data ?? [])]
       .sort((a, b) => fullName(a).localeCompare(fullName(b), 'tr-TR'))
       .map((e) => ({ value: e.id, label: fullName(e) }))
-    return includeAllOption ? [{ value: 'all', label: 'Tüm çalışanlar' }, ...list] : list
+    return includeAllOption ? [{ value: 'all', label: tx('Tüm çalışanlar') }, ...list] : list
   }, [employees.data, includeAllOption])
 
   // Kendi kaydı yüklenince otomatik seç - kullanıcı başka birini seçemez.
@@ -55,15 +56,15 @@ export function EmployeePicker({
       hint={
         hint ??
         (employees.isPending
-          ? 'Çalışanlar yükleniyor'
+          ? tx('Çalışanlar yükleniyor')
           : employees.isError
-            ? 'Çalışan listesi alınamadı.'
+            ? tx('Çalışan listesi alınamadı.')
             : undefined)
       }
       value={value}
       onChange={onChange}
       options={options}
-      placeholder="Çalışan seçin"
+      placeholder={tx('Çalışan seçin')}
       disabled={employees.isPending || options.length === 0 || restrictToSelf}
     />
   )

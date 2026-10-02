@@ -11,6 +11,7 @@ import {
 } from './keycloak'
 import { hasPermission, type Permission, type Role } from './roles'
 import { AuthContext, type AuthContextValue, type AuthUser } from './AuthContext'
+import { lang, tx, appLocale } from '@/lib/i18n'
 
 interface TokenClaims {
   sub?: string
@@ -27,7 +28,7 @@ function initialsOf(name: string): string {
     .split(/\s+/)
     .filter(Boolean)
     .slice(0, 2)
-    .map((part) => part.charAt(0).toLocaleUpperCase('tr-TR'))
+    .map((part) => part.charAt(0).toLocaleUpperCase(appLocale))
     .join('')
 }
 
@@ -40,7 +41,7 @@ function readUser(): AuthUser | null {
     parsed.name ||
     [parsed.given_name, parsed.family_name].filter(Boolean).join(' ') ||
     parsed.preferred_username ||
-    'Kullanıcı'
+    tx('Kullanıcı')
 
   return {
     id: parsed.sub,
@@ -116,7 +117,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setError(
           e instanceof Error
             ? e.message
-            : 'Kimlik sağlayıcıya ulaşılamadı. Ağ bağlantınızı kontrol edin.',
+            : tx('Kimlik sağlayıcıya ulaşılamadı. Ağ bağlantınızı kontrol edin.'),
         )
         setStatus('error')
       })
@@ -150,7 +151,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     void keycloak.login({
       redirectUri: redirectTo ? new URL(redirectTo, window.location.origin).href : window.location.href,
-      locale: 'tr',
+      locale: lang,
       // organization scope'u burada da şart: giriş buradan başlıyorsa
       // init'teki scope hiç devreye girmiyor.
       scope: scopeForTenant(null),
@@ -179,7 +180,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     writePreferredTenant(slug)
     void keycloak.login({
       redirectUri: window.location.href,
-      locale: 'tr',
+      locale: lang,
       scope: scopeForTenant(slug),
     })
   }, [])
@@ -189,10 +190,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!err) return null
     if (err instanceof ApiError) {
       return err.status === 404 || err.status === 502
-        ? 'Kiracı servisine ulaşılamıyor. Gateway’de /api/tenant/* yönlendirmesi tanımlı olmayabilir.'
+        ? tx('Kiracı servisine ulaşılamıyor. Gateway’de /api/tenant/* yönlendirmesi tanımlı olmayabilir.')
         : err.message
     }
-    return 'Kiracı bilgisi alınamadı.'
+    return tx('Kiracı bilgisi alınamadı.')
   }, [myTenant.error])
 
   const value = useMemo<AuthContextValue>(() => {

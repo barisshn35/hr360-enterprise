@@ -20,6 +20,7 @@ import { cn } from '@/lib/utils'
 import { EASE } from '@/motion/primitives'
 import { PersonAvatar } from '../components/people'
 import { ScoreBadge } from '../components/score'
+import { tx, appLocale } from '@/lib/i18n'
 
 const TONE_COLOR = {
   danger: 'hsl(var(--destructive))',
@@ -30,11 +31,11 @@ const TONE_COLOR = {
 }
 
 export function ConfidenceMeter({ value }: { value: number }) {
-  const label = value >= 0.75 ? 'yüksek' : value >= 0.5 ? 'orta' : 'düşük'
+  const label = value >= 0.75 ? tx('yüksek') : value >= 0.5 ? 'orta' : tx('düşük')
   const filled = Math.round(value * 10)
   return (
-    <div className="flex items-center gap-2.5" aria-label={`Güven ${value.toFixed(2)} (${label})`}>
-      <span className="text-[11px] text-muted-foreground">Güven</span>
+    <div className="flex items-center gap-2.5" aria-label={tx('Güven {0} ({1})', [value.toFixed(2), label])}>
+      <span className="text-[11px] text-muted-foreground">{tx('Güven')}</span>
       <span className="flex gap-0.5" aria-hidden>
         {Array.from({ length: 10 }).map((_, i) => (
           <motion.span
@@ -46,7 +47,7 @@ export function ConfidenceMeter({ value }: { value: number }) {
           />
         ))}
       </span>
-      <span className="tabular text-[12px] font-semibold">{value.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+      <span className="tabular text-[12px] font-semibold">{value.toLocaleString(appLocale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
       <span className="text-[11px] text-muted-foreground">{label}</span>
     </div>
   )
@@ -99,7 +100,7 @@ export function RecommendationCard({
 }) {
   const tone = toneOfAction(rec.action)
   const color = TONE_COLOR[tone]
-  const label = rec.actionLabel || (actionLabelsFallback as Record<string, string>)[rec.action] || 'Öneri'
+  const label = rec.actionLabel || (actionLabelsFallback as Record<string, string>)[rec.action] || tx('Öneri')
 
   return (
     <motion.article
@@ -119,7 +120,7 @@ export function RecommendationCard({
               <p className="truncate text-[15px] font-semibold">{name}</p>
               <p className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
                 <Gauge className="size-3.5" aria-hidden />
-                Mevcut puan <ScoreBadge score={rec.currentScore} thresholds={thresholds} />
+                {tx('Mevcut puan')}{' '}<ScoreBadge score={rec.currentScore} thresholds={thresholds} />
               </p>
             </div>
           </div>
@@ -133,7 +134,7 @@ export function RecommendationCard({
 
         {rec.factors.length > 0 && (
           <div>
-            <p className="mb-2 text-[12px] font-semibold text-muted-foreground">Neden?</p>
+            <p className="mb-2 text-[12px] font-semibold text-muted-foreground">{tx('Neden?')}</p>
             <FactorBars factors={rec.factors} />
           </div>
         )}
@@ -142,7 +143,7 @@ export function RecommendationCard({
           <div className="rounded-lg border border-[hsl(var(--warning))]/30 bg-[hsl(var(--warning))]/8 px-3 py-2.5">
             <p className="mb-1 flex items-center gap-1.5 text-[12px] font-semibold">
               <AlertTriangle className="size-3.5 text-[hsl(var(--warning))]" aria-hidden />
-              Dikkat
+              {tx('Dikkat')}
             </p>
             <ul className="flex flex-col gap-0.5 text-[12px] leading-relaxed text-foreground/80">
               {rec.cautions.map((c) => (
@@ -157,12 +158,12 @@ export function RecommendationCard({
         <div className="mt-auto border-t border-dashed border-border bg-muted/30 px-5 py-3.5">
           <p className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
             <BrainCircuit className="size-3.5" aria-hidden />
-            ML sinyalleri · karar vermez
+            {tx('ML sinyalleri · karar vermez')}
           </p>
           <p className="text-[11px] text-muted-foreground">{rec.mlLayer.note}</p>
           {rec.mlLayer.skipReason ? (
             <p className="mt-1.5 text-[12px]">
-              <span className="font-medium">Çalışmadı:</span> <span className="text-muted-foreground">{rec.mlLayer.skipReason}</span>
+              <span className="font-medium">{tx('Çalışmadı:')}</span> <span className="text-muted-foreground">{rec.mlLayer.skipReason}</span>
             </p>
           ) : rec.mlLayer.signals.length ? (
             <ul className="mt-1.5 flex flex-col gap-1">
@@ -170,24 +171,24 @@ export function RecommendationCard({
                 <li key={s.code} className="flex flex-wrap items-baseline gap-x-2 text-[12px]">
                   <span className="font-medium">{s.label}:</span>
                   <span>{s.value}</span>
-                  {s.confidenceLabel && <span className="text-[11px] text-muted-foreground">(güven: {s.confidenceLabel})</span>}
+                  {s.confidenceLabel && <span className="text-[11px] text-muted-foreground">{tx('(güven: {0})', [s.confidenceLabel])}</span>}
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="mt-1.5 text-[12px] text-muted-foreground">Bu çalışan için sinyal üretilmedi.</p>
+            <p className="mt-1.5 text-[12px] text-muted-foreground">{tx('Bu çalışan için sinyal üretilmedi.')}</p>
           )}
         </div>
       )}
 
       <div className="flex flex-wrap gap-2 border-t border-border px-5 py-3">
         <Button asChild size="sm" variant="outline">
-          <Link to={`/panel/performans/puan?calisan=${rec.employeeId}`}>Puan dökümü</Link>
+          <Link to={`/panel/performans/puan?calisan=${rec.employeeId}`}>{tx('Puan dökümü')}</Link>
         </Button>
         <Button asChild size="sm" variant="ghost">
           <Link to={`/panel/performans/geri-bildirim?sekme=calisan&calisan=${rec.employeeId}`}>
             <MessageSquarePlus aria-hidden />
-            Geri bildirimler
+            {tx('Geri bildirimler')}
           </Link>
         </Button>
       </div>

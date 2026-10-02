@@ -25,6 +25,7 @@ import {
 import { formatRelativeToNow } from '@/lib/format'
 import { useEmployeeName } from '@/lib/useEmployeeName'
 import { cn } from '@/lib/utils'
+import { tx } from '@/lib/i18n'
 
 const ALL = '__all__'
 
@@ -62,18 +63,18 @@ function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => void })
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['expense'] })
-      toast.ok('Vaka açıldı')
+      toast.ok(tx('Vaka açıldı'))
       onClose()
       setSubject('')
       setDescription('')
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : 'Vaka açılamadı.'),
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Vaka açılamadı.')),
   })
 
   function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (!employeeId) return setError('Çalışan seçilmeli.')
-    if (subject.trim().length < 3) return setError('Konu en az 3 karakter olmalı.')
+    if (!employeeId) return setError(tx('Çalışan seçilmeli.'))
+    if (subject.trim().length < 3) return setError(tx('Konu en az 3 karakter olmalı.'))
     setError(undefined)
     mutation.mutate()
   }
@@ -82,8 +83,8 @@ function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => void })
     <Modal
       open={open}
       onClose={onClose}
-      title="Yeni İK vakası"
-      note="Vaka açıldığında İK ekibine düşer; İK bir sorumlu atar."
+      title={tx('Yeni İK vakası')}
+      note={tx('Vaka açıldığında İK ekibine düşer; İK bir sorumlu atar.')}
       size="lg"
       footer={
         <>
@@ -93,7 +94,7 @@ function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => void })
             onClick={onClose}
             disabled={mutation.isPending}
           >
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button
             type="submit"
@@ -102,7 +103,7 @@ function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => void })
             disabled={mutation.isPending}
           >
             {mutation.isPending && <LoaderCircle className="size-4 animate-spin" />}
-            Vakayı aç
+            {tx('Vakayı aç')}
           </Button>
         </>
       }
@@ -118,13 +119,13 @@ function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => void })
         ) : (
           <p className="text-[13px] text-muted-foreground">
             {me.notLinked
-              ? 'Hesabınıza bağlı çalışan kaydı bulunamadı; vaka açamazsınız.'
-              : 'Vaka sizin adınıza açılacak.'}
+              ? tx('Hesabınıza bağlı çalışan kaydı bulunamadı; vaka açamazsınız.')
+              : tx('Vaka sizin adınıza açılacak.')}
           </p>
         )}
         <TextField
           id="case-subject"
-          label="Konu"
+          label={tx('Konu')}
           required
           value={subject}
           maxLength={200}
@@ -134,7 +135,7 @@ function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => void })
         <div className="grid gap-4 sm:grid-cols-2">
           <SelectField
             id="case-category"
-            label="Kategori"
+            label={tx('Kategori')}
             value={category}
             onChange={(v) => setCategory(v as CaseCategory)}
             options={(Object.keys(caseCategoryLabels) as CaseCategory[]).map((c) => ({
@@ -144,7 +145,7 @@ function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => void })
           />
           <SelectField
             id="case-priority"
-            label="Öncelik"
+            label={tx('Öncelik')}
             value={priority}
             onChange={(v) => setPriority(v as CasePriority)}
             options={(Object.keys(casePriorityLabels) as CasePriority[]).map((p) => ({
@@ -155,9 +156,9 @@ function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => void })
         </div>
         <TextAreaField
           id="case-desc"
-          label="Açıklama"
+          label={tx('Açıklama')}
           rows={4}
-          hint="İsteğe bağlı"
+          hint={tx('İsteğe bağlı')}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
         />
@@ -182,11 +183,11 @@ export function CasesPage() {
   const filters: TableFilter[] = [
     {
       id: 'status',
-      label: 'Durum',
+      label: tx('Durum'),
       value: status,
       onChange: setStatus,
       options: [
-        { value: ALL, label: 'Tüm durumlar' },
+        { value: ALL, label: tx('Tüm durumlar') },
         ...(Object.keys(caseStatusLabels) as CaseStatus[]).map((s) => ({
           value: s,
           label: caseStatusLabels[s],
@@ -195,11 +196,11 @@ export function CasesPage() {
     },
     {
       id: 'priority',
-      label: 'Öncelik',
+      label: tx('Öncelik'),
       value: priority,
       onChange: setPriority,
       options: [
-        { value: ALL, label: 'Tüm öncelikler' },
+        { value: ALL, label: tx('Tüm öncelikler') },
         ...(Object.keys(casePriorityLabels) as CasePriority[]).map((p) => ({
           value: p,
           label: casePriorityLabels[p],
@@ -211,21 +212,20 @@ export function CasesPage() {
   const columns: Array<Column<HrCase>> = [
     {
       id: 'subject',
-      header: 'Konu',
+      header: tx('Konu'),
       searchText: (c) => `${c.subject} ${caseCategoryLabels[c.category]}`,
       sortValue: (c) => c.subject,
       cell: (c) => (
         <div className={cn('min-w-0 border-l-2 pl-3', PRIORITY_EDGE[c.priority])}>
           <p className="truncate font-medium text-foreground">{c.subject}</p>
           <p className="mt-0.5 truncate text-[12px] text-muted-foreground">
-            {caseCategoryLabels[c.category]}, {formatRelativeToNow(c.createdAt)} açıldı
-          </p>
+            {tx('{0}, {1} açıldı', [caseCategoryLabels[c.category], formatRelativeToNow(c.createdAt)])}</p>
         </div>
       ),
     },
     {
       id: 'employee',
-      header: 'Açan',
+      header: tx('Açan'),
       hideBelow: 'md',
       searchText: (c) => nameOf(c.employeeId),
       sortValue: (c) => nameOf(c.employeeId),
@@ -234,7 +234,7 @@ export function CasesPage() {
     },
     {
       id: 'assignee',
-      header: 'Atanan',
+      header: tx('Atanan'),
       hideBelow: 'lg',
       sortValue: (c) => (c.assignedToEmployeeId ? nameOf(c.assignedToEmployeeId) : ''),
       exportText: (c) => (c.assignedToEmployeeId ? nameOf(c.assignedToEmployeeId) : '—'),
@@ -246,7 +246,7 @@ export function CasesPage() {
     },
     {
       id: 'priority',
-      header: 'Öncelik',
+      header: tx('Öncelik'),
       align: 'right',
       hideBelow: 'sm',
       sortValue: (c) => casePriorityLabels[c.priority] ?? '',
@@ -255,7 +255,7 @@ export function CasesPage() {
     },
     {
       id: 'status',
-      header: 'Durum',
+      header: tx('Durum'),
       align: 'right',
       sortValue: (c) => caseStatusLabels[c.status] ?? '',
       exportText: (c) => caseStatusLabels[c.status] ?? '',
@@ -266,13 +266,13 @@ export function CasesPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="İK vakaları"
-        description="Çalışanlardan gelen talep, soru ve şikâyetlerin izlendiği kayıt defteri."
+        title={tx('İK vakaları')}
+        description={tx('Çalışanlardan gelen talep, soru ve şikâyetlerin izlendiği kayıt defteri.')}
         actions={
           can('case:create') && (
             <Button className="cursor-pointer" onClick={() => setModalOpen(true)}>
               <Plus className="size-4" />
-              Yeni vaka
+              {tx('Yeni vaka')}
             </Button>
           )
         }
@@ -287,15 +287,15 @@ export function CasesPage() {
         error={cases.error}
         onRetry={() => void cases.refetch()}
         onRowClick={(c) => navigate(`/panel/ik-vakalari/${c.id}`)}
-        searchPlaceholder="Konu, kategori veya kişi ara"
+        searchPlaceholder={tx('Konu, kategori veya kişi ara')}
         exportFileName="ik-vakalari"
         pageSize={12}
-        emptyTitle="Vaka yok"
-        emptyDetail="Bu filtreye uyan vaka bulunmuyor."
+        emptyTitle={tx('Vaka yok')}
+        emptyDetail={tx('Bu filtreye uyan vaka bulunmuyor.')}
         emptyAction={
           can('case:create') ? (
             <Button size="sm" className="cursor-pointer" onClick={() => setModalOpen(true)}>
-              Yeni vaka
+              {tx('Yeni vaka')}
             </Button>
           ) : undefined
         }

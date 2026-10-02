@@ -10,6 +10,7 @@ import { getValidToken } from '@/auth/keycloak'
 import { env } from '@/lib/env'
 import { cn } from '@/lib/utils'
 import { toGatewaySpec, type Spec } from '@/lib/openapi'
+import { translateServerData, tx } from '@/lib/i18n'
 
 /**
  * Birleşik API belgesi: her servisin OpenAPI tanımı gateway'den
@@ -22,35 +23,35 @@ import { toGatewaySpec, type Spec } from '@/lib/openapi'
 type Doc = { id: string; title: string; detail: string; public?: boolean }
 
 const DOCS: Doc[] = [
-  { id: 'public', title: 'Açık API (v1)', detail: 'Dış sistemler için, X-Api-Key ile', public: true },
-  { id: 'employee', title: 'Çalışanlar', detail: 'Çalışan kaydı, atamalar' },
-  { id: 'organization', title: 'Organizasyon', detail: 'Şirket, departman, ekip' },
-  { id: 'leave', title: 'İzin', detail: 'Bakiye, talep, resmi tatil' },
-  { id: 'workflow', title: 'Onay akışları', detail: 'Adımlar, vekâlet, SLA' },
-  { id: 'expense', title: 'Masraf ve İK vakaları', detail: 'Beyan, belge, vaka' },
-  { id: 'timeshift', title: 'Vardiya ve puantaj', detail: 'Vardiya, giriş/çıkış' },
-  { id: 'performance', title: 'Performans', detail: 'Dönem, hedef, değerlendirme' },
-  { id: 'learning', title: 'Eğitim', detail: 'Katalog, kayıt, sertifika' },
-  { id: 'compensation', title: 'Ücret', detail: 'Ücret geçmişi, bant' },
-  { id: 'recruitment', title: 'İşe alım', detail: 'İlan, aday, mülakat' },
-  { id: 'onboarding', title: 'İşe başlangıç', detail: 'Plan, görev, zimmet' },
-  { id: 'notification', title: 'Bildirim', detail: 'Gelen kutusu, şablon' },
-  { id: 'engagement', title: 'Bağlılık', detail: 'Takdir, anket, 1:1, ofis' },
-  { id: 'governance', title: 'Yönetişim', detail: 'Denetim, kural, entegrasyon, AI' },
-  { id: 'tenant', title: 'Kiracı', detail: 'Şirket hesabı, ekip, marka' },
+  { id: 'public', title: tx('Açık API (v1)'), detail: tx('Dış sistemler için, X-Api-Key ile'), public: true },
+  { id: 'employee', title: tx('Çalışanlar'), detail: tx('Çalışan kaydı, atamalar') },
+  { id: 'organization', title: tx('Organizasyon'), detail: tx('Şirket, departman, ekip') },
+  { id: 'leave', title: tx('İzin'), detail: tx('Bakiye, talep, resmi tatil') },
+  { id: 'workflow', title: tx('Onay akışları'), detail: tx('Adımlar, vekâlet, SLA') },
+  { id: 'expense', title: tx('Masraf ve İK vakaları'), detail: tx('Beyan, belge, vaka') },
+  { id: 'timeshift', title: tx('Vardiya ve puantaj'), detail: tx('Vardiya, giriş/çıkış') },
+  { id: 'performance', title: tx('Performans'), detail: tx('Dönem, hedef, değerlendirme') },
+  { id: 'learning', title: tx('Eğitim'), detail: tx('Katalog, kayıt, sertifika') },
+  { id: 'compensation', title: tx('Ücret'), detail: tx('Ücret geçmişi, bant') },
+  { id: 'recruitment', title: tx('İşe alım'), detail: tx('İlan, aday, mülakat') },
+  { id: 'onboarding', title: tx('İşe başlangıç'), detail: tx('Plan, görev, zimmet') },
+  { id: 'notification', title: tx('Bildirim'), detail: tx('Gelen kutusu, şablon') },
+  { id: 'engagement', title: tx('Bağlılık'), detail: tx('Takdir, anket, 1:1, ofis') },
+  { id: 'governance', title: tx('Yönetişim'), detail: tx('Denetim, kural, entegrasyon, AI') },
+  { id: 'tenant', title: tx('Kiracı'), detail: tx('Şirket hesabı, ekip, marka') },
 ]
 
 async function loadSpec(doc: Doc): Promise<Spec> {
   if (doc.public) {
     const res = await fetch(`${env.apiBase}/api/governance/public/v1/openapi.json`)
-    if (!res.ok) throw new Error(`Açık API tanımı alınamadı (HTTP ${res.status}).`)
-    return (await res.json()) as Spec
+    if (!res.ok) throw new Error(tx('Açık API tanımı alınamadı (HTTP {0}).', [res.status]))
+    return translateServerData((await res.json()) as Spec)
   }
   const token = await getValidToken()
   const res = await fetch(`${env.apiBase}/api-docs/specs/${doc.id}.json`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   })
-  if (!res.ok) throw new Error(`API tanımı alınamadı (HTTP ${res.status}).`)
+  if (!res.ok) throw new Error(tx('API tanımı alınamadı (HTTP {0}).', [res.status]))
   return toGatewaySpec(doc.id, (await res.json()) as Spec)
 }
 
@@ -62,12 +63,12 @@ export function ApiDocsPage() {
   return (
     <>
       <PageHeader
-        title="API belgeleri"
-        description="Tüm servislerin uçları tek yerde. Panelden yaptığınız her işlem bu uçlarla yapılır."
+        title={tx('API belgeleri')}
+        description={tx('Tüm servislerin uçları tek yerde. Panelden yaptığınız her işlem bu uçlarla yapılır.')}
       />
       <div className="grid gap-6 xl:grid-cols-[280px_1fr]">
         <Panel className="h-fit">
-          <PanelHead title="Servisler" />
+          <PanelHead title={tx('Servisler')} />
           <PanelBody className="grid gap-1 p-2">
             {DOCS.map((d) => (
               <button
@@ -93,18 +94,18 @@ export function ApiDocsPage() {
         <div className="grid min-w-0 gap-4">
           <InfoNote>
             {active.public
-              ? 'Açık API, Entegrasyonlar ekranında oluşturulan X-Api-Key ile çağrılır. "Authorize" düğmesine anahtarı girerek deneyebilirsiniz; dakikada 120 istek sınırı vardır.'
-              : `"Try it out" istekleri oturumunuzun yetkisiyle gider: rolünüzün izin vermediği uçlar 403 döner. Adresler gateway'e göredir (${env.apiBase || 'bu sunucu'}/api/${active.id}/…).`}
+              ? tx('Açık API, Entegrasyonlar ekranında oluşturulan X-Api-Key ile çağrılır. "Authorize" düğmesine anahtarı girerek deneyebilirsiniz; dakikada 120 istek sınırı vardır.')
+              : tx('"Try it out" istekleri oturumunuzun yetkisiyle gider: rolünüzün izin vermediği uçlar 403 döner. Adresler gateway\'e göredir ({0}/api/{1}/…).', [env.apiBase || tx('bu sunucu'), active.id])}
           </InfoNote>
           <Panel className="min-w-0 overflow-hidden">
-            <PanelHead title={active.title} note={spec.data ? `${count} uç` : undefined} />
+            <PanelHead title={active.title} note={spec.data ? tx('{0} uç', [count]) : undefined} />
             <PanelBody className="min-w-0 p-0">
               {spec.isPending && (
                 <div className="flex items-center gap-2 p-6 text-sm text-muted-foreground">
-                  <LoaderCircle className="size-4 animate-spin" /> Tanım yükleniyor
+                  <LoaderCircle className="size-4 animate-spin" />{' '}{tx('Tanım yükleniyor')}
                 </div>
               )}
-              {spec.isError && <ErrorState title="API tanımı alınamadı" message={(spec.error as Error).message} onRetry={() => void spec.refetch()} />}
+              {spec.isError && <ErrorState title={tx('API tanımı alınamadı')} message={(spec.error as Error).message} onRetry={() => void spec.refetch()} />}
               {spec.data && (
                 // Swagger UI kendi açık temasını kullanır; okunaklı kalması için beyaz zemin.
                 <div className="hr360-swagger rounded-b-2xl bg-white text-black">

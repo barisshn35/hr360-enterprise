@@ -8,6 +8,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
+import { tx } from '@/lib/i18n'
 
 /**
  * Modal sarmalayıcı.
@@ -80,7 +81,7 @@ export function ErrorSummary({ items }: { items: SummaryItem[] }) {
       className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3"
     >
       <h3 id="error-summary-title" className="text-[13px] font-semibold text-destructive">
-        {items.length === 1 ? 'Bir alanı düzeltin' : `${items.length} alanı düzeltin`}
+        {items.length === 1 ? tx('Bir alanı düzeltin') : tx('{0} alanı düzeltin', [items.length])}
       </h3>
       <ul className="mt-1.5 space-y-1">
         {items.map((item) => (

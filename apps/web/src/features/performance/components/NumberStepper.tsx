@@ -6,9 +6,10 @@
 import { useEffect, useState } from 'react'
 import { Minus, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { tx, appLocale } from '@/lib/i18n'
 
 const fmt = (v: number, decimals: number) =>
-  new Intl.NumberFormat('tr-TR', { maximumFractionDigits: decimals, useGrouping: false }).format(v)
+  new Intl.NumberFormat(appLocale, { maximumFractionDigits: decimals, useGrouping: false }).format(v)
 
 export function NumberStepper({
   value,
@@ -62,7 +63,7 @@ export function NumberStepper({
         tabIndex={-1}
         onClick={() => bump(-1)}
         disabled={value <= min}
-        aria-label={`${ariaLabel} azalt`}
+        aria-label={tx('{0} azalt', [ariaLabel])}
         className="flex h-full w-7 items-center justify-center text-muted-foreground transition-colors hover:text-foreground disabled:opacity-30"
       >
         <Minus className="size-3.5" />
@@ -106,7 +107,7 @@ export function NumberStepper({
         tabIndex={-1}
         onClick={() => bump(1)}
         disabled={value >= max}
-        aria-label={`${ariaLabel} artır`}
+        aria-label={tx('{0} artır', [ariaLabel])}
         className="flex h-full w-7 items-center justify-center text-muted-foreground transition-colors hover:text-foreground disabled:opacity-30"
       >
         <Plus className="size-3.5" />

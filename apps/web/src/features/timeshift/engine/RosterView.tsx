@@ -47,6 +47,7 @@ import {
   weekdayShort,
 } from './shared'
 import { YearView } from './YearView'
+import { tx } from '@/lib/i18n'
 
 export const ALL_TEAMS = 'tumu'
 
@@ -73,8 +74,8 @@ function rangeTitle(span: Span, from: string, to: string) {
   return `${formatDayMonth(from)} – ${formatDayMonth(to)} ${to.slice(0, 4)}`
 }
 
-const SPAN_LABEL: Record<Span, string> = { hafta: 'Önceki hafta', hafta2: 'Önceki 2 hafta', ay: 'Önceki ay', yil: 'Önceki yıl' }
-const SPAN_NEXT: Record<Span, string> = { hafta: 'Sonraki hafta', hafta2: 'Sonraki 2 hafta', ay: 'Sonraki ay', yil: 'Sonraki yıl' }
+const SPAN_LABEL: Record<Span, string> = { hafta: tx('Önceki hafta'), hafta2: tx('Önceki 2 hafta'), ay: tx('Önceki ay'), yil: tx('Önceki yıl') }
+const SPAN_NEXT: Record<Span, string> = { hafta: tx('Sonraki hafta'), hafta2: tx('Sonraki 2 hafta'), ay: tx('Sonraki ay'), yil: tx('Sonraki yıl') }
 
 interface Row {
   teamName: string
@@ -97,8 +98,7 @@ function toRows(roster: TeamRoster): Row[] {
 
 /** Haftalık görünümün geniş hücresi: tip adı ve saat (ya da override notu) yazılı. */
 function WideCell({ day, date }: { day: RosterDay | undefined; date: string }) {
-  if (!day) return <span className="block h-11 min-w-24" title={`${formatLongDay(date)}
-Kayıt yok`} />
+  if (!day) return <span className="block h-11 min-w-24" title={tx('{0}\nKayıt yok', [formatLongDay(date)])} />
   const s = styleOf(day.type)
   const Icon = s.icon
   const detail = day.startTime ? timeRange(day.startTime, day.endTime!) : day.note ?? ''
@@ -119,7 +119,7 @@ ${describeRosterDay(day)}`}
 
 function Cell({ day, date, name }: { day: RosterDay | undefined; date: string; name: string }) {
   if (!day) {
-    return <span className="block size-7" aria-label={`${name}, ${formatLongDay(date)}: kayıt yok`} />
+    return <span className="block size-7" aria-label={tx('{0}, {1}: kayıt yok', [name, formatLongDay(date)])} />
   }
   const label = describeRosterDay(day)
   return (
@@ -197,8 +197,8 @@ export function RosterView({ teamId, onTeamChange }: { teamId: string | null; on
       <Panel>
         <EmptyState
           icon={CalendarRange}
-          title="Takvim için önce bir vardiya ekibi gerekli"
-          detail="Ekipler sekmesinden bir ekip kurup üye ekleyin; takvim desenden kendiliğinden hesaplanır."
+          title={tx('Takvim için önce bir vardiya ekibi gerekli')}
+          detail={tx('Ekipler sekmesinden bir ekip kurup üye ekleyin; takvim desenden kendiliğinden hesaplanır.')}
         />
       </Panel>
     )
@@ -209,25 +209,25 @@ export function RosterView({ teamId, onTeamChange }: { teamId: string | null; on
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="w-full sm:w-72">
           <SelectField
-            label="Ekip"
+            label={tx('Ekip')}
             value={selected ?? ''}
             onChange={onTeamChange}
             options={[
               ...list.map((t) => ({ value: t.id, label: t.name })),
-              ...(list.length > 1 ? [{ value: ALL_TEAMS, label: 'Tüm ekipler (7/24 görünüm)' }] : []),
+              ...(list.length > 1 ? [{ value: ALL_TEAMS, label: tx('Tüm ekipler (7/24 görünüm)') }] : []),
             ]}
           />
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Segmented
-            ariaLabel="Aralık"
+            ariaLabel={tx('Aralık')}
             value={span}
             onChange={setSpan}
             options={[
-              { value: 'hafta', label: 'Hafta' },
+              { value: 'hafta', label: tx('Hafta') },
               { value: 'hafta2', label: '2 hafta' },
-              { value: 'ay', label: 'Ay' },
-              { value: 'yil', label: 'Yıl' },
+              { value: 'ay', label: tx('Ay') },
+              { value: 'yil', label: tx('Yıl') },
             ]}
           />
           <div className="flex items-center gap-1">
@@ -235,7 +235,7 @@ export function RosterView({ teamId, onTeamChange }: { teamId: string | null; on
               <ChevronLeft className="size-4" />
             </Button>
             <Button size="sm" variant="outline" onClick={() => setCursor(today)}>
-              Bugün
+              {tx('Bugün')}
             </Button>
             <Button size="sm" variant="outline" aria-label={SPAN_NEXT[span]} onClick={() => setCursor((c) => shift(span, c, 1))}>
               <ChevronRight className="size-4" />
@@ -252,14 +252,14 @@ export function RosterView({ teamId, onTeamChange }: { teamId: string | null; on
           title={
             <span className="flex items-center gap-2">
               {rangeTitle(span, from, to)}
-              {fetching && !pending && <span className="text-[12px] font-normal text-muted-foreground">güncelleniyor…</span>}
+              {fetching && !pending && <span className="text-[12px] font-normal text-muted-foreground">{tx('güncelleniyor…')}</span>}
             </span>
           }
           note={
             groups.length === 1
-              ? `${groups[0].team} · ${groups[0].patternName} · ${formatNumber(totalRows)} kişi, sıraya göre`
+              ? tx('{0} · {1} · {2} kişi, sıraya göre', [groups[0].team, groups[0].patternName, formatNumber(totalRows)])
               : groups.length > 1
-                ? `${formatNumber(groups.length)} ekip · ${formatNumber(totalRows)} kişi`
+                ? tx('{0} ekip · {1} kişi', [formatNumber(groups.length), formatNumber(totalRows)])
                 : undefined
           }
           action={<Legend types={[...PATTERN_TYPES, ...OVERRIDE_TYPES]} />}
@@ -271,8 +271,8 @@ export function RosterView({ teamId, onTeamChange }: { teamId: string | null; on
           <ErrorState message={errorText(failed.error)} onRetry={() => rosters.forEach((r) => void r.refetch())} />
         ) : totalRows === 0 ? (
           <EmptyState
-            title="Ekipte üye yok"
-            detail="Takvimde gösterilecek kimse yok. Ekipler sekmesinden üye ekleyin."
+            title={tx('Ekipte üye yok')}
+            detail={tx('Takvimde gösterilecek kimse yok. Ekipler sekmesinden üye ekleyin.')}
           />
         ) : (
           <div className={cn('overflow-x-auto transition-opacity', fetching && !pending && 'opacity-70')}>
@@ -283,7 +283,7 @@ export function RosterView({ teamId, onTeamChange }: { teamId: string | null; on
                     scope="col"
                     className="sticky left-0 z-20 min-w-48 border-b border-border bg-card px-4 py-2 text-left font-medium text-muted-foreground"
                   >
-                    Çalışan
+                    {tx('Çalışan')}
                   </th>
                   {dates.map((d) => (
                     <th
@@ -301,8 +301,8 @@ export function RosterView({ teamId, onTeamChange }: { teamId: string | null; on
                       </span>
                     </th>
                   ))}
-                  <th scope="col" className="border-b border-border px-3 py-2 text-right font-medium text-muted-foreground" title="Aralıktaki vardiya günü">
-                    Vardiya
+                  <th scope="col" className="border-b border-border px-3 py-2 text-right font-medium text-muted-foreground" title={tx('Aralıktaki vardiya günü')}>
+                    {tx('Vardiya')}
                   </th>
                 </tr>
               </thead>
@@ -330,7 +330,7 @@ export function RosterView({ teamId, onTeamChange }: { teamId: string | null; on
                             className="sticky left-0 z-10 border-b border-border bg-card px-4 py-1.5 text-left font-normal group-hover:bg-muted"
                           >
                             <span className="flex items-center gap-2">
-                              <span className="tabular flex size-5 shrink-0 items-center justify-center rounded bg-muted text-[10px] font-semibold text-muted-foreground" title="Sıra (rank)">
+                              <span className="tabular flex size-5 shrink-0 items-center justify-center rounded bg-muted text-[10px] font-semibold text-muted-foreground" title={tx('Sıra (rank)')}>
                                 {row.rank}
                               </span>
                               <span className="min-w-0">
@@ -366,8 +366,7 @@ export function RosterView({ teamId, onTeamChange }: { teamId: string | null; on
                     <th scope="row" className="sticky left-0 z-10 bg-card px-4 py-1 text-left text-[12px] font-normal text-muted-foreground">
                       <span className="flex items-center gap-1.5">
                         <DayBlock type={t} size="xs" />
-                        {DAY_STYLE[t].label}de
-                      </span>
+                        {tx('{0}de', [DAY_STYLE[t].label])}</span>
                     </th>
                     {coverage.map((c) => {
                       const n = t === 'Day' ? c.day : c.night
@@ -379,7 +378,7 @@ export function RosterView({ teamId, onTeamChange }: { teamId: string | null; on
                             c.date === today && 'bg-primary/5',
                             n === 0 && showTeamHeaders ? 'font-semibold text-destructive' : 'text-muted-foreground',
                           )}
-                          title={n === 0 && showTeamHeaders ? `${formatLongDay(c.date)}: ${DAY_STYLE[t].lower} vardiyasında kimse yok` : undefined}
+                          title={n === 0 && showTeamHeaders ? tx('{0}: {1} vardiyasında kimse yok', [formatLongDay(c.date), DAY_STYLE[t].lower]) : undefined}
                         >
                           {n}
                         </td>
@@ -392,7 +391,7 @@ export function RosterView({ teamId, onTeamChange }: { teamId: string | null; on
                   <th scope="row" className="sticky left-0 z-10 bg-card px-4 pt-1 pb-2 text-left text-[12px] font-normal text-muted-foreground">
                     <span className="flex items-center gap-1.5">
                       <DayBlock type="Leave" size="xs" />
-                      İzin / tatil
+                      {tx('İzin / tatil')}
                     </span>
                   </th>
                   {coverage.map((c) => (

@@ -24,7 +24,7 @@ const employeeTone: Record<EmployeeStatusValue, StatusTone> = { 0: 'success', 1:
 export function EmployeeStatusBadge({ status }: { status: EmployeeStatusValue }) {
   return (
     <StatusBadge tone={employeeTone[status] ?? 'neutral'}>
-      {employeeStatusLabels[status] ?? 'Bilinmiyor'}
+      {employeeStatusLabels[status] ?? tx('Bilinmiyor')}
     </StatusBadge>
   )
 }
@@ -77,6 +77,7 @@ import {
   type OnboardingTaskStatus,
   type PlanStatus,
 } from '@/api/types'
+import { tx } from '@/lib/i18n'
 
 /**
  * Modül durum rozetleri.

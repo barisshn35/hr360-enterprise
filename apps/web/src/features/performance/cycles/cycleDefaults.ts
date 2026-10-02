@@ -1,4 +1,5 @@
 import type { CyclePeriod, ReviewCycle } from '@/api/performance'
+import { tx } from '@/lib/i18n'
 
 const RANGES: Record<CyclePeriod, [string, string]> = {
   Q1: ['01-01', '03-31'],
@@ -11,13 +12,13 @@ const RANGES: Record<CyclePeriod, [string, string]> = {
 }
 
 const TITLES: Record<CyclePeriod, string> = {
-  Q1: '1. Çeyrek',
-  Q2: '2. Çeyrek',
-  Q3: '3. Çeyrek',
-  Q4: '4. Çeyrek',
-  H1: '1. Yarıyıl',
-  H2: '2. Yarıyıl',
-  Annual: 'Yıllık',
+  Q1: tx('1. Çeyrek'),
+  Q2: tx('2. Çeyrek'),
+  Q3: tx('3. Çeyrek'),
+  Q4: tx('4. Çeyrek'),
+  H1: tx('1. Yarıyıl'),
+  H2: tx('2. Yarıyıl'),
+  Annual: tx('Yıllık'),
 }
 
 /** Dönem türü ve yıldan önerilen ad ve tarihler — kullanıcı değiştirebilir. */

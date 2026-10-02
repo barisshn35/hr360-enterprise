@@ -28,6 +28,7 @@ import {
 import { formatDate, formatDateTime, formatNumber, fullName } from '@/lib/format'
 import { ApplicationFunnel } from './ApplicationFunnel'
 import { MeetingPanel } from '@/features/shared/Meetings'
+import { tx } from '@/lib/i18n'
 
 /** Başvuru durumunu ilerletme — sıradaki mantıklı aşamayı önerir. */
 const NEXT_STAGE: Partial<Record<ApplicationStatus, ApplicationStatus>> = {
@@ -62,10 +63,10 @@ function StatusModal({
       recruitmentApi.setApplicationStatus(state!.application.id, status, notes.trim() || undefined),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['recruitment'] })
-      toast.ok('Başvuru durumu güncellendi')
+      toast.ok(tx('Başvuru durumu güncellendi'))
       onClose()
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : 'Durum güncellenemedi.'),
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Durum güncellenemedi.')),
   })
 
   if (!state) return null
@@ -74,8 +75,8 @@ function StatusModal({
     <Modal
       open
       onClose={onClose}
-      title="Başvuru durumu"
-      note="Aday hangi aşamaya geçiyor?"
+      title={tx('Başvuru durumu')}
+      note={tx('Aday hangi aşamaya geçiyor?')}
       footer={
         <>
           <Button
@@ -84,7 +85,7 @@ function StatusModal({
             onClick={onClose}
             disabled={mutation.isPending}
           >
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button
             className="cursor-pointer"
@@ -92,7 +93,7 @@ function StatusModal({
             onClick={() => mutation.mutate()}
           >
             {mutation.isPending && <LoaderCircle className="size-4 animate-spin" />}
-            Güncelle
+            {tx('Güncelle')}
           </Button>
         </>
       }
@@ -100,7 +101,7 @@ function StatusModal({
       <div className="space-y-4">
         <SelectField
           id="app-status"
-          label="Yeni durum"
+          label={tx('Yeni durum')}
           value={status}
           onChange={(v) => setStatus(v as ApplicationStatus)}
           options={(Object.keys(applicationStatusLabels) as ApplicationStatus[]).map((s) => ({
@@ -110,11 +111,11 @@ function StatusModal({
         />
         <TextAreaField
           id="app-notes"
-          label="Not"
+          label={tx('Not')}
           rows={3}
           value={notes}
           maxLength={1000}
-          hint="İsteğe bağlı. Başvuru geçmişinde görünür."
+          hint={tx('İsteğe bağlı. Başvuru geçmişinde görünür.')}
           onChange={(e) => setNotes(e.target.value)}
         />
       </div>
@@ -146,19 +147,19 @@ function InterviewModal({
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['recruitment'] })
-      toast.ok('Mülakat planlandı')
+      toast.ok(tx('Mülakat planlandı'))
       onClose()
       setScheduledAt('')
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : 'Mülakat planlanamadı.'),
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Mülakat planlanamadı.')),
   })
 
   if (!application) return null
 
   function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (!scheduledAt) return setError('Tarih ve saat zorunlu.')
-    if (!interviewerEmployeeId) return setError('Görüşmeci seçilmeli.')
+    if (!scheduledAt) return setError(tx('Tarih ve saat zorunlu.'))
+    if (!interviewerEmployeeId) return setError(tx('Görüşmeci seçilmeli.'))
     setError(undefined)
     mutation.mutate()
   }
@@ -167,8 +168,8 @@ function InterviewModal({
     <Modal
       open
       onClose={onClose}
-      title="Mülakat planla"
-      note="Görüşmeciye takvim daveti backend tarafında oluşturulur."
+      title={tx('Mülakat planla')}
+      note={tx('Görüşmeciye takvim daveti backend tarafında oluşturulur.')}
       footer={
         <>
           <Button
@@ -177,7 +178,7 @@ function InterviewModal({
             onClick={onClose}
             disabled={mutation.isPending}
           >
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button
             type="submit"
@@ -186,7 +187,7 @@ function InterviewModal({
             disabled={mutation.isPending}
           >
             {mutation.isPending && <LoaderCircle className="size-4 animate-spin" />}
-            Planla
+            {tx('Planla')}
           </Button>
         </>
       }
@@ -194,7 +195,7 @@ function InterviewModal({
       <form id="new-interview" onSubmit={submit} noValidate className="space-y-4">
         <SelectField
           id="interview-type"
-          label="Mülakat türü"
+          label={tx('Mülakat türü')}
           value={type}
           onChange={(v) => setType(v as InterviewType)}
           options={(Object.keys(interviewTypeLabels) as InterviewType[]).map((t) => ({
@@ -205,7 +206,7 @@ function InterviewModal({
 
         <TextField
           id="interview-at"
-          label="Tarih ve saat"
+          label={tx('Tarih ve saat')}
           type="datetime-local"
           required
           value={scheduledAt}
@@ -215,12 +216,12 @@ function InterviewModal({
 
         <SelectField
           id="interview-by"
-          label="Görüşmeci"
+          label={tx('Görüşmeci')}
           required
           value={interviewerEmployeeId}
           onChange={setInterviewer}
           options={(employees.data ?? []).map((e) => ({ value: e.id, label: fullName(e) }))}
-          placeholder="Çalışan seçin"
+          placeholder={tx('Çalışan seçin')}
           error={error?.includes('Görüşmeci') ? error : undefined}
         />
       </form>
@@ -252,27 +253,27 @@ export function JobPostingDetailPage() {
     mutationFn: () => recruitmentApi.publishPosting(postingId!),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['recruitment'] })
-      toast.ok('İlan yayına alındı')
+      toast.ok(tx('İlan yayına alındı'))
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : 'İlan yayınlanamadı.'),
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('İlan yayınlanamadı.')),
   })
 
   const close = useMutation({
     mutationFn: () => recruitmentApi.closePosting(postingId!),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['recruitment'] })
-      toast.ok('İlan kapatıldı')
+      toast.ok(tx('İlan kapatıldı'))
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : 'İlan kapatılamadı.'),
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('İlan kapatılamadı.')),
   })
 
-  if (posting.isPending) return <CenteredSpinner label="İlan yükleniyor" />
+  if (posting.isPending) return <CenteredSpinner label={tx('İlan yükleniyor')} />
 
   if (posting.isError || !posting.data) {
     return (
       <Panel>
         <ErrorState
-          title="İlan bulunamadı"
+          title={tx('İlan bulunamadı')}
           message={posting.error instanceof Error ? posting.error.message : undefined}
           onRetry={() => void posting.refetch()}
         />
@@ -290,13 +291,13 @@ export function JobPostingDetailPage() {
       <Button variant="ghost" size="sm" className="-ml-2 cursor-pointer" asChild>
         <Link to="/panel/ise-alim">
           <ArrowLeft className="size-4" />
-          İşe alım
+          {tx('İşe alım')}
         </Link>
       </Button>
 
       <PageHeader
         title={data.title}
-        description={`${employmentTypeLabels[data.employmentType]}, ${formatNumber(data.headcount)} kişi. ${formatNumber(applications.length)} başvuru.`}
+        description={tx('{0}, {1} kişi. {2} başvuru.', [employmentTypeLabels[data.employmentType], formatNumber(data.headcount), formatNumber(applications.length)])}
         actions={
           <>
             <JobPostingStatusBadge status={data.status} />
@@ -307,7 +308,7 @@ export function JobPostingDetailPage() {
                 onClick={() => publish.mutate()}
               >
                 {publish.isPending && <LoaderCircle className="size-4 animate-spin" />}
-                Yayına al
+                {tx('Yayına al')}
               </Button>
             )}
             {canPublish && data.status === 'Published' && (
@@ -318,7 +319,7 @@ export function JobPostingDetailPage() {
                 onClick={() => close.mutate()}
               >
                 {close.isPending && <LoaderCircle className="size-4 animate-spin" />}
-                İlanı kapat
+                {tx('İlanı kapat')}
               </Button>
             )}
           </>
@@ -327,12 +328,12 @@ export function JobPostingDetailPage() {
 
       <div className="grid gap-4 xl:grid-cols-[1fr_1.15fr]">
         <Panel>
-          <PanelHead title="Başvuru hunisi" note="Aşamalar arası geçiş oranıyla" />
+          <PanelHead title={tx('Başvuru hunisi')} note={tx('Aşamalar arası geçiş oranıyla')} />
           <PanelBody>
             {applications.length === 0 ? (
               <EmptyState
-                title="Henüz başvuru yok"
-                detail="İlan yayına alındığında başvurular burada aşamalarına göre görünür."
+                title={tx('Henüz başvuru yok')}
+                detail={tx('İlan yayına alındığında başvurular burada aşamalarına göre görünür.')}
               />
             ) : (
               <ApplicationFunnel applications={applications} />
@@ -342,15 +343,14 @@ export function JobPostingDetailPage() {
 
         <Panel>
           <PanelHead
-            title="Başvurular"
+            title={tx('Başvurular')}
             action={
               <span className="tabular text-[12px] text-muted-foreground">
-                {formatNumber(applications.length)} kayıt
-              </span>
+                {tx('{0} kayıt', [formatNumber(applications.length)])}</span>
             }
           />
           {applications.length === 0 ? (
-            <EmptyState title="Başvuru yok" detail="Aday eklendikçe bu listede görünür." />
+            <EmptyState title={tx('Başvuru yok')} detail={tx('Aday eklendikçe bu listede görünür.')} />
           ) : (
             <ul className="divide-y divide-border">
               {applications.map((a) => {
@@ -363,8 +363,7 @@ export function JobPostingDetailPage() {
                           {candidateName.get(a.candidateId) ?? `${a.candidateId.slice(0, 8)}…`}
                         </span>
                         <span className="tabular mt-0.5 block text-[12px] text-muted-foreground">
-                          {formatDate(a.appliedAt)} tarihinde başvurdu
-                        </span>
+                          {tx('{0} tarihinde başvurdu', [formatDate(a.appliedAt)])}</span>
                       </span>
                       <ApplicationStatusBadge status={a.status} />
                     </div>
@@ -405,8 +404,7 @@ export function JobPostingDetailPage() {
                             className="cursor-pointer"
                             onClick={() => setStatusFor({ application: a, suggested: next })}
                           >
-                            {applicationStatusLabels[next]} aşamasına al
-                          </Button>
+                            {tx('{0} aşamasına al', [applicationStatusLabels[next]])}</Button>
                         )}
                         <Button
                           size="sm"
@@ -414,7 +412,7 @@ export function JobPostingDetailPage() {
                           className="cursor-pointer"
                           onClick={() => setStatusFor({ application: a })}
                         >
-                          Durum değiştir
+                          {tx('Durum değiştir')}
                         </Button>
                         <Button
                           size="sm"
@@ -422,7 +420,7 @@ export function JobPostingDetailPage() {
                           className="cursor-pointer"
                           onClick={() => setInterviewFor(a)}
                         >
-                          Mülakat planla
+                          {tx('Mülakat planla')}
                         </Button>
                       </div>
                     )}
@@ -436,7 +434,7 @@ export function JobPostingDetailPage() {
 
       {data.description && (
         <Panel>
-          <PanelHead title="İlan metni" />
+          <PanelHead title={tx('İlan metni')} />
           <PanelBody>
             <p className="text-[14px] leading-relaxed whitespace-pre-wrap text-muted-foreground">
               {data.description}

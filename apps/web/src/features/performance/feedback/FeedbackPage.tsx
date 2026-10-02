@@ -36,6 +36,7 @@ import { PersonSelect } from '../components/pickers'
 import { usePeople } from '../hooks'
 import { FeedbackCard, SENTIMENT_COLOR } from './FeedbackCard'
 import { FeedbackComposer } from './FeedbackComposer'
+import { tx } from '@/lib/i18n'
 
 type Tab = 'gelen' | 'giden' | 'calisan'
 type Since = '30' | '90' | 'all'
@@ -81,7 +82,7 @@ export function FeedbackPage() {
     return (
       <div className="mx-auto w-full max-w-5xl">
         <Panel>
-          <EmptyState icon={Lock} title="Hesabınıza bağlı çalışan kaydı bulunamadı" detail="Geri bildirim yazıp alabilmeniz için hesabınızın bir çalışan kaydıyla eşleşmesi gerekiyor. İK yöneticinize başvurun." />
+          <EmptyState icon={Lock} title={tx('Hesabınıza bağlı çalışan kaydı bulunamadı')} detail={tx('Geri bildirim yazıp alabilmeniz için hesabınızın bir çalışan kaydıyla eşleşmesi gerekiyor. İK yöneticinize başvurun.')} />
         </Panel>
       </div>
     )
@@ -94,15 +95,15 @@ export function FeedbackPage() {
   return (
     <div className="mx-auto w-full max-w-5xl">
       <PerfPageHeader
-        eyebrow="Performans"
-        title="Geri bildirim"
-        description="Dönem boyunca sürekli geri bildirim. Anonim değildir: alıcı kimin yazdığını görür. Yapıcı eleştiri somut bir gerekçe ister."
+        eyebrow={tx('Performans')}
+        title={tx('Geri bildirim')}
+        description={tx('Dönem boyunca sürekli geri bildirim. Anonim değildir: alıcı kimin yazdığını görür. Yapıcı eleştiri somut bir gerekçe ister.')}
         actions={
           // Geri bildirim yazmak backend'de yöneticiye ve üstüne açık (RequireManagerOrAbove).
           manager ? (
             <Button onClick={() => setComposing(true)} disabled={!me.employeeId}>
               <MessageSquarePlus aria-hidden />
-              Geri bildirim yaz
+              {tx('Geri bildirim yaz')}
             </Button>
           ) : undefined
         }
@@ -110,11 +111,11 @@ export function FeedbackPage() {
         <div className="grid gap-5 md:grid-cols-[auto_minmax(0,1fr)] md:items-center">
           <dl className="grid grid-cols-2 gap-6">
             <div>
-              <dt className="text-[11px] text-muted-foreground">Bana gelen</dt>
+              <dt className="text-[11px] text-muted-foreground">{tx('Bana gelen')}</dt>
               <dd className="text-[22px] leading-tight font-semibold">{summary.isPending ? <Skeleton className="mt-1 h-6 w-8" /> : <CountUp to={s?.total ?? 0} duration={0.8} />}</dd>
             </div>
             <div>
-              <dt className="text-[11px] text-muted-foreground">Okunmamış</dt>
+              <dt className="text-[11px] text-muted-foreground">{tx('Okunmamış')}</dt>
               <dd className="text-[22px] leading-tight font-semibold text-primary">{summary.isPending ? <Skeleton className="mt-1 h-6 w-8" /> : <CountUp to={s?.unread ?? 0} duration={0.8} delay={0.08} />}</dd>
             </div>
           </dl>
@@ -139,7 +140,7 @@ export function FeedbackPage() {
                     {sentimentLabels[x]} <span className="tabular font-semibold text-foreground">{s.bySentiment[x] ?? 0}</span>
                   </span>
                 ))}
-                {topReasons.length > 0 && <span className="text-muted-foreground">· En sık: {topReasons.map((x) => `${reasonLabels[x.r]} (${x.n})`).join(', ')}</span>}
+                {topReasons.length > 0 && <span className="text-muted-foreground">{tx('· En sık: {0}', [topReasons.map((x) => `${reasonLabels[x.r]} (${x.n})`).join(', ')])}</span>}
               </div>
             </div>
           )}
@@ -148,39 +149,39 @@ export function FeedbackPage() {
 
       <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <Segmented
-          ariaLabel="Kutu"
+          ariaLabel={tx('Kutu')}
           value={tab}
           onChange={(v) => set('sekme', v === 'gelen' ? null : v)}
           options={[
-            { value: 'gelen', label: <span className="inline-flex items-center gap-1.5"><Inbox className="size-3.5" aria-hidden />Gelen{s?.unread ? <span className="tabular rounded-full bg-primary px-1.5 text-[10px] text-primary-foreground">{s.unread}</span> : null}</span> },
-            { value: 'giden', label: <span className="inline-flex items-center gap-1.5"><SendHorizontal className="size-3.5" aria-hidden />Gönderdiklerim</span> },
-            ...(manager ? [{ value: 'calisan' as const, label: 'Çalışana gelenler' }] : []),
+            { value: 'gelen', label: <span className="inline-flex items-center gap-1.5"><Inbox className="size-3.5" aria-hidden />{tx('Gelen')}{s?.unread ? <span className="tabular rounded-full bg-primary px-1.5 text-[10px] text-primary-foreground">{s.unread}</span> : null}</span> },
+            { value: 'giden', label: <span className="inline-flex items-center gap-1.5"><SendHorizontal className="size-3.5" aria-hidden />{tx('Gönderdiklerim')}</span> },
+            ...(manager ? [{ value: 'calisan' as const, label: tx('Çalışana gelenler') }] : []),
           ]}
         />
         <div className="flex flex-wrap items-end gap-3">
           {tab === 'calisan' && <PersonSelect className="w-56" value={target ?? ''} onChange={(v) => set('calisan', v)} />}
           <SelectField
             className="w-48"
-            label="Neden"
+            label={tx('Neden')}
             value={reason}
             onChange={(v) => setReason(v as FeedbackReason | '__all__')}
-            options={[{ value: '__all__', label: 'Tüm nedenler' }, ...REASONS.map((r) => ({ value: r, label: reasonLabels[r] }))]}
+            options={[{ value: '__all__', label: tx('Tüm nedenler') }, ...REASONS.map((r) => ({ value: r, label: reasonLabels[r] }))]}
           />
-          <Segmented ariaLabel="Zaman" size="sm" value={since} onChange={setSince} options={[{ value: '30', label: '30 gün' }, { value: '90', label: '90 gün' }, { value: 'all', label: 'Tümü' }]} />
+          <Segmented ariaLabel={tx('Zaman')} size="sm" value={since} onChange={setSince} options={[{ value: '30', label: tx('30 gün') }, { value: '90', label: tx('90 gün') }, { value: 'all', label: tx('Tümü') }]} />
         </div>
       </div>
 
       {tab === 'calisan' && (
-        <p className="mb-3 text-[12px] text-muted-foreground">Bu görünümde yalnızca yöneticilerin görebildiği notlar da listelenir ve "Yalnızca yöneticiler görür" etiketi taşır.</p>
+        <p className="mb-3 text-[12px] text-muted-foreground">{tx('Bu görünümde yalnızca yöneticilerin görebildiği notlar da listelenir ve "Yalnızca yöneticiler görür" etiketi taşır.')}</p>
       )}
 
       {tab === 'calisan' && !target ? (
         <Panel>
-          <EmptyState icon={Inbox} title="Bir çalışan seçin" detail="Seçtiğiniz çalışana gelen tüm geri bildirimler, gizli yönetici notlarıyla birlikte burada görünür." />
+          <EmptyState icon={Inbox} title={tx('Bir çalışan seçin')} detail={tx('Seçtiğiniz çalışana gelen tüm geri bildirimler, gizli yönetici notlarıyla birlikte burada görünür.')} />
         </Panel>
       ) : active.isError ? (
         <Panel>
-          <ErrorState title="Geri bildirimler alınamadı" message={errorText(active.error)} onRetry={() => void active.refetch()} />
+          <ErrorState title={tx('Geri bildirimler alınamadı')} message={errorText(active.error)} onRetry={() => void active.refetch()} />
         </Panel>
       ) : active.isPending || me.isPending ? (
         <div className="flex flex-col gap-3" aria-busy="true">
@@ -192,19 +193,19 @@ export function FeedbackPage() {
         <Panel>
           <EmptyState
             icon={tab === 'giden' ? SendHorizontal : Inbox}
-            title={tab === 'giden' ? 'Henüz geri bildirim göndermediniz' : 'Bu filtrede geri bildirim yok'}
+            title={tab === 'giden' ? tx('Henüz geri bildirim göndermediniz') : tx('Bu filtrede geri bildirim yok')}
             detail={
               tab !== 'giden'
-                ? 'Filtreleri genişletmeyi deneyin.'
+                ? tx('Filtreleri genişletmeyi deneyin.')
                 : manager
-                  ? 'Bir ekip arkadaşınızın iyi yaptığı bir şeyi fark ettiyseniz söylemenin tam zamanı.'
-                  : 'Geri bildirimi yöneticiler ve İK yazar; size gelenler "Gelen" sekmesinde görünür.'
+                  ? tx('Bir ekip arkadaşınızın iyi yaptığı bir şeyi fark ettiyseniz söylemenin tam zamanı.')
+                  : tx('Geri bildirimi yöneticiler ve İK yazar; size gelenler "Gelen" sekmesinde görünür.')
             }
             action={
               tab === 'giden' && manager ? (
                 <Button onClick={() => setComposing(true)}>
                   <MessageSquarePlus aria-hidden />
-                  Geri bildirim yaz
+                  {tx('Geri bildirim yaz')}
                 </Button>
               ) : undefined
             }

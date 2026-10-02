@@ -1,10 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
 import { governanceApi, type PlanName } from '@/api/governance'
 import { useAuth } from '@/auth/useAuth'
+import { tx } from '@/lib/i18n'
 
 const RANK: Record<PlanName, number> = { Trial: 1, Standard: 2, Enterprise: 3 }
 
-export const planLabels: Record<PlanName, string> = { Trial: 'Deneme', Standard: 'Standart', Enterprise: 'Kurumsal' }
+export const planLabels: Record<PlanName, string> = { Trial: tx('Deneme'), Standard: tx('Standart'), Enterprise: tx('Kurumsal') }
 
 /**
  * Kiracının planı ve açık özellikleri (governance-service /plan).

@@ -23,16 +23,17 @@ import {
 } from '@/api/types'
 import { formatDate, fullName } from '@/lib/format'
 import { localISODate } from '@/lib/dates'
+import { tx } from '@/lib/i18n'
 
 type TabKey = AssetStatus | 'all'
 
 const TABS: Array<TabDef<TabKey>> = [
-  { key: 'all', label: 'Tümü' },
-  { key: 'Available', label: 'Boşta' },
-  { key: 'Assigned', label: 'Zimmetli' },
-  { key: 'Maintenance', label: 'Bakımda' },
-  { key: 'Retired', label: 'Hurda' },
-  { key: 'Lost', label: 'Kayıp' },
+  { key: 'all', label: tx('Tümü') },
+  { key: 'Available', label: tx('Boşta') },
+  { key: 'Assigned', label: tx('Zimmetli') },
+  { key: 'Maintenance', label: tx('Bakımda') },
+  { key: 'Retired', label: tx('Hurda') },
+  { key: 'Lost', label: tx('Kayıp') },
 ]
 
 function NewAssetModal({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -54,18 +55,18 @@ function NewAssetModal({ open, onClose }: { open: boolean; onClose: () => void }
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['onboarding'] })
-      toast.ok('Zimmet kaydı oluşturuldu')
+      toast.ok(tx('Zimmet kaydı oluşturuldu'))
       onClose()
       setAssetTag('')
       setModel('')
       setSerial('')
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : 'Kayıt oluşturulamadı.'),
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Kayıt oluşturulamadı.')),
   })
 
   function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (assetTag.trim().length < 2) return setError('Demirbaş no en az 2 karakter olmalı.')
+    if (assetTag.trim().length < 2) return setError(tx('Demirbaş no en az 2 karakter olmalı.'))
     setError(undefined)
     mutation.mutate()
   }
@@ -74,8 +75,8 @@ function NewAssetModal({ open, onClose }: { open: boolean; onClose: () => void }
     <Modal
       open={open}
       onClose={onClose}
-      title="Yeni demirbaş"
-      note="Kayıt boşta olarak açılır; zimmetlemek ayrı bir adım."
+      title={tx('Yeni demirbaş')}
+      note={tx('Kayıt boşta olarak açılır; zimmetlemek ayrı bir adım.')}
       footer={
         <>
           <Button
@@ -84,7 +85,7 @@ function NewAssetModal({ open, onClose }: { open: boolean; onClose: () => void }
             onClick={onClose}
             disabled={mutation.isPending}
           >
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button
             type="submit"
@@ -93,7 +94,7 @@ function NewAssetModal({ open, onClose }: { open: boolean; onClose: () => void }
             disabled={mutation.isPending}
           >
             {mutation.isPending && <LoaderCircle className="size-4 animate-spin" />}
-            Kaydet
+            {tx('Kaydet')}
           </Button>
         </>
       }
@@ -101,7 +102,7 @@ function NewAssetModal({ open, onClose }: { open: boolean; onClose: () => void }
       <form id="new-asset" onSubmit={submit} noValidate className="space-y-4">
         <TextField
           id="asset-tag"
-          label="Demirbaş no"
+          label={tx('Demirbaş no')}
           required
           value={assetTag}
           onChange={(e) => setAssetTag(e.target.value)}
@@ -109,7 +110,7 @@ function NewAssetModal({ open, onClose }: { open: boolean; onClose: () => void }
         />
         <SelectField
           id="asset-type"
-          label="Tür"
+          label={tx('Tür')}
           value={type}
           onChange={(v) => setType(v as AssetType)}
           options={(Object.keys(assetTypeLabels) as AssetType[]).map((t) => ({
@@ -120,15 +121,15 @@ function NewAssetModal({ open, onClose }: { open: boolean; onClose: () => void }
         <div className="grid gap-4 sm:grid-cols-2">
           <TextField
             id="asset-model"
-            label="Model"
-            hint="İsteğe bağlı"
+            label={tx('Model')}
+            hint={tx('İsteğe bağlı')}
             value={model}
             onChange={(e) => setModel(e.target.value)}
           />
           <TextField
             id="asset-serial"
-            label="Seri no"
-            hint="İsteğe bağlı"
+            label={tx('Seri no')}
+            hint={tx('İsteğe bağlı')}
             className="tabular"
             value={serialNumber}
             onChange={(e) => setSerial(e.target.value)}
@@ -156,19 +157,19 @@ function AssignModal({ asset, onClose }: { asset: Asset | null; onClose: () => v
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['onboarding'] })
-      toast.ok('Zimmet atandı')
+      toast.ok(tx('Zimmet atandı'))
       onClose()
       setEmployeeId('')
       setNotes('')
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : 'Zimmet atanamadı.'),
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Zimmet atanamadı.')),
   })
 
   if (!asset) return null
 
   function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (!employeeId) return setError('Çalışan seçilmeli.')
+    if (!employeeId) return setError(tx('Çalışan seçilmeli.'))
     setError(undefined)
     mutation.mutate()
   }
@@ -177,7 +178,7 @@ function AssignModal({ asset, onClose }: { asset: Asset | null; onClose: () => v
     <Modal
       open
       onClose={onClose}
-      title="Zimmet ata"
+      title={tx('Zimmet ata')}
       note={`${asset.assetTag}, ${assetTypeLabels[asset.type]}`}
       footer={
         <>
@@ -187,7 +188,7 @@ function AssignModal({ asset, onClose }: { asset: Asset | null; onClose: () => v
             onClick={onClose}
             disabled={mutation.isPending}
           >
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button
             type="submit"
@@ -196,7 +197,7 @@ function AssignModal({ asset, onClose }: { asset: Asset | null; onClose: () => v
             disabled={mutation.isPending}
           >
             {mutation.isPending && <LoaderCircle className="size-4 animate-spin" />}
-            Ata
+            {tx('Ata')}
           </Button>
         </>
       }
@@ -210,7 +211,7 @@ function AssignModal({ asset, onClose }: { asset: Asset | null; onClose: () => v
         />
         <TextField
           id="assign-date"
-          label="Zimmet tarihi"
+          label={tx('Zimmet tarihi')}
           type="date"
           required
           value={assignedOn}
@@ -218,9 +219,9 @@ function AssignModal({ asset, onClose }: { asset: Asset | null; onClose: () => v
         />
         <TextAreaField
           id="assign-notes"
-          label="Not"
+          label={tx('Not')}
           rows={2}
-          hint="İsteğe bağlı"
+          hint={tx('İsteğe bağlı')}
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
         />
@@ -245,12 +246,12 @@ function ReturnModal({ asset, onClose }: { asset: Asset | null; onClose: () => v
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['onboarding'] })
-      toast.ok(markAsRetired ? 'İade alındı, hurdaya ayrıldı' : 'İade alındı')
+      toast.ok(markAsRetired ? tx('İade alındı, hurdaya ayrıldı') : tx('İade alındı'))
       onClose()
       setCondition('')
       setRetired(false)
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : 'İade kaydedilemedi.'),
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('İade kaydedilemedi.')),
   })
 
   if (!asset) return null
@@ -259,7 +260,7 @@ function ReturnModal({ asset, onClose }: { asset: Asset | null; onClose: () => v
     <Modal
       open
       onClose={onClose}
-      title="İade al"
+      title={tx('İade al')}
       note={`${asset.assetTag}, ${assetTypeLabels[asset.type]}`}
       footer={
         <>
@@ -269,7 +270,7 @@ function ReturnModal({ asset, onClose }: { asset: Asset | null; onClose: () => v
             onClick={onClose}
             disabled={mutation.isPending}
           >
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button
             className="cursor-pointer"
@@ -277,7 +278,7 @@ function ReturnModal({ asset, onClose }: { asset: Asset | null; onClose: () => v
             onClick={() => mutation.mutate()}
           >
             {mutation.isPending && <LoaderCircle className="size-4 animate-spin" />}
-            İadeyi kaydet
+            {tx('İadeyi kaydet')}
           </Button>
         </>
       }
@@ -285,7 +286,7 @@ function ReturnModal({ asset, onClose }: { asset: Asset | null; onClose: () => v
       <div className="space-y-4">
         <TextField
           id="return-date"
-          label="İade tarihi"
+          label={tx('İade tarihi')}
           type="date"
           required
           value={returnedOn}
@@ -293,8 +294,8 @@ function ReturnModal({ asset, onClose }: { asset: Asset | null; onClose: () => v
         />
         <TextField
           id="return-condition"
-          label="Durum"
-          hint="İsteğe bağlı. Örn. çizik var, kutusu eksik."
+          label={tx('Durum')}
+          hint={tx('İsteğe bağlı. Örn. çizik var, kutusu eksik.')}
           value={condition}
           onChange={(e) => setCondition(e.target.value)}
         />
@@ -305,9 +306,9 @@ function ReturnModal({ asset, onClose }: { asset: Asset | null; onClose: () => v
             className="mt-0.5"
           />
           <span className="text-[13px]">
-            Hurdaya ayır
+            {tx('Hurdaya ayır')}
             <span className="block text-[12px] text-muted-foreground">
-              İşaretlenmezse demirbaş yeniden boşta görünür.
+              {tx('İşaretlenmezse demirbaş yeniden boşta görünür.')}
             </span>
           </span>
         </label>
@@ -337,7 +338,7 @@ export function AssetsPage() {
   const columns: Array<Column<Asset>> = [
     {
       id: 'tag',
-      header: 'Demirbaş',
+      header: tx('Demirbaş'),
       searchText: (a) => `${a.assetTag} ${assetTypeLabels[a.type]} ${a.model ?? ''}`,
       sortValue: (a) => a.assetTag,
       exportText: (a) => a.assetTag,
@@ -353,7 +354,7 @@ export function AssetsPage() {
     },
     {
       id: 'type',
-      header: 'Tür',
+      header: tx('Tür'),
       hideBelow: 'lg',
       sortValue: (a) => assetTypeLabels[a.type] ?? '',
       exportText: (a) => assetTypeLabels[a.type] ?? '',
@@ -361,7 +362,7 @@ export function AssetsPage() {
     },
     {
       id: 'serial',
-      header: 'Seri no',
+      header: tx('Seri no'),
       hideBelow: 'lg',
       searchText: (a) => a.serialNumber ?? '',
       exportText: (a) => a.serialNumber ?? '—',
@@ -369,7 +370,7 @@ export function AssetsPage() {
     },
     {
       id: 'holder',
-      header: 'Zimmetli',
+      header: tx('Zimmetli'),
       hideBelow: 'md',
       searchText: (a) => (a.assignedEmployeeId ? nameOf(a.assignedEmployeeId) : ''),
       sortValue: (a) => (a.assignedEmployeeId ? nameOf(a.assignedEmployeeId) : ''),
@@ -390,7 +391,7 @@ export function AssetsPage() {
     },
     {
       id: 'status',
-      header: 'Durum',
+      header: tx('Durum'),
       align: 'right',
       sortValue: (a) => assetStatusLabels[a.status] ?? '',
       exportText: (a) => assetStatusLabels[a.status] ?? '',
@@ -401,19 +402,19 @@ export function AssetsPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Zimmet"
-        description="Demirbaş envanteri, atama ve iade kayıtları."
+        title={tx('Zimmet')}
+        description={tx('Demirbaş envanteri, atama ve iade kayıtları.')}
         actions={
           canManage && (
             <Button className="cursor-pointer" onClick={() => setNewOpen(true)}>
               <Plus className="size-4" />
-              Yeni demirbaş
+              {tx('Yeni demirbaş')}
             </Button>
           )
         }
       />
 
-      <Tabs tabs={TABS} value={tab} onChange={setTab} label="Zimmet durumu" />
+      <Tabs tabs={TABS} value={tab} onChange={setTab} label={tx('Zimmet durumu')} />
 
       <DataTable
         rows={assets.data}
@@ -422,15 +423,15 @@ export function AssetsPage() {
         isLoading={assets.isPending}
         error={assets.error}
         onRetry={() => void assets.refetch()}
-        searchPlaceholder="Demirbaş no, model, seri no veya kişi"
+        searchPlaceholder={tx('Demirbaş no, model, seri no veya kişi')}
         exportFileName="zimmet-envanteri"
         pageSize={12}
-        emptyTitle="Bu durumda demirbaş yok"
-        emptyDetail="Başka bir durum sekmesi seçin ya da yeni bir demirbaş ekleyin."
+        emptyTitle={tx('Bu durumda demirbaş yok')}
+        emptyDetail={tx('Başka bir durum sekmesi seçin ya da yeni bir demirbaş ekleyin.')}
         emptyAction={
           canManage ? (
             <Button size="sm" className="cursor-pointer" onClick={() => setNewOpen(true)}>
-              Yeni demirbaş
+              {tx('Yeni demirbaş')}
             </Button>
           ) : undefined
         }
@@ -438,12 +439,12 @@ export function AssetsPage() {
           canManage
             ? [
                 {
-                  label: 'Zimmet ata',
+                  label: tx('Zimmet ata'),
                   hidden: (a) => a.status !== 'Available',
                   onSelect: (a) => setAssignFor(a),
                 },
                 {
-                  label: 'İade al',
+                  label: tx('İade al'),
                   hidden: (a) => a.status !== 'Assigned',
                   onSelect: (a) => setReturnFor(a),
                 },

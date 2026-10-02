@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { SelectField, TextField } from '@/components/ui/Field'
 import { useToast } from '@/components/ui/Toast'
 import { buildTree } from './DepartmentTree'
+import { tx } from '@/lib/i18n'
 
 /**
  * Radix Select boş string değerini kabul etmiyor (o değer "seçim yok"
@@ -62,7 +63,7 @@ export function NewDepartmentModal({
   }, [open, defaultParentId])
 
   const options = useMemo(
-    () => [{ value: ROOT, label: 'Kök seviye (üst departman yok)' }, ...flattenForSelect(departments)],
+    () => [{ value: ROOT, label: tx('Kök seviye (üst departman yok)') }, ...flattenForSelect(departments)],
     [departments],
   )
 
@@ -78,18 +79,18 @@ export function NewDepartmentModal({
       void queryClient.invalidateQueries({ queryKey: qk.companies })
       // Organizasyon şeması departmanları ayrı uçtan (/departments) okur.
       void queryClient.invalidateQueries({ queryKey: ['departments'] })
-      toast.ok(`"${dept.name}" departmanı eklendi.`)
+      toast.ok(tx('"{0}" departmanı eklendi.', [dept.name]))
       onClose()
     },
     onError: (e: unknown) => {
-      toast.stop(e instanceof Error ? e.message : 'Departman oluşturulamadı.')
+      toast.stop(e instanceof Error ? e.message : tx('Departman oluşturulamadı.'))
     },
   })
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setSubmitted(true)
-    const next = name.trim().length < 2 ? 'Departman adı en az 2 karakter olmalı.' : undefined
+    const next = name.trim().length < 2 ? tx('Departman adı en az 2 karakter olmalı.') : undefined
     setError(next)
     if (!next) mutation.mutate()
   }
@@ -101,8 +102,8 @@ export function NewDepartmentModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="Yeni departman"
-      note="Üst departman seçerek hiyerarşiye yerleştirebilirsiniz."
+      title={tx('Yeni departman')}
+      note={tx('Üst departman seçerek hiyerarşiye yerleştirebilirsiniz.')}
       footer={
         <>
           <Button
@@ -111,7 +112,7 @@ export function NewDepartmentModal({
             onClick={onClose}
             disabled={mutation.isPending}
           >
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button
             type="submit"
@@ -120,7 +121,7 @@ export function NewDepartmentModal({
             disabled={mutation.isPending}
           >
             {mutation.isPending && <LoaderCircle className="size-4 animate-spin" />}
-            Departmanı ekle
+            {tx('Departmanı ekle')}
           </Button>
         </>
       }
@@ -130,23 +131,23 @@ export function NewDepartmentModal({
 
         <TextField
           id="department-name"
-          label="Departman adı"
+          label={tx('Departman adı')}
           required
           value={name}
           maxLength={200}
           onChange={(e) => setName(e.target.value)}
           onBlur={() =>
             submitted &&
-            setError(name.trim().length < 2 ? 'Departman adı en az 2 karakter olmalı.' : undefined)
+            setError(name.trim().length < 2 ? tx('Departman adı en az 2 karakter olmalı.') : undefined)
           }
           error={error}
         />
 
         <SelectField
           id="department-parent"
-          label="Üst departman"
+          label={tx('Üst departman')}
           value={parentId}
-          hint="Kök seviye seçilirse şirketin doğrudan altında oluşturulur."
+          hint={tx('Kök seviye seçilirse şirketin doğrudan altında oluşturulur.')}
           onChange={setParentId}
           options={options}
         />

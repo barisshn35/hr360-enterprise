@@ -4,6 +4,7 @@ import type { ApprovalStep } from '@/api/types'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/button'
 import { TextAreaField } from '@/components/ui/Field'
+import { tx } from '@/lib/i18n'
 
 export function DecisionModal({
   state,
@@ -34,7 +35,7 @@ export function DecisionModal({
     e.preventDefault()
     // Ret kararında gerekçe zorunlu — denetim izi için anlamlı kayıt bırakır.
     if (!approve && comment.trim().length < 3) {
-      setError('Ret gerekçesi zorunlu (en az 3 karakter).')
+      setError(tx('Ret gerekçesi zorunlu (en az 3 karakter).'))
       return
     }
     setError(undefined)
@@ -45,12 +46,12 @@ export function DecisionModal({
     <Modal
       open
       onClose={onClose}
-      title={approve ? 'Adımı onayla' : 'Adımı reddet'}
-      note={`${step.order}. onay adımı için kararınızı kaydedin.`}
+      title={approve ? tx('Adımı onayla') : tx('Adımı reddet')}
+      note={tx('{0}. onay adımı için kararınızı kaydedin.', [step.order])}
       footer={
         <>
           <Button variant="outline" className="cursor-pointer" onClick={onClose} disabled={pending}>
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button
             type="submit"
@@ -60,7 +61,7 @@ export function DecisionModal({
             disabled={pending}
           >
             {pending && <LoaderCircle className="size-4 animate-spin" />}
-            {approve ? 'Onayla' : 'Reddet'}
+            {approve ? tx('Onayla') : tx('Reddet')}
           </Button>
         </>
       }
@@ -68,15 +69,15 @@ export function DecisionModal({
       <form id="decision-form" onSubmit={handleSubmit} noValidate>
         <TextAreaField
           id="decision-comment"
-          label="Gerekçe"
+          label={tx('Gerekçe')}
           required={!approve}
           rows={4}
           value={comment}
           maxLength={1000}
           hint={
             approve
-              ? 'İsteğe bağlı. Denetim izinde görünür.'
-              : 'Zorunlu. Talep sahibi bu gerekçeyi görür.'
+              ? tx('İsteğe bağlı. Denetim izinde görünür.')
+              : tx('Zorunlu. Talep sahibi bu gerekçeyi görür.')
           }
           onChange={(e) => setComment(e.target.value)}
           error={error}

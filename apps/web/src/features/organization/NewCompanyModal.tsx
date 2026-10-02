@@ -7,6 +7,7 @@ import { Modal, ErrorSummary, type SummaryItem } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/button'
 import { TextField } from '@/components/ui/Field'
 import { useToast } from '@/components/ui/Toast'
+import { tx } from '@/lib/i18n'
 
 interface Errors {
   name?: string
@@ -15,9 +16,9 @@ interface Errors {
 
 function validate(name: string, taxNumber: string): Errors {
   const errors: Errors = {}
-  if (name.trim().length < 2) errors.name = 'Şirket adı en az 2 karakter olmalı.'
+  if (name.trim().length < 2) errors.name = tx('Şirket adı en az 2 karakter olmalı.')
   if (taxNumber && !/^\d{10,11}$/.test(taxNumber.trim()))
-    errors.taxNumber = 'VKN 10 haneli (veya TCKN 11 haneli) rakamlardan oluşmalı.'
+    errors.taxNumber = tx('VKN 10 haneli (veya TCKN 11 haneli) rakamlardan oluşmalı.')
   return errors
 }
 
@@ -47,11 +48,11 @@ export function NewCompanyModal({ open, onClose }: { open: boolean; onClose: () 
       }),
     onSuccess: (company) => {
       void queryClient.invalidateQueries({ queryKey: qk.companies })
-      toast.ok(`"${company.name}" oluşturuldu.`)
+      toast.ok(tx('"{0}" oluşturuldu.', [company.name]))
       onClose()
     },
     onError: (error: unknown) => {
-      toast.stop(error instanceof Error ? error.message : 'Şirket oluşturulamadı.')
+      toast.stop(error instanceof Error ? error.message : tx('Şirket oluşturulamadı.'))
     },
   })
 
@@ -74,8 +75,8 @@ export function NewCompanyModal({ open, onClose }: { open: boolean; onClose: () 
     <Modal
       open={open}
       onClose={onClose}
-      title="Yeni şirket"
-      note="Organizasyon yapısının kök kaydını oluşturun."
+      title={tx('Yeni şirket')}
+      note={tx('Organizasyon yapısının kök kaydını oluşturun.')}
       footer={
         <>
           <Button
@@ -84,7 +85,7 @@ export function NewCompanyModal({ open, onClose }: { open: boolean; onClose: () 
             onClick={onClose}
             disabled={mutation.isPending}
           >
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button
             type="submit"
@@ -93,7 +94,7 @@ export function NewCompanyModal({ open, onClose }: { open: boolean; onClose: () 
             disabled={mutation.isPending}
           >
             {mutation.isPending && <LoaderCircle className="size-4 animate-spin" />}
-            Şirketi oluştur
+            {tx('Şirketi oluştur')}
           </Button>
         </>
       }
@@ -103,7 +104,7 @@ export function NewCompanyModal({ open, onClose }: { open: boolean; onClose: () 
 
         <TextField
           id="company-name"
-          label="Şirket adı"
+          label={tx('Şirket adı')}
           required
           value={name}
           maxLength={200}
@@ -115,12 +116,12 @@ export function NewCompanyModal({ open, onClose }: { open: boolean; onClose: () 
 
         <TextField
           id="company-tax"
-          label="Vergi numarası"
+          label={tx('Vergi numarası')}
           inputMode="numeric"
           value={taxNumber}
           maxLength={11}
           className="tabular"
-          hint="İsteğe bağlı. 10 haneli VKN veya 11 haneli TCKN."
+          hint={tx('İsteğe bağlı. 10 haneli VKN veya 11 haneli TCKN.')}
           onChange={(e) => setTaxNumber(e.target.value.replace(/\D/g, ''))}
           onBlur={() => submitted && setErrors(validate(name, taxNumber))}
           error={errors.taxNumber}

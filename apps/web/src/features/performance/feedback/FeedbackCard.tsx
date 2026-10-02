@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils'
 import { EASE } from '@/motion/primitives'
 import { Chip } from '../components/controls'
 import { PersonAvatar } from '../components/people'
+import { tx } from '@/lib/i18n'
 
 export const REASON_ICON: Record<FeedbackReason, React.ElementType> = {
   Recognition: Award,
@@ -65,16 +66,16 @@ export function FeedbackCard({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <p className="text-[14px] font-semibold">
-              {perspective === 'received' ? from : perspective === 'sent' ? `${to} için` : `${from} → ${to}`}
+              {perspective === 'received' ? from : perspective === 'sent' ? tx('{0} için', [to]) : `${from} → ${to}`}
             </p>
             {unread && (
               <span className="inline-flex items-center gap-1 text-[11px] font-medium text-primary">
                 <span className="size-1.5 animate-pulse rounded-full bg-primary" />
-                okunmadı
+                {tx('okunmadı')}
               </span>
             )}
             <span className="ml-auto text-[11px] text-muted-foreground" title={formatDateTime(f.createdAt)}>
-              {preview ? 'şimdi' : formatRelativeToNow(f.createdAt)}
+              {preview ? tx('şimdi') : formatRelativeToNow(f.createdAt)}
             </span>
           </div>
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
@@ -92,7 +93,7 @@ export function FeedbackCard({
             {!f.visibleToEmployee && (
               <Chip tone="warning">
                 <EyeOff className="size-3" aria-hidden />
-                Yalnızca yöneticiler görür
+                {tx('Yalnızca yöneticiler görür')}
               </Chip>
             )}
           </div>
@@ -100,19 +101,19 @@ export function FeedbackCard({
             <p className="mt-3 flex gap-2 rounded-md border-l-2 bg-muted/40 px-3 py-2 text-[12px] leading-relaxed text-foreground/80" style={{ borderColor: color }}>
               <Quote className="mt-0.5 size-3 shrink-0 text-muted-foreground" aria-hidden />
               <span>
-                <span className="font-medium text-foreground">Gerekçe: </span>
+                <span className="font-medium text-foreground">{tx('Gerekçe:')}{' '}</span>
                 {f.reasonDetail}
               </span>
             </p>
           )}
-          <p className="mt-2.5 text-[13px] leading-relaxed whitespace-pre-line">{f.body || <span className="text-muted-foreground">Metin…</span>}</p>
+          <p className="mt-2.5 text-[13px] leading-relaxed whitespace-pre-line">{f.body || <span className="text-muted-foreground">{tx('Metin…')}</span>}</p>
           {(unread && onMarkRead) || (f.isRead && perspective === 'received' && f.readAt) ? (
             <div className="mt-3 flex items-center justify-end gap-2">
-              {f.isRead && f.readAt && <span className="text-[11px] text-muted-foreground">Okundu · {formatDateTime(f.readAt)}</span>}
+              {f.isRead && f.readAt && <span className="text-[11px] text-muted-foreground">{tx('Okundu · {0}', [formatDateTime(f.readAt)])}</span>}
               {unread && onMarkRead && (
                 <Button size="sm" variant="outline" onClick={onMarkRead} disabled={marking}>
                   <CheckCheck aria-hidden />
-                  Okundu işaretle
+                  {tx('Okundu işaretle')}
                 </Button>
               )}
             </div>

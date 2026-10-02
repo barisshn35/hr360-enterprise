@@ -11,11 +11,12 @@
 import { Cell, Pie, PieChart, ResponsiveContainer } from 'recharts'
 import { CATEGORIES, categoryColor, categoryLabels, categoryWeightKey, type ScoringConfigInput } from '@/api/performance'
 import { AnimatedNumber } from '../components/AnimatedNumber'
+import { tx, appLocale } from '@/lib/i18n'
 
 export const GOAL_COLOR = 'hsl(var(--foreground) / 0.78)'
 export const METRIC_COLOR = 'hsl(var(--primary))'
 
-const oneDecimal = (v: number) => new Intl.NumberFormat('tr-TR', { maximumFractionDigits: 1 }).format(v)
+const oneDecimal = (v: number) => new Intl.NumberFormat(appLocale, { maximumFractionDigits: 1 }).format(v)
 
 export function CompositionDonut({ draft }: { draft: ScoringConfigInput }) {
   const gw = draft.goalWeightPercent
@@ -75,7 +76,7 @@ export function CompositionDonut({ draft }: { draft: ScoringConfigInput }) {
           </PieChart>
         </ResponsiveContainer>
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-[10px] font-medium text-muted-foreground">Nihai puan</span>
+          <span className="text-[10px] font-medium text-muted-foreground">{tx('Nihai puan')}</span>
           <span className="text-[22px] leading-none font-semibold">100</span>
         </div>
       </div>
@@ -84,7 +85,7 @@ export function CompositionDonut({ draft }: { draft: ScoringConfigInput }) {
         <li className="flex items-center justify-between gap-2">
           <span className="flex items-center gap-2">
             <span className="size-2.5 rounded-sm" style={{ background: GOAL_COLOR }} />
-            Hedefler
+            {tx('Hedefler')}
           </span>
           <span className="font-semibold">
             %<AnimatedNumber value={gw} format={oneDecimal} />
@@ -103,14 +104,14 @@ export function CompositionDonut({ draft }: { draft: ScoringConfigInput }) {
                   %<AnimatedNumber value={part} format={oneDecimal} />
                 </span>
               ) : (
-                <span className="text-muted-foreground">hesaba girmez</span>
+                <span className="text-muted-foreground">{tx('hesaba girmez')}</span>
               )}
             </li>
           )
         })}
       </ul>
       <p className="mt-3 border-t border-border pt-3 text-[11px] leading-relaxed text-muted-foreground">
-        Bir çalışanın hedefi ya da metrik puanı yoksa diğer ayak tam ağırlıkla kullanılır; boş ayağın payı kaybolmaz.
+        {tx('Bir çalışanın hedefi ya da metrik puanı yoksa diğer ayak tam ağırlıkla kullanılır; boş ayağın payı kaybolmaz.')}
       </p>
     </div>
   )

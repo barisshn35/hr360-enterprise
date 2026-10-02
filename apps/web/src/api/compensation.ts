@@ -1,4 +1,5 @@
 import { apiFetch, qs } from './client'
+import { tx } from '@/lib/i18n'
 
 /**
  * Gateway öneki ile controller yolu üst üste bindiği için "compensation"
@@ -17,12 +18,12 @@ export type CompensationChangeReason =
   | 'Other'
 
 export const compensationReasonLabels: Record<CompensationChangeReason, string> = {
-  Hire: 'İşe alım',
-  AnnualIncrease: 'Yıllık zam',
-  Promotion: 'Terfi',
-  MarketAdjustment: 'Piyasa düzeltmesi',
-  Demotion: 'Görev değişikliği',
-  Other: 'Diğer',
+  Hire: tx('İşe alım'),
+  AnnualIncrease: tx('Yıllık zam'),
+  Promotion: tx('Terfi'),
+  MarketAdjustment: tx('Piyasa düzeltmesi'),
+  Demotion: tx('Görev değişikliği'),
+  Other: tx('Diğer'),
 }
 
 export interface CompensationBand {

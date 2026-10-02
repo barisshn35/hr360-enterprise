@@ -5,6 +5,7 @@ import { StepDecisionBadge } from '@/components/ui/ModuleBadges'
 import { formatDateTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import type { ApprovalStep } from '@/api/types'
+import { tx } from '@/lib/i18n'
 
 /**
  * Ürünün merkezi.
@@ -116,7 +117,7 @@ export function ApprovalChain({
               <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
                 <p className="text-[14px] font-semibold">{nameOf(step.approverEmployeeId)}</p>
                 {isLocked ? (
-                  <span className="text-[11px] text-muted-foreground">Sırası gelmedi</span>
+                  <span className="text-[11px] text-muted-foreground">{tx('Sırası gelmedi')}</span>
                 ) : (
                   <StepDecisionBadge decision={step.decision} />
                 )}
@@ -124,8 +125,7 @@ export function ApprovalChain({
 
               {step.delegatedToEmployeeId && (
                 <p className="mt-1 text-[13px] text-muted-foreground">
-                  {nameOf(step.delegatedToEmployeeId)} kişisine devredildi
-                </p>
+                  {tx('{0} kişisine devredildi', [nameOf(step.delegatedToEmployeeId)])}</p>
               )}
 
               {step.comment && (
@@ -142,8 +142,7 @@ export function ApprovalChain({
 
               {isLocked && (
                 <p className="mt-1.5 text-[12px] text-muted-foreground">
-                  {step.order - 1}. adım karara bağlanınca açılır
-                </p>
+                  {tx('{0}. adım karara bağlanınca açılır', [step.order - 1])}</p>
               )}
 
               {isCurrent && (canDecide || canDelegate) && (
@@ -162,7 +161,7 @@ export function ApprovalChain({
                         disabled={busy}
                         onClick={() => onDecide(step, true)}
                       >
-                        Onayla
+                        {tx('Onayla')}
                       </Button>
                       <Button
                         size="sm"
@@ -171,7 +170,7 @@ export function ApprovalChain({
                         disabled={busy}
                         onClick={() => onDecide(step, false)}
                       >
-                        Reddet
+                        {tx('Reddet')}
                       </Button>
                     </>
                   )}
@@ -183,7 +182,7 @@ export function ApprovalChain({
                       disabled={busy}
                       onClick={() => onDelegate(step)}
                     >
-                      Devret
+                      {tx('Devret')}
                     </Button>
                   )}
                 </motion.div>

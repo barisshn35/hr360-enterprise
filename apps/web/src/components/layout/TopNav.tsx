@@ -60,10 +60,12 @@ import { useNavGroups } from './use-nav'
 import { useInstallPrompt } from '@/lib/pwa'
 import { usePrivacyScreen } from '@/lib/privacy-screen'
 import { usePlan } from '@/lib/plan'
+import { tx } from '@/lib/i18n'
+import { LanguageToggle } from '@/components/layout/LanguageToggle'
 
 const SPRING = { type: 'spring' as const, mass: 0.5, damping: 14, stiffness: 120, restDelta: 0.001 }
 
-const planLabels: Record<string, string> = { Trial: 'Deneme', Standard: 'Standart', Enterprise: 'Kurumsal' }
+const planLabels: Record<string, string> = { Trial: tx('Deneme'), Standard: tx('Standart'), Enterprise: tx('Kurumsal') }
 
 function useVisibleGroups() {
   return useNavGroups()
@@ -88,7 +90,7 @@ function Brand() {
       <span className="hidden min-w-0 flex-col leading-none sm:flex">
         <span className="truncate text-[13.5px] font-semibold tracking-tight">{name}</span>
         <span className="mt-1 text-[10.5px] font-medium tracking-[0.12em] text-muted-foreground uppercase">
-          {enforced && tenant?.plan ? planLabels[tenant.plan] : 'HR360'}
+          {enforced && tenant?.plan ? planLabels[tenant.plan] : tx('HR360')}
         </span>
       </span>
     </Link>
@@ -298,7 +300,7 @@ function ThemeToggle() {
     <button
       type="button"
       onClick={toggle}
-      aria-label={isDark ? 'Açık temaya geç' : 'Koyu temaya geç'}
+      aria-label={isDark ? tx('Açık temaya geç') : tx('Koyu temaya geç')}
       className="relative flex size-9 cursor-pointer items-center justify-center overflow-hidden rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
     >
       <AnimatePresence mode="wait" initial={false}>
@@ -325,18 +327,18 @@ function AccountMenu() {
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          aria-label="Hesap menüsü"
+          aria-label={tx('Hesap menüsü')}
           className="group relative ml-0.5 flex cursor-pointer items-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
         >
           <span className="absolute -inset-[3px] rounded-full bg-[conic-gradient(from_0deg,hsl(var(--primary)),transparent_40%,hsl(170_85%_60%),transparent_80%,hsl(var(--primary)))] opacity-40 transition-opacity group-hover:opacity-90 motion-safe:animate-[spin_6s_linear_infinite]" />
           <span className="relative flex size-8 items-center justify-center rounded-full bg-card text-[11.5px] font-semibold text-foreground ring-2 ring-background">
-            {user?.initials ?? 'HR'}
+            {user?.initials ?? tx('HR')}
           </span>
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-64">
         <DropdownMenuLabel className="font-normal">
-          <span className="block truncate text-[13px] font-semibold">{user?.fullName ?? 'Kullanıcı'}</span>
+          <span className="block truncate text-[13px] font-semibold">{user?.fullName ?? tx('Kullanıcı')}</span>
           <span className="mt-0.5 block truncate text-[12px] text-muted-foreground">{user?.email ?? user?.username}</span>
           <span className="mt-1.5 inline-flex rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
             {roleLabels[primaryRole(roles)]}
@@ -347,8 +349,7 @@ function AccountMenu() {
           <>
             <DropdownMenuSub>
               <DropdownMenuSubTrigger>
-                <Building2 className="size-4" strokeWidth={1.5} />
-                Kiracı: {tenant?.name ?? 'seçilmedi'}
+                <Building2 className="size-4" strokeWidth={1.5} />{tx('Kiracı: {0}', [tenant?.name ?? tx('seçilmedi')])}
               </DropdownMenuSubTrigger>
               <DropdownMenuSubContent className="max-h-72 w-56 overflow-y-auto">
                 {availableTenants.map((t) => (
@@ -365,37 +366,37 @@ function AccountMenu() {
         <DropdownMenuItem asChild>
           <Link to="/panel/profil">
             <UserRound className="size-4" strokeWidth={1.5} />
-            Profilim
+            {tx('Profilim')}
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
           <Link to="/panel/ayarlar">
             <UserCog className="size-4" strokeWidth={1.5} />
-            Ayarlar
+            {tx('Ayarlar')}
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setPrivacy(!privacy) }}>
           {privacy ? <EyeOff className="size-4" strokeWidth={1.5} /> : <Eye className="size-4" strokeWidth={1.5} />}
-          Ekran paylaşım modu {privacy ? 'açık' : 'kapalı'}
+          {tx('Ekran paylaşım modu')}{' '}{privacy ? tx('açık') : tx('kapalı')}
         </DropdownMenuItem>
         {install && (
           <DropdownMenuItem onSelect={() => void install()}>
             <Download className="size-4" strokeWidth={1.5} />
-            Uygulama olarak yükle
+            {tx('Uygulama olarak yükle')}
           </DropdownMenuItem>
         )}
         {accountUrl !== '#' && (
           <DropdownMenuItem asChild>
             <a href={accountUrl} target="_blank" rel="noreferrer">
               <UserCog className="size-4" strokeWidth={1.5} />
-              Keycloak hesabım
+              {tx('Keycloak hesabım')}
             </a>
           </DropdownMenuItem>
         )}
         <DropdownMenuSeparator />
         <DropdownMenuItem variant="destructive" onSelect={() => logout()}>
           <LogOut className="size-4" strokeWidth={1.5} />
-          Oturumu kapat
+          {tx('Oturumu kapat')}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -439,15 +440,15 @@ function MobileMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
             <Brand />
             <button
               type="button"
-              aria-label="Menüyü kapat"
+              aria-label={tx('Menüyü kapat')}
               onClick={onClose}
               className="flex size-10 cursor-pointer items-center justify-center rounded-full border border-border"
             >
               <X className="size-5" />
             </button>
           </div>
-          <nav aria-label="Modüller" className="space-y-7 px-5 pt-8 pb-32">
-            {[{ id: 'overview', heading: 'Başlangıç', items: [overviewItem] } as unknown as NavGroupData, ...groups].map(
+          <nav aria-label={tx('Modüller')} className="space-y-7 px-5 pt-8 pb-32">
+            {[{ id: 'overview', heading: tx('Başlangıç'), items: [overviewItem] } as unknown as NavGroupData, ...groups].map(
               (group, gi) => (
                 <motion.section
                   key={group.id}
@@ -531,23 +532,24 @@ export function TopNav({ onOpenCommandPalette }: { onOpenCommandPalette: () => v
               className="mr-1 hidden h-9 cursor-pointer items-center gap-2 rounded-full border border-border bg-card/50 pr-1.5 pl-3 text-[13px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground xl:flex"
             >
               <Search className="size-4" strokeWidth={1.6} />
-              <span className="w-24 text-left">Ara…</span>
-              <kbd className="rounded-full border border-border bg-muted px-2 py-0.5 font-mono text-[10px]">⌘K</kbd>
+              <span className="w-24 text-left">{tx('Ara…')}</span>
+              <kbd className="rounded-full border border-border bg-muted px-2 py-0.5 font-mono text-[10px]">{tx('⌘K')}</kbd>
             </button>
             <button
               type="button"
-              aria-label="Ara"
+              aria-label={tx('Ara')}
               onClick={onOpenCommandPalette}
               className="flex size-9 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground xl:hidden"
             >
               <Search className="size-[18px]" strokeWidth={1.75} />
             </button>
             <NotificationBell />
+            <LanguageToggle className="hidden sm:flex" />
             <ThemeToggle />
             <AccountMenu />
             <button
               type="button"
-              aria-label="Menüyü aç"
+              aria-label={tx('Menüyü aç')}
               onClick={() => setMobileOpen(true)}
               className="ml-1 flex size-9 cursor-pointer items-center justify-center rounded-full border border-border text-foreground lg:hidden"
             >

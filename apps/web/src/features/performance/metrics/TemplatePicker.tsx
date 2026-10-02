@@ -11,6 +11,7 @@ import { TEMPLATES, templateInfo, type MetricTemplate } from '@/api/performance'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { EASE } from '@/motion/primitives'
+import { tx } from '@/lib/i18n'
 
 const ICONS: Record<MetricTemplate, React.ElementType> = {
   genel: Layers,
@@ -95,11 +96,11 @@ export function TemplatePicker({
                 {busy ? (
                   <>
                     <LoaderCircle className="size-4 animate-spin" aria-hidden />
-                    Metrikler ekleniyor…
+                    {tx('Metrikler ekleniyor…')}
                   </>
                 ) : (
                   <>
-                    Bu şablonla başla
+                    {tx('Bu şablonla başla')}
                     <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" aria-hidden />
                   </>
                 )}
@@ -116,10 +117,10 @@ export function TemplatePicker({
           transition={{ delay: 0.4 }}
           className="mt-5 flex flex-col items-center gap-2 text-center"
         >
-          <p className="text-[13px] text-muted-foreground">Şablonlar yalnızca başlangıç; eklenen her metriği sonradan düzenleyebilir ya da arşivleyebilirsiniz.</p>
+          <p className="text-[13px] text-muted-foreground">{tx('Şablonlar yalnızca başlangıç; eklenen her metriği sonradan düzenleyebilir ya da arşivleyebilirsiniz.')}</p>
           <Button variant="ghost" size="sm" onClick={onStartBlank} disabled={pending !== null}>
             <Plus aria-hidden />
-            Sıfırdan kendi metriğimi oluşturacağım
+            {tx('Sıfırdan kendi metriğimi oluşturacağım')}
           </Button>
         </motion.div>
       )}

@@ -17,6 +17,7 @@ import { errorText } from '../components/controls'
 import { PersonPicker } from '../components/people'
 import { CyclePicker } from '../components/pickers'
 import { usePeople } from '../hooks'
+import { tx } from '@/lib/i18n'
 
 export function StartReviewDialog({
   cycles,
@@ -68,15 +69,15 @@ export function StartReviewDialog({
       open
       onClose={onClose}
       size="lg"
-      title="Yeni değerlendirme"
-      note="Önce boş bir taslak oluşur; formu doldurup gönderdiğinizde kilitlenir."
+      title={tx('Yeni değerlendirme')}
+      note={tx('Önce boş bir taslak oluşur; formu doldurup gönderdiğinizde kilitlenir.')}
       footer={
         <>
           <Button variant="outline" onClick={onClose} disabled={create.isPending}>
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button onClick={submit} disabled={!target || !cycleId || create.isPending}>
-            {create.isPending ? 'Oluşturuluyor…' : 'Başlat'}
+            {create.isPending ? tx('Oluşturuluyor…') : tx('Başlat')}
             <ArrowRight aria-hidden />
           </Button>
         </>
@@ -99,7 +100,7 @@ export function StartReviewDialog({
                     navigate(`/panel/performans/degerlendirme/${error.existing}`)
                   }}
                 >
-                  Mevcut değerlendirmeye git
+                  {tx('Mevcut değerlendirmeye git')}
                 </Button>
               )}
             </div>
@@ -108,11 +109,11 @@ export function StartReviewDialog({
       </AnimatePresence>
 
       {open.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-border p-4 text-[13px] text-muted-foreground">Açık dönem yok. Değerlendirme yalnızca açık dönemde başlatılabilir.</p>
+        <p className="rounded-lg border border-dashed border-border p-4 text-[13px] text-muted-foreground">{tx('Açık dönem yok. Değerlendirme yalnızca açık dönemde başlatılabilir.')}</p>
       ) : (
         <div className="flex flex-col gap-5">
           <fieldset>
-            <legend className="mb-2 text-[13px] font-medium">Değerlendirme türü</legend>
+            <legend className="mb-2 text-[13px] font-medium">{tx('Değerlendirme türü')}</legend>
             <div className="grid gap-2 sm:grid-cols-2">
               {types.map((t) => (
                 <button
@@ -138,12 +139,12 @@ export function StartReviewDialog({
 
           {type !== 'Self' && (
             <div>
-              <p className="mb-2 text-[13px] font-medium">Kimi değerlendiriyorsunuz?</p>
+              <p className="mb-2 text-[13px] font-medium">{tx('Kimi değerlendiriyorsunuz?')}</p>
               <PersonPicker people={people.list} value={employeeId} onChange={setEmployeeId} exclude={[me]} detailOf={people.titleOf} height={220} />
             </div>
           )}
 
-          <CyclePicker cycles={open} value={cycleId} onChange={setCycleId} label="Dönem" />
+          <CyclePicker cycles={open} value={cycleId} onChange={setCycleId} label={tx('Dönem')} />
         </div>
       )}
     </Modal>

@@ -13,6 +13,7 @@ import { engagementApi, type OrgMove, type OrgScenario } from '@/api/engagement'
 import { formatMoney } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { Metric, PlanGate, useAction } from '@/features/shared/kit'
+import { tx } from '@/lib/i18n'
 
 const NONE = '__none__'
 
@@ -21,11 +22,11 @@ function Editor({ scenario }: { scenario: OrgScenario }) {
   const [moves, setMoves] = useState<OrgMove[]>(scenario.moves)
   useEffect(() => setMoves(scenario.moves), [scenario.id, scenario.moves])
   const dirty = JSON.stringify(moves) !== JSON.stringify(scenario.moves)
-  const save = useAction(() => engagementApi.updateScenario(scenario.id, { name: scenario.name, moves }), { success: 'Senaryo kaydedildi', invalidate: [['org-scenarios']] })
+  const save = useAction(() => engagementApi.updateScenario(scenario.id, { name: scenario.name, moves }), { success: tx('Senaryo kaydedildi'), invalidate: [['org-scenarios']] })
   const impact = useQuery({ queryKey: ['org-scenarios', scenario.id, 'impact', scenario.updatedAt], queryFn: ({ signal }) => engagementApi.scenarioImpact(scenario.id, signal) })
   const [drag, setDrag] = useState<string | null>(null)
   const [hire, setHire] = useState<string | null>(null)
-  const [hireName, setHireName] = useState('Yeni pozisyon')
+  const [hireName, setHireName] = useState(tx('Yeni pozisyon'))
   const [hireSalary, setHireSalary] = useState('60000')
 
   const columns = useMemo(() => {
@@ -40,7 +41,7 @@ function Editor({ scenario }: { scenario: OrgScenario }) {
       placed.get(target)?.push({ id: p.employeeId, name: p.name, position: m?.newPosition ?? p.position, moved: !!m, kind: 'person' })
     }
     moves.forEach((m, idx) => m.kind === 'Hire' && placed.get(m.toDepartmentId ?? NONE)?.push({ id: `hire-${idx}`, name: m.name, position: m.plannedSalary ? formatMoney(m.plannedSalary) : null, moved: true, kind: 'hire', idx }))
-    return deptIds.map((id) => ({ id, name: id === NONE ? 'Atanmamış' : base.data!.departments.find((d) => d.id === id)!.name, people: placed.get(id)! }))
+    return deptIds.map((id) => ({ id, name: id === NONE ? tx('Atanmamış') : base.data!.departments.find((d) => d.id === id)!.name, people: placed.get(id)! }))
   }, [base.data, moves])
 
   const exits = base.data?.people.filter((p) => moves.some((m) => m.employeeId === p.employeeId && m.kind === 'Exit')) ?? []
@@ -70,10 +71,10 @@ function Editor({ scenario }: { scenario: OrgScenario }) {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-2">
-        <InfoNote>Kişileri sürükleyip başka departmana bırakın. Senaryo gerçek organizasyonu DEĞİŞTİRMEZ; yalnızca etki hesaplanır.</InfoNote>
+        <InfoNote>{tx('Kişileri sürükleyip başka departmana bırakın. Senaryo gerçek organizasyonu DEĞİŞTİRMEZ; yalnızca etki hesaplanır.')}</InfoNote>
         <div className="ml-auto flex gap-2">
-          <Button variant="outline" onClick={() => setMoves(scenario.moves)} disabled={!dirty}>Geri al</Button>
-          <Button onClick={() => save.mutate(undefined)} disabled={!dirty || save.isPending}><Save className="size-4" /> Kaydet ve hesapla</Button>
+          <Button variant="outline" onClick={() => setMoves(scenario.moves)} disabled={!dirty}>{tx('Geri al')}</Button>
+          <Button onClick={() => save.mutate(undefined)} disabled={!dirty || save.isPending}><Save className="size-4" />{' '}{tx('Kaydet ve hesapla')}</Button>
         </div>
       </div>
       <div className="flex gap-4 overflow-x-auto pb-2">
@@ -88,36 +89,36 @@ function Editor({ scenario }: { scenario: OrgScenario }) {
                     draggable onDragStart={() => setDrag(p.id)} onDragEnd={() => setDrag(null)}
                     className={cn('group flex cursor-grab items-center gap-2 rounded-xl border px-2.5 py-2 text-[12.5px] active:cursor-grabbing', p.kind === 'hire' ? 'border-dashed border-emerald-500/50 bg-emerald-500/10' : p.moved ? 'border-primary/50 bg-primary/10' : 'border-border bg-background/60')}>
                     <GripVertical className="size-3.5 text-muted-foreground" />
-                    <div className="min-w-0 flex-1"><p className="truncate font-medium">{p.name}</p><p className="truncate text-[11px] text-muted-foreground">{p.kind === 'hire' ? `yeni kadro · ${p.position ?? ''}` : p.position ?? '—'}</p></div>
-                    <button onClick={() => exit(p.id)} aria-label="Çıkar" className="cursor-pointer text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive"><UserMinus className="size-3.5" /></button>
+                    <div className="min-w-0 flex-1"><p className="truncate font-medium">{p.name}</p><p className="truncate text-[11px] text-muted-foreground">{p.kind === 'hire' ? tx('yeni kadro · {0}', [p.position ?? '']) : p.position ?? '—'}</p></div>
+                    <button onClick={() => exit(p.id)} aria-label={tx('Çıkar')} className="cursor-pointer text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive"><UserMinus className="size-3.5" /></button>
                   </motion.li>
                 ))}
               </AnimatePresence>
             </ul>
-            {col.id !== NONE && <button onClick={() => setHire(col.id)} className="mt-2 flex w-full cursor-pointer items-center justify-center gap-1 rounded-xl border border-dashed border-border py-1.5 text-[12px] text-muted-foreground hover:border-emerald-500/50 hover:text-foreground"><UserPlus className="size-3.5" /> Yeni kadro</button>}
+            {col.id !== NONE && <button onClick={() => setHire(col.id)} className="mt-2 flex w-full cursor-pointer items-center justify-center gap-1 rounded-xl border border-dashed border-border py-1.5 text-[12px] text-muted-foreground hover:border-emerald-500/50 hover:text-foreground"><UserPlus className="size-3.5" />{' '}{tx('Yeni kadro')}</button>}
           </div>
         ))}
         {exits.length > 0 && (
           <div className="w-56 shrink-0 rounded-2xl border border-destructive/30 bg-destructive/5 p-3">
-            <p className="mb-2 text-[13.5px] font-semibold text-destructive">Ayrılanlar</p>
+            <p className="mb-2 text-[13.5px] font-semibold text-destructive">{tx('Ayrılanlar')}</p>
             {exits.map((p) => <button key={p.employeeId} onClick={() => setMoves((ms) => ms.filter((m) => !(m.employeeId === p.employeeId && m.kind === 'Exit')))} className="mb-1 block w-full cursor-pointer truncate rounded-lg bg-background/60 px-2 py-1.5 text-left text-[12.5px] line-through hover:no-underline">{p.name}</button>)}
           </div>
         )}
       </div>
       <Panel>
-        <PanelHead title="Etki" note={dirty ? 'Kaydedilmemiş değişiklikler var — hesap son kayda göredir.' : 'Kayıtlı senaryoya göre.'} />
+        <PanelHead title={tx('Etki')} note={dirty ? tx('Kaydedilmemiş değişiklikler var — hesap son kayda göredir.') : tx('Kayıtlı senaryoya göre.')} />
         <PanelBody>
           {impact.isPending ? <RowsSkeleton rows={2} /> : impact.data && (
             <div className="grid gap-5 lg:grid-cols-[1fr_1.4fr]">
               <div className="grid grid-cols-2 gap-3">
-                <Metric label="Kadro (önce → sonra)" value={`${t!.headcountBefore} → ${t!.headcountAfter}`} />
-                <Metric label="Taşınan kişi" value={t!.movedPeople} />
+                <Metric label={tx('Kadro (önce → sonra)')} value={`${t!.headcountBefore} → ${t!.headcountAfter}`} />
+                <Metric label={tx('Taşınan kişi')} value={t!.movedPeople} />
                 {impact.data.costVisible ? (
                   <>
-                    <Metric label="Aylık maaş farkı" value={formatMoney(t!.monthlyCostDelta ?? 0)} tone={(t!.monthlyCostDelta ?? 0) > 0 ? 'warn' : 'good'} />
-                    <Metric label="Yeni kadro maliyeti" value={formatMoney(t!.hireCost ?? 0)} />
+                    <Metric label={tx('Aylık maaş farkı')} value={formatMoney(t!.monthlyCostDelta ?? 0)} tone={(t!.monthlyCostDelta ?? 0) > 0 ? 'warn' : 'good'} />
+                    <Metric label={tx('Yeni kadro maliyeti')} value={formatMoney(t!.hireCost ?? 0)} />
                   </>
-                ) : <p className="col-span-2 text-[12.5px] text-muted-foreground">Maliyet etkisi yalnızca ücret görme yetkisi olanlara gösterilir.</p>}
+                ) : <p className="col-span-2 text-[12.5px] text-muted-foreground">{tx('Maliyet etkisi yalnızca ücret görme yetkisi olanlara gösterilir.')}</p>}
               </div>
               <div className="h-56">
                 <ResponsiveContainer>
@@ -126,7 +127,7 @@ function Editor({ scenario }: { scenario: OrgScenario }) {
                     <YAxis allowDecimals={false} fontSize={11} width={24} tickLine={false} axisLine={false} />
                     <Tooltip contentStyle={{ background: 'hsl(var(--popover))', border: '1px solid hsl(var(--border))', borderRadius: 12 }} />
                     <Legend wrapperStyle={{ fontSize: 12 }} />
-                    <Bar dataKey="before" name="Önce" fill="hsl(var(--muted-foreground))" radius={[6, 6, 0, 0]} />
+                    <Bar dataKey="before" name={tx('Önce')} fill="hsl(var(--muted-foreground))" radius={[6, 6, 0, 0]} />
                     <Bar dataKey="after" name="Sonra" fill="hsl(var(--primary))" radius={[6, 6, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
@@ -136,8 +137,8 @@ function Editor({ scenario }: { scenario: OrgScenario }) {
         </PanelBody>
       </Panel>
       {hire && (
-        <Modal open onClose={() => setHire(null)} title="Yeni kadro ekle" footer={<><Button variant="outline" onClick={() => setHire(null)}>Vazgeç</Button><Button onClick={() => { setMoves((ms) => [...ms, { employeeId: '00000000-0000-0000-0000-000000000000', name: hireName, toDepartmentId: hire, kind: 'Hire', plannedSalary: Number(hireSalary) || null }]); setHire(null) }}>Ekle</Button></>}>
-          <div className="grid gap-4 sm:grid-cols-2"><TextField label="Pozisyon adı" value={hireName} onChange={(e) => setHireName(e.target.value)} /><TextField label="Planlanan brüt maaş" type="number" value={hireSalary} onChange={(e) => setHireSalary(e.target.value)} /></div>
+        <Modal open onClose={() => setHire(null)} title={tx('Yeni kadro ekle')} footer={<><Button variant="outline" onClick={() => setHire(null)}>{tx('Vazgeç')}</Button><Button onClick={() => { setMoves((ms) => [...ms, { employeeId: '00000000-0000-0000-0000-000000000000', name: hireName, toDepartmentId: hire, kind: 'Hire', plannedSalary: Number(hireSalary) || null }]); setHire(null) }}>{tx('Ekle')}</Button></>}>
+          <div className="grid gap-4 sm:grid-cols-2"><TextField label={tx('Pozisyon adı')} value={hireName} onChange={(e) => setHireName(e.target.value)} /><TextField label={tx('Planlanan brüt maaş')} type="number" value={hireSalary} onChange={(e) => setHireSalary(e.target.value)} /></div>
         </Modal>
       )}
     </div>
@@ -149,26 +150,26 @@ export function OrgScenariosPage() {
   const [sel, setSel] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [name, setName] = useState('')
-  const create = useAction(() => engagementApi.createScenario({ name }), { success: 'Senaryo oluşturuldu', invalidate: [['org-scenarios']], onDone: (s) => { setSel(s.id); setCreating(false); setName('') } })
-  const del = useAction((id: string) => engagementApi.deleteScenario(id), { success: 'Silindi', invalidate: [['org-scenarios']], onDone: () => setSel(null) })
+  const create = useAction(() => engagementApi.createScenario({ name }), { success: tx('Senaryo oluşturuldu'), invalidate: [['org-scenarios']], onDone: (s) => { setSel(s.id); setCreating(false); setName('') } })
+  const del = useAction((id: string) => engagementApi.deleteScenario(id), { success: tx('Silindi'), invalidate: [['org-scenarios']], onDone: () => setSel(null) })
   const current = list.data?.find((s) => s.id === sel) ?? list.data?.[0]
   return (
     <PlanGate feature="org-scenarios">
-      <PageHeader title="Org senaryoları" description="“Ekibi ikiye bölsek?”, “Bu departmanı birleştirsek?” — taşıma, ayrılış ve yeni kadro hamlelerinin kadro ve maliyet etkisini önceden görün." actions={<Button onClick={() => setCreating(true)}><Plus className="size-4" /> Yeni senaryo</Button>} />
+      <PageHeader title={tx('Org senaryoları')} description={tx('“Ekibi ikiye bölsek?”, “Bu departmanı birleştirsek?” — taşıma, ayrılış ve yeni kadro hamlelerinin kadro ve maliyet etkisini önceden görün.')} actions={<Button onClick={() => setCreating(true)}><Plus className="size-4" />{' '}{tx('Yeni senaryo')}</Button>} />
       {list.isPending ? <RowsSkeleton /> : list.isError ? <ErrorState message={(list.error as Error).message} /> : (list.data ?? []).length === 0 ? (
-        <EmptyState icon={Workflow} title="Henüz senaryo yok" detail="Bir senaryo oluşturup kişileri departmanlar arasında sürükleyin." action={<Button onClick={() => setCreating(true)}>Senaryo oluştur</Button>} />
+        <EmptyState icon={Workflow} title={tx('Henüz senaryo yok')} detail={tx('Bir senaryo oluşturup kişileri departmanlar arasında sürükleyin.')} action={<Button onClick={() => setCreating(true)}>{tx('Senaryo oluştur')}</Button>} />
       ) : (
         <>
           <div className="mb-5 flex flex-wrap items-end gap-3">
-            <div className="w-72"><SelectField label="Senaryo" value={current?.id ?? ''} onChange={setSel} options={list.data!.map((s) => ({ value: s.id, label: `${s.name} (${s.moves.length} hamle)` }))} /></div>
-            {current && <Button variant="ghost" onClick={() => del.mutate(current.id)}><Trash2 className="size-4" /> Sil</Button>}
+            <div className="w-72"><SelectField label={tx('Senaryo')} value={current?.id ?? ''} onChange={setSel} options={list.data!.map((s) => ({ value: s.id, label: tx('{0} ({1} hamle)', [s.name, s.moves.length]) }))} /></div>
+            {current && <Button variant="ghost" onClick={() => del.mutate(current.id)}><Trash2 className="size-4" />{' '}{tx('Sil')}</Button>}
           </div>
           {current && <Editor scenario={current} />}
         </>
       )}
       {creating && (
-        <Modal open onClose={() => setCreating(false)} title="Yeni senaryo" footer={<><Button variant="outline" onClick={() => setCreating(false)}>Vazgeç</Button><Button disabled={!name.trim()} onClick={() => create.mutate(undefined)}>Oluştur</Button></>}>
-          <TextField label="Senaryo adı" value={name} onChange={(e) => setName(e.target.value)} placeholder="Örn. 2027 yeniden yapılanma" />
+        <Modal open onClose={() => setCreating(false)} title={tx('Yeni senaryo')} footer={<><Button variant="outline" onClick={() => setCreating(false)}>{tx('Vazgeç')}</Button><Button disabled={!name.trim()} onClick={() => create.mutate(undefined)}>{tx('Oluştur')}</Button></>}>
+          <TextField label={tx('Senaryo adı')} value={name} onChange={(e) => setName(e.target.value)} placeholder={tx('Örn. 2027 yeniden yapılanma')} />
         </Modal>
       )}
     </PlanGate>

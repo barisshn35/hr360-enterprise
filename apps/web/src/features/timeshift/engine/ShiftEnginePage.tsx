@@ -5,6 +5,7 @@ import { useShiftPatterns, useShiftTeams } from '@/api/queries-shift-engine'
 import { PatternsView } from './PatternsView'
 import { RosterView } from './RosterView'
 import { TeamsView } from './TeamsView'
+import { tx } from '@/lib/i18n'
 
 type Tab = 'takvim' | 'ekipler' | 'desenler'
 
@@ -35,18 +36,18 @@ export function ShiftEnginePage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Vardiya planı"
-        description="Döngüsel vardiya desenlerini tanımlayın, ekipleri desenin farklı günlerinden başlatarak 7/24 kapsama kurun. Onaylanan izinler takvime kendiliğinden işlenir."
+        title={tx('Vardiya planı')}
+        description={tx('Döngüsel vardiya desenlerini tanımlayın, ekipleri desenin farklı günlerinden başlatarak 7/24 kapsama kurun. Onaylanan izinler takvime kendiliğinden işlenir.')}
       />
 
       <Tabs<Tab>
-        label="Vardiya planı bölümleri"
+        label={tx('Vardiya planı bölümleri')}
         value={tab}
         onChange={setTab}
         tabs={[
-          { key: 'takvim', label: 'Takvim' },
-          { key: 'ekipler', label: 'Ekipler', count: teams.data?.length },
-          { key: 'desenler', label: 'Desenler', count: patterns.data?.length },
+          { key: 'takvim', label: tx('Takvim') },
+          { key: 'ekipler', label: tx('Ekipler'), count: teams.data?.length },
+          { key: 'desenler', label: tx('Desenler'), count: patterns.data?.length },
         ]}
       />
 

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'motion/react'
 import { CircleAlert, CircleCheck, Info, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { tx } from '@/lib/i18n'
 
 type Tone = 'ok' | 'stop' | 'info'
 
@@ -83,7 +84,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                   <span className="min-w-0 flex-1 break-words">{t.message}</span>
                   <button
                     type="button"
-                    aria-label="Kapat"
+                    aria-label={tx('Kapat')}
                     onClick={() => remove(t.id)}
                     className="-mr-1 shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
                   >
@@ -102,6 +103,6 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
 export function useToast(): Api {
   const ctx = useContext(ToastContext)
-  if (!ctx) throw new Error('useToast yalnızca <ToastProvider> içinde kullanılabilir.')
+  if (!ctx) throw new Error(tx('useToast yalnızca <ToastProvider> içinde kullanılabilir.'))
   return ctx
 }

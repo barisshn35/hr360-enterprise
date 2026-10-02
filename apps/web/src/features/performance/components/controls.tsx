@@ -10,6 +10,7 @@ import { motion } from 'motion/react'
 import { Slider as SliderPrimitive, Switch as SwitchPrimitive } from 'radix-ui'
 import { cn } from '@/lib/utils'
 import { ApiError } from '@/api/client'
+import { tx } from '@/lib/i18n'
 
 /* ------------------------------------ Anahtar ----------------------------------- */
 
@@ -188,10 +189,10 @@ export function Slider({
 /* ---------------------------------- Yardımcılar -------------------------------- */
 
 /** Backend'in `message` alanı; yoksa genel metin. Ham HTTP kodu asla gösterilmez. */
-export function errorText(error: unknown, fallback = 'İşlem tamamlanamadı. Lütfen tekrar deneyin.'): string {
+export function errorText(error: unknown, fallback = tx('İşlem tamamlanamadı. Lütfen tekrar deneyin.')): string {
   if (error instanceof ApiError) return error.message || fallback
   if (error instanceof Error && error.message && !/fetch|network/i.test(error.message)) return error.message
-  if (error instanceof Error) return 'Sunucuya ulaşılamadı. Bağlantınızı kontrol edin.'
+  if (error instanceof Error) return tx('Sunucuya ulaşılamadı. Bağlantınızı kontrol edin.')
   return fallback
 }
 

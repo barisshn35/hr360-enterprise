@@ -12,6 +12,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge'
 import { cn } from '@/lib/utils'
 import { EASE } from '@/motion/primitives'
 import { AnimatedNumber } from './AnimatedNumber'
+import { tx } from '@/lib/i18n'
 
 const TONE_COLOR = {
   danger: 'hsl(var(--destructive))',
@@ -32,7 +33,7 @@ export function ScoreRing({
   thresholds,
   provisional,
   size = 168,
-  label = 'Nihai puan',
+  label = tx('Nihai puan'),
 }: {
   score: number | null
   thresholds?: Thresholds | null
@@ -79,7 +80,7 @@ export function ScoreRing({
         {provisional && (
           <span className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-medium text-[hsl(var(--warning))]">
             <Hourglass className="size-3" aria-hidden />
-            geçici
+            {tx('geçici')}
           </span>
         )}
       </div>
@@ -106,10 +107,10 @@ export function ScoreBadge({
         className,
       )}
       style={{ color: scoreColor(score, thresholds), background: `color-mix(in oklab, ${scoreColor(score, thresholds)} 10%, transparent)` }}
-      title={provisional ? 'Geçici puan — az değerlendirmeye dayanıyor' : undefined}
+      title={provisional ? tx('Geçici puan — az değerlendirmeye dayanıyor') : undefined}
     >
       {formatScore(score)}
-      {provisional && <Hourglass className="size-3 text-[hsl(var(--warning))]" aria-label="geçici" />}
+      {provisional && <Hourglass className="size-3 text-[hsl(var(--warning))]" aria-label={tx('geçici')} />}
     </span>
   )
 }
@@ -135,10 +136,9 @@ export function ProvisionalBanner({ reason, className }: { reason: string | null
       <span aria-hidden className="absolute inset-y-0 left-0 w-1 bg-[hsl(var(--warning))]" />
       <AlertTriangle className="mt-0.5 size-5 shrink-0 text-[hsl(var(--warning))]" aria-hidden />
       <div className="min-w-0">
-        <p className="text-[14px] font-semibold">Bu puan geçici</p>
+        <p className="text-[14px] font-semibold">{tx('Bu puan geçici')}</p>
         <p className="mt-0.5 text-[13px] leading-relaxed text-foreground/80">
-          {reason ?? 'Puan henüz yeterli değerlendirmeye dayanmıyor.'} Yeni değerlendirmeler geldikçe değişebilir.
-        </p>
+          {tx('{0} Yeni değerlendirmeler geldikçe değişebilir.', [reason ?? tx('Puan henüz yeterli değerlendirmeye dayanmıyor.')])}</p>
       </div>
     </motion.div>
   )

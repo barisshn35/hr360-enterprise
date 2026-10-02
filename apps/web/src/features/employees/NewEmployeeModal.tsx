@@ -9,6 +9,7 @@ import { Modal, ErrorSummary, type SummaryItem } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/button'
 import { TextField, SelectField } from '@/components/ui/Field'
 import { useToast } from '@/components/ui/Toast'
+import { tx } from '@/lib/i18n'
 
 interface DepartmentOption {
   id: string
@@ -31,12 +32,12 @@ const PHONE_RE = /^[0-9+()\s-]{7,20}$/
 
 function validate(form: Form): Errors {
   const errors: Errors = {}
-  if (form.firstName.trim().length < 2) errors.firstName = 'Ad en az 2 karakter olmalı.'
-  if (form.lastName.trim().length < 2) errors.lastName = 'Soyad en az 2 karakter olmalı.'
-  if (!EMAIL_RE.test(form.email.trim())) errors.email = 'Geçerli bir e-posta adresi girin.'
+  if (form.firstName.trim().length < 2) errors.firstName = tx('Ad en az 2 karakter olmalı.')
+  if (form.lastName.trim().length < 2) errors.lastName = tx('Soyad en az 2 karakter olmalı.')
+  if (!EMAIL_RE.test(form.email.trim())) errors.email = tx('Geçerli bir e-posta adresi girin.')
   if (form.phone && !PHONE_RE.test(form.phone.trim()))
-    errors.phone = 'Telefon numarası geçerli görünmüyor.'
-  if (!form.hireDate) errors.hireDate = 'İşe giriş tarihi zorunlu.'
+    errors.phone = tx('Telefon numarası geçerli görünmüyor.')
+  if (!form.hireDate) errors.hireDate = tx('İşe giriş tarihi zorunlu.')
   return errors
 }
 
@@ -120,14 +121,14 @@ export function NewEmployeeModal({
       void queryClient.invalidateQueries({ queryKey: ['departments'] })
       toast.ok(
         inviteSent
-          ? `${employee.firstName} ${employee.lastName} kaydedildi. Parola belirleme e-postası gönderildi.`
-          : `${employee.firstName} ${employee.lastName} kaydedildi. Davet e-postası gönderilemedi, sonra tekrar deneyin.`,
+          ? tx('{0} {1} kaydedildi. Parola belirleme e-postası gönderildi.', [employee.firstName, employee.lastName])
+          : tx('{0} {1} kaydedildi. Davet e-postası gönderilemedi, sonra tekrar deneyin.', [employee.firstName, employee.lastName]),
       )
       onClose()
       navigate(`/panel/calisanlar/${employee.id}`)
     },
     onError: (e: unknown) => {
-      toast.stop(e instanceof Error ? e.message : 'Çalışan oluşturulamadı.')
+      toast.stop(e instanceof Error ? e.message : tx('Çalışan oluşturulamadı.'))
     },
   })
 
@@ -152,8 +153,8 @@ export function NewEmployeeModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="Yeni çalışan"
-      note="Temel bilgileri girin. Kayıt tamamlanınca giriş için parola belirleme e-postası gönderilir."
+      title={tx('Yeni çalışan')}
+      note={tx('Temel bilgileri girin. Kayıt tamamlanınca giriş için parola belirleme e-postası gönderilir.')}
       size="lg"
       footer={
         <>
@@ -163,7 +164,7 @@ export function NewEmployeeModal({
             onClick={onClose}
             disabled={mutation.isPending}
           >
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button
             type="submit"
@@ -172,7 +173,7 @@ export function NewEmployeeModal({
             disabled={mutation.isPending}
           >
             {mutation.isPending && <LoaderCircle className="size-4 animate-spin" />}
-            Çalışanı kaydet
+            {tx('Çalışanı kaydet')}
           </Button>
         </>
       }
@@ -183,7 +184,7 @@ export function NewEmployeeModal({
         <div className="grid gap-4 sm:grid-cols-2">
           <TextField
             id="employee-firstName"
-            label="Ad"
+            label={tx('Ad')}
             required
             autoComplete="given-name"
             value={form.firstName}
@@ -193,7 +194,7 @@ export function NewEmployeeModal({
           />
           <TextField
             id="employee-lastName"
-            label="Soyad"
+            label={tx('Soyad')}
             required
             autoComplete="family-name"
             value={form.lastName}
@@ -218,10 +219,10 @@ export function NewEmployeeModal({
         <div className="grid gap-4 sm:grid-cols-2">
           <TextField
             id="employee-phone"
-            label="Telefon"
+            label={tx('Telefon')}
             type="tel"
             autoComplete="tel"
-            hint="İsteğe bağlı"
+            hint={tx('İsteğe bağlı')}
             value={form.phone}
             onChange={set('phone')}
             onBlur={revalidate}
@@ -229,7 +230,7 @@ export function NewEmployeeModal({
           />
           <TextField
             id="employee-hireDate"
-            label="İşe giriş tarihi"
+            label={tx('İşe giriş tarihi')}
             type="date"
             required
             value={form.hireDate}
@@ -241,14 +242,14 @@ export function NewEmployeeModal({
 
         <SelectField
           id="employee-department"
-          label="Departman"
+          label={tx('Departman')}
           value={form.departmentId}
           onChange={setDepartment}
-          placeholder="Departman seçin (isteğe bağlı)"
+          placeholder={tx('Departman seçin (isteğe bağlı)')}
           options={departments.map((d) => ({ value: d.id, label: d.label }))}
           hint={
             departments.length === 0
-              ? 'Henüz departman yok; daha sonra Organizasyon sayfasından atayabilirsiniz.'
+              ? tx('Henüz departman yok; daha sonra Organizasyon sayfasından atayabilirsiniz.')
               : undefined
           }
         />

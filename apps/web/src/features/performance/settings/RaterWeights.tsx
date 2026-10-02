@@ -23,6 +23,7 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { Chip, Switch } from '../components/controls'
 import { NumberStepper } from '../components/NumberStepper'
+import { tx, appLocale } from '@/lib/i18n'
 
 const EXAMPLE: { type: ReviewType; score: number }[] = [
   { type: 'Manager', score: 80 },
@@ -31,9 +32,9 @@ const EXAMPLE: { type: ReviewType; score: number }[] = [
 ]
 
 function ratioText(a: number, b: number): string {
-  if (b === 0) return a === 0 ? 'eşit' : '—'
+  if (b === 0) return a === 0 ? tx('eşit') : '—'
   const r = a / b
-  if (Math.abs(r - 1) < 0.01) return 'eşit ağırlıkta'
+  if (Math.abs(r - 1) < 0.01) return tx('eşit ağırlıkta')
   return `${formatWeight(Math.round(r * 100) / 100)} kat`
 }
 
@@ -53,16 +54,16 @@ export function RaterWeights({
   const times = (a: number, b: number) => formatWeight(Math.round((a / b) * 100) / 100)
   const headline =
     self === 0 && manager === 0
-      ? 'Yönetici ve öz değerlendirme puana katılmıyor (ikisinin de katsayısı 0).'
+      ? tx('Yönetici ve öz değerlendirme puana katılmıyor (ikisinin de katsayısı 0).')
       : self === 0
-        ? 'Öz değerlendirme puana hiç katılmaz (katsayı 0).'
+        ? tx('Öz değerlendirme puana hiç katılmaz (katsayı 0).')
         : manager === 0
-          ? 'Yönetici değerlendirmesi puana hiç katılmaz (katsayı 0).'
+          ? tx('Yönetici değerlendirmesi puana hiç katılmaz (katsayı 0).')
           : Math.abs(manager - self) < 0.001
-            ? 'Yönetici değerlendirmesi ile öz değerlendirme eşit ağırlıkta sayılır.'
+            ? tx('Yönetici değerlendirmesi ile öz değerlendirme eşit ağırlıkta sayılır.')
             : manager > self
-              ? `Yönetici değerlendirmesi öz değerlendirmeden ${times(manager, self)} kat ağır sayılır.`
-              : `Öz değerlendirme yönetici değerlendirmesinden ${times(self, manager)} kat ağır sayılır.`
+              ? tx('Yönetici değerlendirmesi öz değerlendirmeden {0} kat ağır sayılır.', [times(manager, self)])
+              : tx('Öz değerlendirme yönetici değerlendirmesinden {0} kat ağır sayılır.', [times(self, manager)])
 
   const exSum = EXAMPLE.reduce((a, e) => a + w(e.type), 0)
   const exResult = exSum > 0 ? EXAMPLE.reduce((a, e) => a + e.score * w(e.type), 0) / exSum : null
@@ -89,7 +90,7 @@ export function RaterWeights({
               onClick={() => REVIEW_TYPES.forEach((t) => onChange(reviewWeightKey[t], DEFAULT_REVIEW_WEIGHTS[t]))}
             >
               <RotateCcw aria-hidden />
-              Varsayılana dön (0,5 / 2 / 1,5 / 1 / 1)
+              {tx('Varsayılana dön (0,5 / 2 / 1,5 / 1 / 1)')}
             </Button>
           )}
         </div>
@@ -116,14 +117,14 @@ export function RaterWeights({
                         ? 'referans'
                         : self > 0
                           ? Math.abs(v - self) < 0.001
-                            ? 'öz değerlendirmeyle eşit'
-                            : `öz değerlendirmenin ${ratioText(v, self)}ı`
+                            ? tx('öz değerlendirmeyle eşit')
+                            : tx('öz değerlendirmenin {0}ı', [ratioText(v, self)])
                           : ''}
                     </span>
                   </div>
-                  {v === 0 && <Chip tone="warning">Puana katılmaz</Chip>}
+                  {v === 0 && <Chip tone="warning">{tx('Puana katılmaz')}</Chip>}
                 </div>
-                <NumberStepper value={v} onChange={(n) => onChange(reviewWeightKey[t], n)} min={0} max={10} step={0.5} decimals={2} ariaLabel={`${reviewTypeLabels[t]} katsayısı`} />
+                <NumberStepper value={v} onChange={(n) => onChange(reviewWeightKey[t], n)} min={0} max={10} step={0.5} decimals={2} ariaLabel={tx('{0} katsayısı', [reviewTypeLabels[t]])} />
               </li>
             )
           })}
@@ -132,16 +133,16 @@ export function RaterWeights({
         <div className="mt-4 rounded-lg border border-dashed border-border bg-muted/30 p-3.5">
           <p className="flex items-center gap-1.5 text-[12px] font-semibold text-muted-foreground">
             <Calculator className="size-3.5" aria-hidden />
-            Örnek hesap — bir metrikte
+            {tx('Örnek hesap — bir metrikte')}
           </p>
           <p className="mt-1.5 text-[13px] leading-relaxed">
             {EXAMPLE.map((e, i) => (
               <span key={e.type}>
                 {i > 0 && ', '}
-                {reviewTypeLabels[e.type].toLocaleLowerCase('tr-TR')} <span className="tabular font-semibold">{e.score}</span>
+                {reviewTypeLabels[e.type].toLocaleLowerCase(appLocale)} <span className="tabular font-semibold">{e.score}</span>
               </span>
             ))}{' '}
-            verdi →
+            {tx('verdi →')}
           </p>
           <p className="tabular mt-1 overflow-x-auto text-[13px] whitespace-nowrap text-muted-foreground">
             ({EXAMPLE.map((e) => `${e.score}×${formatWeight(w(e.type))}`).join(' + ')}) ÷ {formatWeight(exSum)} ={' '}
@@ -156,9 +157,9 @@ export function RaterWeights({
         <div>
           <div className="flex items-center justify-between gap-4">
             <div>
-              <p className="text-[13px] font-medium">Geçerli puan için en az değerlendirme</p>
+              <p className="text-[13px] font-medium">{tx('Geçerli puan için en az değerlendirme')}</p>
               <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">
-                Bundan az değerlendirmeye dayanan puan <strong className="font-medium text-foreground">geçici</strong> sayılır ve her yerde işaretli görünür.
+                {tx('Bundan az değerlendirmeye dayanan puan')}{' '}<strong className="font-medium text-foreground">{tx('geçici')}</strong>{' '}{tx('sayılır ve her yerde işaretli görünür.')}
               </p>
             </div>
             <NumberStepper
@@ -166,7 +167,7 @@ export function RaterWeights({
               onChange={(n) => onChange('minReviewsForValidScore', Math.round(n))}
               min={1}
               max={10}
-              ariaLabel="Geçerli puan için en az değerlendirme"
+              ariaLabel={tx('Geçerli puan için en az değerlendirme')}
             />
           </div>
           <div className="mt-3 flex gap-1" aria-hidden>
@@ -183,11 +184,11 @@ export function RaterWeights({
         <Switch
           checked={draft.allowSelfOnlyScore}
           onChange={(v) => onChange('allowSelfOnlyScore', v)}
-          label="Yalnızca öz değerlendirmeyle geçerli puan oluşsun"
+          label={tx('Yalnızca öz değerlendirmeyle geçerli puan oluşsun')}
           hint={
             draft.allowSelfOnlyScore
-              ? 'Açık: yalnızca öz değerlendirmesi olan çalışanın puanı da geçerli sayılır.'
-              : 'Kapalı: yalnızca öz değerlendirmesi olan çalışanın puanı geçici kalır; yönetici ya da ekip arkadaşı değerlendirmesi beklenir.'
+              ? tx('Açık: yalnızca öz değerlendirmesi olan çalışanın puanı da geçerli sayılır.')
+              : tx('Kapalı: yalnızca öz değerlendirmesi olan çalışanın puanı geçici kalır; yönetici ya da ekip arkadaşı değerlendirmesi beklenir.')
           }
         />
       </div>

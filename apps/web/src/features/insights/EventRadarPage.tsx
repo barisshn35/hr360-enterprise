@@ -10,11 +10,12 @@ import { governanceApi, streamEvents, type RadarEvent } from '@/api/governance'
 import { formatRelativeToNow } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { PlanGate } from '@/features/shared/kit'
+import { tx, txServer } from '@/lib/i18n'
 
 const TOPIC: Record<string, { label: string; color: string; angle: number; icon: React.ElementType }> = {
-  'hr360.employee.events': { label: 'Çalışan', color: '#10b981', angle: 30, icon: Users },
-  'hr360.leave.events': { label: 'İzin', color: '#38bdf8', angle: 150, icon: CalendarDays },
-  'hr360.workflow.events': { label: 'Onay akışı', color: '#f59e0b', angle: 270, icon: Workflow },
+  'hr360.employee.events': { label: tx('Çalışan'), color: '#10b981', angle: 30, icon: Users },
+  'hr360.leave.events': { label: tx('İzin'), color: '#38bdf8', angle: 150, icon: CalendarDays },
+  'hr360.workflow.events': { label: tx('Onay akışı'), color: '#f59e0b', angle: 270, icon: Workflow },
 }
 const topicOf = (t: string) => TOPIC[t] ?? { label: t.replace('hr360.', '').replace('.events', ''), color: '#a78bfa', angle: (t.length * 47) % 360, icon: Briefcase }
 
@@ -41,7 +42,7 @@ function Radar({ blips }: { blips: Array<RadarEvent & { r: number; a: number }> 
           const y = 50 + Math.sin((b.a * Math.PI) / 180) * b.r * 0.45
           return (
             <motion.span key={b.id} initial={{ scale: 0, opacity: 0 }} animate={{ scale: [0, 1.8, 1], opacity: 1 }} exit={{ opacity: 0, scale: 0 }} transition={{ duration: 0.8 }}
-              className="absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full" style={{ left: `${x}%`, top: `${y}%`, background: t.color, boxShadow: `0 0 14px ${t.color}` }} title={b.summary}>
+              className="absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full" style={{ left: `${x}%`, top: `${y}%`, background: t.color, boxShadow: `0 0 14px ${t.color}` }} title={txServer(b.summary)}>
               <span className="absolute inset-0 animate-ping rounded-full" style={{ background: t.color, opacity: 0.4 }} />
             </motion.span>
           )
@@ -83,16 +84,16 @@ export function EventRadarPage() {
 
   return (
     <PlanGate feature="events">
-      <PageHeader title="Canlı olay radarı" description="Kafka'daki iş olayları gerçek zamanlı: işe alım, görevlendirme, izin onayı, onay akışı… Bir talep oluşturun, burada belirdiğini görün." />
+      <PageHeader title={tx('Canlı olay radarı')} description={tx('Kafka\'daki iş olayları gerçek zamanlı: işe alım, görevlendirme, izin onayı, onay akışı… Bir talep oluşturun, burada belirdiğini görün.')} />
       <div className="mb-5 flex flex-wrap items-center gap-3">
-        <StatusBadge tone={state === 'live' ? 'success' : state === 'error' ? 'danger' : 'warning'}><Radio className="size-3" /> {state === 'live' ? 'Canlı bağlantı' : state === 'error' ? 'Bağlantı koptu — yeniden deneniyor' : 'Bağlanıyor'}</StatusBadge>
-        {stats.data && <span className="text-[12.5px] text-muted-foreground">Son 7 gün {stats.data.byType.reduce((a, b) => a + b.count, 0)} olay · {stats.data.listeners} canlı izleyici</span>}
+        <StatusBadge tone={state === 'live' ? 'success' : state === 'error' ? 'danger' : 'warning'}><Radio className="size-3" /> {state === 'live' ? tx('Canlı bağlantı') : state === 'error' ? tx('Bağlantı koptu — yeniden deneniyor') : tx('Bağlanıyor')}</StatusBadge>
+        {stats.data && <span className="text-[12.5px] text-muted-foreground">{tx('Son 7 gün {0} olay · {1} canlı izleyici', [stats.data.byType.reduce((a, b) => a + b.count, 0), stats.data.listeners])}</span>}
       </div>
       <div className="grid gap-6 xl:grid-cols-[440px_1fr]">
         <div className="space-y-5">
           <Panel><PanelBody><Radar blips={blips} /></PanelBody></Panel>
           <Panel>
-            <PanelHead title="Olay türleri (7 gün)" />
+            <PanelHead title={tx('Olay türleri (7 gün)')} />
             <PanelBody className="space-y-2">
               {(stats.data?.byType ?? []).map((t) => {
                 const max = Math.max(...(stats.data?.byType ?? []).map((x) => x.count), 1)
@@ -107,9 +108,9 @@ export function EventRadarPage() {
           </Panel>
         </div>
         <Panel>
-          <PanelHead title="Akış" note="En yeni üstte" />
+          <PanelHead title={tx('Akış')} note={tx('En yeni üstte')} />
           <PanelBody className="max-h-[720px] space-y-2 overflow-y-auto">
-            {all.length === 0 && <InfoNote>Henüz olay yok. Örneğin bir izin talebi oluşturun ya da bir çalışanın görevlendirmesini değiştirin.</InfoNote>}
+            {all.length === 0 && <InfoNote>{tx('Henüz olay yok. Örneğin bir izin talebi oluşturun ya da bir çalışanın görevlendirmesini değiştirin.')}</InfoNote>}
             <AnimatePresence initial={false}>
               {all.map((e) => {
                 const t = topicOf(e.topic)
@@ -119,10 +120,10 @@ export function EventRadarPage() {
                     className={cn('flex items-start gap-3 rounded-xl border p-3', isNew ? 'border-primary/40 bg-primary/5' : 'border-border')}>
                     <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg" style={{ background: `${t.color}22`, color: t.color }}><t.icon className="size-4" /></span>
                     <div className="min-w-0 flex-1">
-                      <p className="text-[13.5px]">{e.summary}</p>
+                      <p className="text-[13.5px]">{txServer(e.summary)}</p>
                       <p className="text-[11.5px] text-muted-foreground"><span className="font-mono">{e.eventType}</span> · {formatRelativeToNow(e.occurredAt)}{e.tenantSlug ? ` · ${e.tenantSlug}` : ''}</p>
                     </div>
-                    {isNew && <span className="rounded-full bg-primary px-1.5 py-px text-[10px] font-semibold text-primary-foreground">YENİ</span>}
+                    {isNew && <span className="rounded-full bg-primary px-1.5 py-px text-[10px] font-semibold text-primary-foreground">{tx('YENİ')}</span>}
                   </motion.div>
                 )
               })}

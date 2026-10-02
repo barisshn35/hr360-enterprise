@@ -1,6 +1,7 @@
 import { apiFetch, qs } from './client'
 import { getValidToken } from '@/auth/keycloak'
 import { env } from '@/lib/env'
+import { tx } from '@/lib/i18n'
 
 /* ============================== engagement-service ==============================
  * Çalışan deneyimi: takdir, kutlama, ofis, mentorluk, iç ilan, 1:1, ardıl
@@ -86,7 +87,7 @@ export interface DirectoryEntry {
 /* ------------------------------------------------------------------- ofis */
 export type PresenceMode = 'Office' | 'Remote' | 'Travel' | 'Off' | 'Leave' | 'Unknown'
 export const presenceLabels: Record<PresenceMode, string> = {
-  Office: 'Ofiste', Remote: 'Uzaktan', Travel: 'Seyahatte', Off: 'Çalışmıyor', Leave: 'İzinli', Unknown: 'Bildirmedi',
+  Office: tx('Ofiste'), Remote: tx('Uzaktan'), Travel: tx('Seyahatte'), Off: tx('Çalışmıyor'), Leave: tx('İzinli'), Unknown: tx('Bildirmedi'),
 }
 export interface Desk {
   id: string
@@ -168,7 +169,7 @@ export interface Mentorship {
 /* --------------------------------------------------------------- iç ilan */
 export type InternalAppStatus = 'Submitted' | 'Reviewing' | 'Interview' | 'Accepted' | 'Rejected' | 'Withdrawn'
 export const internalAppLabels: Record<InternalAppStatus, string> = {
-  Submitted: 'Alındı', Reviewing: 'İnceleniyor', Interview: 'Görüşme', Accepted: 'Kabul', Rejected: 'Olumsuz', Withdrawn: 'Geri çekildi',
+  Submitted: tx('Alındı'), Reviewing: tx('İnceleniyor'), Interview: tx('Görüşme'), Accepted: tx('Kabul'), Rejected: tx('Olumsuz'), Withdrawn: tx('Geri çekildi'),
 }
 export interface InternalPosting {
   id: string
@@ -229,10 +230,10 @@ export interface OneOnOneTeamRow {
 /* ------------------------------------------------------------ ardıl planı */
 export type Readiness = 'ReadyNow' | 'OneToTwoYears' | 'ThreePlusYears'
 export const readinessLabels: Record<Readiness, string> = {
-  ReadyNow: 'Şimdi hazır', OneToTwoYears: '1–2 yıl', ThreePlusYears: '3+ yıl',
+  ReadyNow: tx('Şimdi hazır'), OneToTwoYears: tx('1–2 yıl'), ThreePlusYears: tx('3+ yıl'),
 }
 export type Level = 'High' | 'Medium' | 'Low'
-export const levelLabels: Record<Level, string> = { High: 'Yüksek', Medium: 'Orta', Low: 'Düşük' }
+export const levelLabels: Record<Level, string> = { High: tx('Yüksek'), Medium: tx('Orta'), Low: tx('Düşük') }
 export interface SuccessionPlan {
   id: string
   positionTitle: string
@@ -311,7 +312,7 @@ export interface SurveyResults {
 /* -------------------------------------------------------------- offboarding */
 export type OffboardingReason = 'Resignation' | 'Termination' | 'Retirement' | 'ContractEnd' | 'Other'
 export const offboardingReasonLabels: Record<OffboardingReason, string> = {
-  Resignation: 'İstifa', Termination: 'İşveren feshi', Retirement: 'Emeklilik', ContractEnd: 'Sözleşme sonu', Other: 'Diğer',
+  Resignation: tx('İstifa'), Termination: tx('İşveren feshi'), Retirement: tx('Emeklilik'), ContractEnd: tx('Sözleşme sonu'), Other: tx('Diğer'),
 }
 export interface ChecklistItem { key: string; title: string; owner: string; done: boolean; doneAt: string | null; doneBy: string | null; hint: string | null }
 export interface ExitInterview {
@@ -433,7 +434,7 @@ export interface ScenarioImpact {
 export async function downloadAuthed(path: string, fileName: string) {
   const token = await getValidToken()
   const res = await fetch(`${env.apiBase}${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
-  if (!res.ok) throw new Error(`İndirilemedi (HTTP ${res.status})`)
+  if (!res.ok) throw new Error(tx('İndirilemedi (HTTP {0})', [res.status]))
   const blob = await res.blob()
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')

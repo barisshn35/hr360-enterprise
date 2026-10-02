@@ -249,13 +249,17 @@ dille yeniden yazma**, **performans özeti** ve bilgi bankasına dayalı **İK a
 | SSO | Google veya Microsoft (Azure AD) OAuth istemci kimliği ve sırrı Güvenlik ekranından girilir; e-posta alan adı organizasyona bağlanır. |
 | E-posta | Bildirimler için SMTP (`scripts/smtp.sh set`). |
 
+## Dil
+
+Panel Türkçe ve İngilizce kullanılabilir (üst çubukta **EN / TR**). Ayrıntılar ve yeni metin ekleme kuralları: [docs/dil/README.md](docs/dil/README.md).
+
 ## Testler
 
 - **Birim testleri:** 50 .NET testi (xUnit), arayüzde bordro hesabı ve Excel/CSV okuma (Vitest) ve ML
   servisi (pytest). Her push'ta CI'da çalışır.
 - **API entegrasyon testleri:** Slack, Teams, takvim/toplantı, LLM ve Redis önbelleği için. Sahte
   sağlayıcı sunucusuyla gerçek hesap gerektirmez.
-- **Tarayıcı testleri (Playwright):** Dört rolle tüm ekranları ve izin onay akışını
+- **Tarayıcı testleri (Playwright):** Dört rolle tüm ekranları, İngilizce arayüzü ve izin onay akışını
   baştan sona dener.
 - Hepsi `scripts/test.sh` ile çalışır; ayrıntılar [tests/README.md](tests/README.md)'de.
 - **Yük testi (k6):** `scripts/loadtest.sh [smoke|load|stress]`. 2 vCPU'lu test

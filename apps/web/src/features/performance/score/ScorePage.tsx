@@ -27,6 +27,7 @@ import { BandBadge, ProvisionalBanner, ScoreRing } from '../components/score'
 import { useCurrentCycle, usePeople } from '../hooks'
 import { explain } from './explain'
 import { ScoreTree } from './ScoreTree'
+import { tx, appLocale } from '@/lib/i18n'
 
 export function ScorePage() {
   const { can } = useAuth()
@@ -62,7 +63,7 @@ export function ScorePage() {
     return (
       <div className="mx-auto w-full max-w-5xl">
         <Panel>
-          <EmptyState icon={Lock} title="Hesabınıza bağlı çalışan kaydı bulunamadı" detail="Puanınızı görebilmeniz için hesabınızın bir çalışan kaydıyla eşleşmesi gerekiyor. İK yöneticinize başvurun." />
+          <EmptyState icon={Lock} title={tx('Hesabınıza bağlı çalışan kaydı bulunamadı')} detail={tx('Puanınızı görebilmeniz için hesabınızın bir çalışan kaydıyla eşleşmesi gerekiyor. İK yöneticinize başvurun.')} />
         </Panel>
       </div>
     )
@@ -71,45 +72,45 @@ export function ScorePage() {
   const s = score.data
   const composition = ex
     ? [
-        ...(ex.hasGoals ? [{ key: 'goals', label: 'Hedefler', value: ex.goalContribution, color: 'hsl(var(--foreground) / 0.75)' }] : []),
+        ...(ex.hasGoals ? [{ key: 'goals', label: tx('Hedefler'), value: ex.goalContribution, color: 'hsl(var(--foreground) / 0.75)' }] : []),
         ...ex.categories.filter((c) => c.counted && c.contribution).map((c) => ({ key: c.category, label: categoryLabels[c.category], value: c.contribution as number, color: categoryColor[c.category] })),
       ]
     : []
 
   const notes: string[] = []
   if (ex && s) {
-    if (!ex.hasGoals && ex.hasMetrics) notes.push(`Bu dönemde hedef tanımlı değil; hedef payı (%${Math.round(ex.goalPct)}) kaybolmadı, metrik puanı %100 ağırlıkla kullanıldı.`)
-    if (ex.hasGoals && !ex.hasMetrics) notes.push(`Henüz metrik puanı yok; metrik payı (%${Math.round(ex.metricPct)}) hedeflere aktarıldı, hedef puanı %100 ağırlıkla kullanıldı.`)
+    if (!ex.hasGoals && ex.hasMetrics) notes.push(tx('Bu dönemde hedef tanımlı değil; hedef payı (%{0}) kaybolmadı, metrik puanı %100 ağırlıkla kullanıldı.', [Math.round(ex.goalPct)]))
+    if (ex.hasGoals && !ex.hasMetrics) notes.push(tx('Henüz metrik puanı yok; metrik payı (%{0}) hedeflere aktarıldı, hedef puanı %100 ağırlıkla kullanıldı.', [Math.round(ex.metricPct)]))
     const zero = ex.categories.filter((c) => c.weight === 0)
-    if (zero.length) notes.push(`${zero.map((c) => categoryLabels[c.category]).join(', ')} kategorisinin ağırlığı bu sürümde 0; puanlandı ama hesaba girmedi.`)
-    notes.push('Metrik puanları 0–100 aralığına çevrilir: 1–5 ölçekte 4 → 75, 1–10 ölçekte 8 → 77,78, yüzde olduğu gibi.')
+    if (zero.length) notes.push(tx('{0} kategorisinin ağırlığı bu sürümde 0; puanlandı ama hesaba girmedi.', [zero.map((c) => categoryLabels[c.category]).join(', ')]))
+    notes.push(tx('Metrik puanları 0–100 aralığına çevrilir: 1–5 ölçekte 4 → 75, 1–10 ölçekte 8 → 77,78, yüzde olduğu gibi.'))
     if (cfg)
       notes.push(
-        `Aynı metriğe gelen puanlar değerlendirici katsayılarıyla ortalandı: ${(['Manager', 'TeamLead', 'Peer', 'Upward', 'Self'] as const)
-          .map((t) => `${reviewTypeLabels[t].toLocaleLowerCase('tr-TR')} ${String(cfg[({ Manager: 'managerReviewWeight', TeamLead: 'teamLeadReviewWeight', Peer: 'peerReviewWeight', Upward: 'upwardReviewWeight', Self: 'selfReviewWeight' } as const)[t]]).replace('.', ',')}`)
-          .join(', ')}.`,
+        tx('Aynı metriğe gelen puanlar değerlendirici katsayılarıyla ortalandı: {0}.', [(['Manager', 'TeamLead', 'Peer', 'Upward', 'Self'] as const)
+          .map((t) => `${reviewTypeLabels[t].toLocaleLowerCase(appLocale)} ${String(cfg[({ Manager: 'managerReviewWeight', TeamLead: 'teamLeadReviewWeight', Peer: 'peerReviewWeight', Upward: 'upwardReviewWeight', Self: 'selfReviewWeight' } as const)[t]]).replace('.', ',')}`)
+          .join(', ')]),
       )
-    notes.push('Sayısal hedeflerde gerçekleşme %100’de kırpılır; aşım puana yansımaz.')
-    if (ex.inferred) notes.push('Bu puanın hesaplandığı ayar sürümüne ulaşılamadı; hedef/metrik payları puanlardan çıkarıldı.')
+    notes.push(tx('Sayısal hedeflerde gerçekleşme %100’de kırpılır; aşım puana yansımaz.'))
+    if (ex.inferred) notes.push(tx('Bu puanın hesaplandığı ayar sürümüne ulaşılamadı; hedef/metrik payları puanlardan çıkarıldı.'))
   }
 
   return (
     <div className="mx-auto w-full max-w-6xl">
       <PerfPageHeader
-        eyebrow="Performans"
-        title={manager ? 'Puan dökümü' : 'Puan dökümüm'}
-        description="Puanın nereden geldiği, katman katman: hedefler ve metrikler, kategoriler, tek tek metrikler — ve her birinin nihai puana katkısı."
+        eyebrow={tx('Performans')}
+        title={manager ? tx('Puan dökümü') : tx('Puan dökümüm')}
+        description={tx('Puanın nereden geldiği, katman katman: hedefler ve metrikler, kategoriler, tek tek metrikler — ve her birinin nihai puana katkısı.')}
       >
         <div className="flex flex-wrap items-end gap-3">
           {manager && <PersonSelect className="w-64" value={employeeId} onChange={(v) => setParam('calisan', v)} />}
           <CyclePicker className="w-64" cycles={cycles} value={cycleId} onChange={(v) => setParam('donem', v)} />
-          {cycle && <Chip className="mb-2">{cycle.status === 'Closed' ? 'Kapanmış dönem — puan sabit' : 'Açık dönem — puan değişebilir'}</Chip>}
+          {cycle && <Chip className="mb-2">{cycle.status === 'Closed' ? tx('Kapanmış dönem — puan sabit') : tx('Açık dönem — puan değişebilir')}</Chip>}
         </div>
       </PerfPageHeader>
 
       {score.isError && (
         <Panel>
-          <ErrorState title="Puan alınamadı" message={errorText(score.error)} onRetry={() => void score.refetch()} />
+          <ErrorState title={tx('Puan alınamadı')} message={errorText(score.error)} onRetry={() => void score.refetch()} />
         </Panel>
       )}
 
@@ -124,13 +125,13 @@ export function ScorePage() {
         <Panel>
           <EmptyState
             icon={Gauge}
-            title="Bu dönemde puan yok"
-            detail="Henüz gönderilmiş değerlendirme yok. İlk değerlendirme gönderildiğinde puan burada katman katman görünür."
+            title={tx('Bu dönemde puan yok')}
+            detail={tx('Henüz gönderilmiş değerlendirme yok. İlk değerlendirme gönderildiğinde puan burada katman katman görünür.')}
             action={
               <Button asChild variant="outline">
                 <Link to="/panel/performans/degerlendirme">
                   <ClipboardList aria-hidden />
-                  Değerlendirmeler
+                  {tx('Değerlendirmeler')}
                 </Link>
               </Button>
             }
@@ -158,23 +159,22 @@ export function ScorePage() {
               <div>
                 <p className="text-[18px] font-semibold">{people.nameOf(employeeId)}</p>
                 <p className="text-[12px] text-muted-foreground">
-                  {cycle?.name} · Sürüm {s.configVersion} ile hesaplandı · {s.reviewCount} değerlendirmeye dayanıyor
-                </p>
+                  {tx('{0} · Sürüm {1} ile hesaplandı · {2} değerlendirmeye dayanıyor', [cycle?.name, s.configVersion, s.reviewCount])}</p>
               </div>
 
               <div className="grid grid-cols-2 gap-3 sm:max-w-md">
                 <div className={cn('rounded-xl border border-border p-3', !ex.hasGoals && 'border-dashed opacity-70')}>
-                  <p className="text-[11px] text-muted-foreground">Hedef ayağı · %{Math.round(ex.effGoalPct)}</p>
+                  <p className="text-[11px] text-muted-foreground">{tx('Hedef ayağı · %{0}', [Math.round(ex.effGoalPct)])}</p>
                   <p className="text-[22px] leading-tight font-semibold">{ex.hasGoals ? <AnimatedNumber value={s.goalScore ?? 0} format={(v) => formatScore(v)} /> : '—'}</p>
                 </div>
                 <div className={cn('rounded-xl border border-border p-3', !ex.hasMetrics && 'border-dashed opacity-70')}>
-                  <p className="text-[11px] text-muted-foreground">Metrik ayağı · %{Math.round(ex.effMetricPct)}</p>
+                  <p className="text-[11px] text-muted-foreground">{tx('Metrik ayağı · %{0}', [Math.round(ex.effMetricPct)])}</p>
                   <p className="text-[22px] leading-tight font-semibold">{ex.hasMetrics ? <AnimatedNumber value={s.metricScore ?? 0} format={(v) => formatScore(v)} /> : '—'}</p>
                 </div>
               </div>
 
               <div>
-                <p className="mb-1.5 text-[12px] font-medium text-muted-foreground">Puan nasıl oluştu? (100 üzerinden katkılar)</p>
+                <p className="mb-1.5 text-[12px] font-medium text-muted-foreground">{tx('Puan nasıl oluştu? (100 üzerinden katkılar)')}</p>
                 <div className="flex h-5 w-full overflow-hidden rounded-full bg-muted">
                   {composition.map((c, i) => (
                     <motion.div
@@ -198,7 +198,7 @@ export function ScorePage() {
                   ))}
                   <span className="inline-flex items-center gap-1.5">
                     <span className="size-2 rounded-full bg-muted-foreground/30" />
-                    Kalan
+                    {tx('Kalan')}
                     <span className="tabular font-semibold text-foreground">{formatScore(Math.max(0, 100 - (s.score ?? 0)))}</span>
                   </span>
                 </div>
@@ -210,8 +210,8 @@ export function ScorePage() {
           <motion.section initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.55, ease: EASE, delay: 0.1 }}>
             <Panel className="p-4 sm:p-5">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-[15px] font-semibold">Katmanlı döküm</h2>
-                <p className="text-[12px] text-muted-foreground">Satırlara tıklayıp açın. Katkıların toplamı nihai puanı verir.</p>
+                <h2 className="text-[15px] font-semibold">{tx('Katmanlı döküm')}</h2>
+                <p className="text-[12px] text-muted-foreground">{tx('Satırlara tıklayıp açın. Katkıların toplamı nihai puanı verir.')}</p>
               </div>
               <ScoreTree score={s} ex={ex} thresholds={thresholds} />
             </Panel>
@@ -220,7 +220,7 @@ export function ScorePage() {
           <Panel className="p-5">
             <h2 className="mb-2 flex items-center gap-1.5 text-[13px] font-semibold">
               <Info className="size-4 text-primary" aria-hidden />
-              Dipnotlar
+              {tx('Dipnotlar')}
             </h2>
             <ol className="flex list-decimal flex-col gap-1.5 pl-5 text-[12px] leading-relaxed text-muted-foreground">
               {notes.map((n) => (
@@ -234,11 +234,11 @@ export function ScorePage() {
               <Button asChild variant="outline" size="sm">
                 <Link to={`/panel/performans/oneriler?calisan=${employeeId}`}>
                   <Lightbulb aria-hidden />
-                  Aksiyon önerisi
+                  {tx('Aksiyon önerisi')}
                 </Link>
               </Button>
               <Button asChild variant="ghost" size="sm">
-                <Link to={`/panel/performans/analiz?calisan=${employeeId}`}>Zaman içindeki seyri</Link>
+                <Link to={`/panel/performans/analiz?calisan=${employeeId}`}>{tx('Zaman içindeki seyri')}</Link>
               </Button>
             </div>
           )}

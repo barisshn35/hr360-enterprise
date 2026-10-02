@@ -8,6 +8,7 @@ import { qk } from '@/api/queries'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/Toast'
+import { tx } from '@/lib/i18n'
 
 interface DepartmentOption {
   id: string
@@ -84,10 +85,10 @@ function parseWorkbook(raw: Record<string, unknown>[], departments: DepartmentOp
 
     let error: string | undefined
     if (!firstName || !lastName) error = 'Ad/Soyad eksik'
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) error = 'E-posta geçersiz'
-    else if (!hireDate) error = 'İşe giriş tarihi okunamadı'
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) error = tx('E-posta geçersiz')
+    else if (!hireDate) error = tx('İşe giriş tarihi okunamadı')
     else if (departmentLabel && !deptByLabel.has(departmentLabel.toLowerCase()))
-      error = `Departman bulunamadı: "${departmentLabel}"`
+      error = tx('Departman bulunamadı: "{0}"', [departmentLabel])
 
     return {
       rowNumber: idx + 2, // Excel'de 1. satır başlık
@@ -143,7 +144,7 @@ export function ImportEmployeesModal({
     try {
       setRows(parseWorkbook(await readSpreadsheet(file), departments))
     } catch (err) {
-      toast.stop(err instanceof SpreadsheetError ? err.message : 'Dosya okunamadı. Geçerli bir .xlsx ya da .csv dosyası seçin.')
+      toast.stop(err instanceof SpreadsheetError ? err.message : tx('Dosya okunamadı. Geçerli bir .xlsx ya da .csv dosyası seçin.'))
       setRows([])
     } finally {
       setParsing(false)
@@ -195,7 +196,7 @@ export function ImportEmployeesModal({
         outcomes.push({
           row,
           status: 'failed',
-          message: e instanceof Error ? e.message : 'Bilinmeyen hata',
+          message: e instanceof Error ? e.message : tx('Bilinmeyen hata'),
         })
       }
       setProgress(outcomes.length)
@@ -208,21 +209,21 @@ export function ImportEmployeesModal({
 
     const okCount = outcomes.filter((o) => o.status === 'ok').length
     const failCount = outcomes.length - okCount
-    if (failCount === 0) toast.ok(`${okCount} çalışan başarıyla içe aktarıldı.`)
-    else toast.stop(`${okCount} başarılı, ${failCount} başarısız. Detaylar aşağıda.`)
+    if (failCount === 0) toast.ok(tx('{0} çalışan başarıyla içe aktarıldı.', [okCount]))
+    else toast.stop(tx('{0} başarılı, {1} başarısız. Detaylar aşağıda.', [okCount, failCount]))
   }
 
   return (
     <Modal
       open={open}
       onClose={handleClose}
-      title="Excel'den çalışan içe aktar"
-      note="Sütunlar: Ad, Soyad, E-posta, Telefon (isteğe bağlı), İşe giriş tarihi, Departman (isteğe bağlı)."
+      title={tx('Excel\'den çalışan içe aktar')}
+      note={tx('Sütunlar: Ad, Soyad, E-posta, Telefon (isteğe bağlı), İşe giriş tarihi, Departman (isteğe bağlı).')}
       size="lg"
       footer={
         <>
           <Button variant="outline" className="cursor-pointer" onClick={handleClose} disabled={importing}>
-            {results ? 'Kapat' : 'Vazgeç'}
+            {results ? tx('Kapat') : tx('Vazgeç')}
           </Button>
           {!results && (
             <Button
@@ -232,8 +233,8 @@ export function ImportEmployeesModal({
             >
               {importing && <LoaderCircle className="size-4 animate-spin" />}
               {importing
-                ? `İçe aktarılıyor (${progress}/${validRows.length})`
-                : `${validRows.length || ''} kaydı içe aktar`}
+                ? tx('İçe aktarılıyor ({0}/{1})', [progress, validRows.length])
+                : tx('{0} kaydı içe aktar', [validRows.length || ''])}
             </Button>
           )}
         </>
@@ -246,9 +247,9 @@ export function ImportEmployeesModal({
             className="border-border flex cursor-pointer flex-col items-center gap-2 rounded-lg border border-dashed px-6 py-10 text-center hover:bg-white/5"
           >
             <Upload className="text-muted-foreground size-6" />
-            <span className="text-sm font-medium">.xlsx dosyasını seçin</span>
+            <span className="text-sm font-medium">{tx('.xlsx dosyasını seçin')}</span>
             <span className="text-muted-foreground text-xs">
-              veya sürükleyip bırakın — ilk satır başlık olmalı
+              {tx('veya sürükleyip bırakın — ilk satır başlık olmalı')}
             </span>
             <input
               id="employee-import-file"
@@ -270,7 +271,7 @@ export function ImportEmployeesModal({
                 className="text-muted-foreground hover:text-foreground ml-auto cursor-pointer text-xs underline"
                 onClick={reset}
               >
-                Değiştir
+                {tx('Değiştir')}
               </button>
             )}
           </div>
@@ -279,7 +280,7 @@ export function ImportEmployeesModal({
         {parsing && (
           <div className="text-muted-foreground flex items-center gap-2 text-sm">
             <LoaderCircle className="size-4 animate-spin" />
-            Dosya okunuyor…
+            {tx('Dosya okunuyor…')}
           </div>
         )}
 
@@ -287,12 +288,10 @@ export function ImportEmployeesModal({
           <>
             <div className="flex gap-4 text-sm">
               <span className="flex items-center gap-1 text-emerald-500">
-                <CheckCircle2 className="size-4" /> {validRows.length} geçerli
-              </span>
+                <CheckCircle2 className="size-4" /> {tx('{0} geçerli', [validRows.length])}</span>
               {invalidRows.length > 0 && (
                 <span className="flex items-center gap-1 text-red-500">
-                  <XCircle className="size-4" /> {invalidRows.length} hatalı (atlanacak)
-                </span>
+                  <XCircle className="size-4" /> {tx('{0} hatalı (atlanacak)', [invalidRows.length])}</span>
               )}
             </div>
 
@@ -300,11 +299,11 @@ export function ImportEmployeesModal({
               <table className="w-full text-left text-sm">
                 <thead className="bg-white/5 text-xs uppercase">
                   <tr>
-                    <th className="px-3 py-2">Satır</th>
-                    <th className="px-3 py-2">Ad Soyad</th>
-                    <th className="px-3 py-2">E-posta</th>
-                    <th className="px-3 py-2">Departman</th>
-                    <th className="px-3 py-2">Durum</th>
+                    <th className="px-3 py-2">{tx('Satır')}</th>
+                    <th className="px-3 py-2">{tx('Ad Soyad')}</th>
+                    <th className="px-3 py-2">{tx('E-posta')}</th>
+                    <th className="px-3 py-2">{tx('Departman')}</th>
+                    <th className="px-3 py-2">{tx('Durum')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -320,7 +319,7 @@ export function ImportEmployeesModal({
                         {r.error ? (
                           <span className="text-red-500">{r.error}</span>
                         ) : (
-                          <span className="text-emerald-500">Hazır</span>
+                          <span className="text-emerald-500">{tx('Hazır')}</span>
                         )}
                       </td>
                     </tr>
@@ -336,13 +335,11 @@ export function ImportEmployeesModal({
             <div className="flex gap-4 text-sm">
               <span className="flex items-center gap-1 text-emerald-500">
                 <CheckCircle2 className="size-4" />
-                {results.filter((r) => r.status === 'ok').length} başarılı
-              </span>
+                {tx('{0} başarılı', [results.filter((r) => r.status === 'ok').length])}</span>
               {results.some((r) => r.status === 'failed') && (
                 <span className="flex items-center gap-1 text-red-500">
                   <XCircle className="size-4" />
-                  {results.filter((r) => r.status === 'failed').length} başarısız
-                </span>
+                  {tx('{0} başarısız', [results.filter((r) => r.status === 'failed').length])}</span>
               )}
             </div>
             {results.some((r) => r.status === 'failed') && (
@@ -353,9 +350,7 @@ export function ImportEmployeesModal({
                       .filter((r) => r.status === 'failed')
                       .map((r) => (
                         <tr key={r.row.rowNumber} className="border-border border-t">
-                          <td className="px-3 py-2 text-red-500">
-                            Satır {r.row.rowNumber} ({r.row.firstName} {r.row.lastName}):{' '}
-                            {r.message}
+                          <td className="px-3 py-2 text-red-500">{tx('Satır {0} ({1} {2}): {3}', [r.row.rowNumber, r.row.firstName, r.row.lastName, r.message])}
                           </td>
                         </tr>
                       ))}

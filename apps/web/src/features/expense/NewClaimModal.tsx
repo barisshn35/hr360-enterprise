@@ -14,6 +14,7 @@ import { useAuth } from '@/auth/useAuth'
 import { expenseCategoryLabels, type ExpenseCategory, type ExpenseItem } from '@/api/types'
 import { formatMoney } from '@/lib/format'
 import { localISODate } from '@/lib/dates'
+import { tx } from '@/lib/i18n'
 
 /** Formda tutulan taslak kalem — tutar kullanıcı yazarken metin kalır. */
 interface DraftItem {
@@ -144,7 +145,7 @@ export function NewClaimModal({ open, onClose }: { open: boolean; onClose: () =>
     try {
       const imported = await parseItemsFromFile(file)
       if (imported.length === 0) {
-        toast.stop('Dosyada geçerli (tutarı olan) satır bulunamadı.')
+        toast.stop(tx('Dosyada geçerli (tutarı olan) satır bulunamadı.'))
         return
       }
       // Bos ilk kalemi (kullanici hic dokunmadiysa) ithal edilenlerle degistir.
@@ -153,27 +154,27 @@ export function NewClaimModal({ open, onClose }: { open: boolean; onClose: () =>
           prev.length === 1 && !prev[0].amount && !prev[0].description
         return isUntouched ? imported : [...prev, ...imported]
       })
-      toast.ok(`${imported.length} kalem içe aktarıldı.`)
+      toast.ok(tx('{0} kalem içe aktarıldı.', [imported.length]))
     } catch (err) {
-      toast.stop(err instanceof SpreadsheetError ? err.message : 'Dosya okunamadı. Geçerli bir .xlsx ya da .csv dosyası seçin.')
+      toast.stop(err instanceof SpreadsheetError ? err.message : tx('Dosya okunamadı. Geçerli bir .xlsx ya da .csv dosyası seçin.'))
     }
   }
 
   function validate(overrideEmployeeId?: string): Errors {
     const next: Errors = {}
-    if (!(overrideEmployeeId ?? employeeId)) next.employeeId = 'Çalışan seçilmeli.'
-    if (title.trim().length < 3) next.title = 'Başlık en az 3 karakter olmalı.'
+    if (!(overrideEmployeeId ?? employeeId)) next.employeeId = tx('Çalışan seçilmeli.')
+    if (title.trim().length < 3) next.title = tx('Başlık en az 3 karakter olmalı.')
     if (items.length === 0) {
-      next.items = 'En az bir kalem eklenmeli.'
+      next.items = tx('En az bir kalem eklenmeli.')
     } else if (items.some((i) => !i.amount || Number(i.amount) <= 0)) {
       // GUVENLIK/VERI BUTUNLUGU: onceki hali yalnizca "!Number(i.amount)"
       // kontrol ediyordu - bu, negatif tutarlari (orn. -50) YAKALAMIYORDU,
       // cunku Number('-50') JavaScript'te "truthy". Form negatif tutari
       // kabul edip gonderiyordu, backend'in jenerik "istek gecersiz"
       // hatasina kadar hicbir uyari gorunmuyordu.
-      next.items = 'Her kalemin tutarı 0\'dan büyük olmalı.'
+      next.items = tx('Her kalemin tutarı 0\'dan büyük olmalı.')
     } else if (items.some((i) => !i.expenseDate)) {
-      next.items = 'Her kalemin tarihi girilmeli.'
+      next.items = tx('Her kalemin tarihi girilmeli.')
     }
     return next
   }
@@ -195,11 +196,11 @@ export function NewClaimModal({ open, onClose }: { open: boolean; onClose: () =>
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['expense'] })
-      toast.ok('Masraf talebi taslak olarak oluşturuldu')
+      toast.ok(tx('Masraf talebi taslak olarak oluşturuldu'))
       onClose()
       reset()
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : 'Talep oluşturulamadı.'),
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Talep oluşturulamadı.')),
   })
 
   function submit(e: React.FormEvent) {
@@ -222,13 +223,12 @@ export function NewClaimModal({ open, onClose }: { open: boolean; onClose: () =>
     <Modal
       open={open}
       onClose={onClose}
-      title="Yeni masraf talebi"
-      note="Taslak olarak açılır; onaya göndermek ayrı bir adımdır."
+      title={tx('Yeni masraf talebi')}
+      note={tx('Taslak olarak açılır; onaya göndermek ayrı bir adımdır.')}
       size="lg"
       footer={
         <>
-          <span className="tabular mr-auto text-[13px] text-muted-foreground">
-            Toplam{' '}
+          <span className="tabular mr-auto text-[13px] text-muted-foreground">{tx('Toplam', [])}{' '}
             <motion.span
               key={total}
               className="text-[15px] font-semibold text-foreground"
@@ -245,7 +245,7 @@ export function NewClaimModal({ open, onClose }: { open: boolean; onClose: () =>
             onClick={onClose}
             disabled={mutation.isPending}
           >
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button
             type="submit"
@@ -254,7 +254,7 @@ export function NewClaimModal({ open, onClose }: { open: boolean; onClose: () =>
             disabled={mutation.isPending}
           >
             {mutation.isPending && <LoaderCircle className="size-4 animate-spin" />}
-            Taslağı oluştur
+            {tx('Taslağı oluştur')}
           </Button>
         </>
       }
@@ -275,13 +275,13 @@ export function NewClaimModal({ open, onClose }: { open: boolean; onClose: () =>
         ) : (
           <p className="text-[13px] text-muted-foreground">
             {me.notLinked
-              ? 'Hesabınıza bağlı çalışan kaydı bulunamadı; masraf beyanı açamazsınız.'
-              : 'Beyan sizin adınıza oluşturulacak.'}
+              ? tx('Hesabınıza bağlı çalışan kaydı bulunamadı; masraf beyanı açamazsınız.')
+              : tx('Beyan sizin adınıza oluşturulacak.')}
           </p>
         )}
         <TextField
           id="claim-title"
-          label="Başlık"
+          label={tx('Başlık')}
           required
           value={title}
           maxLength={200}
@@ -292,17 +292,16 @@ export function NewClaimModal({ open, onClose }: { open: boolean; onClose: () =>
 
         <div className="space-y-3">
           <div className="flex items-baseline justify-between gap-4">
-            <h3 className="text-[14px] font-semibold">Kalemler</h3>
+            <h3 className="text-[14px] font-semibold">{tx('Kalemler')}</h3>
             <div className="flex items-center gap-3">
               <span className="tabular text-[12px] text-muted-foreground">
-                {items.length} kalem
-              </span>
+                {tx('{0} kalem', [items.length])}</span>
               <label
                 htmlFor="claim-items-import"
                 className="flex cursor-pointer items-center gap-1 text-[12px] text-muted-foreground underline hover:text-foreground"
               >
                 <Upload className="size-3" />
-                Excel'den içe aktar
+                {tx('Excel\'den içe aktar')}
               </label>
               <input
                 id="claim-items-import"
@@ -328,8 +327,7 @@ export function NewClaimModal({ open, onClose }: { open: boolean; onClose: () =>
                 >
                   <div className="rounded-md border border-border p-3">
                     <div className="mb-2 flex items-center justify-between gap-3">
-                      <span className="tabular text-[12px] text-muted-foreground">
-                        Kalem {index + 1}
+                      <span className="tabular text-[12px] text-muted-foreground">{tx('Kalem {0}', [index + 1])}
                       </span>
                       {items.length > 1 && (
                         <Button
@@ -339,14 +337,14 @@ export function NewClaimModal({ open, onClose }: { open: boolean; onClose: () =>
                           className="cursor-pointer"
                           onClick={() => setItems((prev) => prev.filter((i) => i.key !== item.key))}
                         >
-                          Kaldır
+                          {tx('Kaldır')}
                         </Button>
                       )}
                     </div>
                     <div className="grid gap-3 sm:grid-cols-3">
                       <SelectField
                         id={`item-cat-${item.key}`}
-                        label="Tür"
+                        label={tx('Tür')}
                         value={item.category}
                         onChange={(v) => patch(item.key, { category: v as ExpenseCategory })}
                         options={(Object.keys(expenseCategoryLabels) as ExpenseCategory[]).map(
@@ -355,7 +353,7 @@ export function NewClaimModal({ open, onClose }: { open: boolean; onClose: () =>
                       />
                       <TextField
                         id={`item-amount-${item.key}`}
-                        label="Tutar"
+                        label={tx('Tutar')}
                         type="number"
                         min={0}
                         step="0.01"
@@ -366,7 +364,7 @@ export function NewClaimModal({ open, onClose }: { open: boolean; onClose: () =>
                       />
                       <TextField
                         id={`item-date-${item.key}`}
-                        label="Tarih"
+                        label={tx('Tarih')}
                         type="date"
                         value={item.expenseDate}
                         onChange={(e) => patch(item.key, { expenseDate: e.target.value })}
@@ -375,8 +373,8 @@ export function NewClaimModal({ open, onClose }: { open: boolean; onClose: () =>
                     <div className="mt-3">
                       <TextField
                         id={`item-desc-${item.key}`}
-                        label="Açıklama"
-                        hint="İsteğe bağlı"
+                        label={tx('Açıklama')}
+                        hint={tx('İsteğe bağlı')}
                         value={item.description}
                         onChange={(e) => patch(item.key, { description: e.target.value })}
                       />
@@ -395,7 +393,7 @@ export function NewClaimModal({ open, onClose }: { open: boolean; onClose: () =>
             onClick={() => setItems((prev) => [...prev, emptyItem()])}
           >
             <Plus className="size-4" />
-            Kalem ekle
+            {tx('Kalem ekle')}
           </Button>
 
           {submitted && errors.items && (

@@ -26,6 +26,7 @@ import { PersonAvatar } from '../components/people'
 import { CyclePicker } from '../components/pickers'
 import { useCurrentCycle, usePeople } from '../hooks'
 import { StartReviewDialog } from './StartReviewDialog'
+import { tx } from '@/lib/i18n'
 
 type Tab = 'mine' | 'about' | 'all'
 const ANONYMOUS: ReviewType[] = ['Peer', 'Upward']
@@ -61,7 +62,7 @@ export function ReviewsPage() {
     return (
       <div className="mx-auto w-full max-w-5xl">
         <Panel>
-          <EmptyState icon={Lock} title="Hesabınıza bağlı çalışan kaydı bulunamadı" detail="Değerlendirme yazabilmeniz için hesabınızın bir çalışan kaydıyla eşleşmesi gerekiyor. İK yöneticinize başvurun." />
+          <EmptyState icon={Lock} title={tx('Hesabınıza bağlı çalışan kaydı bulunamadı')} detail={tx('Değerlendirme yazabilmeniz için hesabınızın bir çalışan kaydıyla eşleşmesi gerekiyor. İK yöneticinize başvurun.')} />
         </Panel>
       </div>
     )
@@ -70,23 +71,23 @@ export function ReviewsPage() {
   return (
     <div className="mx-auto w-full max-w-6xl">
       <PerfPageHeader
-        eyebrow="Performans"
-        title="Değerlendirmeler"
-        description="Metrik bazlı değerlendirme: her metrik kendi ölçeğinde puanlanır. Taslak otomatik kaydedilir, istediğiniz zaman kaldığınız yerden devam edersiniz; gönderdiğinizde kilitlenir."
+        eyebrow={tx('Performans')}
+        title={tx('Değerlendirmeler')}
+        description={tx('Metrik bazlı değerlendirme: her metrik kendi ölçeğinde puanlanır. Taslak otomatik kaydedilir, istediğiniz zaman kaldığınız yerden devam edersiniz; gönderdiğinizde kilitlenir.')}
         actions={
           <Button
             onClick={() => setStarting(true)}
             disabled={!me.employeeId || !cycles.some((c) => c.status === 'Open')}
             title={
               !me.employeeId
-                ? 'Hesabınıza bağlı bir çalışan kaydı yok; değerlendirme başlatılamaz.'
+                ? tx('Hesabınıza bağlı bir çalışan kaydı yok; değerlendirme başlatılamaz.')
                 : !cycles.some((c) => c.status === 'Open')
-                  ? 'Açık bir dönem yok; önce bir dönem açın.'
+                  ? tx('Açık bir dönem yok; önce bir dönem açın.')
                   : undefined
             }
           >
             <Plus aria-hidden />
-            Yeni değerlendirme
+            {tx('Yeni değerlendirme')}
           </Button>
         }
       >
@@ -94,13 +95,13 @@ export function ReviewsPage() {
           <CyclePicker className="w-64" cycles={cycles} value={cycleId} onChange={(v) => setParams({ donem: v }, { replace: true })} />
           <dl className="grid max-w-xs grid-cols-2 gap-6">
             <div>
-              <dt className="text-[11px] text-muted-foreground">{closed ? 'Gönderilmeyen' : 'Taslaklarım'}</dt>
+              <dt className="text-[11px] text-muted-foreground">{closed ? tx('Gönderilmeyen') : tx('Taslaklarım')}</dt>
               <dd className="text-[20px] leading-tight font-semibold">
                 <CountUp to={drafts} duration={0.8} />
               </dd>
             </div>
             <div>
-              <dt className="text-[11px] text-muted-foreground">Gönderdiklerim</dt>
+              <dt className="text-[11px] text-muted-foreground">{tx('Gönderdiklerim')}</dt>
               <dd className="text-[20px] leading-tight font-semibold">
                 <CountUp to={sent} duration={0.8} delay={0.08} />
               </dd>
@@ -113,11 +114,10 @@ export function ReviewsPage() {
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="mb-4 flex flex-col gap-3 rounded-xl border border-primary/25 bg-primary/5 p-4 sm:flex-row sm:items-center sm:justify-between">
           <p className="flex items-center gap-2 text-[13px]">
             <UserRound className="size-4 text-primary" aria-hidden />
-            {cycle.name} için öz değerlendirmenizi henüz başlatmadınız.
-          </p>
+            {tx('{0} için öz değerlendirmenizi henüz başlatmadınız.', [cycle.name])}</p>
           <Button size="sm" asChild>
             <Link to={`/panel/performans/degerlendirme/yeni?calisan=${me.employeeId}&donem=${cycle.id}&tur=Self`}>
-              Öz değerlendirmeyi başlat
+              {tx('Öz değerlendirmeyi başlat')}
               <ArrowRight aria-hidden />
             </Link>
           </Button>
@@ -126,20 +126,20 @@ export function ReviewsPage() {
 
       <div className="mb-3 flex items-center justify-between gap-3">
         <Segmented
-          ariaLabel="Liste"
+          ariaLabel={tx('Liste')}
           value={tab}
           onChange={setTab}
           options={[
-            { value: 'mine', label: 'Yazdıklarım' },
-            { value: 'about', label: 'Hakkımdakiler' },
-            ...(manager ? [{ value: 'all' as const, label: 'Tümü' }] : []),
+            { value: 'mine', label: tx('Yazdıklarım') },
+            { value: 'about', label: tx('Hakkımdakiler') },
+            ...(manager ? [{ value: 'all' as const, label: tx('Tümü') }] : []),
           ]}
         />
       </div>
 
       {reviews.isError ? (
         <Panel>
-          <ErrorState title="Değerlendirmeler alınamadı" message={errorText(reviews.error)} onRetry={() => void reviews.refetch()} />
+          <ErrorState title={tx('Değerlendirmeler alınamadı')} message={errorText(reviews.error)} onRetry={() => void reviews.refetch()} />
         </Panel>
       ) : reviews.isPending || me.isPending ? (
         <Panel aria-busy="true">
@@ -155,8 +155,8 @@ export function ReviewsPage() {
         <Panel>
           <EmptyState
             icon={ClipboardList}
-            title={tab === 'about' ? 'Bu dönemde hakkınızda değerlendirme yok' : 'Bu dönemde değerlendirmeniz yok'}
-            detail={tab === 'about' ? 'Yöneticiniz ya da ekip arkadaşlarınız değerlendirme başlattığında burada görünür.' : 'Yeni değerlendirme başlatın; metrikler çalışanın departmanına göre otomatik gelir.'}
+            title={tab === 'about' ? tx('Bu dönemde hakkınızda değerlendirme yok') : tx('Bu dönemde değerlendirmeniz yok')}
+            detail={tab === 'about' ? tx('Yöneticiniz ya da ekip arkadaşlarınız değerlendirme başlattığında burada görünür.') : tx('Yeni değerlendirme başlatın; metrikler çalışanın departmanına göre otomatik gelir.')}
             action={
               tab !== 'about' && cycle?.status === 'Open' ? (
                 <Button
@@ -164,12 +164,12 @@ export function ReviewsPage() {
                   disabled={!me.employeeId}
                   title={
                     !me.employeeId
-                      ? 'Hesabınıza bağlı bir çalışan kaydı yok; değerlendirme başlatılamaz.'
+                      ? tx('Hesabınıza bağlı bir çalışan kaydı yok; değerlendirme başlatılamaz.')
                       : undefined
                   }
                 >
                   <Plus aria-hidden />
-                  Yeni değerlendirme
+                  {tx('Yeni değerlendirme')}
                 </Button>
               ) : undefined
             }
@@ -209,9 +209,9 @@ function ReviewRow({
 }) {
   const expired = closed && !r.isSubmitted
   const iAmReviewer = r.reviewerEmployeeId === me
-  const subject = r.type === 'Self' ? 'Öz değerlendirme' : nameOf(r.employeeId)
+  const subject = r.type === 'Self' ? tx('Öz değerlendirme') : nameOf(r.employeeId)
   const hiddenAuthor = tab === 'about' && ANONYMOUS.includes(r.type) && !iAmReviewer
-  const author = hiddenAuthor ? (r.type === 'Peer' ? 'Bir ekip arkadaşı' : 'Ekibinden biri') : nameOf(r.reviewerEmployeeId)
+  const author = hiddenAuthor ? (r.type === 'Peer' ? tx('Bir ekip arkadaşı') : tx('Ekibinden biri')) : nameOf(r.reviewerEmployeeId)
   const avatarId = tab === 'about' ? (hiddenAuthor ? `anon-${r.id}` : (r.reviewerEmployeeId ?? r.id)) : r.employeeId
   const avatarName = tab === 'about' ? author : subject
 
@@ -233,30 +233,30 @@ function ReviewRow({
           </p>
           <p className="text-[12px] text-muted-foreground">
             {tab === 'all' ? `${nameOf(r.reviewerEmployeeId)} → ${nameOf(r.employeeId)} · ` : ''}
-            {r.isSubmitted ? `Gönderildi · ${formatDateTime(r.submittedAt)}` : `Başlatıldı · ${formatDate(r.createdAt ?? null)}`}          </p>
+            {r.isSubmitted ? tx('Gönderildi · {0}', [formatDateTime(r.submittedAt)]) : tx('Başlatıldı · {0}', [formatDate(r.createdAt ?? null)])}          </p>
         </div>
       </div>
       <div className="flex items-center gap-2 sm:justify-end">
         {r.isSubmitted ? (
           <Chip tone="success">
             <Lock className="size-3" aria-hidden />
-            Gönderildi
+            {tx('Gönderildi')}
           </Chip>
         ) : expired ? (
-          <Chip>Gönderilmedi · dönem kapandı</Chip>
+          <Chip>{tx('Gönderilmedi · dönem kapandı')}</Chip>
         ) : (
           <Chip tone="warning">
             <span className="size-1.5 animate-pulse rounded-full bg-[hsl(var(--warning))]" />
-            Taslak
+            {tx('Taslak')}
           </Chip>
         )}
         {iAmReviewer || tab === 'all' ? (
           <Button asChild size="sm" variant={r.isSubmitted || expired ? 'ghost' : 'default'} className={cn(!r.isSubmitted && !expired && 'shadow-sm')}>
             <Link to={`/panel/performans/degerlendirme/${r.id}`}>
-              {r.isSubmitted || expired ? 'Görüntüle' : (
+              {r.isSubmitted || expired ? tx('Görüntüle') : (
                 <>
                   <FilePen aria-hidden />
-                  Devam et
+                  {tx('Devam et')}
                 </>
               )}
             </Link>

@@ -26,6 +26,7 @@ import {
   type TooltipProps,
 } from 'recharts'
 import { formatScore } from '@/api/performance'
+import { tx } from '@/lib/i18n'
 
 export const CHART = {
   c1: 'hsl(var(--chart-1))',
@@ -157,8 +158,8 @@ export function TrendChart({
             if (!p.active || !d) return null
             return (
               <TipBox title={d.bucket}>
-                <TipRow color={color} label={label} value={formatScore(d.score)} note={d.isProvisional ? 'geçici' : null} />
-                {d.reviewCount !== undefined && <p className="mt-1 text-[11px] text-muted-foreground">{d.reviewCount} değerlendirme</p>}
+                <TipRow color={color} label={label} value={formatScore(d.score)} note={d.isProvisional ? tx('geçici') : null} />
+                {d.reviewCount !== undefined && <p className="mt-1 text-[11px] text-muted-foreground">{tx('{0} değerlendirme', [d.reviewCount])}</p>}
               </TipBox>
             )
           }}
@@ -212,11 +213,11 @@ export function DualTrendChart({
             const diff = d.a !== null && d.b !== null ? d.a - d.b : null
             return (
               <TipBox title={d.bucket}>
-                <TipRow color={aColor} label={aLabel} value={formatScore(d.a)} note={d.isProvisional ? 'geçici' : null} />
+                <TipRow color={aColor} label={aLabel} value={formatScore(d.a)} note={d.isProvisional ? tx('geçici') : null} />
                 <TipRow color={bColor} label={bLabel} value={formatScore(d.b)} />
                 {diff !== null && (
                   <p className="mt-1 text-[11px] text-muted-foreground">
-                    Fark: <span className="tabular font-semibold text-foreground">{diff > 0 ? '+' : diff < 0 ? '−' : ''}{formatScore(Math.abs(diff))}</span>
+                    {tx('Fark:')}{' '}<span className="tabular font-semibold text-foreground">{diff > 0 ? '+' : diff < 0 ? '−' : ''}{formatScore(Math.abs(diff))}</span>
                   </p>
                 )}
               </TipBox>
@@ -258,9 +259,9 @@ export function Histogram({
             const d = p.payload?.[0]?.payload as { label: string; count: number } | undefined
             if (!p.active || !d) return null
             return (
-              <TipBox title={`${d.label} puan aralığı`}>
+              <TipBox title={tx('{0} puan aralığı', [d.label])}>
                 <p className="tabular text-foreground">
-                  <span className="font-semibold">{d.count}</span> kişi
+                  <span className="font-semibold">{d.count}</span>{' '}{tx('kişi')}
                 </p>
               </TipBox>
             )

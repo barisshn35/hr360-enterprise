@@ -18,14 +18,15 @@ import { onboardingApi } from '@/api/onboarding'
 import { useEmployees, useOnboardingPlans } from '@/api/queries'
 import { planStatusLabels, type OnboardingPlan, type PlanStatus } from '@/api/types'
 import { formatDate, fullName } from '@/lib/format'
+import { tx } from '@/lib/i18n'
 
 type TabKey = PlanStatus | 'all'
 
 const TABS: Array<TabDef<TabKey>> = [
-  { key: 'InProgress', label: 'Sürüyor' },
-  { key: 'NotStarted', label: 'Başlamadı' },
-  { key: 'Completed', label: 'Tamamlandı' },
-  { key: 'all', label: 'Tümü' },
+  { key: 'InProgress', label: tx('Sürüyor') },
+  { key: 'NotStarted', label: tx('Başlamadı') },
+  { key: 'Completed', label: tx('Tamamlandı') },
+  { key: 'all', label: tx('Tümü') },
 ]
 
 /** Tamamlanan görev oranı — plan listesinde tek bakışta ilerleme. */
@@ -53,18 +54,18 @@ function NewPlanModal({ open, onClose }: { open: boolean; onClose: () => void })
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['onboarding'] })
-      toast.ok(useDefaultTasks ? 'Plan oluşturuldu, standart görevler eklendi' : 'Plan oluşturuldu')
+      toast.ok(useDefaultTasks ? tx('Plan oluşturuldu, standart görevler eklendi') : tx('Plan oluşturuldu'))
       onClose()
       setStartDate('')
       setTemplateName('')
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : 'Plan oluşturulamadı.'),
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Plan oluşturulamadı.')),
   })
 
   function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (!employeeId) return setError('Çalışan seçilmeli.')
-    if (!startDate) return setError('Başlangıç tarihi zorunlu.')
+    if (!employeeId) return setError(tx('Çalışan seçilmeli.'))
+    if (!startDate) return setError(tx('Başlangıç tarihi zorunlu.'))
     setError(undefined)
     mutation.mutate()
   }
@@ -73,8 +74,8 @@ function NewPlanModal({ open, onClose }: { open: boolean; onClose: () => void })
     <Modal
       open={open}
       onClose={onClose}
-      title="Yeni onboarding planı"
-      note="Plan açıldığında görevler kategori kategori takip edilir."
+      title={tx('Yeni onboarding planı')}
+      note={tx('Plan açıldığında görevler kategori kategori takip edilir.')}
       footer={
         <>
           <Button
@@ -83,7 +84,7 @@ function NewPlanModal({ open, onClose }: { open: boolean; onClose: () => void })
             onClick={onClose}
             disabled={mutation.isPending}
           >
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button
             type="submit"
@@ -92,7 +93,7 @@ function NewPlanModal({ open, onClose }: { open: boolean; onClose: () => void })
             disabled={mutation.isPending}
           >
             {mutation.isPending && <LoaderCircle className="size-4 animate-spin" />}
-            Planı oluştur
+            {tx('Planı oluştur')}
           </Button>
         </>
       }
@@ -102,12 +103,12 @@ function NewPlanModal({ open, onClose }: { open: boolean; onClose: () => void })
           id="plan-employee"
           value={employeeId}
           onChange={setEmployeeId}
-          hint={error?.includes('Çalışan') ? error : 'Plan bu çalışan için açılır.'}
+          hint={error?.includes('Çalışan') ? error : tx('Plan bu çalışan için açılır.')}
         />
 
         <TextField
           id="plan-start"
-          label="İşe başlama tarihi"
+          label={tx('İşe başlama tarihi')}
           type="date"
           required
           value={startDate}
@@ -117,8 +118,8 @@ function NewPlanModal({ open, onClose }: { open: boolean; onClose: () => void })
 
         <TextField
           id="plan-template"
-          label="Şablon adı"
-          hint="İsteğe bağlı. Örn. Yazılım ekibi."
+          label={tx('Şablon adı')}
+          hint={tx('İsteğe bağlı. Örn. Yazılım ekibi.')}
           value={templateName}
           onChange={(e) => setTemplateName(e.target.value)}
         />
@@ -130,9 +131,9 @@ function NewPlanModal({ open, onClose }: { open: boolean; onClose: () => void })
             className="mt-0.5"
           />
           <span className="text-[13px]">
-            Standart görevleri otomatik oluştur
+            {tx('Standart görevleri otomatik oluştur')}
             <span className="block text-[12px] text-muted-foreground">
-              Hazır görev seti eklenir; sonra düzenleyebilirsiniz.
+              {tx('Hazır görev seti eklenir; sonra düzenleyebilirsiniz.')}
             </span>
           </span>
         </label>
@@ -160,7 +161,7 @@ export function OnboardingPage() {
   const columns: Array<Column<OnboardingPlan>> = [
     {
       id: 'employee',
-      header: 'Çalışan',
+      header: tx('Çalışan'),
       searchText: (p) => `${nameOf(p.employeeId)} ${p.templateName ?? ''}`,
       sortValue: (p) => nameOf(p.employeeId),
       exportText: (p) => nameOf(p.employeeId),
@@ -175,7 +176,7 @@ export function OnboardingPage() {
     },
     {
       id: 'startDate',
-      header: 'Başlangıç',
+      header: tx('Başlangıç'),
       hideBelow: 'sm',
       sortValue: (p) => new Date(p.startDate).getTime(),
       exportText: (p) => formatDate(p.startDate),
@@ -183,7 +184,7 @@ export function OnboardingPage() {
     },
     {
       id: 'progress',
-      header: 'İlerleme',
+      header: tx('İlerleme'),
       hideBelow: 'md',
       sortValue: (p) => {
         const { done, total } = planProgress(p)
@@ -195,14 +196,14 @@ export function OnboardingPage() {
       },
       cell: (p) => {
         const { done, total } = planProgress(p)
-        if (total === 0) return <span className="text-muted-foreground">Görev yok</span>
+        if (total === 0) return <span className="text-muted-foreground">{tx('Görev yok')}</span>
         return (
           <div className="flex min-w-32 items-center gap-3">
             <ProgressBar
               value={done}
               max={total}
               tone={done === total ? 'success' : 'info'}
-              label={`${nameOf(p.employeeId)} görev ilerlemesi`}
+              label={tx('{0} görev ilerlemesi', [nameOf(p.employeeId)])}
             />
             <span className="tabular shrink-0 text-[12px] text-muted-foreground">
               {done}/{total}
@@ -213,7 +214,7 @@ export function OnboardingPage() {
     },
     {
       id: 'status',
-      header: 'Durum',
+      header: tx('Durum'),
       align: 'right',
       sortValue: (p) => planStatusLabels[p.status] ?? '',
       exportText: (p) => planStatusLabels[p.status] ?? '',
@@ -224,19 +225,19 @@ export function OnboardingPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Onboarding"
-        description="İşe yeni başlayanların görev planları ve ilerlemeleri."
+        title={tx('Onboarding')}
+        description={tx('İşe yeni başlayanların görev planları ve ilerlemeleri.')}
         actions={
           canManage && (
             <Button className="cursor-pointer" onClick={() => setModalOpen(true)}>
               <Plus className="size-4" />
-              Yeni plan
+              {tx('Yeni plan')}
             </Button>
           )
         }
       />
 
-      <Tabs tabs={TABS} value={tab} onChange={setTab} label="Plan durumu" />
+      <Tabs tabs={TABS} value={tab} onChange={setTab} label={tx('Plan durumu')} />
 
       <DataTable
         rows={plans.data}
@@ -246,14 +247,14 @@ export function OnboardingPage() {
         error={plans.error}
         onRetry={() => void plans.refetch()}
         onRowClick={(p) => navigate(`/panel/onboarding/${p.id}`)}
-        searchPlaceholder="Çalışan veya şablon ara"
+        searchPlaceholder={tx('Çalışan veya şablon ara')}
         exportFileName="onboarding-planlari"
-        emptyTitle="Bu durumda plan yok"
-        emptyDetail="Yeni bir çalışan için plan açtığınızda burada görünür."
+        emptyTitle={tx('Bu durumda plan yok')}
+        emptyDetail={tx('Yeni bir çalışan için plan açtığınızda burada görünür.')}
         emptyAction={
           canManage ? (
             <Button size="sm" className="cursor-pointer" onClick={() => setModalOpen(true)}>
-              Yeni plan
+              {tx('Yeni plan')}
             </Button>
           ) : undefined
         }

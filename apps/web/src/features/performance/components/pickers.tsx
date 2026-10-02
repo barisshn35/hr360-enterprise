@@ -7,15 +7,16 @@ import { useMemo } from 'react'
 import { cycleStatusLabels, useTeams, type ReviewCycle } from '@/api/performance'
 import { SelectField } from '@/components/ui/Field'
 import { usePeople } from '../hooks'
+import { tx } from '@/lib/i18n'
 
-const statusSuffix = (c: ReviewCycle) => (c.status === 'Open' ? ' · açık' : c.status === 'Planned' ? ' · taslak' : '')
+const statusSuffix = (c: ReviewCycle) => (c.status === 'Open' ? tx(' · açık') : c.status === 'Planned' ? ' · taslak' : '')
 
 export function CyclePicker({
   cycles,
   value,
   onChange,
   includeDraft = false,
-  label = 'Dönem',
+  label = tx('Dönem'),
   className,
 }: {
   cycles: ReviewCycle[]
@@ -35,7 +36,7 @@ export function CyclePicker({
         value={value}
         onChange={onChange}
         options={options}
-        placeholder={options.length ? 'Dönem seçin' : 'Dönem yok'}
+        placeholder={options.length ? tx('Dönem seçin') : tx('Dönem yok')}
         disabled={!options.length}
         hint={value ? undefined : undefined}
       />
@@ -46,9 +47,9 @@ export function CyclePicker({
 export function PersonSelect({
   value,
   onChange,
-  label = 'Çalışan',
+  label = tx('Çalışan'),
   allowAll,
-  allLabel = 'Tüm çalışanlar',
+  allLabel = tx('Tüm çalışanlar'),
   only,
   className,
 }: {
@@ -69,7 +70,7 @@ export function PersonSelect({
   }, [people.list, only, allowAll, allLabel])
   return (
     <div className={className}>
-      <SelectField label={label} value={value} onChange={onChange} options={options} placeholder={people.isPending ? 'Yükleniyor…' : 'Kişi seçin'} disabled={!options.length} />
+      <SelectField label={label} value={value} onChange={onChange} options={options} placeholder={people.isPending ? tx('Yükleniyor…') : tx('Kişi seçin')} disabled={!options.length} />
     </div>
   )
 }
@@ -79,7 +80,7 @@ export function TeamSelect({
   onChange,
   label = 'Ekip',
   allowAll,
-  allLabel = 'Tüm şirket',
+  allLabel = tx('Tüm şirket'),
   className,
 }: {
   value: string
@@ -91,14 +92,14 @@ export function TeamSelect({
 }) {
   const teams = useTeams()
   const options = useMemo(() => {
-    const list = (teams.data ?? []).filter((t) => t.isActive).map((t) => ({ value: t.id, label: `${t.name} · ${t.memberCount} kişi` }))
+    const list = (teams.data ?? []).filter((t) => t.isActive).map((t) => ({ value: t.id, label: tx('{0} · {1} kişi', [t.name, t.memberCount]) }))
     return allowAll ? [{ value: '__all__', label: allLabel }, ...list] : list
   }, [teams.data, allowAll, allLabel])
   return (
     <div className={className}>
-      <SelectField label={label} value={value} onChange={onChange} options={options} placeholder={teams.isPending ? 'Yükleniyor…' : 'Ekip seçin'} disabled={!options.length} />
+      <SelectField label={label} value={value} onChange={onChange} options={options} placeholder={teams.isPending ? tx('Yükleniyor…') : tx('Ekip seçin')} disabled={!options.length} />
     </div>
   )
 }
 
-export const cycleStatusText = (c: ReviewCycle) => cycleStatusLabels[c.status] ?? 'Diğer'
+export const cycleStatusText = (c: ReviewCycle) => cycleStatusLabels[c.status] ?? tx('Diğer')

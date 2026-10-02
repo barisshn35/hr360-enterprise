@@ -9,9 +9,10 @@ import { engagementApi, type TeamHealthMember } from '@/api/engagement'
 import { formatDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { Initials, Metric, PlanGate } from '@/features/shared/kit'
+import { tx, pct } from '@/lib/i18n'
 
 const riskTone = { High: 'danger', Medium: 'warning', Low: 'success' } as const
-const riskLabel = { High: 'Dikkat', Medium: 'İzle', Low: 'İyi' }
+const riskLabel = { High: tx('Dikkat'), Medium: tx('İzle'), Low: tx('İyi') }
 const MOODS = ['😞', '🙁', '😐', '🙂', '😄']
 
 function Bar({ value, max, danger }: { value: number; max: number; danger: number }) {
@@ -33,11 +34,11 @@ function MemberCard({ m, i }: { m: TeamHealthMember; i: number }) {
         <StatusBadge tone={riskTone[m.risk]}>{riskLabel[m.risk]}</StatusBadge>
       </div>
       <div className="mt-4 space-y-2.5 text-[12.5px]">
-        <div><div className="mb-1 flex justify-between"><span className="text-muted-foreground">Son izinden beri</span><span className="tabular">{m.daysSinceLeave} gün</span></div><Bar value={m.daysSinceLeave} max={180} danger={120} /></div>
-        <div><div className="mb-1 flex justify-between"><span className="text-muted-foreground">Fazla mesai (30 gün)</span><span className="tabular">{m.overtimeHours30} sa</span></div><Bar value={m.overtimeHours30} max={40} danger={20} /></div>
-        <div className="flex justify-between"><span className="text-muted-foreground">Performans</span><span className="tabular">{m.latestScore ?? '—'}{m.scoreTrend ? <span className={m.scoreTrend < 0 ? 'text-destructive' : 'text-[hsl(var(--success))]'}> ({m.scoreTrend > 0 ? '+' : ''}{m.scoreTrend.toFixed(0)})</span> : null}</span></div>
-        <div className="flex justify-between"><span className="text-muted-foreground">Takdir (90 gün)</span><span className="tabular">{m.kudos90}</span></div>
-        <div className="flex justify-between"><span className="text-muted-foreground">Son 1:1</span><span>{m.lastOneOnOne ? formatDate(m.lastOneOnOne) : '—'} {m.lastMood ? MOODS[m.lastMood - 1] : ''}</span></div>
+        <div><div className="mb-1 flex justify-between"><span className="text-muted-foreground">{tx('Son izinden beri')}</span><span className="tabular">{tx('{0} gün', [m.daysSinceLeave])}</span></div><Bar value={m.daysSinceLeave} max={180} danger={120} /></div>
+        <div><div className="mb-1 flex justify-between"><span className="text-muted-foreground">{tx('Fazla mesai (30 gün)')}</span><span className="tabular">{tx('{0} sa', [m.overtimeHours30])}</span></div><Bar value={m.overtimeHours30} max={40} danger={20} /></div>
+        <div className="flex justify-between"><span className="text-muted-foreground">{tx('Performans')}</span><span className="tabular">{m.latestScore ?? '—'}{m.scoreTrend ? <span className={m.scoreTrend < 0 ? 'text-destructive' : 'text-[hsl(var(--success))]'}> ({m.scoreTrend > 0 ? '+' : ''}{m.scoreTrend.toFixed(0)})</span> : null}</span></div>
+        <div className="flex justify-between"><span className="text-muted-foreground">{tx('Takdir (90 gün)')}</span><span className="tabular">{m.kudos90}</span></div>
+        <div className="flex justify-between"><span className="text-muted-foreground">{tx('Son 1:1')}</span><span>{m.lastOneOnOne ? formatDate(m.lastOneOnOne) : '—'} {m.lastMood ? MOODS[m.lastMood - 1] : ''}</span></div>
       </div>
       {m.flags.length > 0 && (
         <ul className="mt-3 space-y-1 border-t border-border pt-3">
@@ -53,22 +54,22 @@ export function TeamHealthPage() {
   const s = q.data?.summary
   return (
     <PlanGate feature="team-health">
-      <PageHeader title="Ekip sağlığı" description="İzin, fazla mesai, performans, takdir ve 1:1 sinyallerini tek ekranda görün; kimin desteğe ihtiyacı olabileceğini erken fark edin." />
-      <div className="mb-5"><InfoNote><Info className="mr-1 inline size-3.5" /> Bu bir teşhis değil, konuşma başlatıcıdır. Her bayrağın gerekçesi kartta yazılıdır; puanlama şeffaf kurallarla yapılır.</InfoNote></div>
+      <PageHeader title={tx('Ekip sağlığı')} description={tx('İzin, fazla mesai, performans, takdir ve 1:1 sinyallerini tek ekranda görün; kimin desteğe ihtiyacı olabileceğini erken fark edin.')} />
+      <div className="mb-5"><InfoNote><Info className="mr-1 inline size-3.5" />{' '}{tx('Bu bir teşhis değil, konuşma başlatıcıdır. Her bayrağın gerekçesi kartta yazılıdır; puanlama şeffaf kurallarla yapılır.')}</InfoNote></div>
       {q.isPending ? <RowsSkeleton /> : q.isError ? <ErrorState message={(q.error as Error).message} onRetry={() => q.refetch()} /> : q.data.members.length === 0 ? (
-        <EmptyState icon={HeartPulse} title="Ekip bulunamadı" detail="Başı olduğunuz bir departman veya lideri olduğunuz bir ekip olduğunda üyeler burada görünür." />
+        <EmptyState icon={HeartPulse} title={tx('Ekip bulunamadı')} detail={tx('Başı olduğunuz bir departman veya lideri olduğunuz bir ekip olduğunda üyeler burada görünür.')} />
       ) : (
         <>
           <div className="mb-6 grid gap-3 sm:grid-cols-3 xl:grid-cols-6">
-            <Metric label="Ekip" value={s?.size ?? 0} />
-            <Metric label="Dikkat" value={s?.atRisk ?? 0} tone={(s?.atRisk ?? 0) > 0 ? 'bad' : 'good'} />
-            <Metric label="İzle" value={s?.watch ?? 0} tone={(s?.watch ?? 0) > 0 ? 'warn' : undefined} />
-            <Metric label="Ort. fazla mesai" value={`${s?.avgOvertimeHours ?? 0} sa`} />
-            <Metric label="Ort. izinsiz gün" value={s?.avgDaysSinceLeave ?? 0} />
-            <Metric label="1:1 kapsamı" value={`%${s?.oneOnOneCoverage ?? 0}`} hint="son 45 gün" tone={(s?.oneOnOneCoverage ?? 0) >= 80 ? 'good' : 'warn'} />
+            <Metric label={tx('Ekip')} value={s?.size ?? 0} />
+            <Metric label={tx('Dikkat')} value={s?.atRisk ?? 0} tone={(s?.atRisk ?? 0) > 0 ? 'bad' : 'good'} />
+            <Metric label={tx('İzle')} value={s?.watch ?? 0} tone={(s?.watch ?? 0) > 0 ? 'warn' : undefined} />
+            <Metric label={tx('Ort. fazla mesai')} value={`${s?.avgOvertimeHours ?? 0} sa`} />
+            <Metric label={tx('Ort. izinsiz gün')} value={s?.avgDaysSinceLeave ?? 0} />
+            <Metric label={tx('1:1 kapsamı')} value={pct(s?.oneOnOneCoverage ?? 0)} hint={tx('son 45 gün')} tone={(s?.oneOnOneCoverage ?? 0) >= 80 ? 'good' : 'warn'} />
           </div>
           <Panel>
-            <PanelHead title="Ekip üyeleri" note="Önce en çok sinyali olanlar." />
+            <PanelHead title={tx('Ekip üyeleri')} note={tx('Önce en çok sinyali olanlar.')} />
             <PanelBody className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {q.data.members.map((m, i) => <MemberCard key={m.employeeId} m={m} i={i} />)}
             </PanelBody>

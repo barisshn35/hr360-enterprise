@@ -77,6 +77,7 @@ import {
   writeDraft,
   type LocalDraft,
 } from './reviewSupport'
+import { tx, appLocale } from '@/lib/i18n'
 
 type Form = Omit<LocalDraft, 'savedAt'>
 type Sync = 'idle' | 'pending' | 'saving' | 'saved' | 'error'
@@ -260,7 +261,7 @@ export function ReviewFormPage() {
     const miss = required.filter((m) => !filled.includes(m)).map((m) => m.id)
     if (miss.length) {
       setMissing(new Set(miss))
-      toast.stop(`${miss.length} zorunlu metrik puanlanmadı.`)
+      toast.stop(tx('{0} zorunlu metrik puanlanmadı.', [miss.length]))
       focusFirst(miss)
       return
     }
@@ -280,7 +281,7 @@ export function ReviewFormPage() {
           clearDraft(reviewId)
           setConfirmOpen(false)
           setRestored(null)
-          toast.ok('Değerlendirme gönderildi ve kilitlendi.')
+          toast.ok(tx('Değerlendirme gönderildi ve kilitlendi.'))
           window.scrollTo({ top: 0, behavior: 'smooth' })
         },
         onError: (e) => {
@@ -306,7 +307,7 @@ export function ReviewFormPage() {
       <div className="mx-auto w-full max-w-5xl">
         <BackLink />
         <Panel>
-          <ErrorState title="Değerlendirme açılamadı" message={errorText(review.error)} onRetry={() => void review.refetch()} />
+          <ErrorState title={tx('Değerlendirme açılamadı')} message={errorText(review.error)} onRetry={() => void review.refetch()} />
         </Panel>
       </div>
     )
@@ -330,7 +331,7 @@ export function ReviewFormPage() {
     )
   }
 
-  const subjectName = r!.type === 'Self' ? 'Öz değerlendirme' : people.nameOf(r!.employeeId)
+  const subjectName = r!.type === 'Self' ? tx('Öz değerlendirme') : people.nameOf(r!.employeeId)
   const pct = metrics.length ? filled.length / metrics.length : 0
 
   return (
@@ -349,27 +350,26 @@ export function ReviewFormPage() {
                 {locked && (
                   <Chip tone="success">
                     <Lock className="size-3" aria-hidden />
-                    Gönderildi
+                    {tx('Gönderildi')}
                   </Chip>
                 )}
               </p>
               <p className="truncate text-[12px] text-muted-foreground">
-                {r!.type === 'Self' ? people.nameOf(r!.employeeId) : `Değerlendiren: ${people.nameOf(r!.reviewerEmployeeId)}`} · {cycle.data?.name ?? '…'}
+                {r!.type === 'Self' ? people.nameOf(r!.employeeId) : tx('Değerlendiren: {0}', [people.nameOf(r!.reviewerEmployeeId)])} · {cycle.data?.name ?? '…'}
               </p>
             </div>
           </div>
           <div className="flex items-center gap-3 sm:gap-4">
             <Completion pct={pct} filled={filled.length} total={metrics.length} />
             <div className="min-w-0 flex-1 text-[12px] md:flex-none">
-              <p className={cn('tabular hidden font-medium sm:block', requiredFilled.length < required.length ? 'text-[hsl(var(--warning))]' : 'text-[hsl(var(--success))]')}>
-                Zorunlu {requiredFilled.length}/{required.length}
+              <p className={cn('tabular hidden font-medium sm:block', requiredFilled.length < required.length ? 'text-[hsl(var(--warning))]' : 'text-[hsl(var(--success))]')}>{tx('Zorunlu {0}/{1}', [requiredFilled.length, required.length])}
               </p>
               {!readOnly && <SyncStatus sync={sync} savedAt={savedAt} error={syncError} onRetry={pushDraft} />}
             </div>
             {!readOnly && (
               <Button onClick={trySubmit} disabled={submit.isPending}>
                 <Send aria-hidden />
-                Gönder
+                {tx('Gönder')}
               </Button>
             )}
           </div>
@@ -383,9 +383,7 @@ export function ReviewFormPage() {
               <div className="flex flex-col gap-2 rounded-xl border border-primary/25 bg-primary/5 px-4 py-3 text-[13px] sm:flex-row sm:items-center sm:justify-between">
                 <span className="flex items-start gap-2">
                   <History className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />
-                  <span>
-                    Sunucuya ulaşmamış değişiklikleriniz bu tarayıcıdan geri yüklendi ({formatDateTime(restored)}).
-                    <span className="block text-[12px] text-muted-foreground">Kaydederseniz sunucudaki taslağın yerini alır.</span>
+                  <span>{tx('Sunucuya ulaşmamış değişiklikleriniz bu tarayıcıdan geri yüklendi ({0}).', [formatDateTime(restored)])}<span className="block text-[12px] text-muted-foreground">{tx('Kaydederseniz sunucudaki taslağın yerini alır.')}</span>
                   </span>
                 </span>
                 <div className="flex shrink-0 items-center gap-1.5 self-end sm:self-auto">
@@ -401,7 +399,7 @@ export function ReviewFormPage() {
                       setForm(null)
                     }}
                   >
-                    Yok say
+                    {tx('Yok say')}
                   </Button>
                   <Button
                     size="sm"
@@ -413,7 +411,7 @@ export function ReviewFormPage() {
                     }}
                   >
                     <CloudUpload aria-hidden />
-                    Sunucuya kaydet
+                    {tx('Sunucuya kaydet')}
                   </Button>
                 </div>
               </div>
@@ -426,37 +424,33 @@ export function ReviewFormPage() {
               <div role="alert" className="flex flex-col gap-2 rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-[13px] sm:flex-row sm:items-center sm:justify-between">
                 <span className="flex items-start gap-2">
                   <CloudOff className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden />
-                  <span>
-                    Taslak sunucuya kaydedilemedi{syncError ? `: ${syncError}` : '.'}
-                    <span className="block text-[12px] text-muted-foreground">Değişiklikleriniz kaybolmadı; bu tarayıcıda saklanıyor.</span>
+                  <span>{tx('Taslak sunucuya kaydedilemedi{0}', [syncError ? `: ${syncError}` : '.'])}
+                    <span className="block text-[12px] text-muted-foreground">{tx('Değişiklikleriniz kaybolmadı; bu tarayıcıda saklanıyor.')}</span>
                   </span>
                 </span>
                 <Button size="sm" variant="outline" className="shrink-0 self-end sm:self-auto" onClick={pushDraft}>
                   <RefreshCw aria-hidden />
-                  Tekrar dene
+                  {tx('Tekrar dene')}
                 </Button>
               </div>
             </motion.div>
           )}
         </AnimatePresence>
         {locked && (
-          <InfoNote>
-            Bu değerlendirme {formatDateTime(r!.submittedAt)} tarihinde gönderildi ve kilitlendi; değiştirilemez. Puanın nasıl hesaplandığını{' '}
+          <InfoNote>{tx('Bu değerlendirme {0} tarihinde gönderildi ve kilitlendi; değiştirilemez. Puanın nasıl hesaplandığını', [formatDateTime(r!.submittedAt)])}{' '}
             <Link className="font-medium text-primary hover:underline" to={`/panel/performans/puan?calisan=${r!.employeeId}&donem=${r!.cycleId}`}>
-              puan dökümünde
-            </Link>{' '}
-            görebilirsiniz.
-          </InfoNote>
+              {tx('puan dökümünde')}
+            </Link>{' '}{tx('görebilirsiniz.', [])}</InfoNote>
         )}
-        {!locked && !isReviewer && <InfoNote>Bu taslak {people.nameOf(r!.reviewerEmployeeId)} tarafından doldurulacak; yalnızca görüntülüyorsunuz.</InfoNote>}
-        {!locked && cycle.data?.status === 'Closed' && <InfoNote>Dönem kapandığı için bu değerlendirme artık gönderilemez.</InfoNote>}
-        {!applicable.departmentKnown && <InfoNote>Çalışanın departmanı belirlenemediği için yalnızca genel metrikler gösteriliyor. Eksik zorunlu metrik olursa gönderirken belirtilir.</InfoNote>}
+        {!locked && !isReviewer && <InfoNote>{tx('Bu taslak {0} tarafından doldurulacak; yalnızca görüntülüyorsunuz.', [people.nameOf(r!.reviewerEmployeeId)])}</InfoNote>}
+        {!locked && cycle.data?.status === 'Closed' && <InfoNote>{tx('Dönem kapandığı için bu değerlendirme artık gönderilemez.')}</InfoNote>}
+        {!applicable.departmentKnown && <InfoNote>{tx('Çalışanın departmanı belirlenemediği için yalnızca genel metrikler gösteriliyor. Eksik zorunlu metrik olursa gönderirken belirtilir.')}</InfoNote>}
       </div>
 
       <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
         <div className="flex min-w-0 flex-col gap-5">
           {metrics.length === 0 && (
-            <Panel className="p-6 text-center text-[13px] text-muted-foreground">Bu çalışana uygulanan etkin metrik yok. Metrikler ekranından tanımlayın.</Panel>
+            <Panel className="p-6 text-center text-[13px] text-muted-foreground">{tx('Bu çalışana uygulanan etkin metrik yok. Metrikler ekranından tanımlayın.')}</Panel>
           )}
 
           {byCat.map((g, gi) => (
@@ -497,13 +491,13 @@ export function ReviewFormPage() {
           ))}
 
           <Panel className="p-5">
-            <h2 className="mb-4 text-[15px] font-semibold">Yazılı değerlendirme</h2>
+            <h2 className="mb-4 text-[15px] font-semibold">{tx('Yazılı değerlendirme')}</h2>
             <div className="grid gap-4 md:grid-cols-2">
-              <TextAreaField label="Güçlü yönler" value={form.strengths} onChange={(e) => setForm({ ...form, strengths: e.target.value })} disabled={readOnly} placeholder="Neyi iyi yapıyor? Somut örnek verin." />
-              <TextAreaField label="Geliştirilmesi gerekenler" value={form.improvements} onChange={(e) => setForm({ ...form, improvements: e.target.value })} disabled={readOnly} placeholder="Neyi farklı yapabilir? Nasıl destek olunabilir?" />
+              <TextAreaField label={tx('Güçlü yönler')} value={form.strengths} onChange={(e) => setForm({ ...form, strengths: e.target.value })} disabled={readOnly} placeholder={tx('Neyi iyi yapıyor? Somut örnek verin.')} />
+              <TextAreaField label={tx('Geliştirilmesi gerekenler')} value={form.improvements} onChange={(e) => setForm({ ...form, improvements: e.target.value })} disabled={readOnly} placeholder={tx('Neyi farklı yapabilir? Nasıl destek olunabilir?')} />
             </div>
             <div className="mt-4">
-              <TextAreaField label="Genel yorum" value={form.comments} onChange={(e) => setForm({ ...form, comments: e.target.value })} disabled={readOnly} placeholder="Opsiyonel" />
+              <TextAreaField label={tx('Genel yorum')} value={form.comments} onChange={(e) => setForm({ ...form, comments: e.target.value })} disabled={readOnly} placeholder={tx('Opsiyonel')} />
             </div>
           </Panel>
         </div>
@@ -511,7 +505,7 @@ export function ReviewFormPage() {
         {/* ------------------------------ yan sütun ------------------------------ */}
         <aside className="flex flex-col gap-4 xl:sticky xl:top-40">
           <Panel className="p-4">
-            <p className="mb-3 text-[12px] font-semibold text-muted-foreground">İlerleme</p>
+            <p className="mb-3 text-[12px] font-semibold text-muted-foreground">{tx('İlerleme')}</p>
             <ul className="flex flex-col gap-1">
               {byCat.map((g) => {
                 const done = g.items.filter((m) => filled.includes(m)).length
@@ -539,19 +533,18 @@ export function ReviewFormPage() {
           <Panel className="p-4">
             <p className="flex items-center gap-1.5 text-[12px] font-semibold text-muted-foreground">
               <Gauge className="size-3.5" aria-hidden />
-              Bu formun metrik ortalaması
+              {tx('Bu formun metrik ortalaması')}
             </p>
             <p className="mt-1 text-[28px] leading-none font-semibold tracking-tight">
               {estimate === null ? '—' : <AnimatedNumber value={estimate} format={(v) => formatScore(v)} />}
             </p>
             <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
-              Yalnızca bu formdaki puanlardan, kategori ağırlıklarıyla hesaplanan tahmindir. Nihai puan diğer değerlendirmeler, değerlendirici katsayıları ve
-              hedeflerle birlikte oluşur.
+              {tx('Yalnızca bu formdaki puanlardan, kategori ağırlıklarıyla hesaplanan tahmindir. Nihai puan diğer değerlendirmeler, değerlendirici katsayıları ve hedeflerle birlikte oluşur.')}
             </p>
           </Panel>
           <Panel className="p-4 text-[12px] leading-relaxed text-muted-foreground">
-            <p className="mb-1 font-semibold text-foreground">Ölçek rehberi</p>
-            Yıldız ve 1–10 ölçekte ok tuşlarıyla değer değiştirebilir, Sil tuşuyla temizleyebilirsiniz. Seçili değere tekrar tıklamak da temizler.
+            <p className="mb-1 font-semibold text-foreground">{tx('Ölçek rehberi')}</p>
+            {tx('Yıldız ve 1–10 ölçekte ok tuşlarıyla değer değiştirebilir, Sil tuşuyla temizleyebilirsiniz. Seçili değere tekrar tıklamak da temizler.')}
           </Panel>
         </aside>
       </div>
@@ -559,15 +552,15 @@ export function ReviewFormPage() {
       <Modal
         open={confirmOpen}
         onClose={() => !submit.isPending && setConfirmOpen(false)}
-        title="Değerlendirme gönderilsin mi?"
+        title={tx('Değerlendirme gönderilsin mi?')}
         footer={
           <>
             <Button variant="outline" onClick={() => setConfirmOpen(false)} disabled={submit.isPending}>
-              Kontrol edeyim
+              {tx('Kontrol edeyim')}
             </Button>
             <Button onClick={doSubmit} disabled={submit.isPending}>
               <Send aria-hidden />
-              {submit.isPending ? 'Gönderiliyor…' : 'Gönder ve kilitle'}
+              {submit.isPending ? tx('Gönderiliyor…') : tx('Gönder ve kilitle')}
             </Button>
           </>
         }
@@ -575,21 +568,21 @@ export function ReviewFormPage() {
         <ul className="flex flex-col gap-2 text-[13px]">
           <li className="flex items-center gap-2">
             <Check className="size-4 text-[hsl(var(--success))]" aria-hidden />
-            {metrics.length} metrikten {filled.length} tanesi puanlandı
-            {metrics.length - filled.length > 0 && <span className="text-muted-foreground">({metrics.length - filled.length} opsiyonel metrik boş)</span>}
+            {metrics.length}{' '}{tx('metrikten')}{' '}{filled.length}{' '}{tx('tanesi puanlandı')}
+            {metrics.length - filled.length > 0 && <span className="text-muted-foreground">{tx('({0} opsiyonel metrik boş)', [metrics.length - filled.length])}</span>}
           </li>
           <li className="flex items-center gap-2">
             <Check className="size-4 text-[hsl(var(--success))]" aria-hidden />
-            Zorunlu metriklerin tamamı puanlandı
+            {tx('Zorunlu metriklerin tamamı puanlandı')}
           </li>
           <li className="flex items-center gap-2">
             {form.strengths.trim() || form.improvements.trim() ? <Check className="size-4 text-[hsl(var(--success))]" aria-hidden /> : <CircleDashed className="size-4 text-muted-foreground" aria-hidden />}
-            {form.strengths.trim() || form.improvements.trim() ? 'Yazılı değerlendirme eklendi' : 'Yazılı değerlendirme boş (opsiyonel)'}
+            {form.strengths.trim() || form.improvements.trim() ? tx('Yazılı değerlendirme eklendi') : tx('Yazılı değerlendirme boş (opsiyonel)')}
           </li>
         </ul>
         <p className="mt-4 flex items-start gap-2 rounded-lg border border-[hsl(var(--warning))]/30 bg-[hsl(var(--warning))]/8 px-3 py-2.5 text-[13px]">
           <Lock className="mt-0.5 size-4 shrink-0 text-[hsl(var(--warning))]" aria-hidden />
-          Gönderdikten sonra değerlendirme kilitlenir ve değiştirilemez.
+          {tx('Gönderdikten sonra değerlendirme kilitlenir ve değiştirilemez.')}
         </p>
         {submitError && (
           <p role="alert" className="mt-3 text-[13px] text-destructive">
@@ -605,21 +598,21 @@ function BackLink() {
   return (
     <Link to="/panel/performans/degerlendirme" className="mb-4 inline-flex items-center gap-1.5 text-[13px] text-muted-foreground hover:text-foreground">
       <ArrowLeft className="size-4" aria-hidden />
-      Değerlendirmeler
+      {tx('Değerlendirmeler')}
     </Link>
   )
 }
 
 function SyncStatus({ sync, savedAt, error, onRetry }: { sync: Sync; savedAt: string | null; error: string | null; onRetry: () => void }) {
-  const time = savedAt ? new Date(savedAt).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : null
+  const time = savedAt ? new Date(savedAt).toLocaleTimeString(appLocale, { hour: '2-digit', minute: '2-digit' }) : null
   const at = time ? ` · ${time}` : ''
   // Dar ekranda kısa, genişte uzun metin.
   const view: Record<Sync, { icon: typeof Cloud; short: string; long: string; tone: string; spin?: boolean }> = {
-    idle: { icon: Cloud, short: 'Otomatik kayıt', long: 'Taslak otomatik kaydedilir', tone: 'text-muted-foreground' },
-    pending: { icon: Cloud, short: 'Değişiklik var', long: 'Kaydedilmemiş değişiklik', tone: 'text-muted-foreground' },
-    saving: { icon: LoaderCircle, short: 'Kaydediliyor…', long: 'Taslak kaydediliyor…', tone: 'text-muted-foreground', spin: true },
-    saved: { icon: Check, short: `Kaydedildi${at}`, long: `Taslak kaydedildi${at}`, tone: 'text-[hsl(var(--success))]' },
-    error: { icon: CloudOff, short: 'Kaydedilemedi', long: 'Taslak kaydedilemedi', tone: 'text-destructive' },
+    idle: { icon: Cloud, short: tx('Otomatik kayıt'), long: tx('Taslak otomatik kaydedilir'), tone: 'text-muted-foreground' },
+    pending: { icon: Cloud, short: tx('Değişiklik var'), long: tx('Kaydedilmemiş değişiklik'), tone: 'text-muted-foreground' },
+    saving: { icon: LoaderCircle, short: tx('Kaydediliyor…'), long: tx('Taslak kaydediliyor…'), tone: 'text-muted-foreground', spin: true },
+    saved: { icon: Check, short: tx('Kaydedildi{0}', [at]), long: tx('Taslak kaydedildi{0}', [at]), tone: 'text-[hsl(var(--success))]' },
+    error: { icon: CloudOff, short: tx('Kaydedilemedi'), long: tx('Taslak kaydedilemedi'), tone: 'text-destructive' },
   }
   const v = view[sync]
   const Icon = v.icon
@@ -640,7 +633,7 @@ function SyncStatus({ sync, savedAt, error, onRetry }: { sync: Sync; savedAt: st
         </span>
       </motion.span>
       {sync === 'error' && (
-        <button type="button" onClick={onRetry} aria-label="Taslağı yeniden kaydet" className="grid size-6 shrink-0 place-items-center rounded-md text-destructive hover:bg-destructive/10">
+        <button type="button" onClick={onRetry} aria-label={tx('Taslağı yeniden kaydet')} className="grid size-6 shrink-0 place-items-center rounded-md text-destructive hover:bg-destructive/10">
           <RefreshCw className="size-3.5" aria-hidden />
         </button>
       )}
@@ -662,7 +655,7 @@ function Completion({ pct, filled, total }: { pct: number; filled: number; total
       </div>
       <span className="tabular text-[12px] text-muted-foreground">
         {filled}/{total}
-        <span className="block">puanlandı</span>
+        <span className="block">{tx('puanlandı')}</span>
       </span>
     </div>
   )
@@ -697,13 +690,13 @@ function MetricField({
         <div className="min-w-0 lg:max-w-sm">
           <p id={labelId} className="flex flex-wrap items-center gap-1.5 text-[14px] font-medium">
             {m.name}
-            {m.isRequired && <Chip tone="danger">Zorunlu</Chip>}
+            {m.isRequired && <Chip tone="danger">{tx('Zorunlu')}</Chip>}
           </p>
           {m.description && <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">{m.description}</p>}
           <AnimatePresence>
             {missing && (
               <motion.p initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="mt-1 text-[12px] font-medium text-destructive">
-                Zorunlu metrik — göndermeden önce puanlayın.
+                {tx('Zorunlu metrik — göndermeden önce puanlayın.')}
               </motion.p>
             )}
           </AnimatePresence>
@@ -719,8 +712,8 @@ function MetricField({
               value={comment}
               onChange={(e) => onComment(e.target.value)}
               disabled={readOnly}
-              placeholder="Bu metrik için yorum (opsiyonel)"
-              aria-label={`${m.name} yorumu`}
+              placeholder={tx('Bu metrik için yorum (opsiyonel)')}
+              aria-label={tx('{0} yorumu', [m.name])}
               className="mt-3 min-h-16 w-full rounded-md border border-input bg-background px-3 py-2 text-[13px] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-70"
             />
           </motion.div>
@@ -728,7 +721,7 @@ function MetricField({
           !readOnly && (
             <button type="button" onClick={onOpenComment} className="mt-2 inline-flex items-center gap-1 text-[12px] font-medium text-muted-foreground hover:text-primary">
               <MessageSquarePlus className="size-3.5" aria-hidden />
-              Yorum ekle
+              {tx('Yorum ekle')}
             </button>
           )
         )}

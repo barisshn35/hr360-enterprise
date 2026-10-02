@@ -39,6 +39,7 @@ import { timeProgress } from './cycleDefaults'
 import { cycleStatusGroup } from '@/api/performance/labels'
 import { useAuth } from '@/auth/useAuth'
 import { isHr } from '@/auth/roles'
+import { tx } from '@/lib/i18n'
 
 /** Dönem oluşturma/açma/kapama backend'de yalnızca İK'ya açık (RequireHrAdmin). */
 function useCanAdminCycles() {
@@ -67,22 +68,22 @@ export function CyclesPage() {
   const visible = list.filter((c) => (filter === 'all' || c.status === filter) && (filter !== 'all' || c.year === shownYear || years.length <= 1))
 
   const stats = [
-    { label: 'Açık', value: list.filter((c) => cycleStatusGroup(c.status) === 'open').length },
-    { label: 'Taslak', value: list.filter((c) => cycleStatusGroup(c.status) === 'planned').length },
-    { label: 'Kapanan', value: list.filter((c) => cycleStatusGroup(c.status) === 'closed').length },
+    { label: tx('Açık'), value: list.filter((c) => cycleStatusGroup(c.status) === 'open').length },
+    { label: tx('Taslak'), value: list.filter((c) => cycleStatusGroup(c.status) === 'planned').length },
+    { label: tx('Kapanan'), value: list.filter((c) => cycleStatusGroup(c.status) === 'closed').length },
   ]
 
   return (
     <div className="mx-auto w-full max-w-6xl">
       <PerfPageHeader
-        eyebrow="Performans kurulumu · 3. adım"
-        title="Dönemler"
-        description="Hedefler, değerlendirmeler ve dönemsel sonuçlar döneme bağlıdır. Dönem taslak olarak oluşturulur, açılır ve özel bir akışla kapatılır; kapanan dönem yeniden açılamaz."
+        eyebrow={tx('Performans kurulumu · 3. adım')}
+        title={tx('Dönemler')}
+        description={tx('Hedefler, değerlendirmeler ve dönemsel sonuçlar döneme bağlıdır. Dönem taslak olarak oluşturulur, açılır ve özel bir akışla kapatılır; kapanan dönem yeniden açılamaz.')}
         actions={
           canAdmin ? (
             <Button onClick={() => setCreating(true)} disabled={cycles.isPending}>
               <CalendarPlus aria-hidden />
-              Yeni dönem
+              {tx('Yeni dönem')}
             </Button>
           ) : undefined
         }
@@ -104,7 +105,7 @@ export function CyclesPage() {
 
       {cycles.isError && (
         <Panel>
-          <ErrorState title="Dönemler alınamadı" message={errorText(cycles.error)} onRetry={() => void cycles.refetch()} />
+          <ErrorState title={tx('Dönemler alınamadı')} message={errorText(cycles.error)} onRetry={() => void cycles.refetch()} />
         </Panel>
       )}
 
@@ -124,17 +125,17 @@ export function CyclesPage() {
         <Panel>
           <EmptyState
             icon={CalendarRange}
-            title={canAdmin ? 'Henüz dönem yok — ilk dönemi oluşturun' : 'Henüz dönem yok'}
+            title={canAdmin ? tx('Henüz dönem yok — ilk dönemi oluşturun') : tx('Henüz dönem yok')}
             detail={
               canAdmin
-                ? 'Hedefler ve değerlendirmeler bir döneme bağlanmadan başlatılamaz. Çoğu şirket çeyreklik dönemle başlar.'
-                : 'Dönemleri İK oluşturur ve açar. Açık bir dönem olduğunda hedef ve değerlendirmeler başlatılabilir.'
+                ? tx('Hedefler ve değerlendirmeler bir döneme bağlanmadan başlatılamaz. Çoğu şirket çeyreklik dönemle başlar.')
+                : tx('Dönemleri İK oluşturur ve açar. Açık bir dönem olduğunda hedef ve değerlendirmeler başlatılabilir.')
             }
             action={
               canAdmin ? (
                 <Button onClick={() => setCreating(true)}>
                   <CalendarPlus aria-hidden />
-                  Yeni dönem
+                  {tx('Yeni dönem')}
                 </Button>
               ) : undefined
             }
@@ -150,11 +151,11 @@ export function CyclesPage() {
           <Panel className="p-5">
             <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h2 className="text-[15px] font-semibold">{shownYear} zaman çizelgesi</h2>
-                <p className="text-[12px] text-muted-foreground">Çakışan dönemler ayrı şeritte gösterilir. Bir döneme tıklayınca kartına gidersiniz.</p>
+                <h2 className="text-[15px] font-semibold">{tx('{0} zaman çizelgesi', [shownYear])}</h2>
+                <p className="text-[12px] text-muted-foreground">{tx('Çakışan dönemler ayrı şeritte gösterilir. Bir döneme tıklayınca kartına gidersiniz.')}</p>
               </div>
               {years.length > 1 && (
-                <Segmented ariaLabel="Yıl" size="sm" value={String(shownYear)} onChange={(v) => setYear(Number(v))} options={years.map((y) => ({ value: String(y), label: String(y) }))} />
+                <Segmented ariaLabel={tx('Yıl')} size="sm" value={String(shownYear)} onChange={(v) => setYear(Number(v))} options={years.map((y) => ({ value: String(y), label: String(y) }))} />
               )}
             </div>
             <CycleTimeline
@@ -168,32 +169,32 @@ export function CyclesPage() {
               }}
             />
             <div className="mt-4 flex flex-wrap gap-4 text-[11px] text-muted-foreground">
-              <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-5 rounded bg-primary" />Açık</span>
-              <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-5 rounded border border-dashed border-primary/50 bg-primary/5" />Taslak</span>
-              <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-5 rounded border border-border bg-muted" />Kapandı</span>
+              <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-5 rounded bg-primary" />{tx('Açık')}</span>
+              <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-5 rounded border border-dashed border-primary/50 bg-primary/5" />{tx('Taslak')}</span>
+              <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-5 rounded border border-border bg-muted" />{tx('Kapandı')}</span>
             </div>
           </Panel>
 
           {/* kartlar */}
           <div>
             <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-              <h2 className="text-[15px] font-semibold">Dönemler</h2>
+              <h2 className="text-[15px] font-semibold">{tx('Dönemler')}</h2>
               <Segmented
-                ariaLabel="Durum"
+                ariaLabel={tx('Durum')}
                 size="sm"
                 value={filter}
                 onChange={setFilter}
                 options={[
-                  { value: 'all', label: years.length > 1 ? `${shownYear}` : 'Tümü' },
-                  { value: 'Open', label: 'Açık' },
-                  { value: 'Planned', label: 'Taslak' },
-                  { value: 'Closed', label: 'Kapanan' },
+                  { value: 'all', label: years.length > 1 ? `${shownYear}` : tx('Tümü') },
+                  { value: 'Open', label: tx('Açık') },
+                  { value: 'Planned', label: tx('Taslak') },
+                  { value: 'Closed', label: tx('Kapanan') },
                 ]}
               />
             </div>
             {visible.length === 0 ? (
               <Panel>
-                <p className="px-4 py-10 text-center text-[13px] text-muted-foreground">Bu filtrede dönem yok.</p>
+                <p className="px-4 py-10 text-center text-[13px] text-muted-foreground">{tx('Bu filtrede dönem yok.')}</p>
               </Panel>
             ) : (
               <div className="grid gap-3 md:grid-cols-2">
@@ -243,7 +244,7 @@ function ActiveCycleCard({ cycle, onClose }: { cycle: ReviewCycle; onClose: () =
               <span className="absolute inset-0 animate-ping rounded-full bg-primary/60" />
               <span className="relative size-2 rounded-full bg-primary" />
             </span>
-            Açık dönem
+            {tx('Açık dönem')}
           </p>
           <h2 id="active-cycle" className="mt-1 text-[24px] font-semibold tracking-tight">
             {cycle.name}
@@ -254,9 +255,9 @@ function ActiveCycleCard({ cycle, onClose }: { cycle: ReviewCycle; onClose: () =
 
           <div className="mt-5">
             <div className="mb-1.5 flex items-center justify-between text-[12px]">
-              <span className="text-muted-foreground">Dönem ilerlemesi</span>
+              <span className="text-muted-foreground">{tx('Dönem ilerlemesi')}</span>
               <span className="tabular font-medium">
-                %{Math.round(t.pct * 100)} · {t.ended ? 'süre doldu, kapanmayı bekliyor' : `${t.daysLeft} gün kaldı`}
+                %{Math.round(t.pct * 100)} · {t.ended ? tx('süre doldu, kapanmayı bekliyor') : tx('{0} gün kaldı', [t.daysLeft])}
               </span>
             </div>
             <div className="h-2.5 overflow-hidden rounded-full bg-muted">
@@ -273,15 +274,15 @@ function ActiveCycleCard({ cycle, onClose }: { cycle: ReviewCycle; onClose: () =
             {canAdmin && (
               <Button variant="destructive" onClick={onClose}>
                 <Lock aria-hidden />
-                Dönemi kapat
+                {tx('Dönemi kapat')}
               </Button>
             )}
             <Button asChild variant="outline">
-              <Link to="/panel/performans/degerlendirme">Değerlendirmeler</Link>
+              <Link to="/panel/performans/degerlendirme">{tx('Değerlendirmeler')}</Link>
             </Button>
             <Button asChild variant="ghost">
               <Link to="/panel/performans/hedefler">
-                Hedefler
+                {tx('Hedefler')}
                 <ArrowRight aria-hidden />
               </Link>
             </Button>
@@ -289,7 +290,7 @@ function ActiveCycleCard({ cycle, onClose }: { cycle: ReviewCycle; onClose: () =
         </div>
 
         <div className="rounded-xl border border-border bg-background/60 p-4 backdrop-blur-sm">
-          <p className="text-[12px] font-semibold text-muted-foreground">Kapanışa hazırlık</p>
+          <p className="text-[12px] font-semibold text-muted-foreground">{tx('Kapanışa hazırlık')}</p>
           {readiness.isPending ? (
             <div className="mt-3 flex items-center gap-4">
               <Skeleton className="size-20 rounded-full" />
@@ -305,28 +306,28 @@ function ActiveCycleCard({ cycle, onClose }: { cycle: ReviewCycle; onClose: () =
                 <div className="flex items-center justify-between gap-2">
                   <dt className="flex items-center gap-1.5 text-muted-foreground">
                     <CheckCircle2 className="size-3.5 text-[hsl(var(--success))]" aria-hidden />
-                    Hazır
+                    {tx('Hazır')}
                   </dt>
                   <dd className="tabular font-semibold">{r.readyCount}</dd>
                 </div>
                 <div className="flex items-center justify-between gap-2">
                   <dt className="flex items-center gap-1.5 text-muted-foreground">
                     <Hourglass className="size-3.5 text-[hsl(var(--warning))]" aria-hidden />
-                    Geçici kalacak
+                    {tx('Geçici kalacak')}
                   </dt>
                   <dd className="tabular font-semibold">{r.provisionalCount}</dd>
                 </div>
                 <div className="flex items-center justify-between gap-2">
                   <dt className="flex items-center gap-1.5 text-muted-foreground">
                     <CalendarClock className="size-3.5 text-primary" aria-hidden />
-                    Bekleyen değerlendirme
+                    {tx('Bekleyen değerlendirme')}
                   </dt>
                   <dd className="tabular font-semibold">{r.pendingReviewTotal}</dd>
                 </div>
               </dl>
             </div>
           ) : (
-            <p className="mt-3 text-[12px] text-muted-foreground">{errorText(readiness.error, 'Hazırlık bilgisi alınamadı.')}</p>
+            <p className="mt-3 text-[12px] text-muted-foreground">{errorText(readiness.error, tx('Hazırlık bilgisi alınamadı.'))}</p>
           )}
         </div>
       </div>
@@ -371,21 +372,20 @@ function NoActiveCycle({ drafts, onOpen, onCreate }: { drafts: ReviewCycle[]; on
             <Sparkles className="size-5" aria-hidden />
           </span>
           <div>
-            <p className="text-[15px] font-semibold">Şu an açık dönem yok</p>
+            <p className="text-[15px] font-semibold">{tx('Şu an açık dönem yok')}</p>
             <p className="text-[13px] text-muted-foreground">
-              {next ? `Sıradaki taslak: ${next.name}. Açtığınızda değerlendirmeler başlatılabilir.` : 'Değerlendirme başlatmak için bir dönem oluşturup açın.'}
+              {next ? tx('Sıradaki taslak: {0}. Açtığınızda değerlendirmeler başlatılabilir.', [next.name]) : tx('Değerlendirme başlatmak için bir dönem oluşturup açın.')}
             </p>
           </div>
         </div>
         {!canAdmin ? null : next ? (
           <Button onClick={() => onOpen(next)}>
             <PlayCircle aria-hidden />
-            {next.name} dönemini aç
-          </Button>
+            {tx('{0} dönemini aç', [next.name])}</Button>
         ) : (
           <Button onClick={onCreate}>
             <CalendarPlus aria-hidden />
-            Yeni dönem
+            {tx('Yeni dönem')}
           </Button>
         )}
       </div>
@@ -438,15 +438,14 @@ function CycleCard({
         <p className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
           <Lock className="size-3.5" aria-hidden />
           {cycle.finalizedEmployeeCount !== null && cycle.finalizedEmployeeCount !== undefined
-            ? `${cycle.finalizedEmployeeCount} çalışanın nihai puanı sabitlendi`
-            : 'Puanlar sabitlendi'}
+            ? tx('{0} çalışanın nihai puanı sabitlendi', [cycle.finalizedEmployeeCount])
+            : tx('Puanlar sabitlendi')}
           {cycle.closedAt && ` · ${formatDateTime(cycle.closedAt)}`}
         </p>
       )}
       {cycle.status === 'Planned' && (
         <p className="text-[12px] text-muted-foreground">
-          {t.started ? 'Başlangıç tarihi geçti; açılmayı bekliyor.' : `${t.daysToStart} gün sonra başlıyor.`} Taslakken değerlendirme başlatılamaz.
-        </p>
+          {tx('{0} Taslakken değerlendirme başlatılamaz.', [t.started ? tx('Başlangıç tarihi geçti; açılmayı bekliyor.') : tx('{0} gün sonra başlıyor.', [t.daysToStart])])}</p>
       )}
       {cycle.status === 'Open' && (
         <div className="h-1.5 overflow-hidden rounded-full bg-muted">
@@ -458,18 +457,18 @@ function CycleCard({
         {canAdmin && cycle.status === 'Planned' && (
           <Button size="sm" onClick={onOpen}>
             <PlayCircle aria-hidden />
-            Dönemi aç
+            {tx('Dönemi aç')}
           </Button>
         )}
         {canAdmin && cycle.status === 'Open' && (
           <Button size="sm" variant="destructive" onClick={onClose}>
             <Lock aria-hidden />
-            Dönemi kapat
+            {tx('Dönemi kapat')}
           </Button>
         )}
         {cycle.status !== 'Planned' && (
           <Button asChild size="sm" variant="outline">
-            <Link to={`/panel/performans/analiz?sekme=donem&donem=${cycle.id}`}>Sonuçlar</Link>
+            <Link to={`/panel/performans/analiz?sekme=donem&donem=${cycle.id}`}>{tx('Sonuçlar')}</Link>
           </Button>
         )}
       </div>
@@ -487,11 +486,11 @@ function OpenCycleDialog({ cycle, hasActive, onClose }: { cycle: ReviewCycle; ha
     <Modal
       open
       onClose={onClose}
-      title={`${cycle.name} açılsın mı?`}
+      title={tx('{0} açılsın mı?', [cycle.name])}
       footer={
         <>
           <Button variant="outline" onClick={onClose} disabled={setStatus.isPending}>
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button
             onClick={() =>
@@ -499,7 +498,7 @@ function OpenCycleDialog({ cycle, hasActive, onClose }: { cycle: ReviewCycle; ha
                 { id: cycle.id, status: 'Open' },
                 {
                   onSuccess: () => {
-                    toast.ok(`${cycle.name} açıldı. Değerlendirmeler başlatılabilir.`)
+                    toast.ok(tx('{0} açıldı. Değerlendirmeler başlatılabilir.', [cycle.name]))
                     onClose()
                   },
                   onError: (e) => setError(errorText(e)),
@@ -509,15 +508,15 @@ function OpenCycleDialog({ cycle, hasActive, onClose }: { cycle: ReviewCycle; ha
             disabled={setStatus.isPending}
           >
             <PlayCircle aria-hidden />
-            {setStatus.isPending ? 'Açılıyor…' : 'Dönemi aç'}
+            {setStatus.isPending ? tx('Açılıyor…') : tx('Dönemi aç')}
           </Button>
         </>
       }
     >
       <ul className="flex flex-col gap-2 text-[13px] text-muted-foreground">
-        <li>• Açık dönemde değerlendirme başlatılır ve hedef ilerlemesi güncellenir.</li>
-        <li>• Açılan dönem taslağa geri alınamaz; işi bitince kapanış akışıyla kapatılır.</li>
-        {hasActive && <li className="text-[hsl(var(--warning))]">• Şu an başka bir açık dönem var. İkisi aynı anda açık kalabilir; raporlarda karışıklığa dikkat edin.</li>}
+        <li>{tx('• Açık dönemde değerlendirme başlatılır ve hedef ilerlemesi güncellenir.')}</li>
+        <li>{tx('• Açılan dönem taslağa geri alınamaz; işi bitince kapanış akışıyla kapatılır.')}</li>
+        {hasActive && <li className="text-[hsl(var(--warning))]">{tx('• Şu an başka bir açık dönem var. İkisi aynı anda açık kalabilir; raporlarda karışıklığa dikkat edin.')}</li>}
       </ul>
       {error && (
         <p role="alert" className="mt-3 text-[13px] text-destructive">

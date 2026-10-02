@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { Compass, Map, SearchX } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/States'
+import { tx } from '@/lib/i18n'
 
 export function NotFoundPage() {
   return (
@@ -15,11 +16,11 @@ export function NotFoundPage() {
       <EmptyState
         className="w-full pt-4"
         icons={[Map, Compass, SearchX]}
-        title="Sayfa bulunamadı"
-        detail="Aradığınız adres taşınmış ya da hiç var olmamış olabilir."
+        title={tx('Sayfa bulunamadı')}
+        detail={tx('Aradığınız adres taşınmış ya da hiç var olmamış olabilir.')}
         action={
           <Button asChild>
-            <Link to="/panel">Genel bakışa dön</Link>
+            <Link to="/panel">{tx('Genel bakışa dön')}</Link>
           </Button>
         }
       />

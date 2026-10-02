@@ -10,6 +10,7 @@ import { motion } from 'motion/react'
 import { Check, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { initialsOf, type PickerPerson } from '../hooks'
+import { tx, appLocale } from '@/lib/i18n'
 
 const PALETTE = ['--chart-1', '--chart-2', '--chart-3', '--chart-4', '--chart-5']
 
@@ -103,25 +104,25 @@ export function PersonPicker({
 }) {
   const [q, setQ] = useState('')
   const list = useMemo(() => {
-    const needle = q.trim().toLocaleLowerCase('tr-TR')
-    return people.filter((p) => !exclude.includes(p.id)).filter((p) => !needle || p.name.toLocaleLowerCase('tr-TR').includes(needle))
+    const needle = q.trim().toLocaleLowerCase(appLocale)
+    return people.filter((p) => !exclude.includes(p.id)).filter((p) => !needle || p.name.toLocaleLowerCase(appLocale).includes(needle))
   }, [people, exclude, q])
 
   return (
     <div className="rounded-lg border border-border">
       <label className="relative block border-b border-border">
-        <span className="sr-only">Kişi ara</span>
+        <span className="sr-only">{tx('Kişi ara')}</span>
         <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Ad ara"
+          placeholder={tx('Ad ara')}
           className="h-10 w-full bg-transparent pr-3 pl-9 text-[13px] outline-none"
           autoFocus
         />
       </label>
-      <ul role="listbox" aria-label="Kişiler" className="overflow-y-auto p-1" style={{ maxHeight: height }}>
-        {list.length === 0 && <li className="px-3 py-6 text-center text-[13px] text-muted-foreground">Eşleşen kişi yok.</li>}
+      <ul role="listbox" aria-label={tx('Kişiler')} className="overflow-y-auto p-1" style={{ maxHeight: height }}>
+        {list.length === 0 && <li className="px-3 py-6 text-center text-[13px] text-muted-foreground">{tx('Eşleşen kişi yok.')}</li>}
         {list.map((p) => {
           const on = value === p.id
           const n = note?.(p.id)

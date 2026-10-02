@@ -1,3 +1,4 @@
+import { tx } from '@/lib/i18n'
 /**
  * Tablo dosyası okuma/yazma (.xlsx ve .csv).
  *
@@ -49,7 +50,7 @@ export function rowsToRecords(rows: Cell[][]): Record<string, unknown>[] {
   if (start < 0) return []
   const header = rows[start].map((h, i) => {
     const s = String(h ?? '').trim()
-    return s || `Sütun ${i + 1}`
+    return s || tx('Sütun {0}', [i + 1])
   })
   const out: Record<string, unknown>[] = []
   for (const row of rows.slice(start + 1)) {
@@ -107,13 +108,13 @@ export function parseCsv(text: string): string[][] {
 export async function readSpreadsheet(file: File): Promise<Record<string, unknown>[]> {
   const name = file.name.toLowerCase()
   if (name.endsWith('.csv')) return rowsToRecords(parseCsv(await file.text()))
-  if (name.endsWith('.xls')) throw new SpreadsheetError('Eski .xls biçimi desteklenmiyor. Dosyayı Excel\'de .xlsx olarak kaydedip yeniden deneyin.')
+  if (name.endsWith('.xls')) throw new SpreadsheetError(tx('Eski .xls biçimi desteklenmiyor. Dosyayı Excel\'de .xlsx olarak kaydedip yeniden deneyin.'))
   const { readSheet } = await import('read-excel-file/browser')
   try {
     const rows = await readSheet(file)
     return rowsToRecords(rows as unknown as Cell[][])
   } catch (e) {
-    throw new SpreadsheetError(`Dosya okunamadı. Geçerli bir .xlsx ya da .csv dosyası seçin.${e instanceof Error && e.message ? ` (${e.message})` : ''}`)
+    throw new SpreadsheetError(tx('Dosya okunamadı. Geçerli bir .xlsx ya da .csv dosyası seçin.{0}', [e instanceof Error && e.message ? ` (${e.message})` : '']))
   }
 }
 
@@ -129,7 +130,7 @@ export async function downloadWorkbook(fileName: string, sheets: Record<string, 
   const { default: writeXlsxFile } = await import('write-excel-file/browser')
   const used = new Set<string>()
   const data = Object.entries(sheets).map(([title, list]) => {
-    const rows = list.length ? list : [{ Bilgi: 'Kayıt yok' }]
+    const rows = list.length ? list : [{ Bilgi: tx('Kayıt yok') }]
     const keys = [...new Set(rows.flatMap((r) => Object.keys(r)))]
     // Excel sayfa adı: en çok 31 karakter, []:*?/\ içeremez, benzersiz olmalı.
     let sheet = title.replace(/[[\]:*?/\\]/g, ' ').slice(0, 31) || 'Sayfa'

@@ -26,6 +26,7 @@ import { Segmented, Switch, errorText } from '../components/controls'
 import { NumberStepper } from '../components/NumberStepper'
 import { ShareBar } from '../components/WeightShare'
 import { formatGoalValue, progressOf } from './goalMath'
+import { tx, pct } from '@/lib/i18n'
 
 function ErrorLine({ message }: { message: string | null }) {
   return (
@@ -81,8 +82,8 @@ export function CreateGoalDialog({
   const total = others.reduce((a, g) => a + g.weight, 0) + weight
   const targetNum = parse(target)
   const errs = {
-    title: !title.trim() ? 'Hedefe bir başlık verin.' : undefined,
-    target: numeric && (targetNum === null || targetNum <= 0) ? 'Sıfırdan büyük bir hedef değer girin.' : undefined,
+    title: !title.trim() ? tx('Hedefe bir başlık verin.') : undefined,
+    target: numeric && (targetNum === null || targetNum <= 0) ? tx('Sıfırdan büyük bir hedef değer girin.') : undefined,
   }
 
   const submit = () => {
@@ -99,7 +100,7 @@ export function CreateGoalDialog({
       },
       {
         onSuccess: () => {
-          toast.ok(`«${title.trim()}» hedefi ${employeeName} için eklendi.`)
+          toast.ok(tx('«{0}» hedefi {1} için eklendi.', [title.trim(), employeeName]))
           onClose()
         },
         onError: (e) => setError(errorText(e)),
@@ -112,57 +113,56 @@ export function CreateGoalDialog({
       open
       onClose={onClose}
       size="lg"
-      title="Yeni hedef"
+      title={tx('Yeni hedef')}
       note={`${employeeName} · ${cycle.name}`}
       footer={
         <>
           <Button variant="outline" onClick={onClose} disabled={create.isPending}>
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button onClick={submit} disabled={create.isPending}>
-            {create.isPending ? 'Ekleniyor…' : 'Hedefi ekle'}
+            {create.isPending ? tx('Ekleniyor…') : tx('Hedefi ekle')}
           </Button>
         </>
       }
     >
       <ErrorLine message={error} />
       <div className="flex flex-col gap-4">
-        <TextField label="Başlık" value={title} onChange={(e) => setTitle(e.target.value)} error={touched ? errs.title : undefined} placeholder="ör. Ödeme servisi v2 lansmanı" autoFocus required />
-        <TextAreaField label="Açıklama" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Başarının tanımı ne?" />
+        <TextField label={tx('Başlık')} value={title} onChange={(e) => setTitle(e.target.value)} error={touched ? errs.title : undefined} placeholder={tx('ör. Ödeme servisi v2 lansmanı')} autoFocus required />
+        <TextAreaField label={tx('Açıklama')} value={description} onChange={(e) => setDescription(e.target.value)} placeholder={tx('Başarının tanımı ne?')} />
 
         <div className="rounded-lg border border-border p-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-[13px] font-medium">Ağırlık</p>
-              <p className="text-[12px] text-muted-foreground">Oransal — hedeflerin toplamına göre yüzdeye çevrilir.</p>
+              <p className="text-[13px] font-medium">{tx('Ağırlık')}</p>
+              <p className="text-[12px] text-muted-foreground">{tx('Oransal — hedeflerin toplamına göre yüzdeye çevrilir.')}</p>
             </div>
-            <NumberStepper value={weight} onChange={setWeight} min={1} max={100} step={5} ariaLabel="Hedef ağırlığı" />
+            <NumberStepper value={weight} onChange={setWeight} min={1} max={100} step={5} ariaLabel={tx('Hedef ağırlığı')} />
           </div>
           <ShareBar
             className="mt-3"
-            items={[...others.map((g) => ({ id: g.id, label: g.title, weight: g.weight })), { id: '__new__', label: title.trim() || 'Yeni hedef', weight, color: 'hsl(var(--primary))' }]}
+            items={[...others.map((g) => ({ id: g.id, label: g.title, weight: g.weight })), { id: '__new__', label: title.trim() || tx('Yeni hedef'), weight, color: 'hsl(var(--primary))' }]}
             color="hsl(var(--muted-foreground))"
             highlightId="__new__"
             height={10}
           />
-          <p className="mt-2 text-[12px]">
-            Bu hedef, {employeeName} için bu dönemin hedeflerinin{' '}
-            <span className="tabular font-semibold text-primary">{formatShareOf(shareOf(weight, total))}</span> olur.
+          <p className="mt-2 text-[12px]">{tx('Bu hedef, {0} için bu dönemin hedeflerinin', [employeeName])}{' '}
+            <span className="tabular font-semibold text-primary">{formatShareOf(shareOf(weight, total))}</span>{' '}{tx('olur.')}
           </p>
         </div>
 
         <Switch
           checked={numeric}
           onChange={setNumeric}
-          label="Sayısal hedef"
-          hint={numeric ? 'İlerleme gerçekleşen / hedef değerden hesaplanır; %100’de kırpılır.' : 'Sayısal değer yoksa ilerleme durumdan gelir: Gerçekleşti %100, Devam ediyor %50, Gerçekleşmedi %0.'}
+          label={tx('Sayısal hedef')}
+          hint={numeric ? tx('İlerleme gerçekleşen / hedef değerden hesaplanır; %100’de kırpılır.') : tx('Sayısal değer yoksa ilerleme durumdan gelir: Gerçekleşti %100, Devam ediyor %50, Gerçekleşmedi %0.')}
         />
         <AnimatePresence initial={false}>
           {numeric && (
             <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.3, ease: EASE }} className="overflow-hidden">
               <div className="grid gap-4 sm:grid-cols-[1fr_140px]">
-                <TextField label="Hedef değer" inputMode="decimal" value={target} onChange={(e) => setTarget(e.target.value)} error={touched ? errs.target : undefined} placeholder="ör. 80" className="tabular" />
-                <TextField label="Birim" value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="%, adet, ₺…" />
+                <TextField label={tx('Hedef değer')} inputMode="decimal" value={target} onChange={(e) => setTarget(e.target.value)} error={touched ? errs.target : undefined} placeholder={tx('ör. 80')} className="tabular" />
+                <TextField label={tx('Birim')} value={unit} onChange={(e) => setUnit(e.target.value)} placeholder={tx('%, adet, ₺…')} />
               </div>
             </motion.div>
           )}
@@ -192,7 +192,7 @@ export function ProgressDialog({ goal, onClose }: { goal: Goal; onClose: () => v
       { id: goal.id, input: { ...(numeric ? { currentValue: currentNum! } : {}), ...(status !== goal.status ? { status } : {}) } },
       {
         onSuccess: () => {
-          toast.ok(`«${goal.title}» güncellendi.`)
+          toast.ok(tx('«{0}» güncellendi.', [goal.title]))
           onClose()
         },
         onError: (e) => setError(errorText(e)),
@@ -204,15 +204,15 @@ export function ProgressDialog({ goal, onClose }: { goal: Goal; onClose: () => v
     <Modal
       open
       onClose={onClose}
-      title="İlerlemeyi güncelle"
+      title={tx('İlerlemeyi güncelle')}
       note={goal.title}
       footer={
         <>
           <Button variant="outline" onClick={onClose} disabled={update.isPending}>
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button onClick={submit} disabled={update.isPending || invalid}>
-            {update.isPending ? 'Kaydediliyor…' : 'Kaydet'}
+            {update.isPending ? tx('Kaydediliyor…') : tx('Kaydet')}
           </Button>
         </>
       }
@@ -221,35 +221,33 @@ export function ProgressDialog({ goal, onClose }: { goal: Goal; onClose: () => v
       <div className="flex flex-col gap-4">
         {numeric && (
           <TextField
-            label={`Gerçekleşen (hedef: ${formatGoalValue(goal.targetValue, goal.unit)})`}
+            label={tx('Gerçekleşen (hedef: {0})', [formatGoalValue(goal.targetValue, goal.unit)])}
             inputMode="decimal"
             value={current}
             onChange={(e) => setCurrent(e.target.value)}
-            error={invalid ? 'Sıfır ya da daha büyük bir değer girin.' : undefined}
+            error={invalid ? tx('Sıfır ya da daha büyük bir değer girin.') : undefined}
             autoFocus
             className="tabular"
           />
         )}
         <div>
-          <p className="mb-1.5 text-[13px] font-medium">Durum</p>
-          <Segmented ariaLabel="Hedef durumu" size="sm" value={status} onChange={setStatus} options={GOAL_STATUSES.map((s) => ({ value: s, label: goalStatusLabels[s] }))} />
+          <p className="mb-1.5 text-[13px] font-medium">{tx('Durum')}</p>
+          <Segmented ariaLabel={tx('Hedef durumu')} size="sm" value={status} onChange={setStatus} options={GOAL_STATUSES.map((s) => ({ value: s, label: goalStatusLabels[s] }))} />
         </div>
 
         <div className="rounded-lg border border-border bg-muted/30 p-3">
           <div className="mb-1.5 flex justify-between text-[12px]">
-            <span className="text-muted-foreground">Puana yansıyan ilerleme</span>
-            <span className="tabular font-semibold">{preview.pct === null ? 'hesaba girmez' : `%${Math.round(preview.pct)}`}</span>
+            <span className="text-muted-foreground">{tx('Puana yansıyan ilerleme')}</span>
+            <span className="tabular font-semibold">{preview.pct === null ? tx('hesaba girmez') : pct(Math.round(preview.pct))}</span>
           </div>
           <div className="h-2.5 overflow-hidden rounded-full bg-muted">
             <motion.div className="h-full rounded-full bg-primary" animate={{ width: `${preview.pct ?? 0}%` }} transition={{ type: 'spring', stiffness: 260, damping: 30 }} />
           </div>
           {numeric && (preview.raw ?? 0) > 100 && (
             <p className="mt-2 inline-flex items-center gap-1 text-[12px] font-medium text-[hsl(var(--success))]">
-              <Flame className="size-3.5" aria-hidden />
-              %{Math.round(preview.raw ?? 0)} gerçekleşme — fazlası puana yansımaz, çubuk %100'de durur.
-            </p>
+              <Flame className="size-3.5" aria-hidden />{tx('%{0} gerçekleşme — fazlası puana yansımaz, çubuk %100\'de durur.', [Math.round(preview.raw ?? 0)])}</p>
           )}
-          {!numeric && <p className="mt-2 text-[12px] text-muted-foreground">Sayısal hedef olmadığı için ilerleme durumdan hesaplanır.</p>}
+          {!numeric && <p className="mt-2 text-[12px] text-muted-foreground">{tx('Sayısal hedef olmadığı için ilerleme durumdan hesaplanır.')}</p>}
         </div>
       </div>
     </Modal>

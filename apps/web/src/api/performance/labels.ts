@@ -24,25 +24,26 @@ import type {
   ScoringConfigInput,
   Thresholds,
 } from './types'
+import { lang, tx, appLocale } from '@/lib/i18n'
 
 /* ---------------------------------- Kategoriler -------------------------------- */
 
 export const CATEGORIES: MetricCategory[] = ['Technical', 'Behavioral', 'Leadership', 'Delivery', 'Custom']
 
 export const categoryLabels: Record<MetricCategory, string> = {
-  Technical: 'Teknik',
-  Behavioral: 'Davranışsal',
-  Leadership: 'Liderlik',
-  Delivery: 'Teslimat',
-  Custom: 'Özel',
+  Technical: tx('Teknik'),
+  Behavioral: tx('Davranışsal'),
+  Leadership: tx('Liderlik'),
+  Delivery: tx('Teslimat'),
+  Custom: tx('Özel'),
 }
 
 export const categoryHints: Record<MetricCategory, string> = {
-  Technical: 'Uzmanlık, iş kalitesi, teknik derinlik',
-  Behavioral: 'İletişim, iş birliği, sorumluluk',
-  Leadership: 'Yön verme, gelişim sağlama, karar',
-  Delivery: 'Zamanında teslim, öngörülebilirlik, sonuç',
-  Custom: 'Şirkete özgü ölçütler',
+  Technical: tx('Uzmanlık, iş kalitesi, teknik derinlik'),
+  Behavioral: tx('İletişim, iş birliği, sorumluluk'),
+  Leadership: tx('Yön verme, gelişim sağlama, karar'),
+  Delivery: tx('Zamanında teslim, öngörülebilirlik, sonuç'),
+  Custom: tx('Şirkete özgü ölçütler'),
 }
 
 /** Grafik ve rozetlerde kategori başına sabit renk — `--chart-1..5`. */
@@ -70,13 +71,13 @@ export const SCALES: MetricScale[] = ['OneToFive', 'OneToTen', 'Percentage']
 export const scaleLabels: Record<MetricScale, string> = {
   OneToFive: '1–5',
   OneToTen: '1–10',
-  Percentage: 'Yüzde',
+  Percentage: tx('Yüzde'),
 }
 
 export const scaleHints: Record<MetricScale, string> = {
-  OneToFive: 'Beş kademeli; yıldızla girilir.',
-  OneToTen: 'On kademeli; daha ince ayrım isteyen metrikler için.',
-  Percentage: '0–100 arası; ölçülebilir oranlar için (ör. test kapsamı).',
+  OneToFive: tx('Beş kademeli; yıldızla girilir.'),
+  OneToTen: tx('On kademeli; daha ince ayrım isteyen metrikler için.'),
+  Percentage: tx('0–100 arası; ölçülebilir oranlar için (ör. test kapsamı).'),
 }
 
 /** Backend `range` göndermezse kullanılan varsayılan sınırlar. */
@@ -98,19 +99,19 @@ export const TEMPLATES: MetricTemplate[] = ['genel', 'yazilim', 'satis']
 
 export const templateInfo: Record<MetricTemplate, { title: string; detail: string; metrics: string[] }> = {
   genel: {
-    title: 'Genel',
-    detail: 'Her rol için dengeli bir başlangıç: davranış, teslimat ve iş kalitesi.',
-    metrics: ['İş kalitesi', 'Zamanında teslim', 'İletişim', 'İş birliği', 'Sorumluluk alma'],
+    title: tx('Genel'),
+    detail: tx('Her rol için dengeli bir başlangıç: davranış, teslimat ve iş kalitesi.'),
+    metrics: [tx('İş kalitesi'), tx('Zamanında teslim'), tx('İletişim'), tx('İş birliği'), tx('Sorumluluk alma')],
   },
   yazilim: {
-    title: 'Yazılım',
-    detail: 'Mühendislik ekipleri için: kod kalitesi, teknik derinlik, teslimat.',
-    metrics: ['Kod kalitesi', 'Teknik derinlik', 'Test kapsamı', 'Teslimat öngörülebilirliği', 'Kod inceleme katkısı'],
+    title: tx('Yazılım'),
+    detail: tx('Mühendislik ekipleri için: kod kalitesi, teknik derinlik, teslimat.'),
+    metrics: [tx('Kod kalitesi'), tx('Teknik derinlik'), tx('Test kapsamı'), tx('Teslimat öngörülebilirliği'), tx('Kod inceleme katkısı')],
   },
   satis: {
-    title: 'Satış',
-    detail: 'Satış ekipleri için: hedef gerçekleşmesi, müşteri ilişkisi, süreç disiplini.',
-    metrics: ['Hedef gerçekleşme oranı', 'Müşteri memnuniyeti', 'Fırsat dönüşümü', 'CRM disiplini', 'Ekip katkısı'],
+    title: tx('Satış'),
+    detail: tx('Satış ekipleri için: hedef gerçekleşmesi, müşteri ilişkisi, süreç disiplini.'),
+    metrics: [tx('Hedef gerçekleşme oranı'), tx('Müşteri memnuniyeti'), tx('Fırsat dönüşümü'), tx('CRM disiplini'), tx('Ekip katkısı')],
   },
 }
 
@@ -119,19 +120,19 @@ export const templateInfo: Record<MetricTemplate, { title: string; detail: strin
 export const REVIEW_TYPES: ReviewType[] = ['Self', 'Manager', 'TeamLead', 'Peer', 'Upward']
 
 export const reviewTypeLabels: Record<ReviewType, string> = {
-  Self: 'Öz değerlendirme',
-  Manager: 'Yönetici',
-  TeamLead: 'Takım lideri',
-  Peer: 'Ekip arkadaşı',
-  Upward: 'Yukarı yönlü',
+  Self: tx('Öz değerlendirme'),
+  Manager: tx('Yönetici'),
+  TeamLead: tx('Takım lideri'),
+  Peer: tx('Ekip arkadaşı'),
+  Upward: tx('Yukarı yönlü'),
 }
 
 export const reviewTypeHints: Record<ReviewType, string> = {
-  Self: 'Çalışanın kendisini değerlendirmesi',
-  Manager: 'Bağlı olduğu yöneticinin değerlendirmesi',
-  TeamLead: 'Ekip liderinin değerlendirmesi',
-  Peer: 'Aynı ekipten bir çalışma arkadaşının değerlendirmesi',
-  Upward: 'Yöneticinin, ekibindekiler tarafından değerlendirilmesi',
+  Self: tx('Çalışanın kendisini değerlendirmesi'),
+  Manager: tx('Bağlı olduğu yöneticinin değerlendirmesi'),
+  TeamLead: tx('Ekip liderinin değerlendirmesi'),
+  Peer: tx('Aynı ekipten bir çalışma arkadaşının değerlendirmesi'),
+  Upward: tx('Yöneticinin, ekibindekiler tarafından değerlendirilmesi'),
 }
 
 /** Değerlendirme türü → puanlama ayarındaki katsayı alanı. */
@@ -166,20 +167,20 @@ export function thresholdsOf(c: ScoringConfigInput): Thresholds {
 export const CYCLE_PERIODS: CyclePeriod[] = ['Q1', 'Q2', 'Q3', 'Q4', 'H1', 'H2', 'Annual']
 
 export const cyclePeriodLabels: Record<CyclePeriod, string> = {
-  Q1: '1. çeyrek',
-  Q2: '2. çeyrek',
-  Q3: '3. çeyrek',
-  Q4: '4. çeyrek',
-  H1: '1. yarıyıl',
-  H2: '2. yarıyıl',
-  Annual: 'Yıllık',
+  Q1: tx('1. çeyrek'),
+  Q2: tx('2. çeyrek'),
+  Q3: tx('3. çeyrek'),
+  Q4: tx('4. çeyrek'),
+  H1: tx('1. yarıyıl'),
+  H2: tx('2. yarıyıl'),
+  Annual: tx('Yıllık'),
 }
 
 export const cycleStatusLabels: Record<CycleStatus, string> = {
-  Planned: 'Taslak',
-  Open: 'Açık',
-  InReview: 'İncelemede',
-  Closed: 'Kapandı',
+  Planned: tx('Taslak'),
+  Open: tx('Açık'),
+  InReview: tx('İncelemede'),
+  Closed: tx('Kapandı'),
 }
 
 export const cycleStatusTone: Record<CycleStatus, StatusTone> = {
@@ -205,11 +206,11 @@ export function cycleStatusGroup(status: CycleStatus): 'planned' | 'open' | 'clo
 export const GOAL_STATUSES: GoalStatus[] = ['Draft', 'Active', 'Achieved', 'Missed', 'Cancelled']
 
 export const goalStatusLabels: Record<GoalStatus, string> = {
-  Draft: 'Taslak',
-  Active: 'Devam ediyor',
-  Achieved: 'Gerçekleşti',
-  Missed: 'Gerçekleşmedi',
-  Cancelled: 'İptal edildi',
+  Draft: tx('Taslak'),
+  Active: tx('Devam ediyor'),
+  Achieved: tx('Gerçekleşti'),
+  Missed: tx('Gerçekleşmedi'),
+  Cancelled: tx('İptal edildi'),
 }
 
 export const goalStatusTone: Record<GoalStatus, StatusTone> = {
@@ -225,12 +226,12 @@ export const goalStatusTone: Record<GoalStatus, StatusTone> = {
 export const PERIODS: AnalyticsPeriod[] = ['week', 'month', 'quarter', 'halfYear', 'year', 'all']
 
 export const periodLabels: Record<AnalyticsPeriod, string> = {
-  week: 'Hafta',
-  month: 'Ay',
-  quarter: 'Çeyrek',
-  halfYear: 'Yarıyıl',
-  year: 'Yıl',
-  all: 'Tümü',
+  week: tx('Hafta'),
+  month: tx('Ay'),
+  quarter: tx('Çeyrek'),
+  halfYear: tx('Yarıyıl'),
+  year: tx('Yıl'),
+  all: tx('Tümü'),
 }
 
 /* --------------------------------- Geri bildirim -------------------------------- */
@@ -247,22 +248,22 @@ export const REASONS: FeedbackReason[] = [
 ]
 
 export const reasonLabels: Record<FeedbackReason, string> = {
-  Recognition: 'Takdir',
-  GoalProgress: 'Hedef ilerlemesi',
-  Improvement: 'Gelişim alanı',
-  Coaching: 'Koçluk',
-  Incident: 'Olay bildirimi',
-  PeerObservation: 'Ekip arkadaşı gözlemi',
-  ReviewSummary: 'Değerlendirme özeti',
-  Other: 'Diğer',
+  Recognition: tx('Takdir'),
+  GoalProgress: tx('Hedef ilerlemesi'),
+  Improvement: tx('Gelişim alanı'),
+  Coaching: tx('Koçluk'),
+  Incident: tx('Olay bildirimi'),
+  PeerObservation: tx('Ekip arkadaşı gözlemi'),
+  ReviewSummary: tx('Değerlendirme özeti'),
+  Other: tx('Diğer'),
 }
 
 export const SENTIMENTS: FeedbackSentiment[] = ['Positive', 'Neutral', 'Constructive']
 
 export const sentimentLabels: Record<FeedbackSentiment, string> = {
-  Positive: 'Olumlu',
-  Neutral: 'Nötr',
-  Constructive: 'Yapıcı eleştiri',
+  Positive: tx('Olumlu'),
+  Neutral: tx('Nötr'),
+  Constructive: tx('Yapıcı eleştiri'),
 }
 
 export const sentimentTone: Record<FeedbackSentiment, StatusTone> = {
@@ -283,12 +284,12 @@ export const actionTone: Record<RecommendationAction, StatusTone> = {
 }
 
 export const actionLabelsFallback: Record<RecommendationAction, string> = {
-  Urgent: 'Acil aksiyon',
-  Improvement: 'Gelişim planı',
-  PromotionCandidate: 'Terfi adayı',
-  Watch: 'İzlenmeli',
-  Recognition: 'Takdir',
-  NoAction: 'Aksiyon gerekmiyor',
+  Urgent: tx('Acil aksiyon'),
+  Improvement: tx('Gelişim planı'),
+  PromotionCandidate: tx('Terfi adayı'),
+  Watch: tx('İzlenmeli'),
+  Recognition: tx('Takdir'),
+  NoAction: tx('Aksiyon gerekmiyor'),
 }
 
 export function toneOfAction(action: string): StatusTone {
@@ -308,11 +309,11 @@ export function labelOf<K extends string>(map: Record<K, string>, value: string 
     warned.add(value)
     console.warn(`[performans] Çevirisi olmayan enum değeri: "${value}"`)
   }
-  return 'Diğer'
+  return tx('Diğer')
 }
 
-const scoreFmt = new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-const oneFmt = new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
+const scoreFmt = new Intl.NumberFormat(appLocale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const oneFmt = new Intl.NumberFormat(appLocale, { minimumFractionDigits: 0, maximumFractionDigits: 2 })
 
 /** 0–100 puan, iki ondalık, tr-TR. Puan yoksa "—". */
 export function formatScore(value: number | null | undefined): string {
@@ -326,7 +327,7 @@ export function formatWeight(value: number | null | undefined): string {
 
 /** İşaretli değer: "+1,5" / "−0,8" (gerçek eksi işareti). */
 export function formatSigned(value: number, digits = 1): string {
-  const f = new Intl.NumberFormat('tr-TR', { minimumFractionDigits: digits, maximumFractionDigits: digits })
+  const f = new Intl.NumberFormat(appLocale, { minimumFractionDigits: digits, maximumFractionDigits: digits })
   const abs = f.format(Math.abs(value))
   return value > 0 ? `+${abs}` : value < 0 ? `−${abs}` : abs
 }
@@ -340,7 +341,7 @@ export function shareOf(weight: number, total: number): number {
 }
 
 export function formatShare(value: number): string {
-  return `%${Math.round(value)}`
+  return lang === 'en' ? `${Math.round(value)}%` : `%${Math.round(value)}`
 }
 
 /**
@@ -348,6 +349,8 @@ export function formatShare(value: number): string {
  * Ek, sayının okunuşunun son hecesine göre seçilir.
  */
 export function possessiveSuffix(n: number): string {
+  // İngilizcede iyelik eki yok.
+  if (lang === 'en') return ''
   const v = Math.abs(Math.round(n))
   const units = ["'ı", "'i", "'si", "'ü", "'ü", "'i", "'sı", "'si", "'i", "'u"]
   const tens = ['', "'u", "'si", "'u", "'ı", "'si", "'ı", "'i", "'i", "'ı"]
@@ -383,9 +386,9 @@ export const bandTone: Record<ScoreBand, StatusTone> = {
 }
 
 export const bandLabels: Record<ScoreBand, string> = {
-  critical: 'Kritik',
-  improvement: 'Gelişim gerekli',
-  normal: 'Beklenen aralık',
-  recognition: 'Takdir düzeyi',
-  promotion: 'Terfi düzeyi',
+  critical: tx('Kritik'),
+  improvement: tx('Gelişim gerekli'),
+  normal: tx('Beklenen aralık'),
+  recognition: tx('Takdir düzeyi'),
+  promotion: tx('Terfi düzeyi'),
 }

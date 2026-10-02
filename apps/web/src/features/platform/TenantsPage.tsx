@@ -29,6 +29,7 @@ import {
 } from '@/api/tenant'
 import { formatDate, formatDateTime, formatNumber } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { tx, appLocale } from '@/lib/i18n'
 
 const ALL = '__all__'
 
@@ -48,9 +49,9 @@ const STEP_TONE: Record<string, StatusTone> = {
 }
 
 const STEP_LABEL: Record<string, string> = {
-  Succeeded: 'Başarılı',
-  Failed: 'Başarısız',
-  Pending: 'Sürüyor',
+  Succeeded: tx('Başarılı'),
+  Failed: tx('Başarısız'),
+  Pending: tx('Sürüyor'),
 }
 
 /**
@@ -63,8 +64,7 @@ function ProvisioningTimeline({ entries }: { entries: ProvisioningLogEntry[] }) 
   if (entries.length === 0) {
     return (
       <p className="text-[13px] leading-relaxed text-muted-foreground">
-        Bu kiracı için kurulum kaydı yok. Kayıt eski bir sürümle yapılmış ya da servis günlük
-        tutmuyor olabilir.
+        {tx('Bu kiracı için kurulum kaydı yok. Kayıt eski bir sürümle yapılmış ya da servis günlük tutmuyor olabilir.')}
       </p>
     )
   }
@@ -134,18 +134,18 @@ function SuspendModal({ tenant, onClose }: { tenant: Tenant | null; onClose: () 
 
   function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (reason.trim().length < 5) return setError('Askıya alma gerekçesi en az 5 karakter olmalı.')
+    if (reason.trim().length < 5) return setError(tx('Askıya alma gerekçesi en az 5 karakter olmalı.'))
     setError(undefined)
     suspend.mutate(
       { id: tenant!.id, reason: reason.trim() },
       {
         onSuccess: () => {
-          toast.ok(`${tenant!.name} askıya alındı`)
+          toast.ok(tx('{0} askıya alındı', [tenant!.name]))
           setReason('')
           onClose()
         },
         onError: (e2: unknown) =>
-          toast.stop(e2 instanceof Error ? e2.message : 'Kiracı askıya alınamadı.'),
+          toast.stop(e2 instanceof Error ? e2.message : tx('Kiracı askıya alınamadı.')),
       },
     )
   }
@@ -154,7 +154,7 @@ function SuspendModal({ tenant, onClose }: { tenant: Tenant | null; onClose: () 
     <Modal
       open
       onClose={onClose}
-      title="Kiracıyı askıya al"
+      title={tx('Kiracıyı askıya al')}
       note={`${tenant.name} (${tenant.slug})`}
       footer={
         <>
@@ -164,7 +164,7 @@ function SuspendModal({ tenant, onClose }: { tenant: Tenant | null; onClose: () 
             onClick={onClose}
             disabled={suspend.isPending}
           >
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button
             type="submit"
@@ -174,7 +174,7 @@ function SuspendModal({ tenant, onClose }: { tenant: Tenant | null; onClose: () 
             disabled={suspend.isPending}
           >
             {suspend.isPending && <LoaderCircle className="size-4 animate-spin" />}
-            Askıya al
+            {tx('Askıya al')}
           </Button>
         </>
       }
@@ -183,16 +183,15 @@ function SuspendModal({ tenant, onClose }: { tenant: Tenant | null; onClose: () 
         <div className="flex items-start gap-2.5 rounded-lg border border-destructive/30 bg-destructive/5 p-3.5">
           <TriangleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-destructive" />
           <p className="text-[13px] leading-relaxed">
-            Askıya alınan kiracının kullanıcıları oturum açamaz ve verilerine erişemez. Veriler
-            silinmez; yeniden etkinleştirildiğinde erişim geri gelir.
+            {tx('Askıya alınan kiracının kullanıcıları oturum açamaz ve verilerine erişemez. Veriler silinmez; yeniden etkinleştirildiğinde erişim geri gelir.')}
           </p>
         </div>
         <TextAreaField
           id="suspend-reason"
-          label="Gerekçe"
+          label={tx('Gerekçe')}
           rows={3}
           required
-          hint="Kayda geçer; destek görüşmelerinde referans alınır."
+          hint={tx('Kayda geçer; destek görüşmelerinde referans alınır.')}
           value={reason}
           onChange={(e) => setReason(e.target.value)}
           error={error}
@@ -224,11 +223,11 @@ function PlanModal({ tenant, onClose }: { tenant: Tenant | null; onClose: () => 
       { id: tenant.id, plan, maxEmployees: Number(maxEmployees) || tenantPlanQuota[plan] },
       {
         onSuccess: () => {
-          toast.ok(`${tenant.name} planı ${tenantPlanLabels[plan]} olarak güncellendi`)
+          toast.ok(tx('{0} planı {1} olarak güncellendi', [tenant.name, tenantPlanLabels[plan]]))
           onClose()
         },
         onError: (e2: unknown) =>
-          toast.stop(e2 instanceof Error ? e2.message : 'Plan güncellenemedi.'),
+          toast.stop(e2 instanceof Error ? e2.message : tx('Plan güncellenemedi.')),
       },
     )
   }
@@ -237,7 +236,7 @@ function PlanModal({ tenant, onClose }: { tenant: Tenant | null; onClose: () => 
     <Modal
       open
       onClose={onClose}
-      title="Planı değiştir"
+      title={tx('Planı değiştir')}
       note={`${tenant.name} (${tenant.slug})`}
       footer={
         <>
@@ -247,7 +246,7 @@ function PlanModal({ tenant, onClose }: { tenant: Tenant | null; onClose: () => 
             onClick={onClose}
             disabled={changePlan.isPending}
           >
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button
             type="submit"
@@ -256,7 +255,7 @@ function PlanModal({ tenant, onClose }: { tenant: Tenant | null; onClose: () => 
             disabled={changePlan.isPending}
           >
             {changePlan.isPending && <LoaderCircle className="size-4 animate-spin" />}
-            Planı kaydet
+            {tx('Planı kaydet')}
           </Button>
         </>
       }
@@ -264,22 +263,22 @@ function PlanModal({ tenant, onClose }: { tenant: Tenant | null; onClose: () => 
       <form id="tenant-plan" onSubmit={submit} noValidate className="space-y-4">
         <SelectField
           id="tenant-plan-select"
-          label="Plan"
+          label={tx('Plan')}
           value={plan}
           onChange={onPlanChange}
           options={(Object.keys(tenantPlanLabels) as TenantPlan[]).map((p) => ({
             value: p,
-            label: `${tenantPlanLabels[p]} — ${formatNumber(tenantPlanQuota[p])} çalışan`,
+            label: tx('{0} — {1} çalışan', [tenantPlanLabels[p], formatNumber(tenantPlanQuota[p])]),
           }))}
         />
         <TextField
           id="tenant-max-employees"
-          label="Çalışan kotası"
+          label={tx('Çalışan kotası')}
           type="number"
           min={1}
           required
           className="tabular"
-          hint="Plan varsayılanından farklı bir kota tanımlayabilirsiniz."
+          hint={tx('Plan varsayılanından farklı bir kota tanımlayabilirsiniz.')}
           value={maxEmployees}
           onChange={(e) => {
             setTouched(true)
@@ -300,15 +299,15 @@ function TenantDetail({ tenantId, onClose }: { tenantId: string | null; onClose:
     <Sheet open={Boolean(tenantId)} onOpenChange={(o) => !o && onClose()}>
       <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-lg">
         <SheetHeader className="border-b border-border">
-          <SheetTitle>{detail.data?.name ?? 'Kiracı detayı'}</SheetTitle>
+          <SheetTitle>{detail.data?.name ?? tx('Kiracı detayı')}</SheetTitle>
         </SheetHeader>
 
         <div className="space-y-6 px-4 pb-8">
           {detail.isPending ? (
-            <CenteredSpinner label="Kiracı yükleniyor" />
+            <CenteredSpinner label={tx('Kiracı yükleniyor')} />
           ) : detail.isError || !detail.data ? (
             <ErrorState
-              title="Kiracı bilgisi alınamadı"
+              title={tx('Kiracı bilgisi alınamadı')}
               message={detail.error instanceof Error ? detail.error.message : undefined}
               onRetry={() => void detail.refetch()}
             />
@@ -316,25 +315,25 @@ function TenantDetail({ tenantId, onClose }: { tenantId: string | null; onClose:
             <>
               <dl className="divide-y divide-border">
                 {[
-                  { label: 'Kısa ad', value: detail.data.slug, mono: true },
-                  { label: 'Durum', value: tenantStatusLabels[detail.data.status] },
-                  { label: 'Plan', value: tenantPlanLabels[detail.data.plan] },
+                  { label: tx('Kısa ad'), value: detail.data.slug, mono: true },
+                  { label: tx('Durum'), value: tenantStatusLabels[detail.data.status] },
+                  { label: tx('Plan'), value: tenantPlanLabels[detail.data.plan] },
                   {
-                    label: 'Çalışan kotası',
+                    label: tx('Çalışan kotası'),
                     value: `${formatNumber(detail.data.employeeCount ?? 0)} / ${formatNumber(detail.data.maxEmployees)}`,
                   },
-                  { label: 'Yönetici e-postası', value: detail.data.adminEmail ?? '—' },
-                  { label: 'E-posta alan adı', value: detail.data.emailDomain ?? '—' },
-                  { label: 'Vergi numarası', value: detail.data.taxNumber ?? '—' },
-                  { label: 'Kayıt', value: formatDateTime(detail.data.createdAt) },
+                  { label: tx('Yönetici e-postası'), value: detail.data.adminEmail ?? '—' },
+                  { label: tx('E-posta alan adı'), value: detail.data.emailDomain ?? '—' },
+                  { label: tx('Vergi numarası'), value: detail.data.taxNumber ?? '—' },
+                  { label: tx('Kayıt'), value: formatDateTime(detail.data.createdAt) },
                   ...(detail.data.suspendedAt
                     ? [
                         {
-                          label: 'Askıya alınma',
+                          label: tx('Askıya alınma'),
                           value: formatDateTime(detail.data.suspendedAt),
                         },
                         {
-                          label: 'Askı gerekçesi',
+                          label: tx('Askı gerekçesi'),
                           value: detail.data.suspensionReason ?? '—',
                         },
                       ]
@@ -358,7 +357,7 @@ function TenantDetail({ tenantId, onClose }: { tenantId: string | null; onClose:
               </dl>
 
               <div>
-                <h3 className="mb-3 text-[14px] font-semibold">Kurulum kayıtları</h3>
+                <h3 className="mb-3 text-[14px] font-semibold">{tx('Kurulum kayıtları')}</h3>
                 <ProvisioningTimeline entries={detail.data.provisioningLog ?? []} />
               </div>
             </>
@@ -394,11 +393,11 @@ export function TenantsPage() {
   const filters: TableFilter[] = [
     {
       id: 'status',
-      label: 'Durum',
+      label: tx('Durum'),
       value: status,
       onChange: setStatus,
       options: [
-        { value: ALL, label: 'Tüm durumlar' },
+        { value: ALL, label: tx('Tüm durumlar') },
         ...(Object.keys(tenantStatusLabels) as TenantStatus[]).map((s) => ({
           value: s,
           label: tenantStatusLabels[s],
@@ -410,14 +409,14 @@ export function TenantsPage() {
   const columns: Array<Column<Tenant>> = [
     {
       id: 'name',
-      header: 'Şirket',
+      header: tx('Şirket'),
       searchText: (t) => `${t.name} ${t.slug} ${t.adminEmail ?? ''}`,
       sortValue: (t) => t.name,
       exportText: (t) => t.name,
       cell: (t) => (
         <div className="flex items-center gap-3">
           <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary text-[13px] font-semibold text-primary-foreground">
-            {t.name.charAt(0).toLocaleUpperCase('tr-TR')}
+            {t.name.charAt(0).toLocaleUpperCase(appLocale)}
           </span>
           <div className="min-w-0">
             <p className="truncate font-medium text-foreground">{t.name}</p>
@@ -428,7 +427,7 @@ export function TenantsPage() {
     },
     {
       id: 'plan',
-      header: 'Plan',
+      header: tx('Plan'),
       hideBelow: 'sm',
       sortValue: (t) => tenantPlanLabels[t.plan] ?? '',
       exportText: (t) => tenantPlanLabels[t.plan] ?? '',
@@ -436,7 +435,7 @@ export function TenantsPage() {
     },
     {
       id: 'quota',
-      header: 'Çalışan kotası',
+      header: tx('Çalışan kotası'),
       hideBelow: 'md',
       sortValue: (t) => (t.employeeCount ?? 0) / Math.max(1, t.maxEmployees),
       exportText: (t) => `${t.employeeCount ?? 0}/${t.maxEmployees}`,
@@ -449,7 +448,7 @@ export function TenantsPage() {
               value={used}
               max={t.maxEmployees || 1}
               tone={ratio >= 0.95 ? 'danger' : ratio >= 0.8 ? 'warning' : 'info'}
-              label={`${t.name} çalışan kotası`}
+              label={tx('{0} çalışan kotası', [t.name])}
             />
             <span className="tabular shrink-0 text-[12px] text-muted-foreground">
               {formatNumber(used)}/{formatNumber(t.maxEmployees)}
@@ -460,7 +459,7 @@ export function TenantsPage() {
     },
     {
       id: 'createdAt',
-      header: 'Kayıt',
+      header: tx('Kayıt'),
       align: 'right',
       hideBelow: 'lg',
       sortValue: (t) => new Date(t.createdAt).getTime(),
@@ -469,7 +468,7 @@ export function TenantsPage() {
     },
     {
       id: 'status',
-      header: 'Durum',
+      header: tx('Durum'),
       align: 'right',
       sortValue: (t) => tenantStatusLabels[t.status] ?? '',
       exportText: (t) => tenantStatusLabels[t.status] ?? '',
@@ -484,8 +483,8 @@ export function TenantsPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Kiracılar"
-        description="Platformdaki tüm şirketler, planları ve kurulum durumları. Bu sayfa yalnızca platform yönetimine açıktır."
+        title={tx('Kiracılar')}
+        description={tx('Platformdaki tüm şirketler, planları ve kurulum durumları. Bu sayfa yalnızca platform yönetimine açıktır.')}
       />
 
       {tenants.isPending ? (
@@ -493,34 +492,34 @@ export function TenantsPage() {
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard
-            label="Toplam kiracı"
+            label={tx('Toplam kiracı')}
             count={stats.total}
             format={formatNumber}
-            trend="Kayıtlı şirket"
+            trend={tx('Kayıtlı şirket')}
             trendDirection="flat"
             trendSense="neutral"
           />
           <StatCard
-            label="Aktif"
+            label={tx('Aktif')}
             count={stats.active}
             format={formatNumber}
-            trend="Çalışıyor"
+            trend={tx('Çalışıyor')}
             trendDirection="flat"
             trendSense="positive"
           />
           <StatCard
-            label="Hazırlanıyor"
+            label={tx('Hazırlanıyor')}
             count={stats.pending}
             format={formatNumber}
-            trend={stats.pending > 0 ? 'Kurulum sürüyor' : 'Bekleyen yok'}
+            trend={stats.pending > 0 ? tx('Kurulum sürüyor') : tx('Bekleyen yok')}
             trendDirection={stats.pending > 0 ? 'up' : 'flat'}
             trendSense="negative"
           />
           <StatCard
-            label="Askıda"
+            label={tx('Askıda')}
             count={stats.suspended}
             format={formatNumber}
-            trend={stats.suspended > 0 ? 'Erişim kapalı' : 'Askıda kiracı yok'}
+            trend={stats.suspended > 0 ? tx('Erişim kapalı') : tx('Askıda kiracı yok')}
             trendDirection={stats.suspended > 0 ? 'up' : 'flat'}
             trendSense="negative"
           />
@@ -536,35 +535,35 @@ export function TenantsPage() {
         error={tenants.error}
         onRetry={() => void tenants.refetch()}
         onRowClick={(t) => setOpenId(t.id)}
-        searchPlaceholder="Şirket adı, kısa ad veya e-posta"
+        searchPlaceholder={tx('Şirket adı, kısa ad veya e-posta')}
         exportFileName="kiracilar"
         pageSize={12}
         initialSort={{ columnId: 'createdAt', dir: 'desc' }}
-        emptyTitle="Kiracı yok"
-        emptyDetail="Bu filtreye uyan kiracı bulunmuyor."
+        emptyTitle={tx('Kiracı yok')}
+        emptyDetail={tx('Bu filtreye uyan kiracı bulunmuyor.')}
         rowActions={[
-          { label: 'Detay ve kurulum kaydı', onSelect: (t) => setOpenId(t.id) },
+          { label: tx('Detay ve kurulum kaydı'), onSelect: (t) => setOpenId(t.id) },
           {
-            label: 'Planı değiştir',
+            label: tx('Planı değiştir'),
             hidden: (t) => t.status === 'Cancelled',
             onSelect: (t) => setPlanFor(t),
           },
           {
-            label: 'Askıya al',
+            label: tx('Askıya al'),
             destructive: true,
             hidden: (t) => t.status !== 'Active' && t.status !== 'Pending',
             onSelect: (t) => setSuspendFor(t),
           },
           {
-            label: 'Yeniden etkinleştir',
+            label: tx('Yeniden etkinleştir'),
             hidden: (t) => t.status !== 'Suspended',
             onSelect: (t) =>
               reactivate.mutate(
                 { id: t.id },
                 {
-                  onSuccess: () => toast.ok(`${t.name} yeniden etkinleştirildi`),
+                  onSuccess: () => toast.ok(tx('{0} yeniden etkinleştirildi', [t.name])),
                   onError: (e: unknown) =>
-                    toast.stop(e instanceof Error ? e.message : 'Kiracı etkinleştirilemedi.'),
+                    toast.stop(e instanceof Error ? e.message : tx('Kiracı etkinleştirilemedi.')),
                 },
               ),
           },

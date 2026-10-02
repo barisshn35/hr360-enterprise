@@ -48,6 +48,7 @@ import {
   sortedDays,
   timeRange,
 } from './shared'
+import { tx, appLocale } from '@/lib/i18n'
 
 /* --------------------------------- Yardımcılar --------------------------------- */
 
@@ -71,17 +72,17 @@ const repeat = (type: ShiftDayType, n: number, times = DEFAULT_TIMES) =>
 const PRESETS: Array<{ key: string; label: string; days: () => DraftDay[] }> = [
   {
     key: '3-3-3',
-    label: '3 gece · 3 tatil · 3 gündüz',
+    label: tx('3 gece · 3 tatil · 3 gündüz'),
     days: () => [...repeat('Night', 3), ...repeat('Off', 3), ...repeat('Day', 3)],
   },
   {
     key: '2-2-4',
-    label: '2 gündüz · 2 gece · 4 tatil',
+    label: tx('2 gündüz · 2 gece · 4 tatil'),
     days: () => [...repeat('Day', 2), ...repeat('Night', 2), ...repeat('Off', 4)],
   },
   {
     key: '5-2',
-    label: '5 gündüz · 2 tatil',
+    label: tx('5 gündüz · 2 tatil'),
     days: () => [...repeat('Day', 5, { ...DEFAULT_TIMES, Day: { start: '08:30', end: '17:30' } }), ...repeat('Off', 2)],
   },
 ]
@@ -90,7 +91,7 @@ const PRESETS: Array<{ key: string; label: string; days: () => DraftDay[] }> = [
 function suggestName(days: DraftDay[]): string {
   return describeDays(days)
     .split(' → ')
-    .map((part) => part.replace(/ (\p{L})/u, (_, c: string) => ` ${c.toLocaleUpperCase('tr-TR')}`))
+    .map((part) => part.replace(/ (\p{L})/u, (_, c: string) => ` ${c.toLocaleUpperCase(appLocale)}`))
     .join(' / ')
 }
 
@@ -107,7 +108,7 @@ function weeklyHours(days: Array<{ startTime: string | null; endTime: string | n
   return (minutes / 60 / days.length) * 7
 }
 
-const hoursText = (h: number) => `${h.toLocaleString('tr-TR', { maximumFractionDigits: 1 })} sa`
+const hoursText = (h: number) => `${h.toLocaleString(appLocale, { maximumFractionDigits: 1 })} sa`
 
 /* ------------------------------- Desen oluşturucu ------------------------------- */
 
@@ -130,20 +131,20 @@ function PatternBuilderDialog({ onClose }: { onClose: () => void }) {
 
   const dayErrors = days.map((d) => {
     if (d.type === 'Off') return null
-    if (!d.startTime || !d.endTime) return 'Başlangıç ve bitiş saati gerekli.'
-    if (d.startTime === d.endTime) return 'Başlangıç ve bitiş aynı olamaz.'
+    if (!d.startTime || !d.endTime) return tx('Başlangıç ve bitiş saati gerekli.')
+    if (d.startTime === d.endTime) return tx('Başlangıç ve bitiş aynı olamaz.')
     return null
   })
   const firstBadDay = dayErrors.findIndex(Boolean)
   const errors = {
-    name: !effectiveName.trim() ? 'Desene bir ad verin.' : undefined,
+    name: !effectiveName.trim() ? tx('Desene bir ad verin.') : undefined,
     days:
       days.length === 0
-        ? 'En az bir gün ekleyin.'
+        ? tx('En az bir gün ekleyin.')
         : days.every((d) => d.type === 'Off')
-          ? 'Desende en az bir çalışma günü (gündüz ya da gece) olmalı.'
+          ? tx('Desende en az bir çalışma günü (gündüz ya da gece) olmalı.')
           : firstBadDay >= 0
-            ? `${firstBadDay + 1}. gün: ${dayErrors[firstBadDay]}`
+            ? tx('{0}. gün: {1}', [firstBadDay + 1, dayErrors[firstBadDay]])
             : undefined,
   }
   const valid = !errors.name && !errors.days
@@ -205,7 +206,7 @@ function PatternBuilderDialog({ onClose }: { onClose: () => void }) {
       },
       {
         onSuccess: (p) => {
-          toast.ok(`"${p?.name ?? effectiveName.trim()}" deseni oluşturuldu.`)
+          toast.ok(tx('"{0}" deseni oluşturuldu.', [p?.name ?? effectiveName.trim()]))
           onClose()
         },
       },
@@ -220,16 +221,16 @@ function PatternBuilderDialog({ onClose }: { onClose: () => void }) {
       open
       onClose={onClose}
       size="xl"
-      title="Yeni vardiya deseni"
-      note="Döngüyü gün gün kurun. Ekip, başlangıç tarihinden itibaren bu diziyi sırayla takip eder ve sona gelince başa döner."
+      title={tx('Yeni vardiya deseni')}
+      note={tx('Döngüyü gün gün kurun. Ekip, başlangıç tarihinden itibaren bu diziyi sırayla takip eder ve sona gelince başa döner.')}
       footer={
         <>
           <Button variant="outline" onClick={onClose}>
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button onClick={submit} disabled={create.isPending}>
             {create.isPending && <LoaderCircle className="size-4 animate-spin" />}
-            Deseni kaydet
+            {tx('Deseni kaydet')}
           </Button>
         </>
       }
@@ -238,13 +239,13 @@ function PatternBuilderDialog({ onClose }: { onClose: () => void }) {
         {create.isError && (
           <p role="alert" className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-[13px] text-destructive">
             <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
-            {errorText(create.error, 'Desen kaydedilemedi.')}
+            {errorText(create.error, tx('Desen kaydedilemedi.'))}
           </p>
         )}
 
         {/* Hazır başlangıçlar */}
         <div>
-          <p className="mb-2 text-[13px] font-medium">Hazır bir döngüden başlayın</p>
+          <p className="mb-2 text-[13px] font-medium">{tx('Hazır bir döngüden başlayın')}</p>
           <div className="flex flex-wrap gap-2">
             {PRESETS.map((p) => (
               <Button
@@ -269,7 +270,7 @@ function PatternBuilderDialog({ onClose }: { onClose: () => void }) {
                 setSelected(null)
               }}
             >
-              Boş başla
+              {tx('Boş başla')}
             </Button>
           </div>
         </div>
@@ -278,14 +279,14 @@ function PatternBuilderDialog({ onClose }: { onClose: () => void }) {
         <div>
           <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
             <p className="text-[13px] font-medium">
-              Döngü
+              {tx('Döngü')}
               <span className="ml-2 font-normal text-muted-foreground tabular">
-                {days.length > 0 ? `${formatNumber(days.length)} gün` : 'boş'}
+                {days.length > 0 ? tx('{0} gün', [formatNumber(days.length)]) : tx('boş')}
               </span>
             </p>
             {days.length > 0 && (
               <p className="text-[12px] text-muted-foreground">
-                {describeDays(days)} · haftalık ort. {hoursText(weekly)}
+                {tx('{0} · haftalık ort. {1}', [describeDays(days), hoursText(weekly)])}
               </p>
             )}
           </div>
@@ -293,10 +294,10 @@ function PatternBuilderDialog({ onClose }: { onClose: () => void }) {
           <div className="rounded-lg border border-border bg-muted/30 p-3">
             {days.length === 0 ? (
               <p className="py-4 text-center text-[13px] text-muted-foreground">
-                Henüz gün yok. Aşağıdan blok ekleyin ya da hazır bir döngü seçin.
+                {tx('Henüz gün yok. Aşağıdan blok ekleyin ya da hazır bir döngü seçin.')}
               </p>
             ) : (
-              <ol className="flex flex-wrap gap-1.5" aria-label="Desen günleri">
+              <ol className="flex flex-wrap gap-1.5" aria-label={tx('Desen günleri')}>
                 {days.map((d, i) => {
                   const bad = submitted && Boolean(dayErrors[i])
                   return (
@@ -305,7 +306,7 @@ function PatternBuilderDialog({ onClose }: { onClose: () => void }) {
                         type="button"
                         onClick={() => setSelected(selected === i ? null : i)}
                         aria-pressed={selected === i}
-                        aria-label={`${i + 1}. gün, ${DAY_STYLE[d.type].label}${d.startTime ? ` ${timeRange(d.startTime, d.endTime)}` : ''}`}
+                        aria-label={tx('{0}. gün, {1}{2}', [i + 1, DAY_STYLE[d.type].label, d.startTime ? ` ${timeRange(d.startTime, d.endTime)}` : ''])}
                         className={cn(
                           'group flex cursor-pointer flex-col items-center gap-1 rounded-md p-1 transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
                           selected === i ? 'bg-background shadow-sm ring-2 ring-primary' : 'hover:bg-background',
@@ -332,27 +333,27 @@ function PatternBuilderDialog({ onClose }: { onClose: () => void }) {
         {sel && selected !== null && (
           <div className="rounded-lg border border-primary/30 bg-primary/5 p-3">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <p className="text-[13px] font-semibold">{selected + 1}. gün</p>
+              <p className="text-[13px] font-semibold">{tx('{0}. gün', [selected + 1])}</p>
               <div className="flex flex-wrap gap-1">
-                <Button type="button" size="sm" variant="ghost" onClick={() => move(selected, -1)} disabled={selected === 0} aria-label="Sola taşı">
+                <Button type="button" size="sm" variant="ghost" onClick={() => move(selected, -1)} disabled={selected === 0} aria-label={tx('Sola taşı')}>
                   <ArrowLeft className="size-4" />
                 </Button>
-                <Button type="button" size="sm" variant="ghost" onClick={() => move(selected, 1)} disabled={selected === days.length - 1} aria-label="Sağa taşı">
+                <Button type="button" size="sm" variant="ghost" onClick={() => move(selected, 1)} disabled={selected === days.length - 1} aria-label={tx('Sağa taşı')}>
                   <ArrowRight className="size-4" />
                 </Button>
                 <Button type="button" size="sm" variant="ghost" onClick={() => duplicate(selected)} disabled={days.length >= MAX_DAYS}>
-                  <Copy className="size-4" /> Çoğalt
+                  <Copy className="size-4" />{' '}{tx('Çoğalt')}
                 </Button>
                 <Button type="button" size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => remove(selected)}>
-                  <Trash2 className="size-4" /> Sil
+                  <Trash2 className="size-4" />{' '}{tx('Sil')}
                 </Button>
               </div>
             </div>
             <div className="flex flex-wrap items-end gap-4">
               <div className="flex flex-col gap-1.5">
-                <span className="text-[13px] font-medium">Tip</span>
+                <span className="text-[13px] font-medium">{tx('Tip')}</span>
                 <Segmented
-                  ariaLabel="Gün tipi"
+                  ariaLabel={tx('Gün tipi')}
                   value={sel.type}
                   onChange={(t) => setType(selected, t)}
                   options={PATTERN_TYPES.map((t) => ({ value: t, label: DAY_STYLE[t].label }))}
@@ -361,14 +362,14 @@ function PatternBuilderDialog({ onClose }: { onClose: () => void }) {
               {sel.type !== 'Off' && (
                 <>
                   <TextField
-                    label="Başlangıç"
+                    label={tx('Başlangıç')}
                     type="time"
                     className="w-32"
                     value={hhmm(sel.startTime)}
                     onChange={(e) => update(selected, { startTime: e.target.value || null })}
                   />
                   <TextField
-                    label="Bitiş"
+                    label={tx('Bitiş')}
                     type="time"
                     className="w-32"
                     value={hhmm(sel.endTime)}
@@ -376,7 +377,7 @@ function PatternBuilderDialog({ onClose }: { onClose: () => void }) {
                   />
                   <p className="pb-2 text-[12px] text-muted-foreground">
                     {durationLabel(sel.startTime, sel.endTime)}
-                    {sel.startTime && sel.endTime && hhmm(sel.endTime) <= hhmm(sel.startTime) && ' · ertesi gün biter'}
+                    {sel.startTime && sel.endTime && hhmm(sel.endTime) <= hhmm(sel.startTime) && tx(' · ertesi gün biter')}
                   </p>
                 </>
               )}
@@ -387,19 +388,19 @@ function PatternBuilderDialog({ onClose }: { onClose: () => void }) {
 
         {/* Blok ekle */}
         <div className="rounded-lg border border-border p-3">
-          <p className="mb-3 text-[13px] font-medium">Sona blok ekle</p>
+          <p className="mb-3 text-[13px] font-medium">{tx('Sona blok ekle')}</p>
           <div className="flex flex-wrap items-end gap-4">
             <div className="flex flex-col gap-1.5">
-              <span className="text-[13px]">Tip</span>
+              <span className="text-[13px]">{tx('Tip')}</span>
               <Segmented
-                ariaLabel="Eklenecek gün tipi"
+                ariaLabel={tx('Eklenecek gün tipi')}
                 value={blockType}
                 onChange={setBlockType}
                 options={PATTERN_TYPES.map((t) => ({ value: t, label: DAY_STYLE[t].label }))}
               />
             </div>
             <TextField
-              label="Gün sayısı"
+              label={tx('Gün sayısı')}
               type="number"
               min={1}
               max={31}
@@ -410,14 +411,14 @@ function PatternBuilderDialog({ onClose }: { onClose: () => void }) {
             {blockType !== 'Off' && (
               <>
                 <TextField
-                  label="Başlangıç"
+                  label={tx('Başlangıç')}
                   type="time"
                   className="w-32"
                   value={times[blockType].start}
                   onChange={(e) => setTimes((t) => ({ ...t, [blockType]: { ...t[blockType], start: e.target.value } }))}
                 />
                 <TextField
-                  label="Bitiş"
+                  label={tx('Bitiş')}
                   type="time"
                   className="w-32"
                   value={times[blockType].end}
@@ -427,22 +428,21 @@ function PatternBuilderDialog({ onClose }: { onClose: () => void }) {
             )}
             <Button type="button" variant="secondary" onClick={addBlock} disabled={days.length >= MAX_DAYS}>
               <Plus className="size-4" />
-              {blockCount} gün ekle
-            </Button>
+              {tx('{0} gün ekle', [blockCount])}</Button>
           </div>
           {days.length >= MAX_DAYS && (
-            <p className="mt-2 text-[12px] text-muted-foreground">Bir desen en fazla {MAX_DAYS} gün olabilir.</p>
+            <p className="mt-2 text-[12px] text-muted-foreground">{tx('Bir desen en fazla {0} gün olabilir.', [MAX_DAYS])}</p>
           )}
         </div>
 
         <TextField
-          label="Desen adı"
+          label={tx('Desen adı')}
           value={effectiveName}
           onChange={(e) => {
             setNameTouched(true)
             setName(e.target.value)
           }}
-          hint={nameTouched ? undefined : 'Döngüden otomatik önerildi; dilediğiniz gibi değiştirebilirsiniz.'}
+          hint={nameTouched ? undefined : tx('Döngüden otomatik önerildi; dilediğiniz gibi değiştirebilirsiniz.')}
           error={submitted ? errors.name : undefined}
           maxLength={120}
         />
@@ -462,12 +462,12 @@ function DeletePatternDialog({ pattern, usedBy, onClose }: { pattern: ShiftPatte
     <Modal
       open
       onClose={onClose}
-      title="Desen silinsin mi?"
-      note={`"${pattern.name}" kalıcı olarak silinir.`}
+      title={tx('Desen silinsin mi?')}
+      note={tx('"{0}" kalıcı olarak silinir.', [pattern.name])}
       footer={
         <>
           <Button variant="outline" onClick={onClose}>
-            Vazgeç
+            {tx('Vazgeç')}
           </Button>
           <Button
             variant="destructive"
@@ -475,14 +475,14 @@ function DeletePatternDialog({ pattern, usedBy, onClose }: { pattern: ShiftPatte
             onClick={() =>
               del.mutate(pattern.id, {
                 onSuccess: () => {
-                  toast.ok('Desen silindi.')
+                  toast.ok(tx('Desen silindi.'))
                   onClose()
                 },
               })
             }
           >
             {del.isPending && <LoaderCircle className="size-4 animate-spin" />}
-            Sil
+            {tx('Sil')}
           </Button>
         </>
       }
@@ -491,17 +491,16 @@ function DeletePatternDialog({ pattern, usedBy, onClose }: { pattern: ShiftPatte
         <PatternStrip days={sortedDays(pattern)} size="sm" />
         {usedBy.length > 0 ? (
           <p className="rounded-lg border border-[hsl(var(--warning))]/30 bg-[hsl(var(--warning))]/8 px-3 py-2.5">
-            Bu deseni kullanan ekip var: <strong>{usedBy.join(', ')}</strong>. Silmek için önce bu ekiplerin deseni
-            kullanmaması gerekir.
+            {tx('Bu deseni kullanan ekip var:')}{' '}<strong>{usedBy.join(', ')}</strong>{tx('. Silmek için önce bu ekiplerin deseni kullanmaması gerekir.')}
           </p>
         ) : (
-          <p className="text-muted-foreground">Deseni kullanan ekip yok; silmek mevcut takvimleri etkilemez.</p>
+          <p className="text-muted-foreground">{tx('Deseni kullanan ekip yok; silmek mevcut takvimleri etkilemez.')}</p>
         )}
         {del.isError && (
           <p role="alert" className="text-destructive">
             {conflict
-              ? 'Bu desen hâlâ bir ekip tarafından kullanılıyor, silinemedi.'
-              : errorText(del.error, 'Desen silinemedi.')}
+              ? tx('Bu desen hâlâ bir ekip tarafından kullanılıyor, silinemedi.')
+              : errorText(del.error, tx('Desen silinemedi.'))}
           </p>
         )}
       </div>
@@ -539,14 +538,13 @@ export function PatternsView() {
         <Legend types={PATTERN_TYPES} />
         {manage && (
           <Button onClick={() => setBuilding(true)}>
-            <Plus className="size-4" /> Yeni desen
+            <Plus className="size-4" />{' '}{tx('Yeni desen')}
           </Button>
         )}
       </div>
 
       <InfoNote>
-        Desen yalnızca olağan döngüyü tanımlar. Onaylanan izinler ve resmî tatiller takvimde desenin üzerine
-        kendiliğinden işlenir; bunları desene eklemeniz gerekmez.
+        {tx('Desen yalnızca olağan döngüyü tanımlar. Onaylanan izinler ve resmî tatiller takvimde desenin üzerine kendiliğinden işlenir; bunları desene eklemeniz gerekmez.')}
       </InfoNote>
 
       {patterns.isPending ? (
@@ -561,16 +559,16 @@ export function PatternsView() {
         <Panel>
           <EmptyState
             icon={Repeat}
-            title="Henüz vardiya deseni yok"
+            title={tx('Henüz vardiya deseni yok')}
             detail={
               manage
-                ? 'Şirketiniz vardiyalı çalışıyorsa döngüyü burada tanımlayın. Vardiya kullanmıyorsanız bu bölümü boş bırakabilirsiniz.'
-                : 'Vardiya desenlerini İK yöneticisi tanımlar.'
+                ? tx('Şirketiniz vardiyalı çalışıyorsa döngüyü burada tanımlayın. Vardiya kullanmıyorsanız bu bölümü boş bırakabilirsiniz.')
+                : tx('Vardiya desenlerini İK yöneticisi tanımlar.')
             }
             action={
               manage && (
                 <Button onClick={() => setBuilding(true)}>
-                  <Plus className="size-4" /> İlk deseni oluştur
+                  <Plus className="size-4" />{' '}{tx('İlk deseni oluştur')}
                 </Button>
               )
             }
@@ -587,13 +585,13 @@ export function PatternsView() {
                   title={
                     <span className="flex flex-wrap items-center gap-2">
                       {p.name}
-                      {!p.isActive && <StatusBadge>Pasif</StatusBadge>}
+                      {!p.isActive && <StatusBadge>{tx('Pasif')}</StatusBadge>}
                     </span>
                   }
-                  note={`${formatNumber(days.length)} günlük döngü · ${describeDays(days)}`}
+                  note={tx('{0} günlük döngü · {1}', [formatNumber(days.length), describeDays(days)])}
                   action={
                     manage && (
-                      <Button size="sm" variant="ghost" aria-label={`${p.name} desenini sil`} onClick={() => setDeleting(p)}>
+                      <Button size="sm" variant="ghost" aria-label={tx('{0} desenini sil', [p.name])} onClick={() => setDeleting(p)}>
                         <Trash2 className="size-4" />
                       </Button>
                     )
@@ -612,11 +610,11 @@ export function PatternsView() {
                       ) : null
                     })}
                     <div className="flex gap-1.5">
-                      <dt>Haftalık ort.</dt>
+                      <dt>{tx('Haftalık ort.')}</dt>
                       <dd className="tabular text-foreground">{hoursText(weeklyHours(days))}</dd>
                     </div>
                     <div className="flex gap-1.5">
-                      <dt>Kullanan ekip</dt>
+                      <dt>{tx('Kullanan ekip')}</dt>
                       <dd className="text-foreground">{usedBy.length ? usedBy.join(', ') : 'yok'}</dd>
                     </div>
                   </dl>

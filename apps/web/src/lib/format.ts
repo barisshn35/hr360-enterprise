@@ -1,10 +1,11 @@
-const dateFmt = new Intl.DateTimeFormat('tr-TR', {
+import { tx, appLocale } from '@/lib/i18n'
+const dateFmt = new Intl.DateTimeFormat(appLocale, {
   day: '2-digit',
   month: 'short',
   year: 'numeric',
 })
 
-const dateTimeFmt = new Intl.DateTimeFormat('tr-TR', {
+const dateTimeFmt = new Intl.DateTimeFormat(appLocale, {
   day: '2-digit',
   month: 'short',
   year: 'numeric',
@@ -12,7 +13,7 @@ const dateTimeFmt = new Intl.DateTimeFormat('tr-TR', {
   minute: '2-digit',
 })
 
-const numberFmt = new Intl.NumberFormat('tr-TR')
+const numberFmt = new Intl.NumberFormat(appLocale)
 
 function toDate(value: string | null | undefined): Date | null {
   if (!value) return null
@@ -35,7 +36,7 @@ export function formatNumber(value: number | null | undefined, fallback = '—')
 }
 
 export function formatPercent(value: number, digits = 0): string {
-  return new Intl.NumberFormat('tr-TR', {
+  return new Intl.NumberFormat(appLocale, {
     style: 'percent',
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
@@ -47,7 +48,7 @@ export function formatRelativeToNow(value: string | null | undefined): string {
   const d = toDate(value)
   if (!d) return '—'
   const diffMs = d.getTime() - Date.now()
-  const rtf = new Intl.RelativeTimeFormat('tr-TR', { numeric: 'auto' })
+  const rtf = new Intl.RelativeTimeFormat(appLocale, { numeric: 'auto' })
   const abs = Math.abs(diffMs)
   const hour = 3_600_000
   const day = 24 * hour
@@ -60,17 +61,17 @@ export function formatRelativeToNow(value: string | null | undefined): string {
 export function initialsOf(firstName?: string, lastName?: string): string {
   const a = firstName?.trim()?.[0] ?? ''
   const b = lastName?.trim()?.[0] ?? ''
-  return (a + b).toLocaleUpperCase('tr-TR') || '?'
+  return (a + b).toLocaleUpperCase(appLocale) || '?'
 }
 
 export function fullName(p: { firstName?: string; lastName?: string }): string {
-  return [p.firstName, p.lastName].filter(Boolean).join(' ').trim() || 'İsimsiz kayıt'
+  return [p.firstName, p.lastName].filter(Boolean).join(' ').trim() || tx('İsimsiz kayıt')
 }
 
 /** Türkçe karakter duyarlı arama normalizasyonu. */
 export function normalizeSearch(value: string): string {
   return value
-    .toLocaleLowerCase('tr-TR')
+    .toLocaleLowerCase(appLocale)
     .replace(/ı/g, 'i')
     .replace(/ş/g, 's')
     .replace(/ğ/g, 'g')
@@ -87,7 +88,7 @@ export function formatMoney(
   fallback = '—',
 ): string {
   if (typeof value !== 'number' || !Number.isFinite(value)) return fallback
-  return new Intl.NumberFormat('tr-TR', {
+  return new Intl.NumberFormat(appLocale, {
     style: 'currency',
     currency,
     minimumFractionDigits: Number.isInteger(value) ? 0 : 2,

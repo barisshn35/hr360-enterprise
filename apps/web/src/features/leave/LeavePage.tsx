@@ -27,6 +27,7 @@ import { formatDate, formatNumber } from '@/lib/format'
 import { NewBalanceModal } from './NewBalanceModal'
 import { HolidaysModal } from './HolidaysModal'
 import { NewLeaveRequestModal } from './NewLeaveRequestModal'
+import { tx } from '@/lib/i18n'
 
 type TabKey = LeaveStatus | 'all'
 
@@ -34,8 +35,8 @@ const TABS: Array<TabDef<TabKey>> = [
   { key: 'Submitted', label: leaveStatusLabels.Submitted },
   { key: 'Approved', label: leaveStatusLabels.Approved },
   { key: 'Rejected', label: leaveStatusLabels.Rejected },
-  { key: 'Cancelled', label: 'İptal' },
-  { key: 'all', label: 'Tümü' },
+  { key: 'Cancelled', label: tx('İptal') },
+  { key: 'all', label: tx('Tümü') },
 ]
 
 /** Bakiye halkası: kalan gün vurgulu, kullanılan ve onaydaki ayrı okunur. */
@@ -49,32 +50,32 @@ function BalanceCard({ balance }: { balance: LeaveBalance }) {
         value={balance.remainingDays}
         max={balance.entitledDays || 1}
         tone={tone}
-        label={`${leaveTypeLabels[balance.type]} kalan gün`}
+        label={tx('{0} kalan gün', [leaveTypeLabels[balance.type]])}
       >
         <span className="tabular text-[19px] leading-none font-bold">
           {formatNumber(balance.remainingDays)}
         </span>
-        <span className="text-[10px] text-muted-foreground">gün</span>
+        <span className="text-[10px] text-muted-foreground">{tx('gün')}</span>
       </ProgressRing>
 
       <div className="min-w-0">
         <p className="text-[14px] font-semibold">{leaveTypeLabels[balance.type]}</p>
         <dl className="mt-1.5 space-y-0.5 text-[12px] text-muted-foreground">
           <div className="flex gap-2">
-            <dt>Hak edilen</dt>
+            <dt>{tx('Hak edilen')}</dt>
             <dd className="tabular font-medium text-foreground">
               {formatNumber(balance.entitledDays)}
             </dd>
           </div>
           <div className="flex gap-2">
-            <dt>Kullanılan</dt>
+            <dt>{tx('Kullanılan')}</dt>
             <dd className="tabular font-medium text-foreground">
               {formatNumber(balance.usedDays)}
             </dd>
           </div>
           {balance.pendingDays > 0 && (
             <div className="flex gap-2">
-              <dt>Onayda</dt>
+              <dt>{tx('Onayda')}</dt>
               <dd className="tabular font-medium text-[hsl(var(--warning))]">
                 {formatNumber(balance.pendingDays)}
               </dd>
@@ -110,9 +111,9 @@ export function LeavePage() {
     mutationFn: (id: string) => leaveApi.cancelRequest(id),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['leave'] })
-      toast.ok('Talep iptal edildi')
+      toast.ok(tx('Talep iptal edildi'))
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : 'Talep iptal edilemedi.'),
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Talep iptal edilemedi.')),
   })
 
   const rows = useMemo(
@@ -126,7 +127,7 @@ export function LeavePage() {
   const columns: Array<Column<LeaveRequest>> = [
     {
       id: 'type',
-      header: 'İzin türü',
+      header: tx('İzin türü'),
       searchText: (r) => `${leaveTypeLabels[r.type]} ${r.reason ?? ''}`,
       sortValue: (r) => leaveTypeLabels[r.type],
       cell: (r) => (
@@ -138,7 +139,7 @@ export function LeavePage() {
     },
     {
       id: 'range',
-      header: 'Tarih aralığı',
+      header: tx('Tarih aralığı'),
       hideBelow: 'sm',
       sortValue: (r) => new Date(r.startDate).getTime(),
       exportText: (r) => `${formatDate(r.startDate)} – ${formatDate(r.endDate)}`,
@@ -150,7 +151,7 @@ export function LeavePage() {
     },
     {
       id: 'days',
-      header: 'Gün',
+      header: tx('Gün'),
       align: 'right',
       sortValue: (r) => r.days,
       exportText: (r) => String(r.days),
@@ -158,7 +159,7 @@ export function LeavePage() {
     },
     {
       id: 'status',
-      header: 'Durum',
+      header: tx('Durum'),
       align: 'right',
       sortValue: (r) => leaveStatusLabels[r.status],
       exportText: (r) => leaveStatusLabels[r.status],
@@ -169,13 +170,13 @@ export function LeavePage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="İzin"
-        description="İzin talepleri ve yıllık bakiyeler. Onay, Onay kutusu üzerinden ilerler."
+        title={tx('İzin')}
+        description={tx('İzin talepleri ve yıllık bakiyeler. Onay, Onay kutusu üzerinden ilerler.')}
         actions={
           <>
             {can('leave:manageBalance') && (
               <Button variant="outline" className="cursor-pointer" onClick={() => setHolidaysOpen(true)}>
-                Resmi tatiller
+                {tx('Resmi tatiller')}
               </Button>
             )}
             {can('leave:manageBalance') && (
@@ -185,13 +186,13 @@ export function LeavePage() {
                 onClick={() => setBalanceOpen(true)}
               >
                 <Plus className="size-4" />
-                Bakiye tanımla
+                {tx('Bakiye tanımla')}
               </Button>
             )}
             {can('leave:create') && (
               <Button className="cursor-pointer" onClick={() => setModalOpen(true)}>
                 <Plus className="size-4" />
-                Yeni izin talebi
+                {tx('Yeni izin talebi')}
               </Button>
             )}
           </>
@@ -202,13 +203,13 @@ export function LeavePage() {
         <EmployeePicker
           value={employeeId}
           onChange={setEmployeeId}
-          hint="Bakiyeleri görmek için çalışan seçin."
+          hint={tx('Bakiyeleri görmek için çalışan seçin.')}
         />
       </div>
 
       {employeeId && (
         <Panel>
-          <PanelHead title={`${year} bakiyeleri`} note="Kalan gün halkanın içinde" />
+          <PanelHead title={tx('{0} bakiyeleri', [year])} note={tx('Kalan gün halkanın içinde')} />
           {balances.isPending ? (
             <RowsSkeleton rows={2} columns={3} />
           ) : balances.isError ? (
@@ -218,12 +219,12 @@ export function LeavePage() {
             />
           ) : (balances.data?.length ?? 0) === 0 ? (
             <EmptyState
-              title="Bakiye tanımlı değil"
-              detail="Bu çalışan için bu yıla ait izin bakiyesi girilmemiş."
+              title={tx('Bakiye tanımlı değil')}
+              detail={tx('Bu çalışan için bu yıla ait izin bakiyesi girilmemiş.')}
               action={
                 can('leave:manageBalance') ? (
                   <Button size="sm" className="cursor-pointer" onClick={() => setBalanceOpen(true)}>
-                    Bakiye tanımla
+                    {tx('Bakiye tanımla')}
                   </Button>
                 ) : undefined
               }
@@ -240,7 +241,7 @@ export function LeavePage() {
         </Panel>
       )}
 
-      <Tabs tabs={TABS} value={tab} onChange={setTab} label="İzin talebi durumu" />
+      <Tabs tabs={TABS} value={tab} onChange={setTab} label={tx('İzin talebi durumu')} />
 
       <DataTable
         rows={rows}
@@ -249,17 +250,17 @@ export function LeavePage() {
         isLoading={requests.isPending}
         error={requests.error}
         onRetry={() => void requests.refetch()}
-        searchPlaceholder="İzin türü veya gerekçe ara"
+        searchPlaceholder={tx('İzin türü veya gerekçe ara')}
         exportFileName="izin-talepleri"
-        emptyTitle="Bu durumda izin talebi yok"
+        emptyTitle={tx('Bu durumda izin talebi yok')}
         emptyDetail={
           employeeId
-            ? 'Seçili çalışan için bu durumda kayıt bulunmuyor.'
-            : 'Başka bir durum sekmesi seçin ya da yeni bir talep oluşturun.'
+            ? tx('Seçili çalışan için bu durumda kayıt bulunmuyor.')
+            : tx('Başka bir durum sekmesi seçin ya da yeni bir talep oluşturun.')
         }
         rowActions={[
           {
-            label: 'Talebi iptal et',
+            label: tx('Talebi iptal et'),
             destructive: true,
             hidden: (r) =>
               !(r.status === 'Submitted' || r.status === 'Draft') || cancel.isPending || !canCancel(r),
@@ -269,11 +270,8 @@ export function LeavePage() {
         notice={
           <InfoNote>
             <strong className="font-semibold text-foreground">
-              Onay bu ekrandan verilmez.
-            </strong>{' '}
-            Talep gönderilince onay zinciri <em>Onay kutusu</em> üzerinden ilerler; onaylandığında
-            izin kaydı ve bakiye Kafka olayıyla kendiliğinden güncellenir. Buradan yalnızca kendi
-            bekleyen talebinizi iptal edebilirsiniz.
+              {tx('Onay bu ekrandan verilmez.')}
+            </strong>{' '}{tx('Talep gönderilince onay zinciri', [])}{' '}<em>{tx('Onay kutusu')}</em>{' '}{tx('üzerinden ilerler; onaylandığında izin kaydı ve bakiye Kafka olayıyla kendiliğinden güncellenir. Buradan yalnızca kendi bekleyen talebinizi iptal edebilirsiniz.')}
           </InfoNote>
         }
       />

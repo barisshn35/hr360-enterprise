@@ -1,3 +1,4 @@
+import { tx } from '@/lib/i18n'
 /**
  * Türkiye bordro simülasyonu (2026 parametreleri).
  *
@@ -35,7 +36,7 @@ export const PARAMS_2026: PayrollParams = {
   stampRate: 0.00759,
 }
 
-export const MONTHS_TR = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık']
+export const MONTHS_TR = [tx('Ocak'), tx('Şubat'), tx('Mart'), tx('Nisan'), tx('Mayıs'), tx('Haziran'), tx('Temmuz'), tx('Ağustos'), tx('Eylül'), tx('Ekim'), tx('Kasım'), tx('Aralık')]
 
 const r2 = (n: number) => Math.round(n * 100) / 100
 

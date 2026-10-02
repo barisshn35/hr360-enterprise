@@ -13,6 +13,7 @@ import { useAuth } from '@/auth/useAuth'
 import { useCompanies, useDepartmentList } from '@/api/queries'
 import { tenantApi } from '@/api/tenant'
 import { permissionsFor, roleLabels, type Permission, type Role } from '@/auth/roles'
+import { tx } from '@/lib/i18n'
 
 /**
  * Bu sayfadan atanabilecek roller - platform-admin platform seviyesinde,
@@ -26,11 +27,11 @@ const ASSIGNABLE_ROLES: Role[] = ['employee', 'manager', 'accounting', 'hr-admin
  * kod olarak değil, çalışanın anlayacağı dilde özetleniyor.
  */
 const ROLE_SUMMARY: Partial<Record<Role, string>> = {
-  employee: 'Kendi izin/masraf talebini açar, kendi puantajını ve eğitimlerini görür.',
-  manager: 'Onay kutusunda karar verir, ekip kurar, performans ve onboarding sürecini yönetir.',
-  accounting: 'Masraf beyanlarını görür ve onaylananları ödendi işaretler.',
-  'hr-admin': 'Çalışan kayıtlarını, ücret bantlarını, izin bakiyelerini ve ilan yayınını yönetir.',
-  'tenant-admin': 'Şirket ayarlarının sahibi; İK yönetiminin tüm yetkilerini de devralır.',
+  employee: tx('Kendi izin/masraf talebini açar, kendi puantajını ve eğitimlerini görür.'),
+  manager: tx('Onay kutusunda karar verir, ekip kurar, performans ve onboarding sürecini yönetir.'),
+  accounting: tx('Masraf beyanlarını görür ve onaylananları ödendi işaretler.'),
+  'hr-admin': tx('Çalışan kayıtlarını, ücret bantlarını, izin bakiyelerini ve ilan yayınını yönetir.'),
+  'tenant-admin': tx('Şirket ayarlarının sahibi; İK yönetiminin tüm yetkilerini de devralır.'),
 }
 
 /**
@@ -40,45 +41,45 @@ const ROLE_SUMMARY: Partial<Record<Role, string>> = {
  * listelenen servislerde uygulanmış durumda (bkz. aşağı).
  */
 const PERMISSION_LABELS: Record<Permission, string> = {
-  'organization:view': 'Departman / organizasyon yapısını görüntüler',
-  'organization:manage': 'Departman / organizasyon yapısını düzenler',
-  'employee:viewAll': 'Tüm çalışanların listesini görüntüler',
-  'employee:manage': 'Çalışan kayıtlarını düzenler',
-  'employee:create': 'Yeni çalışan kaydı oluşturur',
-  'workflow:view': 'Onay taleplerinin durumunu görüntüler',
-  'workflow:create': 'Kendi adına onay talebi oluşturur',
-  'workflow:decide': 'Onay kutusundaki taleplere karar verir',
-  'leave:view': 'İzin taleplerini ve bakiyelerini görüntüler',
-  'leave:create': 'Kendi adına izin talebi oluşturur',
-  'leave:manageBalance': 'Çalışanların yıllık izin bakiyesini tanımlar',
-  'recruitment:view': 'Açık iş ilanlarını görüntüler',
-  'recruitment:candidates': 'Adayları görüntüler, başvuru sürecini yönetir',
-  'recruitment:publish': 'İş ilanı oluşturur ve yayına alır',
-  'onboarding:view': 'Onboarding planlarını görüntüler',
-  'onboarding:manage': 'Onboarding planı oluşturur, düzenler',
-  'asset:manage': 'Zimmet / demirbaş kayıtlarını yönetir',
-  'timeshift:view': 'Puantaj ve vardiya bilgilerini görüntüler',
-  'timeshift:clock': 'Kendi mesai giriş / çıkışını kaydeder',
-  'timeshift:manage': 'Vardiya deseni ve puantaj kayıtlarını yönetir',
-  'performance:view': 'Performans değerlendirmelerini görüntüler',
-  'performance:manage': 'Performans değerlendirme sürecini yönetir',
-  'team:manage': 'Ekip kurar, lider atar, üye ekler / çıkarır',
-  'learning:view': 'Eğitim kataloğunu görüntüler',
-  'learning:enroll': 'Bir eğitime kayıt olur',
-  'learning:manage': 'Eğitim kataloğuna eğitim ekler, düzenler',
-  'compensation:view': 'Ücret bantlarını ve maaş geçmişini görüntüler',
-  'expense:view': 'Masraf taleplerini görüntüler',
-  'expense:create': 'Kendi adına masraf talebi oluşturur',
-  'expense:manage': 'Masraf taleplerini onaylar / yönetir',
-  'expense:markPaid': 'Onaylanan masraf talebini ödendi işaretler',
-  'document:manage': 'Şirket dokümanlarını yönetir',
-  'case:view': 'İK vakalarını görüntüler',
-  'case:create': 'Yeni İK vakası açar',
-  'case:manage': 'İK vakalarını yönetir, sonuçlandırır',
-  'notification:view': 'Kendine gelen bildirimleri görüntüler',
-  'notification:manage': 'Bildirim şablonlarını oluşturur / düzenler',
-  'platform:manage': 'Platformdaki tüm kiracıları yönetir',
-  'tenant:manage': 'Kendi şirketinin (kiracının) ayarlarını yönetir',
+  'organization:view': tx('Departman / organizasyon yapısını görüntüler'),
+  'organization:manage': tx('Departman / organizasyon yapısını düzenler'),
+  'employee:viewAll': tx('Tüm çalışanların listesini görüntüler'),
+  'employee:manage': tx('Çalışan kayıtlarını düzenler'),
+  'employee:create': tx('Yeni çalışan kaydı oluşturur'),
+  'workflow:view': tx('Onay taleplerinin durumunu görüntüler'),
+  'workflow:create': tx('Kendi adına onay talebi oluşturur'),
+  'workflow:decide': tx('Onay kutusundaki taleplere karar verir'),
+  'leave:view': tx('İzin taleplerini ve bakiyelerini görüntüler'),
+  'leave:create': tx('Kendi adına izin talebi oluşturur'),
+  'leave:manageBalance': tx('Çalışanların yıllık izin bakiyesini tanımlar'),
+  'recruitment:view': tx('Açık iş ilanlarını görüntüler'),
+  'recruitment:candidates': tx('Adayları görüntüler, başvuru sürecini yönetir'),
+  'recruitment:publish': tx('İş ilanı oluşturur ve yayına alır'),
+  'onboarding:view': tx('Onboarding planlarını görüntüler'),
+  'onboarding:manage': tx('Onboarding planı oluşturur, düzenler'),
+  'asset:manage': tx('Zimmet / demirbaş kayıtlarını yönetir'),
+  'timeshift:view': tx('Puantaj ve vardiya bilgilerini görüntüler'),
+  'timeshift:clock': tx('Kendi mesai giriş / çıkışını kaydeder'),
+  'timeshift:manage': tx('Vardiya deseni ve puantaj kayıtlarını yönetir'),
+  'performance:view': tx('Performans değerlendirmelerini görüntüler'),
+  'performance:manage': tx('Performans değerlendirme sürecini yönetir'),
+  'team:manage': tx('Ekip kurar, lider atar, üye ekler / çıkarır'),
+  'learning:view': tx('Eğitim kataloğunu görüntüler'),
+  'learning:enroll': tx('Bir eğitime kayıt olur'),
+  'learning:manage': tx('Eğitim kataloğuna eğitim ekler, düzenler'),
+  'compensation:view': tx('Ücret bantlarını ve maaş geçmişini görüntüler'),
+  'expense:view': tx('Masraf taleplerini görüntüler'),
+  'expense:create': tx('Kendi adına masraf talebi oluşturur'),
+  'expense:manage': tx('Masraf taleplerini onaylar / yönetir'),
+  'expense:markPaid': tx('Onaylanan masraf talebini ödendi işaretler'),
+  'document:manage': tx('Şirket dokümanlarını yönetir'),
+  'case:view': tx('İK vakalarını görüntüler'),
+  'case:create': tx('Yeni İK vakası açar'),
+  'case:manage': tx('İK vakalarını yönetir, sonuçlandırır'),
+  'notification:view': tx('Kendine gelen bildirimleri görüntüler'),
+  'notification:manage': tx('Bildirim şablonlarını oluşturur / düzenler'),
+  'platform:manage': tx('Platformdaki tüm kiracıları yönetir'),
+  'tenant:manage': tx('Kendi şirketinin (kiracının) ayarlarını yönetir'),
 }
 
 /**
@@ -168,9 +169,9 @@ export function RolesPage() {
     mutationFn: (employeeId: string) => tenantApi.inviteMember(employeeId),
     onSuccess: () => {
       invalidate()
-      toast.ok('Davet gönderildi.')
+      toast.ok(tx('Davet gönderildi.'))
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : 'Davet gönderilemedi.'),
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Davet gönderilemedi.')),
   })
 
   const assignMutation = useMutation({
@@ -178,9 +179,9 @@ export function RolesPage() {
       tenantApi.assignRole(userId, role),
     onSuccess: () => {
       invalidate()
-      toast.ok('Rol atandı.')
+      toast.ok(tx('Rol atandı.'))
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : 'Rol atanamadı.'),
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Rol atanamadı.')),
   })
 
   const removeMutation = useMutation({
@@ -188,9 +189,9 @@ export function RolesPage() {
       tenantApi.removeRole(userId, role),
     onSuccess: () => {
       invalidate()
-      toast.ok('Rol kaldırıldı.')
+      toast.ok(tx('Rol kaldırıldı.'))
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : 'Rol kaldırılamadı.'),
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Rol kaldırılamadı.')),
   })
 
   const assignPermMutation = useMutation({
@@ -199,9 +200,9 @@ export function RolesPage() {
     onSuccess: () => {
       invalidate()
       setAddingPermFor(null)
-      toast.ok('İzin atandı.')
+      toast.ok(tx('İzin atandı.'))
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : 'İzin atanamadı.'),
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('İzin atanamadı.')),
   })
 
   const removePermMutation = useMutation({
@@ -209,9 +210,9 @@ export function RolesPage() {
       tenantApi.removeExtraPermission(userId, permission),
     onSuccess: () => {
       invalidate()
-      toast.ok('İzin kaldırıldı.')
+      toast.ok(tx('İzin kaldırıldı.'))
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : 'İzin kaldırılamadı.'),
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('İzin kaldırılamadı.')),
   })
 
   const pending = assignMutation.isPending || removeMutation.isPending
@@ -224,7 +225,7 @@ export function RolesPage() {
 
   const employeeColumn: Column<RoleRow> = {
     id: 'employee',
-    header: 'Çalışan',
+    header: tx('Çalışan'),
     searchText: (r) => `${r.firstName} ${r.lastName} ${r.email}`,
     sortValue: (r) => `${r.firstName} ${r.lastName}`,
     cell: (r) => (
@@ -240,8 +241,7 @@ export function RolesPage() {
                   <ShieldAlert className="size-3.5 shrink-0 text-[hsl(var(--warning))]" />
                 </TooltipTrigger>
                 <TooltipContent className="max-w-64 text-[12px] leading-relaxed">
-                  Bir departmanın başı ama Yönetici rolü yok - kendisine atanan onayları
-                  karara bağlayamaz.
+                  {tx('Bir departmanın başı ama Yönetici rolü yok - kendisine atanan onayları karara bağlayamaz.')}
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -264,7 +264,7 @@ export function RolesPage() {
           // Şirket yöneticisi rolünü yalnızca şirket/platform yöneticisi verip alabilir.
           disabled={pending || !r.keycloakUserId || (role === 'tenant-admin' && !canGrantExtraPermissions)}
           onCheckedChange={(checked) => toggleRole(r, role, checked === true)}
-          aria-label={`${r.firstName} ${r.lastName} için ${roleLabels[role]} rolü`}
+          aria-label={tx('{0} {1} için {2} rolü', [r.firstName, r.lastName, roleLabels[role]])}
         />
       ) : (
         <span className="text-[12px] text-muted-foreground">—</span>
@@ -284,7 +284,7 @@ export function RolesPage() {
           onClick={() => inviteMutation.mutate(r.employeeId)}
         >
           <Mail className="size-3.5" />
-          Giriş erişimi ver
+          {tx('Giriş erişimi ver')}
         </Button>
       ),
   }
@@ -298,7 +298,7 @@ export function RolesPage() {
    */
   const extraPermColumn: Column<RoleRow> = {
     id: 'extra-permissions',
-    header: 'Ek izinler',
+    header: tx('Ek izinler'),
     cell: (r) => {
       if (!r.hasLoginAccess) return <span className="text-[12px] text-muted-foreground">—</span>
       const available = Array.from(PERMISSIONS_WITH_BACKEND_SUPPORT).filter(
@@ -311,7 +311,7 @@ export function RolesPage() {
               {PERMISSION_LABELS[perm as Permission] ?? perm}
               <button
                 type="button"
-                aria-label={`${PERMISSION_LABELS[perm as Permission] ?? perm} iznini kaldır`}
+                aria-label={tx('{0} iznini kaldır', [PERMISSION_LABELS[perm as Permission] ?? perm])}
                 className="cursor-pointer opacity-60 hover:opacity-100"
                 disabled={removePermMutation.isPending}
                 onClick={() =>
@@ -326,7 +326,7 @@ export function RolesPage() {
 
           {addingPermFor === r.employeeId ? (
             available.length === 0 ? (
-              <span className="text-[12px] text-muted-foreground">Eklenecek izin yok</span>
+              <span className="text-[12px] text-muted-foreground">{tx('Eklenecek izin yok')}</span>
             ) : (
               <SelectField
                 id={`add-perm-${r.employeeId}`}
@@ -337,7 +337,7 @@ export function RolesPage() {
                   assignPermMutation.mutate({ userId: r.keycloakUserId, permission })
                 }
                 options={available.map((p) => ({ value: p, label: PERMISSION_LABELS[p] }))}
-                placeholder="İzin seç"
+                placeholder={tx('İzin seç')}
                 className="w-56"
               />
             )
@@ -345,7 +345,7 @@ export function RolesPage() {
             <button
               type="button"
               className="cursor-pointer text-muted-foreground opacity-60 hover:opacity-100"
-              aria-label="Ek izin ekle"
+              aria-label={tx('Ek izin ekle')}
               onClick={() => setAddingPermFor(r.employeeId)}
             >
               <Plus className="size-4" />
@@ -359,8 +359,8 @@ export function RolesPage() {
   return (
     <div>
       <PageHeader
-        title="Roller"
-        description="Çalışanların sistem yetkilerini tek tablodan verin ya da kaldırın. Bir hücreyi işaretlemek o rolü ekler."
+        title={tx('Roller')}
+        description={tx('Çalışanların sistem yetkilerini tek tablodan verin ya da kaldırın. Bir hücreyi işaretlemek o rolü ekler.')}
       />
 
       <TooltipProvider>
@@ -392,9 +392,9 @@ export function RolesPage() {
         rowKey={(r) => r.employeeId}
         isLoading={membersQuery.isPending}
         error={membersQuery.error}
-        emptyTitle="Henüz çalışan yok"
-        emptyDetail="Önce Çalışanlar bölümünden ekleyin."
-        searchPlaceholder="Ad, soyad veya e-posta"
+        emptyTitle={tx('Henüz çalışan yok')}
+        emptyDetail={tx('Önce Çalışanlar bölümünden ekleyin.')}
+        searchPlaceholder={tx('Ad, soyad veya e-posta')}
         columns={[
           employeeColumn,
           ...roleColumns,
@@ -406,14 +406,13 @@ export function RolesPage() {
       {canGrantExtraPermissions && (
         <p className="mt-3 text-[12px] leading-relaxed text-muted-foreground">
           <Info className="mr-1 inline size-3" />
-          Ek izinler, bir çalışana rolünün dışında tek bir yetki verir - yalnızca Şirket ve
-          Platform Yöneticisi bu şekilde izin atayabilir.
+          {tx('Ek izinler, bir çalışana rolünün dışında tek bir yetki verir - yalnızca Şirket ve Platform Yöneticisi bu şekilde izin atayabilir.')}
         </p>
       )}
 
       <p className="mt-4 flex items-start gap-1.5 text-[12px] leading-relaxed text-muted-foreground">
         <ShieldAlert className="mt-0.5 size-3.5 shrink-0" />
-        Bir tenant&apos;ta en az bir Şirket Yöneticisi kalmalı - son kişinin rolü kaldırılamaz.
+        {tx('Bir tenant\'ta en az bir Şirket Yöneticisi kalmalı - son kişinin rolü kaldırılamaz.')}
       </p>
     </div>
   )

@@ -17,6 +17,7 @@ import { Spotlight } from '@/components/fx/spotlight'
 import { BorderBeam } from '@/components/fx/border-beam'
 import { CountUp } from '@/motion/primitives'
 import { cn } from '@/lib/utils'
+import { tx } from '@/lib/i18n'
 
 export type TrendDirection = 'up' | 'down' | 'flat'
 
@@ -159,7 +160,7 @@ export function StatCardsSkeleton({ count = 4 }: { count?: number }) {
       aria-busy="true"
       className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4"
     >
-      <span className="sr-only">Yükleniyor</span>
+      <span className="sr-only">{tx('Yükleniyor')}</span>
       {Array.from({ length: count }).map((_, i) => (
         <div key={i} className="surface flex flex-col gap-3 rounded-xl p-5">
           <div className="flex items-center justify-between">

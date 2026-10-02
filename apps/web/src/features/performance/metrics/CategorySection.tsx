@@ -29,6 +29,7 @@ import { Chip } from '../components/controls'
 import { ScaleBadge } from '../components/ScaleInput'
 import { ShareBar, ShareMeter } from '../components/WeightShare'
 import { basisFor, categoryBasis, type Scope } from './share'
+import { tx } from '@/lib/i18n'
 
 export function CategorySection({
   category,
@@ -90,8 +91,7 @@ export function CategorySection({
                 <h2 id={`cat-${category}`} className="text-[15px] font-semibold">
                   {categoryLabels[category]}
                   <span className="ml-2 text-[12px] font-normal text-muted-foreground">
-                    {metrics.filter((m) => m.isActive).length} metrik
-                  </span>
+                    {tx('{0} metrik', [metrics.filter((m) => m.isActive).length])}</span>
                 </h2>
                 <p className="text-[12px] text-muted-foreground">{categoryHints[category]}</p>
               </div>
@@ -103,17 +103,17 @@ export function CategorySection({
                   <Link to="/panel/performans/ayarlar" className="group">
                     <Chip tone="warning">
                       <TriangleAlert className="size-3" aria-hidden />
-                      Ağırlık 0 · puana girmiyor
+                      {tx('Ağırlık 0 · puana girmiyor')}
                       <ArrowRight className="size-3 transition-transform group-hover:translate-x-0.5" aria-hidden />
                     </Chip>
                   </Link>
                 ) : (
-                  <Link to="/panel/performans/ayarlar" title="Puanlama ayarında değiştir">
+                  <Link to="/panel/performans/ayarlar" title={tx('Puanlama ayarında değiştir')}>
                     <Chip>
-                      Ağırlık <span className="tabular font-semibold text-foreground">{formatWeight(categoryWeight)}</span>
+                      {tx('Ağırlık')}{' '}<span className="tabular font-semibold text-foreground">{formatWeight(categoryWeight)}</span>
                       {categoryShare !== null && (
                         <>
-                          {' '}· metrik ayağının <span className="tabular font-semibold text-foreground">{formatShareOf(categoryShare)}</span>
+                          {' '}{tx('· metrik ayağının', [])}{' '}<span className="tabular font-semibold text-foreground">{formatShareOf(categoryShare)}</span>
                         </>
                       )}
                     </Chip>
@@ -121,7 +121,7 @@ export function CategorySection({
                 ))}
               <Button size="xs" variant="ghost" onClick={() => onAdd(category)}>
                 <Plus aria-hidden />
-                Ekle
+                {tx('Ekle')}
               </Button>
             </div>
           </div>
@@ -135,26 +135,23 @@ export function CategorySection({
                 onHover={setHover}
                 height={8}
               />
-              <p className="mt-1.5 text-[11px] text-muted-foreground">
-                Kategori içi pay dağılımı · {basis.departmentId ? `${deptName(basis.departmentId)} çalışanları` : 'tüm departmanlar'}
+              <p className="mt-1.5 text-[11px] text-muted-foreground">{tx('Kategori içi pay dağılımı · {0}', [basis.departmentId ? tx('{0} çalışanları', [deptName(basis.departmentId)]) : tx('tüm departmanlar')])}
               </p>
             </div>
           )}
 
           {excluded && (
             <p className="mt-2.5 rounded-md border border-[hsl(var(--warning))]/30 bg-[hsl(var(--warning))]/8 px-2.5 py-1.5 text-[12px] leading-relaxed text-foreground">
-              Puanlama ayarında bu kategorinin ağırlığı <strong className="font-semibold">0</strong>. Buradaki metrikler değerlendirmede sorulur ve puan
-              dökümünde görünür, ama nihai puana katkı vermez.
+              {tx('Puanlama ayarında bu kategorinin ağırlığı')}{' '}<strong className="font-semibold">0</strong>{tx('. Buradaki metrikler değerlendirmede sorulur ve puan dökümünde görünür, ama nihai puana katkı vermez.')}
             </p>
           )}
 
           {basis.mixed && scope === 'all' && (
             <p className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md bg-muted/60 px-2.5 py-1.5 text-[12px] text-muted-foreground">
-              Departmana özgü metrikler, o departmanda genel metriklerin payını düşürür.
+              {tx('Departmana özgü metrikler, o departmanda genel metriklerin payını düşürür.')}
               {[...new Set(metrics.map((m) => m.departmentId).filter((d): d is string => d !== null))].map((d) => (
                 <button key={d} type="button" onClick={() => onScope(d)} className="font-medium text-primary hover:underline">
-                  {deptName(d)} için göster
-                </button>
+                  {tx('{0} için göster', [deptName(d)])}</button>
               ))}
             </p>
           )}
@@ -198,12 +195,12 @@ export function CategorySection({
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-1.5">
                           <span className={cn('text-[14px] font-medium', !m.isActive && 'text-muted-foreground')}>{m.name}</span>
-                          {m.isRequired && m.isActive && <Chip tone="danger">Zorunlu</Chip>}
+                          {m.isRequired && m.isActive && <Chip tone="danger">{tx('Zorunlu')}</Chip>}
                           {m.departmentId && <Chip tone="primary">{deptName(m.departmentId)}</Chip>}
                           {!m.isActive && (
                             <Chip>
                               <Archive className="size-3" aria-hidden />
-                              Arşivde · geçmiş puanlar korunuyor
+                              {tx('Arşivde · geçmiş puanlar korunuyor')}
                             </Chip>
                           )}
                         </div>
@@ -218,15 +215,14 @@ export function CategorySection({
                           <ScaleBadge scale={m.scale} range={m.range} />
                         </span>
                         <div className="flex shrink-0 items-baseline gap-1.5 sm:block sm:text-right">
-                          <p className="text-[11px] text-muted-foreground">Ağırlık</p>
+                          <p className="text-[11px] text-muted-foreground">{tx('Ağırlık')}</p>
                           <p className="tabular text-[13px] font-semibold">{formatWeight(m.weight)}</p>
                         </div>
                         {share !== null ? (
                           <div className="flex shrink-0 flex-col items-start sm:w-[190px] sm:items-end">
                             <ShareMeter share={share} color={color} />
                             <p className="mt-0.5 hidden text-[11px] whitespace-nowrap text-muted-foreground sm:block">
-                              {m.departmentId && scope === 'all' ? `${deptName(m.departmentId)} için · ` : ''}
-                              {categoryLabels[category]} kategorisinin {formatShareOf(share)}
+                              {tx('{0}{1} kategorisinin {2}', [m.departmentId && scope === 'all' ? tx('{0} için · ', [deptName(m.departmentId)]) : '', categoryLabels[category], formatShareOf(share)])}
                             </p>
                           </div>
                         ) : (
@@ -234,8 +230,7 @@ export function CategorySection({
                         )}
                         {share !== null && (
                           <p className="order-last w-full text-[11px] text-muted-foreground sm:hidden">
-                            {m.departmentId && scope === 'all' ? `${deptName(m.departmentId)} için · ` : ''}
-                            {categoryLabels[category]} kategorisinin {formatShareOf(share)}
+                            {tx('{0}{1} kategorisinin {2}', [m.departmentId && scope === 'all' ? tx('{0} için · ', [deptName(m.departmentId)]) : '', categoryLabels[category], formatShareOf(share)])}
                           </p>
                         )}
                       </div>
@@ -243,10 +238,10 @@ export function CategorySection({
                     <div className="flex shrink-0 items-center gap-0.5 sm:opacity-0 sm:transition-opacity sm:group-focus-within:opacity-100 sm:group-hover:opacity-100">
                       {m.isActive && (
                         <>
-                          <Button size="icon-sm" variant="ghost" onClick={() => onEdit(m)} aria-label={`${m.name} metriğini düzenle`} title="Düzenle">
+                          <Button size="icon-sm" variant="ghost" onClick={() => onEdit(m)} aria-label={tx('{0} metriğini düzenle', [m.name])} title={tx('Düzenle')}>
                             <Pencil aria-hidden />
                           </Button>
-                          <Button size="icon-sm" variant="ghost" onClick={() => onArchive(m)} aria-label={`${m.name} metriğini arşivle`} title="Arşivle">
+                          <Button size="icon-sm" variant="ghost" onClick={() => onArchive(m)} aria-label={tx('{0} metriğini arşivle', [m.name])} title={tx('Arşivle')}>
                             <Archive aria-hidden />
                           </Button>
                         </>

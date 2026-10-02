@@ -33,10 +33,11 @@ import {
   todayIso,
   weekdayOf,
 } from './shared'
+import { tx } from '@/lib/i18n'
 
 const COUNTED: RosterDayType[] = ['Day', 'Night', 'Off', 'Leave', 'Holiday', 'Manual']
-const MONTHS = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık']
-const WEEK_HEAD = ['Pt', 'Sa', 'Ça', 'Pe', 'Cu', 'Ct', 'Pa']
+const MONTHS = [tx('Ocak'), tx('Şubat'), tx('Mart'), tx('Nisan'), tx('Mayıs'), tx('Haziran'), tx('Temmuz'), tx('Ağustos'), tx('Eylül'), tx('Ekim'), tx('Kasım'), tx('Aralık')]
+const WEEK_HEAD = [tx('Pt'), tx('Sa'), tx('Ça'), tx('Pe'), tx('Cu'), tx('Ct'), tx('Pa')]
 
 interface YearRow {
   key: string
@@ -106,7 +107,7 @@ function MiniMonth({ year, month, row }: { year: number; month: number; row: Yea
       <div className="mb-1.5 flex items-baseline justify-between gap-2">
         <p className="text-[13px] font-semibold">{MONTHS[month]}</p>
         <p className="text-[11px] text-muted-foreground tabular">
-          {worked} vardiya{away ? ` · ${away} istisna` : ''}
+          {tx('{0} vardiya{1}', [worked, away ? tx(' · {0} istisna', [away]) : ''])}
         </p>
       </div>
       <div className="grid grid-cols-7 gap-0.5 text-center text-[10px]">
@@ -136,7 +137,7 @@ function MiniMonth({ year, month, row }: { year: number; month: number; row: Yea
           ) : (
             <span
               key={d}
-              title={`${formatLongDay(d)}\nKayıt yok`}
+              title={tx('{0}\nKayıt yok', [formatLongDay(d)])}
               className={cn('tabular flex aspect-square items-center justify-center text-muted-foreground/50', d === today && 'rounded-[4px] ring-2 ring-foreground/80')}
             >
               {n}
@@ -183,7 +184,7 @@ export function YearView({ teamIds, year, showTeams }: { teamIds: string[]; year
   if (pending && allRows.length === 0) {
     return (
       <Panel>
-        <PanelHead title={String(year)} note={`Takvim yükleniyor · ${loaded}/${results.length} ay`} />
+        <PanelHead title={String(year)} note={tx('Takvim yükleniyor · {0}/{1} ay', [loaded, results.length])} />
         <RowsSkeleton rows={6} columns={8} />
       </Panel>
     )
@@ -191,7 +192,7 @@ export function YearView({ teamIds, year, showTeams }: { teamIds: string[]; year
   if (allRows.length === 0) {
     return (
       <Panel>
-        <EmptyState title="Bu yıl için kayıt yok" detail="Ekipte üye yok ya da seçili yılda takvim hesaplanmadı." />
+        <EmptyState title={tx('Bu yıl için kayıt yok')} detail={tx('Ekipte üye yok ya da seçili yılda takvim hesaplanmadı.')} />
       </Panel>
     )
   }
@@ -202,11 +203,11 @@ export function YearView({ teamIds, year, showTeams }: { teamIds: string[]; year
     <div className="space-y-4">
       <Panel>
         <PanelHead
-          title={`${year} özeti`}
+          title={tx('{0} özeti', [year])}
           note={
             pending
-              ? `Yükleniyor · ${loaded}/${results.length} ay`
-              : 'Satıra tıklayın; aşağıda o kişinin yıllık takvimi açılır.'
+              ? tx('Yükleniyor · {0}/{1} ay', [loaded, results.length])
+              : tx('Satıra tıklayın; aşağıda o kişinin yıllık takvimi açılır.')
           }
           action={<Legend types={[...PATTERN_TYPES, ...OVERRIDE_TYPES]} />}
         />
@@ -215,7 +216,7 @@ export function YearView({ teamIds, year, showTeams }: { teamIds: string[]; year
             <thead>
               <tr className="border-b border-border text-[12px] text-muted-foreground">
                 <th scope="col" className="px-4 py-2 text-left font-medium">
-                  Çalışan
+                  {tx('Çalışan')}
                 </th>
                 {COUNTED.map((t) => (
                   <th key={t} scope="col" className="px-2 py-2 text-right font-medium">
@@ -226,7 +227,7 @@ export function YearView({ teamIds, year, showTeams }: { teamIds: string[]; year
                   </th>
                 ))}
                 <th scope="col" className="px-4 py-2 text-right font-medium">
-                  Vardiya saati
+                  {tx('Vardiya saati')}
                 </th>
               </tr>
             </thead>
@@ -280,8 +281,8 @@ export function YearView({ teamIds, year, showTeams }: { teamIds: string[]; year
       {selected && (
         <Panel>
           <PanelHead
-            title={`${selectedName} · ${year} takvimi`}
-            note={`${selected.team} · ${formatNumber(selected.counts.Day + selected.counts.Night)} vardiya, ${hoursLabel(selected.minutes)}`}
+            title={tx('{0} · {1} takvimi', [selectedName, year])}
+            note={tx('{0} · {1} vardiya, {2}', [selected.team, formatNumber(selected.counts.Day + selected.counts.Night), hoursLabel(selected.minutes)])}
           />
           <PanelBody>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">

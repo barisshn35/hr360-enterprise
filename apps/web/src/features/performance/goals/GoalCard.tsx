@@ -6,6 +6,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge'
 import { cn } from '@/lib/utils'
 import { EASE } from '@/motion/primitives'
 import { formatGoalValue, progressOf } from './goalMath'
+import { tx } from '@/lib/i18n'
 
 export function GoalCard({
   goal,
@@ -57,7 +58,7 @@ export function GoalCard({
                   <span className="tabular font-medium text-foreground">{formatGoalValue(goal.currentValue ?? 0, goal.unit)}</span> / {formatGoalValue(goal.targetValue, goal.unit)}
                 </>
               ) : (
-                'Sayısal hedef yok — ilerleme durumdan'
+                tx('Sayısal hedef yok — ilerleme durumdan')
               )}
             </span>
             <span className="tabular text-[15px] font-semibold" style={{ color: barColor }}>
@@ -76,31 +77,28 @@ export function GoalCard({
           </div>
           {over && (
             <p className="mt-1.5 inline-flex items-center gap-1 rounded-md bg-[hsl(var(--success))]/10 px-1.5 py-0.5 text-[11px] font-medium text-[hsl(var(--success))]">
-              <Flame className="size-3" aria-hidden />
-              Hedef aşıldı: %{Math.round(p.raw ?? 0)} gerçekleşti — puana %100 olarak yansır.
-            </p>
+              <Flame className="size-3" aria-hidden />{tx('Hedef aşıldı: %{0} gerçekleşti — puana %100 olarak yansır.', [Math.round(p.raw ?? 0)])}</p>
           )}
           {p.source === 'status' && (
             <p className="mt-1.5 text-[11px] text-muted-foreground">
-              {goalStatusLabels[goal.status]} = %{Math.round(p.pct)} sayılır (Gerçekleşti %100 · Devam ediyor %50 · Gerçekleşmedi %0).
-            </p>
+              {tx('{0} = %{1} sayılır (Gerçekleşti %100 · Devam ediyor %50 · Gerçekleşmedi %0).', [goalStatusLabels[goal.status], Math.round(p.pct)])}</p>
           )}
         </div>
       )}
-      {goal.status === 'Cancelled' && <p className="mt-3 text-[12px] text-muted-foreground">İptal edilen hedef hedef ayağının hesabına girmez.</p>}
+      {goal.status === 'Cancelled' && <p className="mt-3 text-[12px] text-muted-foreground">{tx('İptal edilen hedef hedef ayağının hesabına girmez.')}</p>}
 
       <div className="mt-4 flex items-center justify-between gap-3 border-t border-border pt-3">
         <p className="text-[12px] text-muted-foreground">
-          Ağırlık <span className="tabular font-semibold text-foreground">{goal.weight}</span>
+          {tx('Ağırlık')}{' '}<span className="tabular font-semibold text-foreground">{goal.weight}</span>
           {goal.status !== 'Cancelled' && (
             <>
-              {' '}· hedeflerin <span className="tabular font-semibold text-foreground">{formatShareOf(share)}</span>
+              {' '}{tx('· hedeflerin', [])}{' '}<span className="tabular font-semibold text-foreground">{formatShareOf(share)}</span>
             </>
           )}
         </p>
         {canEdit && (
           <Button size="sm" variant="outline" onClick={onUpdate}>
-            İlerlemeyi güncelle
+            {tx('İlerlemeyi güncelle')}
           </Button>
         )}
       </div>
