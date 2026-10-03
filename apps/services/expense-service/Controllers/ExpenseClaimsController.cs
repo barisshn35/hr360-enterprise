@@ -14,10 +14,14 @@ public class ExpenseClaimsController : ControllerBase
 {
     private readonly ExpenseDbContext _db;
     private readonly ApprovalWorkflowClient _approvals;
-    public ExpenseClaimsController(ExpenseDbContext db, ApprovalWorkflowClient approvals)
+    private readonly FxService _fx;
+    private readonly ExpenseService.Tenancy.ITenantContext _tenant;
+    public ExpenseClaimsController(ExpenseDbContext db, ApprovalWorkflowClient approvals, FxService fx, ExpenseService.Tenancy.ITenantContext tenant)
     {
         _db = db;
         _approvals = approvals;
+        _fx = fx;
+        _tenant = tenant;
     }
 
     private bool IsHr => User.IsInRole("hr-admin") || User.IsInRole("tenant-admin")
@@ -108,16 +112,43 @@ public class ExpenseClaimsController : ControllerBase
             Currency = currency
         };
 
+        var policy = await _db.Policies.AsNoTracking().FirstOrDefaultAsync(ct);
         foreach (var item in request.Items)
         {
-            if (item.Amount <= 0) return BadRequest("Kalem tutari sifirdan buyuk olmali");
+            var amount = item.Amount;
+            decimal? rate = null;
+            string? origCur = null;
+            decimal? km = null;
+            // G9: kilometre masrafı km × kiracının km ücreti; yabancı para harcama günündeki TCMB kuruyla TL'ye çevrilir.
+            if (item.Category == ExpenseCategory.Mileage)
+            {
+                if (item.Km is not (> 0 and <= 10000)) return BadRequest("Kilometre 0–10000 arasında olmalı");
+                km = item.Km;
+                amount = Math.Round(item.Km.Value * (policy?.KmRate ?? new ExpensePolicy().KmRate), 2);
+            }
+            else if (!string.IsNullOrWhiteSpace(item.OriginalCurrency) && item.OriginalCurrency.ToUpperInvariant() != currency)
+            {
+                if (currency != "TRY") return BadRequest("Yabancı para kalemi yalnızca TL beyanda kullanılabilir");
+                if (item.OriginalAmount is not > 0) return BadRequest("Yabancı para tutarı gerekli");
+                origCur = item.OriginalCurrency.Trim().ToUpperInvariant();
+                var fx = await _fx.RateAsync(_db, _tenant.TenantSlug, origCur, item.ExpenseDate, ct);
+                if (fx is null) return BadRequest(new { message = $"{origCur} için {item.ExpenseDate:dd.MM.yyyy} kuru bulunamadı; İK elle kur girebilir.", code = "fx_unavailable" });
+                rate = fx.Value.Rate;
+                amount = Math.Round(item.OriginalAmount.Value * rate.Value, 2);
+            }
+            if (amount <= 0) return BadRequest("Kalem tutari sifirdan buyuk olmali");
             claim.Items.Add(new ExpenseItem
             {
                 Category = item.Category,
-                Amount = item.Amount,
+                Amount = amount,
                 ExpenseDate = item.ExpenseDate,
                 Description = item.Description,
-                ReceiptStorageKey = item.ReceiptStorageKey
+                ReceiptStorageKey = item.ReceiptStorageKey,
+                OriginalCurrency = origCur,
+                OriginalAmount = origCur is null ? null : item.OriginalAmount,
+                FxRate = rate,
+                Km = km,
+                TravelRequestId = item.TravelRequestId,
             });
         }
 
@@ -140,6 +171,21 @@ public class ExpenseClaimsController : ControllerBase
         {
             var me = await _approvals.FindMyEmployeeIdAsync(ct);
             if (me is null || me.Value != claim.EmployeeId) return NotFound();
+        }
+
+        // G9: politika denetimi (kalem/aylık limit, fiş zorunluluğu).
+        var policy = await _db.Policies.AsNoTracking().FirstOrDefaultAsync(ct);
+        var limits = ExpensePolicies.Limits(policy);
+        if (limits.Count > 0)
+        {
+            var monthStart = new DateOnly(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1);
+            var mtd = await _db.Items.AsNoTracking()
+                .Where(i => i.ClaimId != claim.Id && i.ExpenseDate >= monthStart && i.Claim!.EmployeeId == claim.EmployeeId
+                    && (i.Claim.Status == ClaimStatus.Submitted || i.Claim.Status == ClaimStatus.Approved || i.Claim.Status == ClaimStatus.Paid))
+                .GroupBy(i => i.Category).Select(g => new { g.Key, Sum = g.Sum(i => i.Amount) }).ToDictionaryAsync(x => x.Key, x => x.Sum, ct);
+            var violations = ExpensePolicies.Violations(claim.Items, limits, mtd);
+            if (violations.Count > 0)
+                return BadRequest(new { message = "Masraf politikasına uymayan kalemler var: " + string.Join("; ", violations), code = "policy_violation", violations });
         }
 
         claim.Status = ClaimStatus.Submitted;
@@ -221,7 +267,8 @@ public class ExpenseClaimsController : ControllerBase
 
 public record ExpenseItemInput(
     ExpenseCategory Category, decimal Amount, DateOnly ExpenseDate,
-    string? Description, string? ReceiptStorageKey);
+    string? Description, string? ReceiptStorageKey,
+    string? OriginalCurrency = null, decimal? OriginalAmount = null, decimal? Km = null, Guid? TravelRequestId = null);
 public record CreateClaimRequest(
     Guid EmployeeId, string Title, string Currency, List<ExpenseItemInput> Items);
 public record SubmitClaimRequest(Guid? WorkflowRequestId);

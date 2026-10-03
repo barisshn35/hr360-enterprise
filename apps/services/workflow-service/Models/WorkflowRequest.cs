@@ -19,7 +19,8 @@ public enum WorkflowType
     Other,
     // Sona eklenir: sayısal değerler (0-4) servisler arası çağrılarda kullanılıyor.
     Overtime,
-    DocumentRequest
+    DocumentRequest,
+    Travel
 }
 
 public class WorkflowRequest : ITenantOwned

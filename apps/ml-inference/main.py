@@ -83,6 +83,10 @@ async def verify_token(authorization: str = Header(None)):
 from ai_tools import router as ai_router
 app.include_router(ai_router, dependencies=[Depends(verify_token)])
 
+# Fiş okuma (yerel Tesseract): çağıranın Keycloak jetonu gerekir (expense-service iletir).
+from ocr import router as ocr_router
+app.include_router(ocr_router, dependencies=[Depends(verify_token)])
+
 
 def _load_model_blocking():
     """MLflow'dan modeli senkron olarak yukler - asagida bir thread'de

@@ -244,6 +244,29 @@ sunucunun kendisinden erişilebilir.
   (KVKK Kurulu 2026/921). Konum denetimi nokta başına isteğe bağlıdır; koordinat yalnızca o
   istekte "noktada mı" hesabında kullanılır, saklanmaz. Kart numarası ve PIN özet olarak
   tutulur; 5 hatalı PIN'de 15 dakika kilit.
+- **Bordro dosyaları** (kapanmış dönem sayfası): SGK aylık prim ve hizmet belgesi (XML taslağı,
+  eksik gün nedeni, işe giriş/çıkış günü), SGK işe giriş/ayrılış listesi, banka toplu maaş ödeme
+  dosyası (CSV) ve muhasebe fişi (genel/Logo/Mikro/Netsis sütunları, masraf merkezi özeti; kişi
+  verisi içermez). Dosyalar şifreli saklanır, her indirme kaydedilir; banka dosyası bir kez
+  indirilir, tümü 24 saatte silinir. SGK XML'i ve muhasebe şablonları SGK'nın/yazılımların güncel
+  şablonuyla birebir doğrulanmadı; yüklemeden önce karşılaştırın.
+- **Avans ve borç** (Bordrolarım › Avans ve borçlarım; İK: Bordro › Avanslar): çalışan talep eder,
+  İK onaylar; taksitler dönem hesabında kesinti olarak otomatik eklenir, dönem kapanınca ödenmiş
+  sayılır. Taksit brüt ücretin %25'ini aşarsa İK uyarı görür.
+- **Esnek yan haklar** (`/panel/yan-haklar`): yıllık bütçe ve seçim penceresi; kategori başına bir
+  seçenek. Özel sağlık sigortası için sağlık beyanı istenmez.
+- **Zam dönemi** (`/panel/zam-donemi`): İK bütçe yüzdesiyle dönemi açar, bölüm yöneticileri kendi
+  ekipleri için öneri yapar (bant konumu ve bant dışı uyarısıyla), İK onaylar ve yürürlük
+  tarihiyle yeni ücret kaydına dönüştürür. Bölüm özetinde 5 kişiden az gruplar gizlenir; çalışma
+  sayfasının her açılışı erişim kaydına yazılır.
+- **Masraf**: yabancı para kalemleri harcama günündeki TCMB döviz alış kuruyla TL'ye çevrilir
+  (hafta sonu önceki iş günü; İK elle kur girebilir), kilometre masrafı km × şirket km ücreti,
+  kategori başına kalem/aylık limit ve fiş zorunluluğu onaya gönderirken denetlenir. **Fiş okuma**
+  yereldir (ml-inference içindeki Tesseract): görüntü saklanmaz, yalnızca tutar/tarih/VKN önerisi
+  döner.
+- **Seyahat** (`/panel/seyahat`): talep onay akışına gider, harcırah gün × şirket oranıyla hesaplanır
+  ve onaydan sonra tek tıkla masraf beyanına dönüşür. Pasaport no yalnızca yurt dışı seyahatte,
+  şifreli tutulur; seyahat bitiminden 7 gün sonra (iptal/retle hemen) silinir.
 
 ### Belge talebi, onay akışları ve vekâlet
 

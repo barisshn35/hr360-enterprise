@@ -16,6 +16,7 @@ var connectionString = Environment.GetEnvironmentVariable("COMPENSATION_DB_CONNE
 builder.Services.AddScoped<TenantContext>();
 builder.Services.AddScoped<ITenantContext>(sp => sp.GetRequiredService<TenantContext>());
 
+builder.Services.AddHostedService<CompensationService.Controllers.ExportPurgeWorker>();
 builder.Services.AddDbContext<CompensationDbContext>(options =>
     options.UseNpgsql(connectionString)
         .AddInterceptors(new CompensationService.Auditing.AuditInterceptor("compensation-service")));

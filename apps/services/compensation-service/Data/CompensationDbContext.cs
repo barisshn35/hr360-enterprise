@@ -26,6 +26,13 @@ public class CompensationDbContext : DbContext, ITenantAwareContext
     public DbSet<PayrollParameterSet> PayrollParameters => Set<PayrollParameterSet>();
     public DbSet<PayrollAdjustment> PayrollAdjustments => Set<PayrollAdjustment>();
     public DbSet<Payslip> Payslips => Set<Payslip>();
+    public DbSet<PayrollExport> PayrollExports => Set<PayrollExport>();
+    public DbSet<SalaryAdvance> Advances => Set<SalaryAdvance>();
+    public DbSet<BenefitPlan> BenefitPlans => Set<BenefitPlan>();
+    public DbSet<BenefitOption> BenefitOptions => Set<BenefitOption>();
+    public DbSet<BenefitElection> BenefitElections => Set<BenefitElection>();
+    public DbSet<RaiseCycle> RaiseCycles => Set<RaiseCycle>();
+    public DbSet<RaiseProposal> RaiseProposals => Set<RaiseProposal>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -56,6 +63,27 @@ public class CompensationDbContext : DbContext, ITenantAwareContext
         modelBuilder.Entity<Payslip>().ToTable("compensation_payslips");
         modelBuilder.Entity<Payslip>().HasIndex(p => new { p.PeriodId, p.EmployeeId }).IsUnique();
         modelBuilder.Entity<Payslip>().HasIndex(p => new { p.EmployeeId, p.Year });
+
+        modelBuilder.Entity<PayrollExport>().ConfigureTenantColumn();
+        modelBuilder.Entity<PayrollExport>().ToTable("compensation_payroll_exports");
+        modelBuilder.Entity<SalaryAdvance>().ConfigureTenantColumn();
+        modelBuilder.Entity<SalaryAdvance>().ToTable("compensation_advances");
+        modelBuilder.Entity<SalaryAdvance>().Property(a => a.Status).HasConversion<string>();
+        modelBuilder.Entity<BenefitPlan>().ConfigureTenantColumn();
+        modelBuilder.Entity<BenefitPlan>().ToTable("compensation_benefit_plans");
+        modelBuilder.Entity<BenefitPlan>().HasIndex(p => new { p.TenantSlug, p.Year }).IsUnique();
+        modelBuilder.Entity<BenefitOption>().ConfigureTenantColumn();
+        modelBuilder.Entity<BenefitOption>().ToTable("compensation_benefit_options");
+        modelBuilder.Entity<BenefitElection>().ConfigureTenantColumn();
+        modelBuilder.Entity<BenefitElection>().ToTable("compensation_benefit_elections");
+        modelBuilder.Entity<BenefitElection>().HasIndex(e => new { e.PlanId, e.EmployeeId }).IsUnique();
+        modelBuilder.Entity<RaiseCycle>().ConfigureTenantColumn();
+        modelBuilder.Entity<RaiseCycle>().ToTable("compensation_raise_cycles");
+        modelBuilder.Entity<RaiseCycle>().Property(c => c.Status).HasConversion<string>();
+        modelBuilder.Entity<RaiseProposal>().ConfigureTenantColumn();
+        modelBuilder.Entity<RaiseProposal>().ToTable("compensation_raise_proposals");
+        modelBuilder.Entity<RaiseProposal>().Property(c => c.Status).HasConversion<string>();
+        modelBuilder.Entity<RaiseProposal>().HasIndex(p => new { p.CycleId, p.EmployeeId }).IsUnique();
 
         modelBuilder.ApplyTenantFilters(this);
     }

@@ -25,6 +25,9 @@ public class ExpenseDbContext : DbContext, ITenantAwareContext
     public DbSet<ExpenseItem> Items => Set<ExpenseItem>();
     public DbSet<Document> Documents => Set<Document>();
     public DbSet<HrCase> Cases => Set<HrCase>();
+    public DbSet<FxRate> FxRates => Set<FxRate>();
+    public DbSet<ExpensePolicy> Policies => Set<ExpensePolicy>();
+    public DbSet<TravelRequest> Travels => Set<TravelRequest>();
     public DbSet<ProcessedEvent> ProcessedEvents => Set<ProcessedEvent>();
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
 
@@ -53,6 +56,15 @@ public class ExpenseDbContext : DbContext, ITenantAwareContext
         modelBuilder.Entity<HrCase>().Property(c => c.Priority).HasConversion<string>();
         modelBuilder.Entity<HrCase>().Property(c => c.Status).HasConversion<string>();
         modelBuilder.Entity<HrCase>().HasIndex(c => c.Status);
+
+        modelBuilder.Entity<FxRate>().ToTable("expense_fx_rates");
+        modelBuilder.Entity<FxRate>().HasIndex(r => new { r.Date, r.Currency, r.TenantSlug });
+        modelBuilder.Entity<ExpensePolicy>().ConfigureTenantColumn();
+        modelBuilder.Entity<ExpensePolicy>().ToTable("expense_policies");
+        modelBuilder.Entity<TravelRequest>().ConfigureTenantColumn();
+        modelBuilder.Entity<TravelRequest>().ToTable("expense_travel_requests");
+        modelBuilder.Entity<TravelRequest>().Property(t => t.Status).HasConversion<string>();
+        modelBuilder.Entity<TravelRequest>().HasIndex(t => t.EmployeeId);
 
         // Kafka idempotency ve outbox tablolari - TUM servisler bu ORTAK
         // tablolari paylasir (bkz. leave-service ile ayni desen).

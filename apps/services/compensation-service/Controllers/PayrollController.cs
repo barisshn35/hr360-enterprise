@@ -281,6 +281,21 @@ public class PayrollController : ControllerBase
             WHERE "TenantSlug" = {0} AND "Status" = 'Approved' AND "Date" BETWEEN {1} AND {2}
             GROUP BY "EmployeeId"
             """, tenant, start, end).ToListAsync(ct);
+        // Y11: onaylı avans/borç taksitleri bu dönemin kesintisi olarak (kaynağı avans) yeniden yazılır.
+        var advanceIds = await _db.Advances.Where(a => a.Status == AdvanceStatus.Approved).Select(a => a.Id).ToListAsync(ct);
+        await _db.PayrollAdjustments.Where(a => a.PeriodId == id && a.SourceId != null && advanceIds.Contains(a.SourceId.Value)).ExecuteDeleteAsync(ct);
+        foreach (var adv in await _db.Advances.AsNoTracking().Where(a => a.Status == AdvanceStatus.Approved).ToListAsync(ct))
+        {
+            var idx = Exporters.InstallmentIndex(adv, period.Year, period.Month);
+            if (idx < 0 || !empIds.Contains(adv.EmployeeId)) continue;
+            _db.PayrollAdjustments.Add(new PayrollAdjustment
+            {
+                PeriodId = id, EmployeeId = adv.EmployeeId, Kind = PayrollAdjustmentKind.Deduction, SourceId = adv.Id,
+                Amount = Exporters.Installment(adv.Amount, adv.Installments, idx),
+                Description = $"{(adv.Kind == "Loan" ? "Borç" : "Avans")} taksiti {idx + 1}/{adv.Installments}",
+            });
+        }
+        await _db.SaveChangesAsync(ct);
         var adjustments = await _db.PayrollAdjustments.AsNoTracking().Where(a => a.PeriodId == id).ToListAsync(ct);
         var prior = await _db.Payslips.AsNoTracking()
             .Where(s => s.Year == period.Year && s.Month < period.Month)
@@ -314,6 +329,20 @@ public class PayrollController : ControllerBase
         return Ok(new { period.Id, status = period.Status.ToString(), employeeCount = current.Count });
     }
 
+    /// <summary>Dönem kapanınca avans taksitleri ödenmiş sayılır (yeniden açılırsa geri alınır).</summary>
+    private async Task ApplyAdvanceRepaymentsAsync(Guid periodId, int sign, CancellationToken ct)
+    {
+        var sourced = await _db.PayrollAdjustments.AsNoTracking().Where(a => a.PeriodId == periodId && a.SourceId != null).ToListAsync(ct);
+        if (sourced.Count == 0) return;
+        var ids = sourced.Select(a => a.SourceId!.Value).Distinct().ToList();
+        foreach (var adv in await _db.Advances.Where(a => ids.Contains(a.Id)).ToListAsync(ct))
+        {
+            adv.RepaidAmount = Math.Max(0, adv.RepaidAmount + sign * sourced.Where(x => x.SourceId == adv.Id).Sum(x => x.Amount));
+            if (adv.RepaidAmount >= adv.Amount && adv.Status == AdvanceStatus.Approved) adv.Status = AdvanceStatus.Closed;
+            else if (adv.RepaidAmount < adv.Amount && adv.Status == AdvanceStatus.Closed) adv.Status = AdvanceStatus.Approved;
+        }
+    }
+
     public sealed class EmpNumber { public Guid EmployeeId { get; set; } public decimal Value { get; set; } }
 
     [HttpPost("payroll/periods/{id:guid}/close")]
@@ -326,6 +355,7 @@ public class PayrollController : ControllerBase
         period.Status = PayrollPeriodStatus.Closed;
         period.ClosedAt = DateTimeOffset.UtcNow;
         period.ClosedBy = UserName ?? UserId;
+        await ApplyAdvanceRepaymentsAsync(id, +1, ct);
         await _db.SaveChangesAsync(ct);
         await AuditAsync("PayrollPeriod", id.ToString(), "Closed", new { period.Year, period.Month });
         return Ok(new { period.Id, status = period.Status.ToString(), period.ClosedAt });
@@ -345,6 +375,7 @@ public class PayrollController : ControllerBase
         if (period.Status != PayrollPeriodStatus.Closed) return BadRequest(new { message = "Dönem kapalı değil" });
         period.Status = PayrollPeriodStatus.Calculated;
         period.ClosedAt = null; period.ClosedBy = null;
+        await ApplyAdvanceRepaymentsAsync(id, -1, ct);
         await _db.SaveChangesAsync(ct);
         await AuditAsync("PayrollPeriod", id.ToString(), "Reopened", new { period.Year, period.Month, reason = body.Reason.Trim() });
         return Ok(new { period.Id, status = period.Status.ToString() });

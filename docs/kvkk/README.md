@@ -85,6 +85,12 @@ edilmiş kayıtlar yeniden silinir (bkz. README › Yedekleme). Tutanaklar silin
 | Vekâlet | Vekil yalnızca kendisine düşen kaydı görür; süre bitince erişim kapanır; kararları "(vekâleten)" diye kaydedilir. |
 | Anlık bildirim (PWA) | Push içeriğinde kişisel veri yok; oturum kapanınca cihaz aboneliği ve çevrimdışı kuyruk silinir. |
 | Yasal izin hakkı | Doğum tarihi yalnızca yaş kuralı için kullanılır, gösterilmez. |
+| Bordro dosyaları | SGK/banka dosyası TCKN/IBAN içerir: şifreli saklanır, banka dosyası tek indirme, tümü 24 saatte silinir, indirmeler erişim kaydında; muhasebe fişi yalnızca masraf merkezi toplamı. |
+| Avans | Yalnızca çalışan ve bordro yetkilisi görür; bildirimde tutar yazmaz. |
+| Esnek yan haklar | Sağlık beyanı alınmaz; İK özeti seçenek bazında sayı gösterir. |
+| Zam dönemi | Yönetici yalnızca kendi bölümünü görür; çalışma sayfası açılışı erişim kaydında; 5 kişiden az grup özette gizli. |
+| Seyahat | Pasaport no şifreli, yalnızca yurt dışında istenir, seyahat bitince 7 gün içinde silinir; açılışı kaydedilir. |
+| Fiş okuma | Yerel OCR; görüntü saklanmaz, ham metin döndürülmez. |
 
 ## Aydınlatma ve açık rıza metinleri
 

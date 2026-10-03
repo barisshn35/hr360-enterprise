@@ -60,9 +60,9 @@ public static class NotificationTexts
 
     public static string TypeLabel(string? type, bool en) => en
         ? type switch { "LeaveRequest" => "leave", "ExpenseClaim" => "expense", "PositionChange" => "position change", "AssetRequest" => "asset",
-            "Overtime" => "overtime", "DocumentRequest" => "document", _ => "approval" }
+            "Overtime" => "overtime", "DocumentRequest" => "document", "Travel" => "travel", _ => "approval" }
         : type switch { "LeaveRequest" => "izin", "ExpenseClaim" => "masraf", "PositionChange" => "pozisyon değişikliği", "AssetRequest" => "zimmet",
-            "Overtime" => "fazla mesai", "DocumentRequest" => "belge", _ => "onay" };
+            "Overtime" => "fazla mesai", "DocumentRequest" => "belge", "Travel" => "seyahat", _ => "onay" };
 
     public static (string Subject, string Body) Decided(string lang, bool approved, string subject, string? comment) => lang == "en"
         ? ($"Your request was {(approved ? "approved" : "rejected")}",

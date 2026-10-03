@@ -18,6 +18,7 @@ import { formatDateTime, formatMoney } from '@/lib/format'
 import { Metric, PersonSelect, useAction } from '@/features/shared/kit'
 import { tx, appLocale } from '@/lib/i18n'
 import { printPayslip } from './payslipPrint'
+import { AdvancesAdminPanel, PayrollExportsPanel } from './PayrollExtras'
 
 export const monthName = (m: number) => new Date(2026, m - 1, 1).toLocaleDateString(appLocale, { month: 'long' })
 const periodLabel = (p: { year: number; month: number }) => `${monthName(p.month)} ${p.year}`
@@ -138,12 +139,12 @@ function ParametersPanel() {
 }
 
 export function PayrollPage() {
-  const [tab, setTab] = useState<'periods' | 'params'>('periods')
+  const [tab, setTab] = useState<'periods' | 'params' | 'advances'>('periods')
   return (
     <>
       <PageHeader title={tx('Bordro')} description={tx('Aylık bordro dönemi: hesaplama, ek ödeme ve kesintiler, dönem kapatma ve bordro pusulası.')} />
-      <div className="mb-4"><Tabs label={tx('Bölüm')} value={tab} onChange={setTab} tabs={[{ key: 'periods', label: tx('Dönemler') }, { key: 'params', label: tx('Parametreler') }]} /></div>
-      {tab === 'periods' ? <PeriodList /> : <ParametersPanel />}
+      <div className="mb-4"><Tabs label={tx('Bölüm')} value={tab} onChange={setTab} tabs={[{ key: 'periods', label: tx('Dönemler') }, { key: 'params', label: tx('Parametreler') }, { key: 'advances', label: tx('Avanslar') }]} /></div>
+      {tab === 'periods' ? <PeriodList /> : tab === 'params' ? <ParametersPanel /> : <AdvancesAdminPanel />}
       <div className="mt-4"><InfoNote>{tx('KVKK: Bordro pusulasını yalnızca çalışanın kendisi (dönem kapandıktan sonra) ve bordro yetkilisi görür. Bordro listesinin açılması erişim kaydına yazılır; pusulalar 10 yıl saklanıp imha edilir.')}</InfoNote></div>
     </>
   )
@@ -276,6 +277,7 @@ export function PayrollPeriodPage() {
       </div>
       <div className="space-y-5">
         <AdjustmentsPanel period={period} editable={admin && !closed} />
+        {admin && <PayrollExportsPanel periodId={period.id} closed={closed} />}
         {period.status === 'Open'
           ? <InfoNote>{tx('Dönem henüz hesaplanmadı. Hesaplamaya onaylı ücretsiz izin günleri (eksik gün), onaylı fazla mesai ve yukarıdaki ek ödeme/kesintiler girer.')}</InfoNote>
           : <DataTable rows={slips.data} rowKey={(s) => s.id} columns={columns} isLoading={slips.isPending} error={slips.error} onRowClick={setOpen} exportFileName={`bordro-${period.year}-${period.month}`} />}

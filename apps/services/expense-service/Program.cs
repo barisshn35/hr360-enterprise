@@ -21,6 +21,9 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddHttpClient<ApprovalWorkflowClient>();
 builder.Services.AddHostedService<OutboxPublisher>();
 builder.Services.AddHostedService<WorkflowEventConsumer>();
+builder.Services.AddHttpClient<ExpenseService.Services.FxService>();
+builder.Services.AddHttpClient();
+builder.Services.AddHostedService<ExpenseService.Controllers.TravelPurgeWorker>();
 
 builder.Services.AddDbContext<ExpenseDbContext>(options =>
     options.UseNpgsql(connectionString)

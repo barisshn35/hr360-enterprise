@@ -106,3 +106,100 @@ public class PayrollCalculatorTests
     public void Gecersiz_ay_reddedilir() =>
         Assert.Throws<ArgumentOutOfRangeException>(() => Calc(30_000m, month: 13));
 }
+
+public class ExporterTests
+{
+    private static readonly CompensationService.Models.PayrollPeriod Period = new() { Year = 2026, Month = 10, Status = CompensationService.Models.PayrollPeriodStatus.Closed };
+
+    private static CompensationService.Models.Payslip Slip(Guid emp, decimal gross, decimal net) => new()
+    {
+        EmployeeId = emp, Year = 2026, Month = 10, PaidDays = 30, Gross = gross, SgkBase = gross, Net = net,
+        SgkEmployee = gross * 0.14m, UnemploymentEmployee = gross * 0.01m, IncomeTax = gross - net - gross * 0.15m, IncomeTaxExemption = 0,
+        StampTax = 0, StampTaxExemption = 0, SgkEmployer = gross * 0.1975m, UnemploymentEmployer = gross * 0.02m,
+    };
+
+    [Theory]
+    [InlineData("10000000146", true)]
+    [InlineData("10000000147", false)]
+    [InlineData("01234567890", false)]
+    [InlineData(null, false)]
+    public void Tckn_dogrulama(string? t, bool ok) => Assert.Equal(ok, CompensationService.Payroll.Exporters.ValidTckn(t));
+
+    [Theory]
+    [InlineData("TR330006100519786457841326", true)]
+    [InlineData("TR330006100519786457841327", false)]
+    [InlineData("DE89370400440532013000", false)]
+    public void Iban_dogrulama(string iban, bool ok) => Assert.Equal(ok, CompensationService.Payroll.Exporters.ValidIban(iban));
+
+    [Fact]
+    public void Taksit_son_taksit_farki_tasir()
+    {
+        Assert.Equal(333.33m, CompensationService.Payroll.Exporters.Installment(1000, 3, 0));
+        Assert.Equal(333.34m, CompensationService.Payroll.Exporters.Installment(1000, 3, 2));
+        var a = new CompensationService.Models.SalaryAdvance { Amount = 1000, Installments = 3, StartYear = 2026, StartMonth = 11 };
+        Assert.Equal(-1, CompensationService.Payroll.Exporters.InstallmentIndex(a, 2026, 10));
+        Assert.Equal(0, CompensationService.Payroll.Exporters.InstallmentIndex(a, 2026, 11));
+        Assert.Equal(2, CompensationService.Payroll.Exporters.InstallmentIndex(a, 2027, 1));
+        Assert.Equal(-1, CompensationService.Payroll.Exporters.InstallmentIndex(a, 2027, 2));
+    }
+
+    [Fact]
+    public void Sgk_xml_ve_eksik_tckn_uyarisi()
+    {
+        var a = Guid.NewGuid(); var b = Guid.NewGuid();
+        var people = new Dictionary<Guid, CompensationService.Payroll.ExportPerson>
+        {
+            [a] = new(a, "Ayşe", "Yılmaz", "10000000146", null, "Mühendislik", new DateOnly(2026, 10, 15), null),
+            [b] = new(b, "İsmail", "Işık", null, null, "Satış", new DateOnly(2020, 1, 1), null),
+        };
+        var r = CompensationService.Payroll.Exporters.SgkAphb(Period, new[] { Slip(a, 50000, 38000), Slip(b, 40000, 31000) }, people, "Demo A.Ş.");
+        var xml = System.Text.Encoding.UTF8.GetString(r.Content);
+        Assert.Equal(1, r.Rows);
+        Assert.Contains("<TCKIMLIKNO>10000000146</TCKIMLIKNO>", xml);
+        Assert.Contains("<AD>AYŞE</AD>", xml);
+        Assert.Contains("<ISEGIRISGUN>15</ISEGIRISGUN>", xml);
+        Assert.Contains("<PRIMEESASKAZANC>50000.00</PRIMEESASKAZANC>", xml);
+        Assert.Single(r.Warnings);
+        Assert.Contains("İsmail", r.Warnings[0]);
+    }
+
+    [Fact]
+    public void Banka_dosyasi_gecersiz_ibani_almaz()
+    {
+        var a = Guid.NewGuid(); var b = Guid.NewGuid();
+        var people = new Dictionary<Guid, CompensationService.Payroll.ExportPerson>
+        {
+            [a] = new(a, "Ayşe", "Yılmaz", null, "TR33 0006 1005 1978 6457 8413 26", null, new DateOnly(2020, 1, 1), null),
+            [b] = new(b, "Can", "Demir", null, "TR00", null, new DateOnly(2020, 1, 1), null),
+        };
+        var r = CompensationService.Payroll.Exporters.Bank(Period, new[] { Slip(a, 50000, 38000.5m), Slip(b, 40000, 31000) }, people);
+        var csv = System.Text.Encoding.UTF8.GetString(r.Content);
+        Assert.Equal(1, r.Rows);
+        Assert.Contains("TR330006100519786457841326;38000.50;", csv);
+        Assert.DoesNotContain("CAN DEMİR", csv);
+        Assert.Single(r.Warnings);
+    }
+
+    [Fact]
+    public void Muhasebe_fisi_dengeli_ve_kisi_icermez()
+    {
+        var a = Guid.NewGuid(); var b = Guid.NewGuid();
+        var people = new Dictionary<Guid, CompensationService.Payroll.ExportPerson>
+        {
+            [a] = new(a, "Ayşe", "Yılmaz", "10000000146", null, "Mühendislik", new DateOnly(2020, 1, 1), null),
+            [b] = new(b, "Can", "Demir", null, null, "Satış", new DateOnly(2020, 1, 1), null),
+        };
+        var slips = new[] { Slip(a, 50000, 38000), Slip(b, 40000, 31000) };
+        var lines = CompensationService.Payroll.Exporters.Journal(Period, slips, people, new CompensationService.Payroll.AccountMap());
+        Assert.Equal(lines.Sum(l => l.Debit), lines.Sum(l => l.Credit));
+        foreach (var f in new[] { "generic", "logo", "mikro", "netsis" })
+        {
+            var r = CompensationService.Payroll.Exporters.Accounting(Period, slips, people, f, new CompensationService.Payroll.AccountMap());
+            var csv = System.Text.Encoding.UTF8.GetString(r.Content);
+            Assert.Empty(r.Warnings);
+            Assert.DoesNotContain("Ayşe", csv);
+            Assert.DoesNotContain("10000000146", csv);
+            Assert.Contains("Mühendislik", csv);
+        }
+    }
+}

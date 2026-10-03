@@ -27,6 +27,19 @@ public class WorkflowEventConsumer : KafkaConsumerBase
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
         if (evt is null) return;
 
+        // Y12: seyahat talebi kararı.
+        if (string.Equals(evt.WorkflowType, "Travel", StringComparison.OrdinalIgnoreCase))
+        {
+            var travel = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions
+                .FirstOrDefaultAsync(db.Travels.Where(t => t.WorkflowRequestId == evt.WorkflowRequestId), ct);
+            if (travel is null || travel.Status != TravelStatus.Submitted || travel.EmployeeId != evt.RequesterEmployeeId) return;
+            travel.Status = evt.Approved ? TravelStatus.Approved : TravelStatus.Rejected;
+            travel.DecidedByEmployeeId = evt.DecidedByEmployeeId;
+            // Reddedilen seyahatin pasaport bilgisi hemen silinir.
+            if (!evt.Approved && travel.PassportCipher is not null) { travel.PassportCipher = null; travel.PassportPurgedAt = DateTimeOffset.UtcNow; }
+            return;
+        }
+
         // Yalnizca masraf beyanlariyla ilgileniyoruz.
         if (!string.Equals(evt.WorkflowType, "ExpenseClaim", StringComparison.OrdinalIgnoreCase))
             return;

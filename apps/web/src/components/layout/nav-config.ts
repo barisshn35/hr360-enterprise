@@ -14,6 +14,7 @@ import {
   MessagesSquare, HeartPulse, GitBranch, LogOut, ScrollText, ShieldCheck, FileStack,
   Workflow, PlugZap, Receipt, Radar, History, BarChart3, Bot, Calculator, FileSpreadsheet,
   Route, Telescope, Award, Search, Lock, BookOpenText, ScanLine, ReceiptText, Banknote, QrCode, FileCheck2,
+  Gift, Plane, TrendingUp,
 } from 'lucide-react'
 import type { Permission, Role } from '@/auth/roles'
 import { hasStandardRole } from '@/auth/roles'
@@ -67,6 +68,8 @@ export const navGroups: NavGroupData[] = [
       { id: 'timeshift', title: tx('Puantaj'), description: tx('Giriş/çıkış ve fazla mesai'), icon: Clock, path: '/panel/puantaj', permission: 'timeshift:view' },
       { id: 'time-clock', title: tx('Giriş-çıkış'), description: tx('QR, kart ya da PIN ile; biyometri yok'), icon: ScanLine, path: '/panel/giris-cikis', permission: 'timeshift:clock' },
       { id: 'my-payslips', title: tx('Bordrolarım'), description: tx('Bordro pusulalarınız'), icon: ReceiptText, path: '/panel/bordrolarim' },
+      { id: 'travel', title: tx('Seyahat'), description: tx('Seyahat talebi ve harcırah'), icon: Plane, path: '/panel/seyahat', permission: 'expense:view' },
+      { id: 'benefits', title: tx('Yan haklar'), description: tx('Esnek yan hak seçimi'), icon: Gift, path: '/panel/yan-haklar' },
       { id: 'doc-request', title: tx('Belge talebi'), description: tx('Çalışma belgesi, maaş yazısı'), icon: FileCheck2, path: '/panel/belge-talebi' },
       { id: 'shift-engine', title: tx('Vardiya planı'), description: tx('Döngüsel desenler, 7/24 kapsama'), icon: CalendarClock, path: '/panel/vardiya-motoru', permission: 'timeshift:view' },
       { id: 'workplace', title: tx('Ofis ve masa'), description: tx('Kim nerede, masa/oda rezervasyonu'), icon: MapPin, path: '/panel/ofis', feature: 'workplace' },
@@ -179,6 +182,7 @@ export const navGroups: NavGroupData[] = [
       },
       { id: 'compensation', title: tx('Ücret'), description: tx('Bantlar, geçmiş, zam simülasyonu'), icon: BadgeDollarSign, path: '/panel/ucret', permission: 'compensation:view' },
       { id: 'payroll', title: tx('Bordro'), description: tx('Aylık dönem, pusula, kapatma'), icon: Banknote, path: '/panel/bordro', permission: 'compensation:view' },
+      { id: 'raise-cycles', title: tx('Zam dönemi'), description: tx('Öneri, bütçe ve bant kontrolü'), icon: TrendingUp, path: '/panel/zam-donemi', requireRoles: ['manager', 'hr-admin', 'tenant-admin', 'platform-admin'] },
       { id: 'wf-designer', title: tx('Onay akışları'), description: tx('Çok adımlı zincir, koşullar, vekâlet'), icon: GitBranch, path: '/panel/onay-akislari', permission: 'employee:manage' },
       { id: 'time-clock-admin', title: tx('Giriş-çıkış yönetimi'), description: tx('Noktalar, kiosk QR, kartlar'), icon: QrCode, path: '/panel/giris-cikis/yonetim', permission: 'employee:manage' },
       { id: 'documents', title: tx('Dokümanlar'), description: tx('Çalışan dosyaları'), icon: FileText, path: '/panel/dokumanlar', permission: 'document:manage' },

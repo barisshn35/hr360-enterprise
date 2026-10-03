@@ -68,7 +68,7 @@ public class ApprovalWorkflowClient
     /// Id'yi doner. Zincirin herhangi bir adimi basarisiz olursa null doner.
     /// </summary>
     public async Task<Guid?> StartExpenseApprovalAsync(
-        Guid employeeId, string? subject, CancellationToken ct, string? payload = null)
+        Guid employeeId, string? subject, CancellationToken ct, string? payload = null, int type = 1)
     {
         try
         {
@@ -92,7 +92,7 @@ public class ApprovalWorkflowClient
 
             var wfResp = await _http.SendAsync(
                 Build(HttpMethod.Post, _workflowServiceUrl, "/api/workflows", new CreateWorkflowBody(
-                    Type: 1, // WorkflowType.ExpenseClaim
+                    Type: type, // 1 = ExpenseClaim, 7 = Travel
                     RequesterEmployeeId: employeeId,
                     Subject: subject,
                     Payload: payload,

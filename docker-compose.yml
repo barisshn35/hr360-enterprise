@@ -424,6 +424,8 @@ services:
     <<: *dotnet-service
     build: ./apps/services/compensation-service
     environment:
+      # Bordro/masraf dosyaları ve pasaport no bu anahtarla şifrelenir; TCKN/IBAN açılır.
+      TENANT_SECRET_KEY: "${TENANT_SECRET_KEY}"
       COMPENSATION_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=12"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
       KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
@@ -435,6 +437,8 @@ services:
     <<: *dotnet-service
     build: ./apps/services/expense-service
     environment:
+      # Bordro/masraf dosyaları ve pasaport no bu anahtarla şifrelenir; TCKN/IBAN açılır.
+      TENANT_SECRET_KEY: "${TENANT_SECRET_KEY}"
       EXPENSE_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=12"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
       KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"

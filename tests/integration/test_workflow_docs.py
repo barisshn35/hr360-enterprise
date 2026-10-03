@@ -58,6 +58,7 @@ check("Çalışan talep edebileceği belgeleri görür", code == 200 and {"Çal�
 code, _ = api("ayse", "GET", f"{G}/documents/templates")
 check("Yetki: çalışan şablon yönetimini göremez", code == 403, code)
 
+psql(f"""DELETE FROM governance_document_requests WHERE "EmployeeId" = '{AYSE}' AND "CreatedAt" > now() - interval '1 day'""")  # günlük 10 sınırı
 code, r1 = api("ayse", "POST", f"{G}/documents/requests", {"templateId": work["id"], "purpose": "Banka kredi başvurusu"})
 check("Onaysız belge hemen düzenlendi (doğrulama kodu var)", code == 200 and r1["status"] == "Issued" and len(r1.get("verificationCode") or "") == 11, r1)
 code, doc = api("ayse", "GET", f"{G}/documents/requests/{r1['id']}/document")
@@ -106,8 +107,15 @@ check("Ön izleme: 3 saatte bölüm başı + Zeynep", code == 200 and [a["employ
 code, pv = api("admin", "POST", f"{W}/definitions/preview", {"type": "Overtime", "requesterEmployeeId": AYSE, "hours": 2})
 check("Ön izleme: 2 saatte yalnızca bölüm başı (koşul sağlanmadı)", code == 200 and [a["employeeId"] for a in pv["approvers"]] == [MEHMET], pv)
 
-base = 20 + random.randint(0, 25)
-d1, d2, d3 = workday(base), workday(base + 1), workday(base + 2)
+# Başka testlerin bıraktığı fazla mesai kayıtlarıyla çakışmayan üç iş günü.
+taken = set(psql(f"""SELECT "Date" FROM timeshift_overtime_requests WHERE "EmployeeId" = '{AYSE}' AND "Status" IN ('Pending','Approved')""").split())
+free, off = [], 20 + random.randint(0, 20)
+while len(free) < 4 and off < 59:
+    d = workday(off)
+    if d.isoformat() not in taken and d not in free:
+        free.append(d)
+    off += 1
+d1, d2, d3, d4 = free
 code, o3 = api("ayse", "POST", f"{T}/overtime", {"date": d1.isoformat(), "hours": 3, "reason": "test-wf-3s"})
 _, w3 = api("ayse", "GET", f"{W}/{o3['workflowRequestId']}")
 check("Gerçek talep: 3 saat → 2 adımlı zincir (tanımdan)", [s["approverEmployeeId"] for s in w3["steps"]] == [MEHMET, ZEYNEP] and w3["steps"][1].get("slaHours") == 24, w3["steps"])
@@ -172,7 +180,7 @@ _, w3c = api("ayse", "GET", f"{W}/{w3['id']}")
 check("Toplu onaydan sonra ikinci adım (Zeynep) sırada", w3c["status"] == "Pending" and w3c["steps"][0]["decision"] == "Approved" and "(toplu karar)" in w3c["steps"][0]["comment"], w3c["steps"])
 
 # ====================================================================== G10 süre aşımında iletme
-code, ox = api("ayse", "POST", f"{T}/overtime", {"date": workday(base + 3).isoformat(), "hours": 1, "reason": "test-wf-sla"})
+code, ox = api("ayse", "POST", f"{T}/overtime", {"date": d4.isoformat(), "hours": 1, "reason": "test-wf-sla"})
 wfx = ox["workflowRequestId"]
 psql(f"UPDATE workflow_requests SET \"SlaDueAt\" = now() - interval '1 hour' WHERE \"Id\"='{wfx}'")
 esc = ""

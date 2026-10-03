@@ -34,3 +34,11 @@ services:
     environment:
       # Vekalet ve sure asimi isleri 5 sn'de bir (uretimde 5 dk).
       WORKFLOW_JOBS_SECONDS: "5"
+  expense-service:
+    environment:
+      # Sahte TCMB kur dosyalari; pasaport temizligi dakikada bir.
+      TCMB_RATES_URL: "http://chatmock:8000/tcmb"
+      TRAVEL_PURGE_MINUTES: "1"
+  compensation-service:
+    environment:
+      EXPORT_PURGE_MINUTES: "1"

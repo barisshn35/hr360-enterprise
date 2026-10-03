@@ -107,6 +107,32 @@ class H(BaseHTTPRequestHandler):
         if u.path == "/_log":
             with LOCK:
                 return self._send(200, LOG)
+        if u.path.startswith("/tcmb/"):
+            # Sahte TCMB kur dosyası: hafta içi günler için USD/EUR, hafta sonu 404.
+            import datetime as _dt
+            name = u.path.rsplit("/", 1)[-1]
+            if name == "today.xml":
+                day = _dt.date.today()
+            else:
+                try:
+                    day = _dt.datetime.strptime(name[:8], "%d%m%Y").date()
+                except ValueError:
+                    return self._send(404, {"error": "bad"})
+            if day.weekday() >= 5:
+                return self._send(404, {"error": "holiday"})
+            with LOCK:
+                LOG.append({"method": "GET", "path": u.path, "auth": None, "body": None, "at": time.time()})
+            xml = ('<?xml version="1.0" encoding="UTF-8"?><Tarih_Date Tarih="%s">'
+                   '<Currency Kod="USD" CurrencyCode="USD"><Unit>1</Unit><ForexBuying>41.5000</ForexBuying></Currency>'
+                   '<Currency Kod="EUR" CurrencyCode="EUR"><Unit>1</Unit><ForexBuying>48.2500</ForexBuying></Currency>'
+                   '</Tarih_Date>') % day.strftime("%d.%m.%Y")
+            data = xml.encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/xml")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
         if u.path == "/_syslog":
             with LOCK:
                 return self._send(200, SYSLOG[-int(q.get("n", "500")):])

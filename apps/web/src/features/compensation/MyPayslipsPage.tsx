@@ -13,6 +13,7 @@ import { errMsg } from '@/features/shared/kit'
 import { tx } from '@/lib/i18n'
 import { PayslipBreakdown, monthName } from './PayrollPage'
 import { printPayslip } from './payslipPrint'
+import { MyAdvancesPanel } from './PayrollExtras'
 
 /** Çalışanın kendi bordro pusulaları (yalnızca kapanmış dönemler). */
 export function MyPayslipsPage() {
@@ -54,6 +55,7 @@ export function MyPayslipsPage() {
         </div>
       )}
       <div className="mt-4"><InfoNote>{tx('Pusulanızı yalnızca siz ve bordro yetkilisi görebilir.')}</InfoNote></div>
+      <div className="mt-5"><MyAdvancesPanel /></div>
     </>
   )
 }

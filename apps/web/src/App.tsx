@@ -70,6 +70,9 @@ const CompensationPage = page(() => import('@/features/compensation/Compensation
 const PayrollPage = page(() => import('@/features/compensation/PayrollPage'), 'PayrollPage')
 const PayrollPeriodPage = page(() => import('@/features/compensation/PayrollPage'), 'PayrollPeriodPage')
 const MyPayslipsPage = page(() => import('@/features/compensation/MyPayslipsPage'), 'MyPayslipsPage')
+const BenefitsPage = page(() => import('@/features/compensation/PayrollExtras'), 'BenefitsPage')
+const RaiseCyclesPage = page(() => import('@/features/compensation/PayrollExtras'), 'RaiseCyclesPage')
+const TravelPage = page(() => import('@/features/expense/TravelPage'), 'TravelPage')
 const TimeClockPage = page(() => import('@/features/timeshift/TimeClockPage'), 'TimeClockPage')
 const TimeClockAdminPage = page(() => import('@/features/timeshift/TimeClockPage'), 'TimeClockAdminPage')
 const MyDocumentsPage = page(() => import('@/features/documents/DocumentRequestPages'), 'MyDocumentsPage')
@@ -328,6 +331,9 @@ export function App() {
                     <Route path="profil" element={<ProfilePage />} />
                     <Route path="sohbet-bagla" element={<ChatLinkPage />} />
                     <Route path="bordrolarim" element={<MyPayslipsPage />} />
+                    <Route path="yan-haklar" element={<BenefitsPage />} />
+                    <Route path="zam-donemi" element={<RaiseCyclesPage />} />
+                    <Route path="seyahat" element={guarded('expense:view', <TravelPage />)} />
                     <Route path="belge-talebi" element={<MyDocumentsPage />} />
 
                     {/* ---------------- Topluluk ---------------- */}

@@ -1,4 +1,4 @@
-import { apiFetch, qs } from './client'
+import { apiFetch, apiUploadFile, qs } from './client'
 import { tx } from '@/lib/i18n'
 
 const BASE = '/api/expense'
@@ -14,6 +14,8 @@ export type ExpenseCategory =
   | 'Supplies'
   | 'Training'
   | 'Other'
+  | 'Mileage'
+  | 'PerDiem'
 export type CaseCategory = 'Payroll' | 'Benefits' | 'Policy' | 'Complaint' | 'ITSupport' | 'Other'
 export type CasePriority = 'Low' | 'Normal' | 'High' | 'Urgent'
 export type CaseStatus = 'Open' | 'InProgress' | 'WaitingOnEmployee' | 'Resolved' | 'Closed'
@@ -34,6 +36,8 @@ export const expenseCategoryLabels: Record<ExpenseCategory, string> = {
   Supplies: tx('Sarf malzeme'),
   Training: tx('Eğitim'),
   Other: tx('Diğer'),
+  Mileage: tx('Kilometre'),
+  PerDiem: tx('Harcırah'),
 }
 
 export const caseCategoryLabels: Record<CaseCategory, string> = {
@@ -67,6 +71,43 @@ export interface ExpenseItem {
   expenseDate: string
   description?: string | null
   receiptStorageKey?: string | null
+  originalCurrency?: string | null
+  originalAmount?: number | null
+  fxRate?: number | null
+  km?: number | null
+  travelRequestId?: string | null
+}
+
+export interface CategoryLimit { perItem: number | null; monthly: number | null; receiptAbove: number | null }
+export interface ExpensePolicy {
+  limits: Record<string, CategoryLimit>
+  kmRate: number
+  perDiemDomestic: number
+  perDiemAbroad: number
+  perDiemAbroadCurrency: string
+  updatedAt?: string
+}
+export type TravelStatus = 'Submitted' | 'Approved' | 'Rejected' | 'Cancelled' | 'Completed'
+export interface TravelRequest {
+  id: string
+  employeeId: string
+  destination: string
+  abroad: boolean
+  startDate: string
+  endDate: string
+  purpose: string
+  transport: 'Plane' | 'Bus' | 'Train' | 'Car' | 'Other'
+  needsAccommodation: boolean
+  perDiemDays: number
+  perDiemRate: number
+  perDiemCurrency: string
+  perDiemTotal: number
+  advanceRequested: number | null
+  status: TravelStatus
+  workflowRequestId: string | null
+  createdAt: string
+  hasPassport: boolean
+  passportPurged: boolean
 }
 
 export interface ExpenseClaim {
@@ -202,6 +243,20 @@ export const expenseApi = {
       method: 'POST',
       body: { assignedToEmployeeId },
     }),
+
+  policy: (signal?: AbortSignal) => apiFetch<ExpensePolicy>(`${BASE}/expense-policy`, { signal }),
+  savePolicy: (body: Omit<ExpensePolicy, 'updatedAt'>) => apiFetch<unknown>(`${BASE}/expense-policy`, { method: 'PUT', body }),
+  fx: (currency: string, date?: string, signal?: AbortSignal) =>
+    apiFetch<{ currency: string; rate: number; rateDate: string; source: string }>(`${BASE}/expense-fx${qs({ currency, date })}`, { signal }),
+  setFx: (body: { currency: string; date: string; rate: number }) => apiFetch<unknown>(`${BASE}/expense-fx`, { method: 'PUT', body }),
+  ocr: (file: File) => apiUploadFile<{ amount: number | null; date: string | null; taxNo: string | null; confidence: number | null }>(`${BASE}/expense-claims/ocr`, file),
+  travels: (signal?: AbortSignal) => apiFetch<TravelRequest[]>(`${BASE}/travel`, { signal }),
+  createTravel: (body: { destination: string; abroad: boolean; startDate: string; endDate: string; purpose: string; transport: string; needsAccommodation: boolean; advanceRequested?: number | null; passportNumber?: string }) =>
+    apiFetch<TravelRequest>(`${BASE}/travel`, { method: 'POST', body }),
+  cancelTravel: (id: string) => apiFetch<TravelRequest>(`${BASE}/travel/${id}/cancel`, { method: 'POST' }),
+  decideTravel: (id: string, approve: boolean) => apiFetch<TravelRequest>(`${BASE}/travel/${id}/decide`, { method: 'POST', body: { approve } }),
+  perDiemClaim: (id: string) => apiFetch<{ claimId: string; amount: number }>(`${BASE}/travel/${id}/per-diem-claim`, { method: 'POST' }),
+  passport: (id: string) => apiFetch<{ passportNumber: string }>(`${BASE}/travel/${id}/passport`),
 
   resolveCase: (id: string, resolution: string) =>
     apiFetch<HrCase>(`${BASE}/hr-cases/${id}/resolve`, { method: 'POST', body: { resolution } }),

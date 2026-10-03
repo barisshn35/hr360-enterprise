@@ -89,6 +89,7 @@ export type WorkflowType =
   | 'Other'
   | 'Overtime'
   | 'DocumentRequest'
+  | 'Travel'
 
 export type WorkflowStatus = 'Pending' | 'Approved' | 'Rejected' | 'Cancelled'
 
@@ -102,6 +103,7 @@ export const workflowTypeLabels: Record<WorkflowType, string> = {
   Other: tx('Diğer'),
   Overtime: tx('Fazla Mesai'),
   DocumentRequest: tx('Belge Talebi'),
+  Travel: tx('Seyahat Talebi'),
 }
 
 export const workflowStatusLabels: Record<WorkflowStatus, string> = {

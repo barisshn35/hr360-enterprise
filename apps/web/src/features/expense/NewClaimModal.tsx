@@ -1,7 +1,7 @@
-import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
-import { LoaderCircle, Plus, Upload } from 'lucide-react'
+import { LoaderCircle, Plus, ScanText, Upload } from 'lucide-react'
 import { headerField, readSpreadsheet, SpreadsheetError } from '@/lib/spreadsheet'
 import { Button } from '@/components/ui/button'
 import { Modal, ErrorSummary, type SummaryItem } from '@/components/ui/Modal'
@@ -23,7 +23,12 @@ interface DraftItem {
   amount: string
   expenseDate: string
   description: string
+  /** TRY dışı: tutar bu para birimindedir; TL karşılığı harcama günündeki TCMB kuruyla hesaplanır. */
+  currency: string
+  km: string
 }
+
+const CURRENCIES = ['TRY', 'USD', 'EUR', 'GBP', 'CHF']
 
 let nextKey = 1
 function emptyItem(): DraftItem {
@@ -33,6 +38,8 @@ function emptyItem(): DraftItem {
     amount: '',
     expenseDate: localISODate(),
     description: '',
+    currency: 'TRY',
+    km: '',
   }
 }
 
@@ -90,6 +97,8 @@ async function parseItemsFromFile(file: File): Promise<DraftItem[]> {
       amount: String(amount),
       expenseDate: excelDateToIso(mapped.expenseDate),
       description: String(mapped.description ?? '').trim(),
+      currency: 'TRY',
+      km: '',
     })
   }
   return drafts
@@ -125,7 +134,33 @@ export function NewClaimModal({ open, onClose }: { open: boolean; onClose: () =>
   const [errors, setErrors] = useState<Errors>({})
   const [submitted, setSubmitted] = useState(false)
 
-  const total = items.reduce((sum, i) => sum + (Number(i.amount) || 0), 0)
+  const policy = useQuery({ queryKey: ['expense', 'policy'], queryFn: ({ signal }) => expenseApi.policy(signal), enabled: open, staleTime: 300_000 })
+  const kmRate = policy.data?.kmRate ?? 0
+  const [rates, setRates] = useState<Record<string, number>>({})
+  const rateKey = (i: DraftItem) => `${i.currency}|${i.expenseDate}`
+  useEffect(() => {
+    for (const i of items) {
+      if (i.currency === 'TRY' || !i.expenseDate || rates[rateKey(i)] !== undefined) continue
+      const k = rateKey(i)
+      expenseApi.fx(i.currency, i.expenseDate).then((r) => setRates((p) => ({ ...p, [k]: r.rate })), () => setRates((p) => ({ ...p, [k]: 0 })))
+    }
+  }, [items, rates])
+  const tlOf = (i: DraftItem) => i.category === 'Mileage' ? (Number(i.km) || 0) * kmRate
+    : i.currency === 'TRY' ? Number(i.amount) || 0 : (Number(i.amount) || 0) * (rates[rateKey(i)] || 0)
+  const total = items.reduce((sum, i) => sum + tlOf(i), 0)
+  const [ocrBusy, setOcrBusy] = useState<number | null>(null)
+  async function readReceipt(key: number, file: File) {
+    setOcrBusy(key)
+    try {
+      const r = await expenseApi.ocr(file)
+      patch(key, { ...(r.amount ? { amount: String(r.amount) } : {}), ...(r.date ? { expenseDate: r.date } : {}) })
+      toast.ok(r.amount ? tx('Fişten okundu; tutarı ve tarihi kontrol edin.') : tx('Tutar okunamadı; elle girin.'))
+    } catch (e) {
+      toast.stop(e instanceof Error ? e.message : tx('Fiş okunamadı'))
+    } finally {
+      setOcrBusy(null)
+    }
+  }
 
   function patch(key: number, changes: Partial<DraftItem>) {
     setItems((prev) => prev.map((i) => (i.key === key ? { ...i, ...changes } : i)))
@@ -166,7 +201,7 @@ export function NewClaimModal({ open, onClose }: { open: boolean; onClose: () =>
     if (title.trim().length < 3) next.title = tx('Başlık en az 3 karakter olmalı.')
     if (items.length === 0) {
       next.items = tx('En az bir kalem eklenmeli.')
-    } else if (items.some((i) => !i.amount || Number(i.amount) <= 0)) {
+    } else if (items.some((i) => (i.category === 'Mileage' ? !(Number(i.km) > 0) : !i.amount || Number(i.amount) <= 0))) {
       // GUVENLIK/VERI BUTUNLUGU: onceki hali yalnizca "!Number(i.amount)"
       // kontrol ediyordu - bu, negatif tutarlari (orn. -50) YAKALAMIYORDU,
       // cunku Number('-50') JavaScript'te "truthy". Form negatif tutari
@@ -183,9 +218,11 @@ export function NewClaimModal({ open, onClose }: { open: boolean; onClose: () =>
     mutationFn: () => {
       const payload: ExpenseItem[] = items.map((i) => ({
         category: i.category,
-        amount: Number(i.amount),
+        amount: i.category === 'Mileage' ? 0 : Number(i.amount),
         expenseDate: i.expenseDate,
         description: i.description.trim() || undefined,
+        ...(i.category === 'Mileage' ? { km: Number(i.km) } : {}),
+        ...(i.category !== 'Mileage' && i.currency !== 'TRY' ? { originalCurrency: i.currency, originalAmount: Number(i.amount) } : {}),
       }))
       return expenseApi.createClaim({
         employeeId,
@@ -341,7 +378,7 @@ export function NewClaimModal({ open, onClose }: { open: boolean; onClose: () =>
                         </Button>
                       )}
                     </div>
-                    <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="grid gap-3 sm:grid-cols-4">
                       <SelectField
                         id={`item-cat-${item.key}`}
                         label={tx('Tür')}
@@ -351,17 +388,41 @@ export function NewClaimModal({ open, onClose }: { open: boolean; onClose: () =>
                           (c) => ({ value: c, label: expenseCategoryLabels[c] }),
                         )}
                       />
-                      <TextField
-                        id={`item-amount-${item.key}`}
-                        label={tx('Tutar')}
-                        type="number"
-                        min={0}
-                        step="0.01"
-                        className="tabular"
-                        value={item.amount}
-                        onChange={(e) => patch(item.key, { amount: e.target.value })}
-                        onBlur={() => submitted && setErrors(validate())}
-                      />
+                      {item.category === 'Mileage' ? (
+                        <TextField
+                          id={`item-amount-${item.key}`}
+                          label={tx('Kilometre')}
+                          type="number"
+                          min={0}
+                          step="0.1"
+                          className="tabular"
+                          value={item.km}
+                          hint={tx('km × {0} = {1}', [formatMoney(kmRate), formatMoney(tlOf(item))])}
+                          onChange={(e) => patch(item.key, { km: e.target.value })}
+                        />
+                      ) : (
+                        <TextField
+                          id={`item-amount-${item.key}`}
+                          label={item.currency === 'TRY' ? tx('Tutar') : tx('Tutar ({0})', [item.currency])}
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          className="tabular"
+                          value={item.amount}
+                          hint={item.currency !== 'TRY' ? (rates[rateKey(item)] ? tx('TCMB kuru {0} → {1}', [rates[rateKey(item)], formatMoney(tlOf(item))]) : tx('Kur alınıyor…')) : undefined}
+                          onChange={(e) => patch(item.key, { amount: e.target.value })}
+                          onBlur={() => submitted && setErrors(validate())}
+                        />
+                      )}
+                      {item.category === 'Mileage' ? <div /> : (
+                        <SelectField
+                          id={`item-cur-${item.key}`}
+                          label={tx('Para birimi')}
+                          value={item.currency}
+                          onChange={(v) => patch(item.key, { currency: v })}
+                          options={CURRENCIES.map((c) => ({ value: c, label: c }))}
+                        />
+                      )}
                       <TextField
                         id={`item-date-${item.key}`}
                         label={tx('Tarih')}
@@ -378,6 +439,14 @@ export function NewClaimModal({ open, onClose }: { open: boolean; onClose: () =>
                         value={item.description}
                         onChange={(e) => patch(item.key, { description: e.target.value })}
                       />
+                      {item.category !== 'Mileage' && (
+                        <label className="mt-2 inline-flex cursor-pointer items-center gap-1 text-[12px] text-muted-foreground underline hover:text-foreground">
+                          {ocrBusy === item.key ? <LoaderCircle className="size-3 animate-spin" /> : <ScanText className="size-3" />}
+                          {tx('Fişten oku (görüntü sunucuda okunur, saklanmaz)')}
+                          <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
+                            onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void readReceipt(item.key, f) }} />
+                        </label>
+                      )}
                     </div>
                   </div>
                 </motion.li>
