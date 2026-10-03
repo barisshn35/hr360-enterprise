@@ -44,6 +44,7 @@ builder.Services.AddSingleton<GovernanceService.Infrastructure.Ai.LlmClient>();
 builder.Services.AddScoped<GovernanceService.Infrastructure.Ai.AiGateway>();
 builder.Services.AddHostedService<GovernanceService.Infrastructure.EventConsumer>();
 builder.Services.AddHostedService<GovernanceService.Infrastructure.Housekeeping>();
+builder.Services.AddHostedService<GovernanceService.Infrastructure.Chat.ChatOutboxWorker>();
 
 
 

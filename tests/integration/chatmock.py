@@ -9,6 +9,7 @@ Entegrasyon testleri gerçek hesaplar olmadan uçtan uca çalışsın diye.
 Test yardımcı uçları:
     GET  /_log            alınan tüm çağrılar (JSON)
     POST /_reset          kaydı temizler
+    POST /_fail?path=..&count=N   yolu bu metni içeren sonraki N isteğe 500 döner (yeniden deneme testi)
     GET  /_jwt?aud=..&serviceurl=..&expired=0&wrongkey=0   Bot Framework jetonu üretir
 Slack kullanıcıları e-postaya göre: ad.soyad@... -> U_AD (büyük harf).
 """
@@ -28,6 +29,7 @@ KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 OTHER_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 KID = "mock-key-1"
 LOG = []
+FAILS = {}
 LOCK = threading.Lock()
 EMAILS = {}  # slack user id -> email
 SEQ = [0]
@@ -142,7 +144,19 @@ class H(BaseHTTPRequestHandler):
         if u.path == "/_reset":
             with LOCK:
                 LOG.clear()
+                FAILS.clear()
             return self._send(200, {"ok": True})
+        if u.path == "/_fail":
+            q = {k: v[0] for k, v in parse_qs(u.query).items()}
+            with LOCK:
+                FAILS[q["path"]] = int(q.get("count", "1"))
+            return self._send(200, {"ok": True})
+        with LOCK:
+            hit = next((k for k, n in FAILS.items() if n > 0 and k in u.path), None)
+            if hit:
+                FAILS[hit] -= 1
+        if hit:
+            return self._send(500, {"ok": False, "error": "injected_failure"})
         if u.path.endswith("/oauth2/v2.0/token") or u.path == "/google/token":
             f = {k: v[0] for k, v in parse_qs(body).items()}
             if f.get("client_secret") == "wrong":

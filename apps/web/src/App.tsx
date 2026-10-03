@@ -75,6 +75,7 @@ const TenantsPage = page(() => import('@/features/platform/TenantsPage'), 'Tenan
 
 /* -------- Topluluk, gelişim, kişiler, içgörü, yönetişim (2026-10 eklemeleri) -------- */
 const ProfilePage = page(() => import('@/features/profile/ProfilePage'), 'ProfilePage')
+const ChatLinkPage = page(() => import('@/features/profile/ChatAccounts'), 'ChatLinkPage')
 const KudosPage = page(() => import('@/features/community/KudosPage'), 'KudosPage')
 const CelebrationsPage = page(() => import('@/features/community/CelebrationsPage'), 'CelebrationsPage')
 const SurveysPage = page(() => import('@/features/community/SurveysPage'), 'SurveysPage')
@@ -306,6 +307,7 @@ export function App() {
 
                     {/* ---------------- Hesabım ---------------- */}
                     <Route path="profil" element={<ProfilePage />} />
+                    <Route path="sohbet-bagla" element={<ChatLinkPage />} />
 
                     {/* ---------------- Topluluk ---------------- */}
                     <Route path="takdir" element={<PlanGate feature="kudos"><KudosPage /></PlanGate>} />

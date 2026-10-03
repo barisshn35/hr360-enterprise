@@ -81,15 +81,23 @@ def token(who: str, browser=None, min_valid: int = 60) -> str:
         page.wait_for_timeout(1000)
         ctx.close()
 
-    if browser is not None:
-        grab(browser)
-    else:
-        from playwright.sync_api import sync_playwright
+    # Servisler yeni başlatıldığında ilk giriş zaman aşımına uğrayabilir; birkaç kez denenir.
+    for _attempt in range(3):
+        try:
+            if browser is not None:
+                grab(browser)
+            else:
+                from playwright.sync_api import sync_playwright
 
-        with sync_playwright() as p:
-            b = p.chromium.launch(headless=True, args=["--no-sandbox"])
-            grab(b)
-            b.close()
+                with sync_playwright() as p:
+                    b = p.chromium.launch(headless=True, args=["--no-sandbox"])
+                    grab(b)
+                    b.close()
+        except Exception:  # noqa: BLE001
+            pass
+        if holder.get("t"):
+            break
+        time.sleep(3)
     if not holder.get("t"):
         raise RuntimeError(f"{who} için jeton alınamadı")
     cache.write_text(json.dumps({"token": holder["t"]}))

@@ -23,14 +23,17 @@ public static class ChatFormat
         p.SlaDueAt is { } d ? d.AddHours(3).ToString("d MMMM HH:mm", Tr) : null;
 
     public static string ApprovalFallback(PendingApproval p) =>
-        $"{Title(p)}: {p.Requester ?? "Bir çalışan"} — {p.Subject}";
+        $"{Title(p)}: {p.Requester ?? "Bir çalışan"}" + (p.Subject is null ? "" : $" — {p.Subject}");
+
+    public static string StatusFallback(string status, PendingApproval p) =>
+        p.Subject is null ? status : $"{status}: {p.Subject}";
 
     /// <summary>Slack mrkdwn kaçışı (&amp; &lt; &gt;).</summary>
     private static string E(string? s) => (s ?? "").Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
 
     public static JsonArray SlackApproval(PendingApproval p, string? status)
     {
-        var lines = $"*{E(Title(p))}*\n*{E(p.Requester ?? "Bir çalışan")}* · {E(p.Subject)}";
+        var lines = $"*{E(Title(p))}*\n*{E(p.Requester ?? "Bir çalışan")}*" + (p.Subject is null ? "" : $" · {E(p.Subject)}");
         if (p.Details is not null) lines += $"\n{E(p.Details)}";
         var blocks = new JsonArray
         {
@@ -118,8 +121,8 @@ public static class ChatFormat
         var facts = new JsonArray
         {
             new JsonObject { ["title"] = "Talep eden", ["value"] = p.Requester ?? "—" },
-            new JsonObject { ["title"] = "Konu", ["value"] = p.Subject ?? "—" },
         };
+        if (p.Subject is not null) facts.Add(new JsonObject { ["title"] = "Konu", ["value"] = p.Subject });
         if (p.Details is not null) facts.Add(new JsonObject { ["title"] = "Ayrıntı", ["value"] = p.Details });
         if (Sla(p) is { } sla && status is null) facts.Add(new JsonObject { ["title"] = "Son karar", ["value"] = sla });
         var body = new JsonArray { Text(Title(p), bold: true), new JsonObject { ["type"] = "FactSet", ["facts"] = facts } };

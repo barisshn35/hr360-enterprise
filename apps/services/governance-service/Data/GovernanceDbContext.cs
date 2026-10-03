@@ -38,6 +38,7 @@ public class GovernanceDbContext : DbContext, ITenantAwareContext
     public DbSet<ChatApp> ChatApps => Set<ChatApp>();
     public DbSet<ChatIdentity> ChatIdentities => Set<ChatIdentity>();
     public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
+    public DbSet<ChatOutbox> ChatOutbox => Set<ChatOutbox>();
     public DbSet<ProviderConfig> ProviderConfigs => Set<ProviderConfig>();
     public DbSet<CalendarConnection> CalendarConnections => Set<CalendarConnection>();
     public DbSet<OAuthState> OAuthStates => Set<OAuthState>();
@@ -71,6 +72,7 @@ public class GovernanceDbContext : DbContext, ITenantAwareContext
         b.Entity<ChatApp>().ToTable("governance_chat_apps").ConfigureTenantColumn();
         b.Entity<ChatIdentity>().ToTable("governance_chat_identities").ConfigureTenantColumn();
         b.Entity<ChatMessage>().ToTable("governance_chat_messages").ConfigureTenantColumn();
+        b.Entity<ChatOutbox>().ToTable("governance_chat_outbox").ConfigureTenantColumn();
         b.Entity<ProviderConfig>().ToTable("governance_provider_configs").ConfigureTenantColumn();
         b.Entity<CalendarConnection>().ToTable("governance_calendar_connections").ConfigureTenantColumn();
         b.Entity<OAuthState>().ToTable("governance_oauth_states").HasKey(x => x.State);

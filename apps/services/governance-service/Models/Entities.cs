@@ -322,9 +322,31 @@ public class ChatApp : ITenantOwned
     public string? LastError { get; set; }
     public DateTime? LastActivityAt { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    /// <summary>
+    /// Sohbet hesabı, kişi HR360'a bir kez giriş yapıp bağlamayı onaylamadan veri almaz
+    /// (yalnızca e-posta eşleşmesine güvenilmez).
+    /// </summary>
+    public bool RequireVerifiedIdentity { get; set; } = true;
+    /// <summary>Minimal: onay mesajında ad kısaltılır, konu yazılmaz. Standard: tam bilgi.</summary>
+    public string MessageDetail { get; set; } = "Minimal";
 }
 
-/// <summary>Sohbet hesabı ↔ çalışan eşleşmesi (e-posta ile kurulur).</summary>
+/// <summary>Gönderilemeyen sohbet mesajı; arka planda artan aralıklarla yeniden denenir.</summary>
+public class ChatOutbox : ITenantOwned
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string TenantSlug { get; set; } = "";
+    public Guid AppId { get; set; }
+    /// <summary>approval | text</summary>
+    public string Kind { get; set; } = "";
+    public string Payload { get; set; } = "{}";
+    public int Attempts { get; set; }
+    public DateTime NextAttemptAt { get; set; } = DateTime.UtcNow;
+    public string? LastError { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>Sohbet hesabı ↔ çalışan eşleşmesi (e-posta ile önerilir, kişi HR360'ta onaylar).</summary>
 public class ChatIdentity : ITenantOwned
 {
     public Guid Id { get; set; } = Guid.NewGuid();
@@ -341,6 +363,10 @@ public class ChatIdentity : ITenantOwned
     public string? ServiceUrl { get; set; }
     public DateTime LinkedAt { get; set; } = DateTime.UtcNow;
     public DateTime? LastSeenAt { get; set; }
+    /// <summary>Kişi HR360'a giriş yapıp bu sohbet hesabını kendisine bağladı.</summary>
+    public DateTime? VerifiedAt { get; set; }
+    public string? LinkCodeHash { get; set; }
+    public DateTime? LinkCodeExpiresAt { get; set; }
 }
 
 /// <summary>Gönderilen onay mesajı; karar verilince mesaj güncellenir.</summary>

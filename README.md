@@ -214,7 +214,17 @@ olarak gider; karar verilince mesaj güncellenir, talep sahibine sonuç bildiril
 Komutlar (Slack'te `/hr360 …` ya da bota DM, Teams'te bota mesaj): `onaylarım`,
 `bakiye`, `izindekiler`, `kimnerede`, `bekleyen`, `ben`.
 
-- Kişiler **e-posta adresiyle** eşleşir (sohbet hesabı ↔ çalışan kaydı).
+- Kişiler **e-posta adresiyle** eşleşir, ama e-posta eşleşmesi tek başına yetmez:
+  bot ilk kez yazan ya da onay alacak kişiye tek kullanımlık bir bağlantı gönderir; kişi
+  HR360'a giriş yapıp "Bu hesap benim" diyene kadar ona talep içeriği gitmez. E-postalar
+  uyuşmazsa bağlama reddedilir. Bağlı hesaplar **Profilim › Güvenlik**'te görünür ve
+  kaldırılabilir; yönetici de bağı kaldırabilir. Uygulama ayarından kapatılabilir.
+- **KVKK veri en aza indirme:** Varsayılan "Az" ayrıntıda onay mesajında talep edenin
+  soyadı kısaltılır, talep konusu yazılmaz. `izindekiler` yöneticiye yalnızca kendi
+  ekibini, diğerlerine yalnızca sayıyı gösterir. Teams'te grup sohbetine yazılan komutun
+  yanıtı kişiye özel sohbete gider. Ayrılan çalışanın sohbet erişimi ilk istekte kapanır.
+- Gönderilemeyen mesajlar kuyruğa alınır ve 1, 5, 15, 60 ve 180 dakika sonra yeniden
+  denenir; talep bu arada karara bağlandıysa gönderilmez.
 - Karar workflow-service'te web arayüzüyle **aynı kurallarla** yetkilendirilir:
   yalnızca adımın onaycısı ya da vekili karar verebilir, kimse kendi talebini
   onaylayamaz. Servisler arası çağrı `INTERNAL_SERVICE_TOKEN` ile korunur, gateway

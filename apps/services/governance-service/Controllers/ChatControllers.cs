@@ -46,6 +46,7 @@ public class ChatAppsController : AppController
         a.SlackTeamId, a.SlackTeamName, a.TeamsAppId, a.TeamsAzureTenantId,
         hasSlackToken = a.SlackBotTokenEnc != null, hasSigningSecret = a.SlackSigningSecretEnc != null, hasTeamsPassword = a.TeamsAppPasswordEnc != null,
         a.LastError, a.LastActivityAt, a.CreatedAt, linkedUsers = linked, knownUsers = total,
+        a.RequireVerifiedIdentity, a.MessageDetail,
         endpoints = Endpoints(a),
         publicOriginIsHttps = ChatService.PublicOrigin.StartsWith("https://", StringComparison.OrdinalIgnoreCase),
     };
@@ -55,7 +56,7 @@ public class ChatAppsController : AppController
     {
         var apps = await _db.ChatApps.AsNoTracking().OrderBy(a => a.Platform).ThenBy(a => a.Name).ToListAsync(ct);
         var counts = await _db.ChatIdentities.AsNoTracking().GroupBy(i => i.AppId)
-            .Select(g => new { g.Key, Linked = g.Count(i => i.EmployeeId != null), Total = g.Count() }).ToListAsync(ct);
+            .Select(g => new { g.Key, Linked = g.Count(i => i.EmployeeId != null && i.VerifiedAt != null), Total = g.Count() }).ToListAsync(ct);
         return Ok(apps.Select(a =>
         {
             var c = counts.FirstOrDefault(x => x.Key == a.Id);
@@ -64,7 +65,8 @@ public class ChatAppsController : AppController
     }
 
     public record ChatAppInput(string Platform, string Name, bool IsEnabled, bool NotifyApprovals, bool NotifyRequesters,
-        string? SlackBotToken, string? SlackSigningSecret, string? TeamsAppId, string? TeamsAppPassword, string? TeamsAzureTenantId);
+        string? SlackBotToken, string? SlackSigningSecret, string? TeamsAppId, string? TeamsAppPassword, string? TeamsAzureTenantId,
+        bool? RequireVerifiedIdentity = null, string? MessageDetail = null);
 
     private async Task<string?> ApplyAsync(ChatApp a, ChatAppInput body, bool creating, CancellationToken ct)
     {
@@ -74,6 +76,12 @@ public class ChatAppsController : AppController
         a.IsEnabled = body.IsEnabled;
         a.NotifyApprovals = body.NotifyApprovals;
         a.NotifyRequesters = body.NotifyRequesters;
+        if (body.RequireVerifiedIdentity is { } rv) a.RequireVerifiedIdentity = rv;
+        if (body.MessageDetail is not null)
+        {
+            if (body.MessageDetail is not ("Minimal" or "Standard")) return "Mesaj ayrıntısı Minimal ya da Standard olmalı.";
+            a.MessageDetail = body.MessageDetail;
+        }
         if (a.Platform == "Slack")
         {
             var token = string.IsNullOrWhiteSpace(body.SlackBotToken) ? SecretBox.Unprotect(a.SlackBotTokenEnc) : body.SlackBotToken.Trim();
@@ -148,8 +156,19 @@ public class ChatAppsController : AppController
         {
             i.Id, i.ExternalUserId, i.Email, i.DisplayName, i.EmployeeId,
             employeeName = i.EmployeeId is { } e && names.TryGetValue(e, out var n) ? n : null,
-            canReceive = i.ConversationId != null, i.LinkedAt, i.LastSeenAt,
+            canReceive = i.ConversationId != null, i.LinkedAt, i.LastSeenAt, i.VerifiedAt,
         }));
+    }
+
+    /// <summary>Sohbet hesabının bağını kaldırır; kişi yeniden bağlayana kadar veri almaz.</summary>
+    [HttpPost("{id:guid}/identities/{identityId:guid}/revoke")]
+    public async Task<IActionResult> Revoke(Guid id, Guid identityId, CancellationToken ct)
+    {
+        var i = await _db.ChatIdentities.FirstOrDefaultAsync(x => x.AppId == id && x.Id == identityId, ct);
+        if (i is null) return NotFound();
+        i.VerifiedAt = null; i.LinkCodeHash = null; i.LinkCodeExpiresAt = null;
+        await _db.SaveChangesAsync(ct);
+        return NoContent();
     }
 
     /// <summary>Oturumdaki kullanıcıya deneme mesajı gönderir.</summary>
@@ -287,6 +306,86 @@ public class ChatAppsController : AppController
  * Slack'ten gelen istekler (komut, düğme, DM). Kimlik doğrulama: Slack imzası.
  * ==================================================================== */
 [ApiController]
+/* ======================================================================
+ * Sohbet hesabını bağlama: bot, doğrulanmamış hesaba tek kullanımlık bir
+ * bağlantı gönderir; kişi HR360'a giriş yapıp onaylar. E-postalar uyuşmalı.
+ * ==================================================================== */
+[Route("api/chat/link")]
+[Authorize]
+public class ChatLinkController : AppController
+{
+    private readonly GovernanceDbContext _db;
+    private readonly ChatService _chat;
+    public ChatLinkController(GovernanceDbContext db, ChatService chat) { _db = db; _chat = chat; }
+
+    private async Task<ChatIdentity?> FindAsync(string code, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(code) || code.Length > 100) return null;
+        var hash = ChatService.HashCode(code.Trim());
+        var now = DateTime.UtcNow;
+        return await _db.ChatIdentities.FirstOrDefaultAsync(i => i.LinkCodeHash == hash && i.LinkCodeExpiresAt > now, ct);
+    }
+
+    private static bool EmailMatches(ChatIdentity i, string? mine) =>
+        i.Email is null || (mine is not null && string.Equals(i.Email.Trim(), mine.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    [HttpGet("{code}")]
+    public async Task<IActionResult> Preview(string code, CancellationToken ct)
+    {
+        var i = await FindAsync(code, ct);
+        if (i is null) return NotFound(new { message = L("Bağlantı geçersiz ya da süresi dolmuş. Sohbette \"ben\" yazarak yenisini alın.", "The link is invalid or expired. Type \"me\" in the chat to get a new one.") });
+        var me = await MyPersonAsync(ct);
+        var app = await _db.ChatApps.AsNoTracking().FirstOrDefaultAsync(a => a.Id == i.AppId, ct);
+        return Ok(new { platform = i.Platform, appName = app?.Name, displayName = i.DisplayName, email = i.Email, emailMatches = EmailMatches(i, me?.Email), myName = me?.Name });
+    }
+
+    public record LinkInput(string Code);
+
+    [HttpPost]
+    public async Task<IActionResult> Link(LinkInput body, CancellationToken ct)
+    {
+        var i = await FindAsync(body.Code, ct);
+        if (i is null) return NotFound(new { message = L("Bağlantı geçersiz ya da süresi dolmuş.", "The link is invalid or expired.") });
+        var me = await MyPersonAsync(ct);
+        if (me is null) return BadRequest(new { message = L("Hesabınız bir çalışan kaydına bağlı değil.", "Your account is not linked to an employee record.") });
+        if (!EmailMatches(i, me.Email))
+            return Conflict(new { code = "email_mismatch", message = L("Sohbet hesabının e-postası HR360 e-postanızla aynı değil; bu hesap size bağlanamaz.", "The chat account's email does not match your HR360 email; it cannot be linked to you.") });
+        i.EmployeeId = me.Id;
+        i.VerifiedAt = DateTime.UtcNow;
+        i.LinkCodeHash = null;
+        i.LinkCodeExpiresAt = null;
+        await _db.SaveChangesAsync(ct);
+        var app = await _db.ChatApps.FirstOrDefaultAsync(a => a.Id == i.AppId, ct);
+        if (app is not null)
+        {
+            try { await _chat.SendTextToEmployeeAsync(_db, app, me.Id, "✅ Hesabınız HR360'a bağlandı. Onay talepleriniz buraya gelecek.\n" + ChatService.Help, null, ct); await _db.SaveChangesAsync(ct); }
+            catch (Exception) { /* bilgilendirme mesajı gönderilemezse bağlama yine geçerli */ }
+        }
+        return Ok(new { linked = true, platform = i.Platform });
+    }
+
+    [HttpGet("mine")]
+    public async Task<IActionResult> Mine(CancellationToken ct)
+    {
+        var me = await MyPersonAsync(ct);
+        if (me is null) return Ok(Array.Empty<object>());
+        var rows = await _db.ChatIdentities.AsNoTracking().Where(i => i.EmployeeId == me.Id).ToListAsync(ct);
+        var apps = await _db.ChatApps.AsNoTracking().ToDictionaryAsync(a => a.Id, a => a.Name, ct);
+        return Ok(rows.Select(i => new { i.Id, i.Platform, appName = apps.GetValueOrDefault(i.AppId), i.DisplayName, i.Email, i.VerifiedAt, i.LastSeenAt }));
+    }
+
+    [HttpDelete("mine/{id:guid}")]
+    public async Task<IActionResult> Unlink(Guid id, CancellationToken ct)
+    {
+        var me = await MyPersonAsync(ct);
+        var i = await _db.ChatIdentities.FirstOrDefaultAsync(x => x.Id == id && me != null && x.EmployeeId == me.Id, ct);
+        if (i is null) return NotFound();
+        i.EmployeeId = null; i.VerifiedAt = null; i.LinkCodeHash = null; i.LinkCodeExpiresAt = null;
+        await _db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+}
+
 [Route("api/chat/slack/{appId:guid}")]
 [AllowAnonymous]
 [BufferBody]
@@ -339,7 +438,7 @@ public class SlackEndpointsController : ControllerBase
         try
         {
             var who = await _chat.EnsureSlackIdentityAsync(_db, app, userId, ct);
-            reply = await _chat.CommandAsync(who, FormValue(raw, "text"), ct);
+            reply = await _chat.CommandAsync(_db, app, who, FormValue(raw, "text"), ct);
         }
         catch (ChatApiException ex)
         {
@@ -445,7 +544,7 @@ public class SlackEndpointsController : ControllerBase
                 var who = await chat.EnsureSlackIdentityAsync(db, a, user, CancellationToken.None);
                 who.ConversationId ??= channel;
                 await db.SaveChangesAsync();
-                var reply = await chat.CommandAsync(who, text, CancellationToken.None);
+                var reply = await chat.CommandAsync(db, a, who, text, CancellationToken.None);
                 await slack.PostAsync(SecretBox.Unprotect(a.SlackBotTokenEnc)!, channel, reply.Text, ChatFormat.SlackReply(reply), CancellationToken.None);
             }
             catch (Exception ex) { _log.LogWarning(ex, "Slack DM komutu işlenemedi"); }
@@ -510,7 +609,9 @@ public class TeamsEndpointsController : ControllerBase
                     var who = await _chat.EnsureTeamsIdentityAsync(_db, app, fromId, S(activity, "from", "aadObjectId"), serviceUrl, conversationId, true, ct);
                     var hello = who.EmployeeId is null
                         ? $"Merhaba! HR360'a hoş geldiniz. Microsoft hesabınız ({who.Email ?? "e-posta görünmüyor"}) bir çalışan kaydıyla eşleşmedi; İK'nızdan e-postanızı kontrol etmesini isteyin."
-                        : "Merhaba! Onay talepleriniz artık buraya gelecek.\n" + ChatService.Help;
+                        : ChatService.Trusted(app, who)
+                            ? "Merhaba! Onay talepleriniz artık buraya gelecek.\n" + ChatService.Help
+                            : "Merhaba! Onay talepleriniz buraya gelecek. " + ChatService.LinkPrompt(await _chat.LinkUrlAsync(_db, who, TimeSpan.FromHours(24), ct));
                     await _teams.PostActivityAsync(token, serviceUrl, conversationId, ChatFormat.TeamsActivity(ChatFormat.TeamsTextCard(hello, null), hello), ct);
                 }
                 return Ok();
@@ -539,7 +640,22 @@ public class TeamsEndpointsController : ControllerBase
                 return Ok();
             }
 
-            var reply = await _chat.CommandAsync(identity, S(activity, "text"), ct);
+            var reply = await _chat.CommandAsync(_db, app, identity, S(activity, "text"), ct);
+            if (!personal)
+            {
+                // Grup sohbeti / kanal: kişisel yanıt herkesin göreceği yere yazılmaz. Kişiye özel
+                // sohbet biliniyorsa yanıt oraya gider, kanalda yalnızca yönlendirme kalır.
+                var notice = identity.ConversationId is not null
+                    ? "Yanıtı size özel mesajla gönderdim."
+                    : "Kişisel bilgiler kanalda paylaşılmaz. Lütfen bu komutu bana özel mesajla yazın.";
+                var n = ChatFormat.TeamsActivity(ChatFormat.TeamsTextCard(notice, null), notice);
+                if (S(activity, "id") is { } cid) n["replyToId"] = cid;
+                await _teams.PostActivityAsync(token, serviceUrl, conversationId, n, ct);
+                if (identity.ConversationId is null || identity.ServiceUrl is null) return Ok();
+                foreach (var a in ChatFormat.TeamsReply(reply))
+                    await _teams.PostActivityAsync(token, identity.ServiceUrl, identity.ConversationId, a, ct);
+                return Ok();
+            }
             foreach (var a in ChatFormat.TeamsReply(reply))
             {
                 if (S(activity, "id") is { } id) a["replyToId"] = id;

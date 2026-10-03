@@ -20,6 +20,7 @@ import { formatDate } from '@/lib/format'
 import { ChipInput, Initials, errMsg, useAction } from '@/features/shared/kit'
 import { CalendarConnections } from '@/features/shared/Meetings'
 import { MyAccessLog, MyObjections } from './PrivacyExtras'
+import { MyChatAccounts } from './ChatAccounts'
 import { tx } from '@/lib/i18n'
 
 type TabKey = 'bilgiler' | 'gizlilik' | 'takvim' | 'guvenlik'
@@ -275,7 +276,7 @@ export function ProfilePage() {
           {tab === 'bilgiler' && <InfoTab key={p.updatedAt ?? 'new'} p={p} />}
           {tab === 'gizlilik' && <PrivacyTab employeeId={p.employeeId} />}
           {tab === 'takvim' && <CalendarTab />}
-          {tab === 'guvenlik' && <SecurityTab />}
+          {tab === 'guvenlik' && <div className="space-y-5"><SecurityTab /><MyChatAccounts /></div>}
         </>
       )}
     </>

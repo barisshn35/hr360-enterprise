@@ -37,17 +37,33 @@ RUN_WEEK = __import__("random").randint(0, 150)
 
 def new_leave(day, reason):
     # Ücretsiz izin (bakiye kontrolü yok). Tarihler her çalıştırmada farklı bir haftaya
-    # düşer ki önceki çalıştırmaların izinleriyle çakışmasın (Pzt + day%3 gün).
+    # düşer ki önceki çalıştırmaların izinleriyle çakışmasın (Pzt + day%5 gün).
     import datetime as _dt
-    start = (_dt.date(2028, 1, 3) + _dt.timedelta(weeks=RUN_WEEK, days=day % 3)).isoformat()
-    code, r = api("ayse", "POST", "/api/leave/leave-requests",
-                  {"employeeId": AYSE, "type": "Unpaid", "startDate": start, "endDate": start, "days": 0, "reason": reason})
+    # Önceki çalıştırmalardan aynı güne denk gelen izin varsa sonraki haftalar denenir.
+    for extra in range(0, 40, 7):
+        start = (_dt.date(2028, 1, 3) + _dt.timedelta(weeks=RUN_WEEK + extra, days=day % 5)).isoformat()
+        code, r = api("ayse", "POST", "/api/leave/leave-requests",
+                      {"employeeId": AYSE, "type": "Unpaid", "startDate": start, "endDate": start, "days": 0, "reason": reason})
+        if code != 400 or "çakışan" not in json.dumps(r, ensure_ascii=False):
+            break
     check(f"izin talebi oluşturuldu ({reason})", code in (200, 201), r)
     return r["workflowRequestId"]
 
 
 def wf_status(wf):
     return api("ayse", "GET", f"/api/workflow/workflows/{wf}")[1]
+
+
+def link_code(text):
+    import re
+    m = re.search(r"/panel/sohbet-bagla\?kod=([A-Za-z0-9_-]+)", urllib.parse.unquote_plus(text or ""))
+    return m.group(1) if m else None
+
+
+def confirm_link(code, who):
+    c1, prev = api(who, "GET", f"{G}/chat/link/{code}")
+    c2, res = api(who, "POST", f"{G}/chat/link", {"code": code})
+    return c1, prev, c2, res
 
 
 # ====================================================================== SLACK
@@ -73,17 +89,48 @@ check("Slack: yanlış imza 401", code == 401, code)
 code, _ = slack_post(slack_id, "commands", {"user_id": "U_AYSE", "text": "bakiye"}, ts=int(time.time()) - 900)
 check("Slack: eski zaman damgası 401", code == 401, code)
 
+# hesap doğrulama: e-posta eşleşmesi tek başına yetmez, kişi HR360'ta onaylar
+code, r = slack_post(slack_id, "commands", {"user_id": "U_AYSE", "text": "bakiye"})
+ayse_code = link_code(r.get("text"))
+check("Slack: doğrulanmamış hesaba veri yok, bağlama bağlantısı var", code == 200 and ayse_code and "izin bakiyeniz" not in r["text"], r)
+c1, prev, c2, res = confirm_link(ayse_code, "mehmet")
+check("Slack: başkasının bağlantısı e-posta uyuşmazlığıyla reddedilir", c1 == 200 and prev["emailMatches"] is False and c2 == 409 and res.get("code") == "email_mismatch", (c1, prev, c2, res))
+c1, prev, c2, res = confirm_link(ayse_code, "ayse")
+check("Slack: Ayşe hesabını bağladı", c1 == 200 and prev["emailMatches"] and prev["platform"] == "Slack" and c2 == 200, (c1, prev, c2, res))
+c1, _, c2, _ = confirm_link(ayse_code, "ayse")
+check("Slack: bağlama kodu tek kullanımlık", c1 == 404 and c2 == 404, (c1, c2))
+code, r = slack_post(slack_id, "commands", {"user_id": "U_MEHMET", "text": "ben"})
+c1, prev, c2, res = confirm_link(link_code(r.get("text")), "mehmet")
+check("Slack: Mehmet hesabını bağladı", c2 == 200, (c1, prev, c2, res))
+code, mine = api("ayse", "GET", f"{G}/chat/link/mine")
+check("Profil: bağlı sohbet hesabı listelenir", code == 200 and any(i["platform"] == "Slack" and i["verifiedAt"] for i in mine), mine)
+
 # komutlar
 code, r = slack_post(slack_id, "commands", {"user_id": "U_AYSE", "text": "bakiye"})
 check("Slack /hr360 bakiye", code == 200 and "izin bakiyeniz" in r["text"], r)
 code, r = slack_post(slack_id, "commands", {"user_id": "U_AYSE", "text": "ben"})
-check("Slack /hr360 ben (eşleşme)", code == 200 and "Ayşe" in r["text"], r)
+check("Slack /hr360 ben (eşleşme)", code == 200 and "Ayşe" in r["text"] and "bağlı" in r["text"], r)
+code, r = slack_post(slack_id, "commands", {"user_id": "U_AYSE", "text": "izindekiler"})
+check("Slack: ekibi olmayana izindekiler yalnızca sayı", code == 200 and ("kişi izinde" in r["text"] or "kimse yok" in r["text"]) and "'e kadar" not in r["text"], r)
 code, r = slack_post(slack_id, "commands", {"user_id": "U_BILINMEYEN", "text": "bakiye"})
 check("Slack: eşleşmeyen kullanıcı uyarılır", code == 200 and "eşleşmedi" in r["text"], r)
 code, r = slack_post(slack_id, "commands", {"user_id": "U_AYSE", "text": "saçma"})
 check("Slack: bilinmeyen komut yardım gösterir", code == 200 and "Komutlar" in r["text"], r)
 code, r = slack_post(slack_id, "events", raw=json.dumps({"type": "url_verification", "challenge": "abc123"}))
 check("Slack Events URL doğrulaması", code == 200 and r.get("challenge") == "abc123", r)
+
+# bağı kaldırılan onaycıya talep içeriği değil, yalnızca bağlama bağlantısı gider
+code, ids = api("admin", "GET", f"{G}/chat-apps/{slack_id}/identities")
+mehmet_ident = next(i for i in ids if i.get("employeeName") == "Mehmet Demir")
+code, _ = api("admin", "POST", f"{G}/chat-apps/{slack_id}/identities/{mehmet_ident['id']}/revoke")
+check("Yönetici bağı kaldırabilir", code == 204, code)
+tp = time.time()
+wf_prompt = new_leave(11, "slack-baglama-istemi")
+prompt = wait_for("/api/chat.postMessage", lambda c: "D_U_MEHMET" in c["body"] and "sohbet-bagla" in urllib.parse.unquote_plus(c["body"]), tp)
+body_txt = urllib.parse.unquote_plus(prompt[0]["body"]) if prompt else ""
+check("Doğrulanmamış onaycıya yalnızca bağlama bağlantısı", bool(prompt) and "hr360_approve" not in body_txt and wf_prompt not in body_txt, body_txt[:300])
+c1, prev, c2, res = confirm_link(link_code(body_txt), "mehmet")
+check("Mehmet yeniden bağladı", c2 == 200, (c2, res))
 
 # onay akışı
 t0 = time.time()
@@ -93,6 +140,8 @@ check("Slack: onaycıya düğmeli DM gitti", bool(posts), mock_calls("/api/", t0
 if posts:
     msg = urllib.parse.parse_qs(posts[0]["body"])
     blocks = json.loads(msg["blocks"][0])
+    text_all = json.dumps(blocks, ensure_ascii=False)
+    check("KVKK: mesajda soyadı kısaltılmış, talep konusu yok", "Ayşe Y." in text_all and "Yılmaz" not in text_all and "slack-onay-testi" not in text_all, text_all[:400])
     acts = [e for b in blocks if b["type"] == "actions" for e in b["elements"]]
     check("Slack: Onayla/Reddet/HR360'ta aç düğmeleri", {e.get("action_id") for e in acts} >= {"hr360_approve", "hr360_reject", "hr360_open"}, acts)
     value = next(e["value"] for e in acts if e["action_id"] == "hr360_approve")
@@ -145,6 +194,34 @@ if val:
     check("Slack: komuttan reddedildi", wf_status(wf2)["status"] == "Rejected")
     rej = wait_for("/api/chat.postMessage", lambda c: "D_U_AYSE" in c["body"] and "reddedildi" in urllib.parse.unquote_plus(c["body"]), t4)
     check("Slack: talep sahibine 'reddedildi' DM'i", bool(rej))
+for w in (wf_prompt,):
+    code, r = slack_post(slack_id, "commands", {"user_id": "U_MEHMET", "text": "onaylarım"})
+    v = next((e["value"] for b in (r or {}).get("blocks", []) if b.get("type") == "actions" for e in b["elements"]
+              if e.get("action_id") == "hr360_reject" and w in e["value"]), None)
+    if v:
+        slack_post(slack_id, "interactions", {"payload": json.dumps({"type": "block_actions", "user": {"id": "U_MEHMET"},
+                   "actions": [{"action_id": "hr360_reject", "value": v}], "response_url": "http://chatmock:8000/slack-response/9"})})
+
+# gönderilemeyen mesaj kuyruğa alınır ve yeniden denenir (önceki bildirimler bitsin diye beklenir)
+time.sleep(6)
+mock("/_fail?path=/api/chat.postMessage&count=1", "POST")
+tr = time.time()
+wf_retry = new_leave(15, "slack-yeniden-deneme")
+attempts = []
+for _ in range(60):
+    attempts = [c for c in mock_calls("/api/chat.postMessage", tr) if wf_retry in urllib.parse.unquote_plus(c["body"])]
+    if len(attempts) >= 2:
+        break
+    time.sleep(1)
+retry = attempts[1:]
+check("Yeniden deneme: ilk gönderim başarısız, kuyruktan tekrar gönderildi", bool(retry) and len(attempts) >= 2, len(attempts))
+if retry:
+    v = next(e["value"] for b in json.loads(urllib.parse.parse_qs(retry[-1]["body"])["blocks"][0]) if b["type"] == "actions"
+             for e in b["elements"] if e.get("action_id") == "hr360_reject")
+    slack_post(slack_id, "interactions", {"payload": json.dumps({"type": "block_actions", "user": {"id": "U_MEHMET"},
+               "actions": [{"action_id": "hr360_reject", "value": v}], "response_url": "http://chatmock:8000/slack-response/10"})})
+    time.sleep(3)
+    check("Yeniden gönderilen karttan karar verildi", wf_status(wf_retry)["status"] == "Rejected")
 
 code, ids = api("admin", "GET", f"{G}/chat-apps/{slack_id}/identities")
 check("Slack: eşleşen kullanıcılar listelenir", code == 200 and {i.get("employeeName") for i in ids} >= {"Mehmet Demir", "Ayşe Yılmaz"}, ids)
@@ -213,13 +290,25 @@ for u in ("mehmet.demir", "ayse.yilmaz"):
     code, _ = teams_post(act(u, typ="conversationUpdate"))
     check(f"Teams: {u} botu ekledi", code == 200, code)
 welcome = wait_for("/teams/v3/conversations/a:conv-mehmet.demir/activities", since=t5)
-check("Teams: hoş geldin mesajı", bool(welcome) and "Onay talepleriniz" in welcome[0]["body"], welcome)
+check("Teams: hoş geldin mesajı + bağlama bağlantısı", bool(welcome) and "Onay talepleriniz" in welcome[0]["body"] and link_code(welcome[0]["body"]), welcome)
 check("Teams: bot jetonuyla gönderim", bool(welcome) and welcome[0]["auth"] == "Bearer teams-bot-token", welcome)
+for u, who in (("mehmet.demir", "mehmet"), ("ayse.yilmaz", "ayse")):
+    w = wait_for(f"/teams/v3/conversations/a:conv-{u}/activities", since=t5)
+    c1, prev, c2, res = confirm_link(link_code(w[0]["body"]) if w else None, who)
+    check(f"Teams: {u} hesabını bağladı", c2 == 200 and prev["platform"] == "Teams", (c1, prev, c2, res))
 
 t6 = time.time()
 teams_post(act("ayse.yilmaz", "bakiye"))
 rep = wait_for("/teams/v3/conversations/a:conv-ayse.yilmaz/activities", since=t6)
 check("Teams: 'bakiye' komutu yanıtlandı", bool(rep) and "izin bakiyeniz" in rep[0]["body"], rep)
+
+# grup sohbetinde kişisel yanıt kanala yazılmaz, kişiye özel sohbete gider
+tg = time.time()
+teams_post(act("ayse.yilmaz", "bakiye", conv="19:grup-sohbeti") | {"conversation": {"id": "19:grup-sohbeti", "conversationType": "groupChat", "tenantId": MSTENANT}})
+grp = wait_for("/teams/v3/conversations/19:grup-sohbeti/activities", since=tg)
+dm = wait_for("/teams/v3/conversations/a:conv-ayse.yilmaz/activities", lambda c: "izin bakiyeniz" in c["body"], tg)
+grp_text = json.loads(grp[0]["body"])["summary"] if grp else ""
+check("Teams: grup sohbetinde kişisel veri yok, yanıt özelden", "izin bakiyeniz" not in grp_text and "özel mesajla" in grp_text and bool(dm), (grp_text, dm))
 
 t7 = time.time()
 wf3 = new_leave(14, "teams-red-testi")

@@ -5,7 +5,7 @@ import { AlertTriangle, Bot, Copy, Download, Pencil, Plus, Send, Trash2, Users }
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Modal } from '@/components/ui/Modal'
-import { TextField } from '@/components/ui/Field'
+import { SelectField, TextField } from '@/components/ui/Field'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { EmptyState, InfoNote, RowsSkeleton } from '@/components/ui/States'
 import { useToast } from '@/components/ui/Toast'
@@ -45,6 +45,8 @@ const empty = (platform: ChatPlatform): ChatAppInput => ({
   teamsAppId: '',
   teamsAppPassword: '',
   teamsAzureTenantId: '',
+  requireVerifiedIdentity: true,
+  messageDetail: 'Minimal',
 })
 
 function SetupModal({ initial, editing, onClose }: { initial: ChatAppInput; editing?: ChatApp; onClose: () => void }) {
@@ -104,7 +106,12 @@ function SetupModal({ initial, editing, onClose }: { initial: ChatAppInput; edit
           <label className="flex items-center gap-2"><Checkbox checked={f.notifyApprovals} onCheckedChange={(v) => setF({ ...f, notifyApprovals: v === true })} />{' '}{tx('Onaycılara “Onayla / Reddet” düğmeli mesaj gönder')}</label>
           <label className="flex items-center gap-2"><Checkbox checked={f.notifyRequesters} onCheckedChange={(v) => setF({ ...f, notifyRequesters: v === true })} />{' '}{tx('Talep sahibine sonucu bildir')}</label>
           <label className="flex items-center gap-2"><Checkbox checked={f.isEnabled} onCheckedChange={(v) => setF({ ...f, isEnabled: v === true })} />{' '}{tx('Etkin')}</label>
+          <label className="flex items-start gap-2"><Checkbox checked={f.requireVerifiedIdentity ?? true} onCheckedChange={(v) => setF({ ...f, requireVerifiedIdentity: v === true })} />{' '}
+            <span>{tx('Hesap doğrulaması zorunlu (önerilen)')}<span className="block text-[11.5px] text-muted-foreground">{tx('Kişi HR360\'a bir kez giriş yapıp sohbet hesabını bağlayana kadar bot ona talep içeriği göndermez; yalnızca e-posta eşleşmesine güvenilmez.')}</span></span></label>
         </div>
+        <SelectField label={tx('Mesajlardaki ayrıntı')} value={f.messageDetail ?? 'Minimal'} onChange={(v) => setF({ ...f, messageDetail: v as 'Minimal' | 'Standard' })}
+          hint={tx('KVKK: sohbet hizmetleri yurt dışındadır. "Az" seçeneğinde talep edenin soyadı kısaltılır, talep konusu yazılmaz; ayrıntı HR360\'ta görülür.')}
+          options={[{ value: 'Minimal', label: tx('Az (önerilen): ad ve soyadın baş harfi, tür, gün/tutar') }, { value: 'Standard', label: tx('Standart: ad soyad ve talep konusu') }]} />
         <p className="text-[12px] text-muted-foreground">{tx('Kaydederken bilgiler {0} ile doğrulanır. Jeton ve gizli anahtarlar şifreli saklanır, bir daha gösterilmez.', [slack ? tx('Slack') : tx('Microsoft')])}</p>
       </div>
     </Modal>
@@ -113,20 +120,23 @@ function SetupModal({ initial, editing, onClose }: { initial: ChatAppInput; edit
 
 function IdentitiesModal({ app, onClose }: { app: ChatApp; onClose: () => void }) {
   const q = useQuery({ queryKey: ['chat-identities', app.id], queryFn: ({ signal }) => governanceApi.chatIdentities(app.id, signal) })
+  const revoke = useAction((id: string) => governanceApi.revokeChatIdentity(app.id, id), { success: tx('Bağ kaldırıldı; kişi yeniden bağlayana kadar veri almaz.'), invalidate: [['chat-identities', app.id], ['chat-apps']] })
   return (
-    <Modal open onClose={onClose} size="lg" title={tx('{0} — kullanıcılar', [app.name])} note={tx('Eşleşme e-posta adresiyle yapılır: sohbet hesabının e-postası HR360\'taki çalışan e-postasıyla aynı olmalı.')}>
+    <Modal open onClose={onClose} size="lg" title={tx('{0} — kullanıcılar', [app.name])} note={tx('Eşleşme e-posta adresiyle önerilir; kişi botun gönderdiği bağlantıyla HR360\'a giriş yapıp onaylayınca doğrulanır. E-postalar aynı olmalı.')}>
       {q.isPending ? <RowsSkeleton /> : (q.data ?? []).length === 0 ? (
         <p className="text-[13px] text-muted-foreground">{app.platform === 'Teams' ? tx('Henüz botu ekleyen olmadı.') : tx('Henüz bir kullanıcıyla etkileşim olmadı.')}</p>
       ) : (
         <table className="w-full text-[12.5px]">
-          <thead><tr className="border-b border-border text-left text-[11.5px] text-muted-foreground"><th className="py-2">{tx('Sohbet hesabı')}</th><th>{tx('Çalışan')}</th><th>{tx('Mesaj alabilir')}</th><th>{tx('Son görülme')}</th></tr></thead>
+          <thead><tr className="border-b border-border text-left text-[11.5px] text-muted-foreground"><th className="py-2">{tx('Sohbet hesabı')}</th><th>{tx('Çalışan')}</th><th>{tx('Doğrulandı')}</th><th>{tx('Mesaj alabilir')}</th><th>{tx('Son görülme')}</th><th /></tr></thead>
           <tbody>
             {q.data!.map((i) => (
               <tr key={i.id} className="border-b border-border/50 last:border-0">
                 <td className="py-2"><p>{i.displayName ?? i.externalUserId}</p><p className="text-[11.5px] text-muted-foreground">{i.email ?? '—'}</p></td>
                 <td>{i.employeeName ?? <StatusBadge tone="warning">{tx('Eşleşmedi')}</StatusBadge>}</td>
+                <td>{i.verifiedAt ? <StatusBadge tone="success">{tx('Evet')}</StatusBadge> : <StatusBadge tone="warning">{tx('Bekliyor')}</StatusBadge>}</td>
                 <td>{i.canReceive ? <StatusBadge tone="success">{tx('Evet')}</StatusBadge> : <StatusBadge>{tx('Hayır')}</StatusBadge>}</td>
                 <td className="text-muted-foreground">{i.lastSeenAt ? formatRelativeToNow(i.lastSeenAt) : '—'}</td>
+                <td>{i.verifiedAt && <Button size="sm" variant="ghost" onClick={() => revoke.mutate(i.id)}>{tx('Bağı kaldır')}</Button>}</td>
               </tr>
             ))}
           </tbody>
@@ -186,7 +196,7 @@ export function ChatAppsPanel() {
                 {a.platform === 'Slack'
                   ? <Button size="sm" variant="outline" onClick={async () => saveJson(await governanceApi.slackManifest(a.id), 'hr360-slack-manifest.json')}><Download className="size-4" />{' '}{tx('Manifest')}</Button>
                   : <Button size="sm" variant="outline" onClick={() => governanceApi.teamsPackage(a.id)}><Download className="size-4" />{' '}{tx('Teams paketi')}</Button>}
-                <Button size="sm" variant="ghost" aria-label={tx('Düzenle')} onClick={() => setSetup({ editing: a, input: { ...empty(a.platform), name: a.name, isEnabled: a.isEnabled, notifyApprovals: a.notifyApprovals, notifyRequesters: a.notifyRequesters, teamsAppId: a.teamsAppId ?? '', teamsAzureTenantId: a.teamsAzureTenantId ?? '' } })}><Pencil className="size-4" /></Button>
+                <Button size="sm" variant="ghost" aria-label={tx('Düzenle')} onClick={() => setSetup({ editing: a, input: { ...empty(a.platform), name: a.name, isEnabled: a.isEnabled, notifyApprovals: a.notifyApprovals, notifyRequesters: a.notifyRequesters, teamsAppId: a.teamsAppId ?? '', teamsAzureTenantId: a.teamsAzureTenantId ?? '', requireVerifiedIdentity: a.requireVerifiedIdentity, messageDetail: a.messageDetail } })}><Pencil className="size-4" /></Button>
                 <Button size="sm" variant="ghost" aria-label={tx('Sil')} onClick={() => del.mutate(a.id)}><Trash2 className="size-4" /></Button>
               </div>
             </motion.div>

@@ -238,8 +238,8 @@ public class ProfileController : AppController
         pr.EmergencyContactName = body.EmergencyContactName ?? pr.EmergencyContactName;
         pr.EmergencyContactPhone = body.EmergencyContactPhone ?? pr.EmergencyContactPhone;
         // Maskeli değer geri gönderildiyse (•• içerir) dokunma.
-        if (body.Iban is not null && !body.Iban.Contains('•')) pr.Iban = body.Iban.Replace(" ", "").ToUpperInvariant();
-        if (body.NationalId is not null && !body.NationalId.Contains('•')) pr.NationalId = body.NationalId;
+        if (body.Iban is not null && !body.Iban.Contains('•')) pr.Iban = body.Iban.Trim() == "" ? null : body.Iban.Replace(" ", "").ToUpperInvariant();
+        if (body.NationalId is not null && !body.NationalId.Contains('•')) pr.NationalId = body.NationalId.Trim() == "" ? null : body.NationalId.Trim();
         pr.LinkedInUrl = body.LinkedInUrl ?? pr.LinkedInUrl;
         pr.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);

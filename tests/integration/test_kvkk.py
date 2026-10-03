@@ -83,7 +83,7 @@ code, logs = api("admin", "GET", f"{P}/destruction-logs?from={today.isoformat()}
 check("Elle imha tutanağa yazıldı", code == 200 and any(l["category"] == "WebhookDeliveries" and l["trigger"] == "Manual" and l["method"] for l in logs), logs[:2] if code == 200 else code)
 
 # --- hassas veri: şifreleme, gerekçe, erişim kaydı -------------------------------
-enc = psql("""SELECT count(*) FILTER (WHERE "Iban" IS NOT NULL AND "Iban" NOT LIKE 'enc1:%') + count(*) FILTER (WHERE "NationalId" IS NOT NULL AND "NationalId" NOT LIKE 'enc1:%') FROM engagement_profiles""")
+enc = psql("""SELECT count(*) FILTER (WHERE coalesce("Iban", '') <> '' AND "Iban" NOT LIKE 'enc1:%') + count(*) FILTER (WHERE coalesce("NationalId", '') <> '' AND "NationalId" NOT LIKE 'enc1:%') FROM engagement_profiles""")
 check("TCKN/IBAN veritabanında düz metin yok", enc == "0", enc)
 # Ayşe'nin mevcut IBAN'ı saklanır, test sonunda geri yazılır.
 _, _orig = api("ayse", "GET", f"/api/engagement/profile/{AYSE}/reveal?field=iban")

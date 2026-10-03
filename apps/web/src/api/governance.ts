@@ -308,6 +308,8 @@ export interface ChatApp {
   createdAt: string
   linkedUsers: number
   knownUsers: number
+  requireVerifiedIdentity: boolean
+  messageDetail: 'Minimal' | 'Standard'
   endpoints: { commands?: string; interactivity?: string; events?: string; messaging?: string }
   publicOriginIsHttps: boolean
 }
@@ -322,6 +324,25 @@ export interface ChatAppInput {
   teamsAppId?: string
   teamsAppPassword?: string
   teamsAzureTenantId?: string
+  requireVerifiedIdentity?: boolean
+  messageDetail?: 'Minimal' | 'Standard'
+}
+export interface MyChatIdentity {
+  id: string
+  platform: ChatPlatform
+  appName: string | null
+  displayName: string | null
+  email: string | null
+  verifiedAt: string | null
+  lastSeenAt: string | null
+}
+export interface ChatLinkPreview {
+  platform: ChatPlatform
+  appName: string | null
+  displayName: string | null
+  email: string | null
+  emailMatches: boolean
+  myName: string | null
 }
 export interface ChatIdentityRow {
   id: string
@@ -333,6 +354,7 @@ export interface ChatIdentityRow {
   canReceive: boolean
   linkedAt: string
   lastSeenAt: string | null
+  verifiedAt: string | null
 }
 
 /* ------------------------------------------------- takvim ve toplantı */
@@ -600,6 +622,11 @@ export const governanceApi = {
   deleteChatApp: (id: string) => apiFetch<void>(`${BASE}/chat-apps/${id}`, { method: 'DELETE' }),
   testChatApp: (id: string) => apiFetch<{ sent: boolean }>(`${BASE}/chat-apps/${id}/test`, { method: 'POST' }),
   chatIdentities: (id: string, signal?: AbortSignal) => apiFetch<ChatIdentityRow[]>(`${BASE}/chat-apps/${id}/identities`, { signal }),
+  revokeChatIdentity: (appId: string, identityId: string) => apiFetch<void>(`${BASE}/chat-apps/${appId}/identities/${identityId}/revoke`, { method: 'POST' }),
+  chatLinkPreview: (code: string, signal?: AbortSignal) => apiFetch<ChatLinkPreview>(`${BASE}/chat/link/${encodeURIComponent(code)}`, { signal }),
+  chatLink: (code: string) => apiFetch<{ linked: boolean; platform: ChatPlatform }>(`${BASE}/chat/link`, { method: 'POST', body: { code } }),
+  myChatIdentities: (signal?: AbortSignal) => apiFetch<MyChatIdentity[]>(`${BASE}/chat/link/mine`, { signal }),
+  unlinkMyChatIdentity: (id: string) => apiFetch<void>(`${BASE}/chat/link/mine/${id}`, { method: 'DELETE' }),
   slackManifest: (id?: string, name?: string) =>
     apiFetch<unknown>(id ? `${BASE}/chat-apps/${id}/slack-manifest` : `${BASE}/chat-apps/slack-manifest${qs({ name })}`),
   teamsPackage: (id: string) => downloadAuthed(`${BASE}/chat-apps/${id}/teams-package`, 'hr360-teams.zip'),
