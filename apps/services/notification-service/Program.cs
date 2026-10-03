@@ -28,6 +28,10 @@ builder.Services.AddHttpClient<TenantBrandingClient>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddHttpClient<EmployeeDirectoryClient>();
 builder.Services.AddHostedService<EmailSenderWorker>();
+// Anlık bildirim (PWA / Web Push): VAPID anahtarı ilk kullanımda üretilir.
+builder.Services.AddSingleton<NotificationService.Push.VapidKeys>();
+builder.Services.AddHttpClient("webpush", c => c.Timeout = TimeSpan.FromSeconds(10));
+builder.Services.AddHostedService<NotificationService.Push.PushSenderWorker>();
 
 builder.Services.AddDbContext<NotificationDbContext>(options =>
     options.UseNpgsql(connectionString)

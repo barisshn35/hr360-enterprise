@@ -151,9 +151,21 @@ public class LeaveRequestsController : ControllerBase
         if (workingDays == 0)
             return (Bad("Seçilen aralıkta iş günü yok"), null);
         // Yarim gun: yalnizca tek gunluk taleplerde istemcinin 0.5 bildirmesine izin var.
-        var days = request.StartDate == request.EndDate && request.Days == 0.5m
-            ? 0.5m
-            : workingDays;
+        // Saatlik izin (G8): yalnizca tek gun; gun = saat / gunluk calisma saati (LEAVE_DAY_HOURS).
+        decimal? hours = null;
+        if (request.Hours is { } h)
+        {
+            if (request.StartDate != request.EndDate)
+                return (Bad("Saatlik izin yalnızca tek gün için girilebilir"), null);
+            if (h <= 0 || h >= Services.LeaveEntitlement.DayHours || h * 2 != Math.Floor(h * 2))
+                return (Bad($"Saatlik izin 0,5 saatlik adımlarla ve {Services.LeaveEntitlement.DayHours:0.#} saatten az olmalı"), null);
+            hours = h;
+        }
+        var days = hours is { } hh
+            ? Services.LeaveEntitlement.HoursToDays(hh)
+            : request.StartDate == request.EndDate && request.Days == 0.5m
+                ? 0.5m
+                : workingDays;
 
         // Ayni calisanin bekleyen/onayli bir izniyle cakisan talep reddedilir.
         var overlaps = await _db.LeaveRequests.AnyAsync(r =>
@@ -183,6 +195,7 @@ public class LeaveRequestsController : ControllerBase
             StartDate = request.StartDate,
             EndDate = request.EndDate,
             Days = days,
+            Hours = hours,
             Reason = request.Reason,
             Status = LeaveRequestStatus.Submitted,
             // GUVENLIK: istemcinin WorkflowRequestId'si ARTIK KULLANILMAZ - onay akisini
@@ -210,12 +223,14 @@ public class LeaveRequestsController : ControllerBase
         // Departman basina onay workflow'u ac - bulunamazsa (bas atanmamis,
         // cross-service cagri hatasi) talep yine de Submitted olarak kalir
         // ve mevcut /resolve ucuyla elle sonuclandirilabilir.
-        var subject = $"{days} günlük {leave.Type} talebi ({leave.StartDate:dd.MM.yyyy} - {leave.EndDate:dd.MM.yyyy})";
+        var subject = hours is { } sh
+            ? $"{sh:0.#} saatlik {leave.Type} talebi ({leave.StartDate:dd.MM.yyyy})"
+            : $"{days} günlük {leave.Type} talebi ({leave.StartDate:dd.MM.yyyy} - {leave.EndDate:dd.MM.yyyy})";
         // Onay mesajlarında (web, e-posta, sohbet) tarih ve gün sayısı gösterilebilsin diye.
         var payload = System.Text.Json.JsonSerializer.Serialize(new
         {
             leaveRequestId = leave.Id, type = leave.Type.ToString(), startDate = leave.StartDate.ToString("yyyy-MM-dd"),
-            endDate = leave.EndDate.ToString("yyyy-MM-dd"), days = leave.Days,
+            endDate = leave.EndDate.ToString("yyyy-MM-dd"), days = leave.Days, hours = leave.Hours,
         });
         var workflowId = internalCall
             ? await _approvals.StartLeaveApprovalInternalAsync(_db, leave.EmployeeId, subject, ct, payload)
@@ -348,7 +363,7 @@ public class LeaveRequestsController : ControllerBase
 
 public record CreateLeaveRequest(
     Guid EmployeeId, LeaveType Type, DateOnly StartDate, DateOnly EndDate,
-    decimal Days, string? Reason, Guid? WorkflowRequestId);
+    decimal Days, string? Reason, Guid? WorkflowRequestId, decimal? Hours = null);
 
 public record ResolveLeaveRequest(bool Approved);
 public record InternalCreateLeaveRequest(string TenantSlug, Guid EmployeeId, LeaveType Type, DateOnly StartDate, DateOnly EndDate,

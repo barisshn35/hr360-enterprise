@@ -36,6 +36,8 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
     {
         "salary", "iban", "nationalid", "tckn", "identitynumber", "password", "secret",
         "keyhash", "token", "bankaccount", "privatenotes",
+        // Bordro ek ödeme/kesinti tutarı.
+        "amount",
     };
 
     /// <summary>Teknik/altyapı tabloları denetlenmez (gürültü olur).</summary>
@@ -43,6 +45,9 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
     {
         "ProcessedEvent", "OutboxMessage", "AuditEntry", "GovernanceEvent", "RuleRun",
         "WebhookDelivery", "ProvisioningLogEntry",
+        // Bordro pusulası satırları her hesaplamada yeniden üretilir; tutarlar denetim kaydına
+        // yazılmaz (dönem kapatma/yeniden açma ayrıca kaydedilir).
+        "Payslip",
         // Anonim anket yanıtı kimle ilişkilendirilmemeli: denetim satırı yanıtı
         // yanıtlayanla (UserId) eşleştirirdi.
         "SurveyResponse",

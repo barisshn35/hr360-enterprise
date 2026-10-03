@@ -67,6 +67,15 @@ const MyPerformancePage = page(() => import('@/features/performance/me/MyPerform
 const ScoringSettingsPage = page(() => import('@/features/performance/settings/ScoringSettingsPage'), 'ScoringSettingsPage')
 const LearningPage = page(() => import('@/features/learning/LearningPage'), 'LearningPage')
 const CompensationPage = page(() => import('@/features/compensation/CompensationPage'), 'CompensationPage')
+const PayrollPage = page(() => import('@/features/compensation/PayrollPage'), 'PayrollPage')
+const PayrollPeriodPage = page(() => import('@/features/compensation/PayrollPage'), 'PayrollPeriodPage')
+const MyPayslipsPage = page(() => import('@/features/compensation/MyPayslipsPage'), 'MyPayslipsPage')
+const TimeClockPage = page(() => import('@/features/timeshift/TimeClockPage'), 'TimeClockPage')
+const TimeClockAdminPage = page(() => import('@/features/timeshift/TimeClockPage'), 'TimeClockAdminPage')
+const MyDocumentsPage = page(() => import('@/features/documents/DocumentRequestPages'), 'MyDocumentsPage')
+const VerifyDocumentPage = page(() => import('@/features/documents/DocumentRequestPages'), 'VerifyDocumentPage')
+const EmailDecisionPage = page(() => import('@/features/documents/DocumentRequestPages'), 'EmailDecisionPage')
+const WorkflowDesignerPage = page(() => import('@/features/workflows/WorkflowDesignerPage'), 'WorkflowDesignerPage')
 const DocumentsPage = page(() => import('@/features/documents/DocumentsPage'), 'DocumentsPage')
 const NotificationsPage = page(() => import('@/features/notification/NotificationsPage'), 'NotificationsPage')
 const SettingsPage = page(() => import('@/features/settings/SettingsPage'), 'SettingsPage')
@@ -159,6 +168,11 @@ export function App() {
                   }
                 />
 
+                {/* Belge doğrulama ve e-postadan tek tıkla karar: oturum gerekmez (kişisel veri göstermez). */}
+                <Route path="/belge-dogrula" element={<Suspense fallback={<FullPageSpinner />}><VerifyDocumentPage /></Suspense>} />
+                <Route path="/belge-dogrula/:code" element={<Suspense fallback={<FullPageSpinner />}><VerifyDocumentPage /></Suspense>} />
+                <Route path="/onay-eposta" element={<Suspense fallback={<FullPageSpinner />}><EmailDecisionPage /></Suspense>} />
+
                 {/* --------------------------- Oturum gerektiren --------------------------- */}
                 <Route
                   path="/panel"
@@ -178,6 +192,7 @@ export function App() {
                     <Route index element={<DashboardPage />} />
 
                     <Route path="onaylar" element={guarded('workflow:view', <WorkflowInboxPage />)} />
+                    <Route path="onay-akislari" element={guarded('employee:manage', <WorkflowDesignerPage />)} />
                     <Route
                       path="onaylar/:workflowId"
                       element={guarded('workflow:view', <WorkflowDetailPage />)}
@@ -198,6 +213,8 @@ export function App() {
                     />
 
                     <Route path="puantaj" element={guarded('timeshift:view', <TimesheetPage />)} />
+                    <Route path="giris-cikis" element={guarded('timeshift:clock', <TimeClockPage />)} />
+                    <Route path="giris-cikis/yonetim" element={guarded('employee:manage', <TimeClockAdminPage />)} />
                     <Route
                       path="vardiya-motoru"
                       element={guarded('timeshift:view', <ShiftEnginePage />)}
@@ -272,6 +289,8 @@ export function App() {
 
                     {/* Ücret hassas veri — yalnızca İK yönetimi */}
                     <Route path="ucret" element={guarded('compensation:view', <CompensationPage />)} />
+                    <Route path="bordro" element={guarded('compensation:view', <PayrollPage />)} />
+                    <Route path="bordro/:id" element={guarded('compensation:view', <PayrollPeriodPage />)} />
 
                     <Route path="dokumanlar" element={guarded('document:manage', <DocumentsPage />)} />
                     <Route
@@ -308,6 +327,8 @@ export function App() {
                     {/* ---------------- Hesabım ---------------- */}
                     <Route path="profil" element={<ProfilePage />} />
                     <Route path="sohbet-bagla" element={<ChatLinkPage />} />
+                    <Route path="bordrolarim" element={<MyPayslipsPage />} />
+                    <Route path="belge-talebi" element={<MyDocumentsPage />} />
 
                     {/* ---------------- Topluluk ---------------- */}
                     <Route path="takdir" element={<PlanGate feature="kudos"><KudosPage /></PlanGate>} />

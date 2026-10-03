@@ -25,6 +25,19 @@ public class SmtpCredentialProtector
             throw new InvalidOperationException("TENANT_SECRET_KEY 32 byte (base64) olmali");
     }
 
+    /// <summary>AES-256-GCM: nonce | etiket | şifreli metin (Decrypt ile aynı biçim).</summary>
+    public string Encrypt(string plain)
+    {
+        var nonce = RandomNumberGenerator.GetBytes(AesGcm.NonceByteSizes.MaxSize);
+        var tagSize = AesGcm.TagByteSizes.MaxSize;
+        var p = System.Text.Encoding.UTF8.GetBytes(plain);
+        var c = new byte[p.Length];
+        var tag = new byte[tagSize];
+        using var aes = new AesGcm(_key, tagSize);
+        aes.Encrypt(nonce, p, c, tag);
+        return Convert.ToBase64String([.. nonce, .. tag, .. c]);
+    }
+
     public string Decrypt(string encryptedBase64)
     {
         var data = Convert.FromBase64String(encryptedBase64);

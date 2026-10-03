@@ -87,6 +87,8 @@ export type WorkflowType =
   | 'PositionChange'
   | 'AssetRequest'
   | 'Other'
+  | 'Overtime'
+  | 'DocumentRequest'
 
 export type WorkflowStatus = 'Pending' | 'Approved' | 'Rejected' | 'Cancelled'
 
@@ -98,6 +100,8 @@ export const workflowTypeLabels: Record<WorkflowType, string> = {
   PositionChange: tx('Pozisyon Değişikliği'),
   AssetRequest: tx('Zimmet Talebi'),
   Other: tx('Diğer'),
+  Overtime: tx('Fazla Mesai'),
+  DocumentRequest: tx('Belge Talebi'),
 }
 
 export const workflowStatusLabels: Record<WorkflowStatus, string> = {
@@ -122,6 +126,9 @@ export interface ApprovalStep {
   comment: string | null
   decidedAt: string | null
   delegatedToEmployeeId?: string | null
+  /** Süre aşımıyla üst yöneticiye iletildiği an. */
+  escalatedAt?: string | null
+  delegationId?: string | null
 }
 
 export interface Workflow {

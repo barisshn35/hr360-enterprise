@@ -16,7 +16,10 @@ public enum WorkflowType
     ExpenseClaim,
     PositionChange,
     AssetRequest,
-    Other
+    Other,
+    // Sona eklenir: sayısal değerler (0-4) servisler arası çağrılarda kullanılıyor.
+    Overtime,
+    DocumentRequest
 }
 
 public class WorkflowRequest : ITenantOwned

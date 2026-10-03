@@ -319,6 +319,9 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
       ORGANIZATION_SERVICE_URL: "http://organization-service:8080"
       EMPLOYEE_SERVICE_URL: "http://employee-service:8080"
+      # Fazla mesai talebinin onay akisi workflow-service ic ucuyla acilir.
+      WORKFLOW_SERVICE_URL: "http://workflow-service:8080"
+      INTERNAL_SERVICE_TOKEN: "${INTERNAL_SERVICE_TOKEN:-}"
       ASPNETCORE_ENVIRONMENT: "Production"
     mem_limit: "512m"
 
@@ -460,6 +463,8 @@ services:
       # ugruyordu). Bu adresi kullanan diger servisler de degiskeni tanimliyor.
       EMPLOYEE_SERVICE_URL: "http://employee-service:8080"
       TENANT_SECRET_KEY: ${TENANT_SECRET_KEY}
+      # E-postadaki karar bağlantısı ve anlık bildirim (VAPID) için genel adres.
+      PUBLIC_ORIGIN: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}"
       ASPNETCORE_ENVIRONMENT: "Production"
       SMTP_HOST: ${SMTP_HOST}
       SMTP_PORT: ${SMTP_PORT}

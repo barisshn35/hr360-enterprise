@@ -2,6 +2,7 @@ import { Suspense, lazy, useState } from 'react'
 import { useLocation, useOutlet } from 'react-router-dom'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { TriangleAlert } from 'lucide-react'
+import { OfflineQueueWatcher } from '@/features/profile/DevicePanel'
 import { useMyEmployeeId, useUnreadCount } from '@/api/queries'
 import { useDirectory } from '@/api/directory'
 import { useAuth } from '@/auth/useAuth'
@@ -96,6 +97,7 @@ export function AppShell() {
 
       <AppDock unreadCount={unread.data?.unreadCount ?? 0} onOpenCommandPalette={() => setPaletteOpen(true)} />
       <Suspense fallback={null}><AssistantWidget /></Suspense>
+      <OfflineQueueWatcher />
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
     </div>
   )

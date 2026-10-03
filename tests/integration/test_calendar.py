@@ -93,8 +93,12 @@ check("Ayşe'nin Google bağlantısı etkin ve e-posta doğru", gc and gc["statu
 
 # ---------------------------------------------------------------- izin senkronizasyonu
 t0 = time.time()
-start = (dt.date(2031, 1, 6) + dt.timedelta(weeks=random.randint(0, 150))).isoformat()
-code, lv = api("ayse", "POST", "/api/leave/leave-requests", {"employeeId": AYSE, "type": "Unpaid", "startDate": start, "endDate": start, "days": 0, "reason": "takvim-testi"})
+# Önceki çalıştırmaların (ya da diğer testlerin) izinleriyle çakışırsa başka bir gün denenir.
+for _try in range(10):
+    start = (dt.date(2031, 1, 6) + dt.timedelta(weeks=random.randint(0, 150))).isoformat()
+    code, lv = api("ayse", "POST", "/api/leave/leave-requests", {"employeeId": AYSE, "type": "Unpaid", "startDate": start, "endDate": start, "days": 0, "reason": "takvim-testi"})
+    if code != 409:
+        break
 check("İzin talebi", code in (200, 201), lv)
 wf = lv["workflowRequestId"]
 _, w = api("ayse", "GET", f"/api/workflow/workflows/{wf}")

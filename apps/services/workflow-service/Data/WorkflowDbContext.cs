@@ -24,6 +24,8 @@ public class WorkflowDbContext : DbContext, ITenantAwareContext
     public DbSet<WorkflowRequest> WorkflowRequests => Set<WorkflowRequest>();
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
     public DbSet<ApprovalStep> ApprovalSteps => Set<ApprovalStep>();
+    public DbSet<WorkflowDefinition> Definitions => Set<WorkflowDefinition>();
+    public DbSet<Delegation> Delegations => Set<Delegation>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -44,6 +46,15 @@ public class WorkflowDbContext : DbContext, ITenantAwareContext
             .WithMany(w => w.Steps)
             .HasForeignKey(s => s.WorkflowRequestId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<WorkflowDefinition>().ConfigureTenantColumn();
+        modelBuilder.Entity<WorkflowDefinition>().ToTable("workflow_definitions");
+        modelBuilder.Entity<WorkflowDefinition>().Property(d => d.Type).HasConversion<string>();
+        modelBuilder.Entity<WorkflowDefinition>().HasIndex(d => new { d.TenantSlug, d.Type });
+
+        modelBuilder.Entity<Delegation>().ConfigureTenantColumn();
+        modelBuilder.Entity<Delegation>().ToTable("workflow_delegations");
+        modelBuilder.Entity<Delegation>().HasIndex(d => new { d.TenantSlug, d.FromEmployeeId });
 
         modelBuilder.ApplyTenantFilters(this);
     }

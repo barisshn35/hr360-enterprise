@@ -18,6 +18,8 @@ var connectionString = Environment.GetEnvironmentVariable("TIMESHIFT_DB_CONNECTI
 builder.Services.AddScoped<TenantContext>();
 builder.Services.AddScoped<ITenantContext>(sp => sp.GetRequiredService<TenantContext>());
 builder.Services.AddHostedService<LeaveEventConsumer>();
+builder.Services.AddHostedService<WorkflowEventConsumer>();
+builder.Services.AddHttpClient<ApprovalStarter>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddHttpClient<EmployeeDirectoryClient>();
 builder.Services.AddHttpClient<DepartmentDirectoryClient>();

@@ -68,7 +68,7 @@ public class ApprovalWorkflowClient
     /// Id'yi doner. Zincirin herhangi bir adimi basarisiz olursa null doner.
     /// </summary>
     public async Task<Guid?> StartExpenseApprovalAsync(
-        Guid employeeId, string? subject, CancellationToken ct)
+        Guid employeeId, string? subject, CancellationToken ct, string? payload = null)
     {
         try
         {
@@ -95,7 +95,7 @@ public class ApprovalWorkflowClient
                     Type: 1, // WorkflowType.ExpenseClaim
                     RequesterEmployeeId: employeeId,
                     Subject: subject,
-                    Payload: null,
+                    Payload: payload,
                     ApproverEmployeeIds: new List<Guid> { dept.HeadEmployeeId.Value },
                     SlaHours: null)), ct);
             if (!wfResp.IsSuccessStatusCode) return null;

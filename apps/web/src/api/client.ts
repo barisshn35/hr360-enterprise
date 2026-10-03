@@ -1,6 +1,7 @@
 import { getValidToken, keycloak } from '@/auth/keycloak'
 import { env } from '@/lib/env'
 import { lang, translateServerData, tx } from '@/lib/i18n'
+import { QueuedOfflineError, enqueueOffline, isQueueable } from '@/lib/push'
 
 /**
  * `?optional=true` ile çağrılan `/me` uçları, hesaba bağlı çalışan kaydı yoksa
@@ -87,10 +88,18 @@ interface RequestOptions {
   signal?: AbortSignal
   /** Auth gerektirmeyen uçlar (ör. /gateway/health) için. */
   anonymous?: boolean
+  /** Çevrimdışı kuyruğa alma (kuyruğu boşaltırken kullanılır). */
+  noQueue?: boolean
 }
 
 export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = 'GET', body, signal, anonymous = false } = options
+  const { method = 'GET', body, signal, anonymous = false, noQueue = false } = options
+
+  // Çevrimdışıyken izinli talepler (izin, fazla mesai) cihazda sıraya alınır (PWA).
+  if (!noQueue && typeof navigator !== 'undefined' && !navigator.onLine && isQueueable(path, method)) {
+    enqueueOffline(path, body)
+    throw new QueuedOfflineError()
+  }
 
   // Sunucu yanıt metinlerini (rapor asistanı, hata iletileri…) arayüz dilinde üretsin.
   const headers: Record<string, string> = { Accept: 'application/json', 'X-HR360-Lang': lang }
@@ -106,12 +115,21 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
 
   if (body !== undefined) headers['Content-Type'] = 'application/json'
 
-  const res = await fetch(`${env.apiBase}${path}`, {
-    method,
-    headers,
-    signal,
-    body: body === undefined ? undefined : JSON.stringify(body),
-  })
+  let res: Response
+  try {
+    res = await fetch(`${env.apiBase}${path}`, {
+      method,
+      headers,
+      signal,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    })
+  } catch (e) {
+    if (!noQueue && e instanceof TypeError && isQueueable(path, method)) {
+      enqueueOffline(path, body)
+      throw new QueuedOfflineError()
+    }
+    throw e
+  }
 
   if (res.status === 401 && !anonymous) {
     keycloak.clearToken()

@@ -30,6 +30,10 @@ public class TimeShiftDbContext : DbContext, ITenantAwareContext
     public DbSet<ShiftTeamMember> ShiftTeamMembers => Set<ShiftTeamMember>();
     public DbSet<ShiftOverride> ShiftOverrides => Set<ShiftOverride>();
     public DbSet<ProcessedEvent> ProcessedEvents => Set<ProcessedEvent>();
+    public DbSet<OvertimeRequest> OvertimeRequests => Set<OvertimeRequest>();
+    public DbSet<TimeClockSite> TimeClockSites => Set<TimeClockSite>();
+    public DbSet<TimeClockCredential> TimeClockCredentials => Set<TimeClockCredential>();
+    public DbSet<TimeClockPunch> TimeClockPunches => Set<TimeClockPunch>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -87,6 +91,27 @@ public class TimeShiftDbContext : DbContext, ITenantAwareContext
         // TenantSlug yok, tenant filtrelerine dahil edilmemeli.
         modelBuilder.Entity<ProcessedEvent>().ToTable("messaging_processed_events");
         modelBuilder.Entity<ProcessedEvent>().HasKey(p => new { p.EventId, p.Consumer });
+
+        modelBuilder.Entity<OvertimeRequest>().ConfigureTenantColumn();
+        modelBuilder.Entity<OvertimeRequest>().ToTable("timeshift_overtime_requests");
+        modelBuilder.Entity<OvertimeRequest>().Property(o => o.Status).HasConversion<string>();
+        modelBuilder.Entity<OvertimeRequest>().HasIndex(o => new { o.EmployeeId, o.Date });
+        modelBuilder.Entity<OvertimeRequest>().HasIndex(o => o.WorkflowRequestId);
+
+        modelBuilder.Entity<TimeClockSite>().ConfigureTenantColumn();
+        modelBuilder.Entity<TimeClockSite>().ToTable("timeshift_clock_sites");
+
+        modelBuilder.Entity<TimeClockCredential>().ConfigureTenantColumn();
+        modelBuilder.Entity<TimeClockCredential>().ToTable("timeshift_clock_credentials");
+        modelBuilder.Entity<TimeClockCredential>().HasIndex(c => new { c.TenantSlug, c.EmployeeId }).IsUnique();
+        modelBuilder.Entity<TimeClockCredential>().HasIndex(c => new { c.TenantSlug, c.BadgeCode });
+        modelBuilder.Entity<TimeClockCredential>().HasIndex(c => new { c.TenantSlug, c.CardHash });
+
+        modelBuilder.Entity<TimeClockPunch>().ConfigureTenantColumn();
+        modelBuilder.Entity<TimeClockPunch>().ToTable("timeshift_clock_punches");
+        modelBuilder.Entity<TimeClockPunch>().Property(p => p.Kind).HasConversion<string>();
+        modelBuilder.Entity<TimeClockPunch>().Property(p => p.Method).HasConversion<string>();
+        modelBuilder.Entity<TimeClockPunch>().HasIndex(p => new { p.EmployeeId, p.At });
 
         modelBuilder.ApplyTenantFilters(this);
     }

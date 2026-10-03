@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus } from 'lucide-react'
+import { Check, Plus, UserRoundCog, X } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/button'
 import { DataTable, type Column } from '@/components/ui/DataTable'
@@ -9,7 +9,10 @@ import { WorkflowStatusBadge } from '@/components/ui/ModuleBadges'
 import { Tabs, useTabParam, type TabDef } from '@/components/ui/Tabs'
 import { InfoNote } from '@/components/ui/States'
 import { useAuth } from '@/auth/useAuth'
-import { useEmployees, useOverdueWorkflows, useWorkflows } from '@/api/queries'
+import { useEmployees, useMyEmployeeId, useOverdueWorkflows, useWorkflows } from '@/api/queries'
+import { workflowApi } from '@/api/workflows'
+import { useAction } from '@/features/shared/kit'
+import { DelegationsModal } from './DelegationsModal'
 import {
   workflowStatusLabels,
   workflowTypeLabels,
@@ -26,6 +29,8 @@ export function WorkflowInboxPage() {
   const { can } = useAuth()
   const navigate = useNavigate()
   const [modalOpen, setModalOpen] = useState(false)
+  const [delegating, setDelegating] = useState(false)
+  const me = useMyEmployeeId()
   const [tab, setTab] = useTabParam<TabKey>('durum', 'Pending')
 
   // "Süresi geçen" ayrı bir uçtan gelir; yalnızca karar verebilenlere gösterilir.
@@ -55,6 +60,20 @@ export function WorkflowInboxPage() {
       ),
     [query.data],
   )
+
+  // Toplu karar: seçilen taleplerde sırası gelmiş ve onaycısı (ya da vekili) ben olan adım.
+  const myStep = (w: Workflow) => {
+    const step = [...(w.steps ?? [])].filter((s) => s.decision === 'Pending').sort((a, b) => a.order - b.order)[0]
+    return step && me.employeeId && w.requesterEmployeeId !== me.employeeId
+      && (step.approverEmployeeId === me.employeeId || step.delegatedToEmployeeId === me.employeeId) ? step : undefined
+  }
+  const bulk = useAction(({ ids, approve }: { ids: string[]; approve: boolean }) => {
+    const items = rows.filter((w) => ids.includes(w.id)).flatMap((w) => { const st = myStep(w); return st ? [{ workflowId: w.id, stepId: st.id }] : [] })
+    return workflowApi.bulkDecide(items, approve ? 'Approved' : 'Rejected')
+  }, {
+    success: (r) => tx('{0} talep karara bağlandı', [r.done]) + (r.results.length > r.done ? ' · ' + tx('{0} talep atlandı', [r.results.length - r.done]) : ''),
+    invalidate: [['workflows']],
+  })
 
   const tabs: Array<TabDef<TabKey>> = [
     { key: 'Pending', label: workflowStatusLabels.Pending },
@@ -133,12 +152,20 @@ export function WorkflowInboxPage() {
         title={tx('Onay kutusu')}
         description={tx('İzin, masraf ve pozisyon talepleri tanımlı sırayla ilerler.')}
         actions={
-          can('workflow:create') && (
-            <Button className="cursor-pointer" onClick={() => setModalOpen(true)}>
-              <Plus className="size-4" />
-              {tx('Yeni talep')}
-            </Button>
-          )
+          <div className="flex flex-wrap gap-2">
+            {can('workflow:decide') && (
+              <Button variant="outline" className="cursor-pointer" onClick={() => setDelegating(true)}>
+                <UserRoundCog className="size-4" />
+                {tx('Vekâlet')}
+              </Button>
+            )}
+            {can('workflow:create') && (
+              <Button className="cursor-pointer" onClick={() => setModalOpen(true)}>
+                <Plus className="size-4" />
+                {tx('Yeni talep')}
+              </Button>
+            )}
+          </div>
         }
       />
 
@@ -155,6 +182,17 @@ export function WorkflowInboxPage() {
         searchPlaceholder={tx('Talep veya tür ara')}
         exportFileName="onay-talepleri"
         pageSize={12}
+        selectable={can('workflow:decide') && (tab === 'Pending' || isOverdueTab)}
+        bulkActions={(ids) => {
+          const n = rows.filter((w) => ids.includes(w.id) && myStep(w)).length
+          return (
+            <>
+              <span className="text-[12.5px] text-muted-foreground">{tx('Kararınızı bekleyen: {0}', [n])}</span>
+              <Button size="sm" disabled={!n || bulk.isPending} onClick={() => bulk.mutate({ ids, approve: true })}><Check className="size-4" /> {tx('Toplu onayla')}</Button>
+              <Button size="sm" variant="outline" disabled={!n || bulk.isPending} onClick={() => bulk.mutate({ ids, approve: false })}><X className="size-4" /> {tx('Toplu reddet')}</Button>
+            </>
+          )
+        }}
         emptyTitle={isOverdueTab ? tx('Süresi geçen talep yok') : tx('Bu durumda talep yok')}
         emptyDetail={
           isOverdueTab
@@ -163,12 +201,13 @@ export function WorkflowInboxPage() {
         }
         notice={
           <InfoNote>
-            {tx('Kararlar bu listeden değil, talebin kendi sayfasındaki onay zincirinden verilir. Bir izin talebi onaylandığında izin kaydı ve bakiye Kafka üzerinden kendiliğinden güncellenir.')}
+            {tx('Kararı talebin sayfasındaki onay zincirinden ya da birden çok talebi seçip toplu olarak verebilirsiniz. Bir izin talebi onaylandığında izin kaydı ve bakiye kendiliğinden güncellenir.')}
           </InfoNote>
         }
       />
 
       <NewWorkflowModal open={modalOpen} onClose={() => setModalOpen(false)} />
+      {delegating && <DelegationsModal onClose={() => setDelegating(false)} myId={me.employeeId} />}
     </div>
   )
 }

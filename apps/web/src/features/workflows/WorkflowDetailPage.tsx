@@ -112,7 +112,9 @@ export function WorkflowDetailPage() {
   const myStep =
     Boolean(myEmployeeId) &&
     (currentStep?.approverEmployeeId === myEmployeeId || currentStep?.delegatedToEmployeeId === myEmployeeId)
-  const canDecide = can('workflow:decide') && isOpen && Boolean(myEmployeeId) && !isRequester && (hr || myStep)
+  // Akış tanımı (belirli kişi) ya da vekâletle yönetici olmayan biri de onaycı/vekil olabilir:
+  // kendi adımı varsa rolüne bakılmaksızın karar verebilir (backend aynı kuralla denetler).
+  const canDecide = isOpen && Boolean(myEmployeeId) && !isRequester && ((hr && can('workflow:decide')) || Boolean(myStep))
   const canDelegate =
     can('workflow:decide') && isOpen && (hr || (Boolean(myEmployeeId) && currentStep?.approverEmployeeId === myEmployeeId))
   const title = data.subject || workflowTypeLabels[data.type]

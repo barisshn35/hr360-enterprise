@@ -27,4 +27,35 @@ public class Notification : ITenantOwned
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? SentAt { get; set; }
     public DateTimeOffset? ReadAt { get; set; }
+    /// <summary>E-postadaki eylem düğmesi (ör. tek kullanımlık karar sayfası).</summary>
+    public string? ActionUrl { get; set; }
+    public string? ActionLabel { get; set; }
+    /// <summary>Uygulama içi bildirimin anlık bildirim (Web Push) olarak iletildiği an.</summary>
+    public DateTimeOffset? PushedAt { get; set; }
+}
+
+/// <summary>
+/// Bir cihazın Web Push aboneliği. KVKK: uç nokta ve şifreleme anahtarları tarayıcıdan gelir;
+/// kişi bildirimi kapatınca ya da oturumu kapatınca silinir.
+/// </summary>
+public class PushSubscription : ITenantOwned
+{
+    public string TenantSlug { get; set; } = "";
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid EmployeeId { get; set; }
+    public string Endpoint { get; set; } = "";
+    public string P256dh { get; set; } = "";
+    public string Auth { get; set; } = "";
+    public string? Device { get; set; }
+    public int FailureCount { get; set; }
+    public DateTimeOffset? LastSuccessAt { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+/// <summary>Kurulumun VAPID anahtarı (tek satır; özel anahtar şifreli).</summary>
+public class VapidKeyRow
+{
+    public int Id { get; set; } = 1;
+    public string PublicKey { get; set; } = "";
+    public string PrivateKeyEnc { get; set; } = "";
 }

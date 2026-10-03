@@ -13,6 +13,10 @@ public class LeaveBalance : ITenantOwned
     public decimal EntitledDays { get; set; }
     public decimal UsedDays { get; set; }
     public decimal PendingDays { get; set; }
+    /// <summary>Önceki yıldan devreden gün (EntitledDays'e dahildir).</summary>
+    public decimal CarriedOverDays { get; set; }
+    /// <summary>Sonraki yıla devredilen gün (bu yılın kullanılmayan kısmı).</summary>
+    public decimal CarriedOutDays { get; set; }
     public decimal RemainingDays => EntitledDays - UsedDays - PendingDays;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }

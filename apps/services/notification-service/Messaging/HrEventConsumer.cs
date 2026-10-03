@@ -79,7 +79,8 @@ public class HrEventConsumer : KafkaConsumerBase
                 var e = JsonSerializer.Deserialize<SubmittedPayload>(payload, JsonOpts);
                 if (e is null) break;
                 var lang = await LangOfAsync(db, e.TenantSlug, e.ApproverEmployeeId, ct);
-                var (subject, body) = NotificationTexts.Submitted(lang, e.ApproverFirstName, e.RequesterName, e.Subject ?? e.WorkflowType, e.SlaDueAt);
+                var (subject, body) = NotificationTexts.Submitted(lang, e.ApproverFirstName, e.RequesterName, e.WorkflowType, e.SlaDueAt,
+                    e.Escalated, e.OnBehalfOfEmployeeId is not null, hasLink: e.ActionToken is not null);
                 db.Notifications.Add(new Notification
                 {
                     TenantSlug = e.TenantSlug,
@@ -90,6 +91,9 @@ public class HrEventConsumer : KafkaConsumerBase
                     Subject = subject,
                     Body = body,
                     Language = lang,
+                    // Tek kullanımlık karar sayfası (e-posta tarayıcıları açsa da karar vermez; sayfada ayrıca onay istenir).
+                    ActionUrl = e.ActionToken is null ? null : $"{PublicOrigin}/onay-eposta?t={Uri.EscapeDataString(e.ActionToken)}",
+                    ActionLabel = e.ActionToken is null ? null : (lang == "en" ? "Review and decide" : "İncele ve karar ver"),
                 });
                 break;
             }
@@ -128,11 +132,14 @@ public class HrEventConsumer : KafkaConsumerBase
         string TenantSlug, Guid EmployeeId, string FirstName, string LastName, string Email,
         DateOnly HireDate, DateTimeOffset OccurredAt);
 
+    private static readonly string PublicOrigin =
+        (Environment.GetEnvironmentVariable("PUBLIC_ORIGIN") is { Length: > 0 } o ? o : "http://localhost").TrimEnd('/');
+
     private record SubmittedPayload(
         string TenantSlug, Guid WorkflowRequestId, string WorkflowType, Guid RequesterEmployeeId,
         string? RequesterName, string? Subject, Guid ApproverEmployeeId,
         string ApproverEmail, string ApproverFirstName, DateTimeOffset? SlaDueAt,
-        DateTimeOffset OccurredAt);
+        DateTimeOffset OccurredAt, string? ActionToken = null, Guid? OnBehalfOfEmployeeId = null, bool Escalated = false);
 
     private record AssignedPayload(
         string TenantSlug, Guid EmployeeId, Guid AssignmentId, Guid DepartmentId,

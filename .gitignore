@@ -44,3 +44,4 @@ backups/
 tests/credentials.json
 .pytest_cache/
 tests/load/results/
+.update-state

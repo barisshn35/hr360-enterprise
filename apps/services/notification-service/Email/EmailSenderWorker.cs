@@ -315,6 +315,8 @@ public class EmailSenderWorker : BackgroundService
         var html = EmailTemplateRenderer.Render(
             subject: message.Subject,
             bodyPlainText: notification.Body,
+            actionUrl: notification.ActionUrl is { } au && Uri.TryCreate(au, UriKind.Absolute, out var u) && u.Scheme is "http" or "https" ? System.Net.WebUtility.HtmlEncode(au) : null,
+            actionLabel: notification.ActionLabel,
             logoUrl: plan.LogoUrl,
             companyName: plan.CompanyName,
             lang: notification.Language);

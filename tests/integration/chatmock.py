@@ -138,6 +138,16 @@ class H(BaseHTTPRequestHandler):
 
     # ------------------------------------------------------------------ POST
     def do_POST(self):
+        if self.path.startswith("/push/"):
+            # Sahte Web Push servisi: ikili (aes128gcm) gövde base64 olarak kaydedilir.
+            import base64 as _b64
+            n = int(self.headers.get("Content-Length") or 0)
+            raw = self.rfile.read(n) if n else b""
+            with LOCK:
+                LOG.append({"method": "POST", "path": self.path, "auth": self.headers.get("Authorization"),
+                            "body": _b64.b64encode(raw).decode(), "encoding": self.headers.get("Content-Encoding"),
+                            "ttl": self.headers.get("TTL"), "at": time.time()})
+            return self._send(410 if "/gone" in self.path else 201)
         body = self._body()
         self._record(body)
         u = urlparse(self.path)

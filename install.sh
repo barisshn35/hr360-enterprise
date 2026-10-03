@@ -528,6 +528,13 @@ if [ -f .env ]; then
       info "REDIS_PASSWORD .env'e eklendi."
     fi
 
+    # Yedek sifreleme anahtari (KVKK m.12); eski .env'lerde yok.
+    if [ -z "${BACKUP_ENCRYPTION_KEY:-}" ]; then
+      BACKUP_ENCRYPTION_KEY="$(random_secret)$(random_secret)$(random_secret)"
+      echo "BACKUP_ENCRYPTION_KEY=${BACKUP_ENCRYPTION_KEY}" >> .env
+      info "BACKUP_ENCRYPTION_KEY .env'e eklendi; yedekler artik sifreli. Anahtari ayri bir yerde saklayin."
+    fi
+
     # NOT: Onceden bu yol yalnizca "docker compose up --build" calistiriyordu -
     # scripts/sql altindaki goc betikleri hic uygulanmiyordu (yeni kolon eksik
     # kalinca ilgili servis tum sorgularda 500 veriyordu).
@@ -867,6 +874,7 @@ KEYCLOAK_ADMIN_USER=admin
 MINIO_ROOT_USER=hr360minio
 INTERNAL_SERVICE_TOKEN="$(random_secret)$(random_secret)"
 REDIS_PASSWORD="$(random_secret)$(random_secret)"
+BACKUP_ENCRYPTION_KEY="$(random_secret)$(random_secret)$(random_secret)"
 
 # --- 3) .env yaz ----------------------------------------------------------
 cat > .env <<EOF
@@ -890,6 +898,9 @@ INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN}
 
 # Redis (Valkey) onbellegi; yalnizca ic agda.
 REDIS_PASSWORD=${REDIS_PASSWORD}
+# Yedek sifreleme anahtari: scripts/backup.sh arsivi AES-256 ile sifreler. Kaybolursa sifreli
+# yedekler acilamaz; bu dosyanin disinda da guvenli bir yerde saklayin.
+BACKUP_ENCRYPTION_KEY=${BACKUP_ENCRYPTION_KEY}
 
 # NOT: DEMO_ADMIN_PASSWORD daha once bu dosyaya hic yazilmiyordu (script
 # "Tum sirlar .env dosyasinda" diyordu ama bu degisken sadece Keycloak

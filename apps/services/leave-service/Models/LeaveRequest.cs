@@ -20,6 +20,8 @@ public class LeaveRequest : ITenantOwned
     public DateOnly StartDate { get; set; }
     public DateOnly EndDate { get; set; }
     public decimal Days { get; set; }
+    /// <summary>Saatlik izin (tek gün): istenen saat; Days = saat / günlük çalışma saati.</summary>
+    public decimal? Hours { get; set; }
     public string? Reason { get; set; }
     public LeaveRequestStatus Status { get; set; } = LeaveRequestStatus.Draft;
     /// <summary>Workflow Service'teki onay akisinin kimligi (mikroservis sinirlari arasi ID referansi).</summary>

@@ -16,6 +16,10 @@
 #   3. Arsivdeki her veritabanini SILIP yeniden olusturur ve pg_restore ile doldurur.
 #   4. MinIO verisini arsivdekiyle degistirir.
 #   5. Tum servisleri yeniden baslatir.
+#   6. KVKK: yedekten sonra imha edilmis kayitlar geri gelmis olabilir; etkin saklama
+#      politikalari hemen yeniden calistirilir (imha tutanagina "Geri yukleme" olarak yazilir).
+#
+# Sifreli arsiv (.tar.gz.enc) .env'deki BACKUP_ENCRYPTION_KEY ile cozulur.
 #
 # UYARI: Hedef veritabanlarindaki mevcut veriler kalici olarak silinir. Emin
 # degilseniz once scripts/backup.sh ile mevcut durumun yedegini alin.
@@ -45,6 +49,13 @@ fi
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
+if [[ "$ARCHIVE" == *.enc ]]; then
+  KEY="$( { [ -f .env ] && grep -E '^BACKUP_ENCRYPTION_KEY=' .env | tail -1 | cut -d= -f2-; } || true)"
+  [ -n "$KEY" ] || die "arsiv sifreli; .env'de BACKUP_ENCRYPTION_KEY gerekli"
+  HR360_BK="$KEY" openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in "$ARCHIVE" -out "$WORK/archive.tar.gz" -pass env:HR360_BK 2>/dev/null \
+    || die "sifre cozulemedi (anahtar yanlis ya da arsiv bozuk)"
+  ARCHIVE="$WORK/archive.tar.gz"
+fi
 tar xzf "$ARCHIVE" -C "$WORK"
 D="$(find "$WORK" -mindepth 1 -maxdepth 1 -type d -name 'hr360-*' | head -1)"
 [ -n "$D" ] && [ -f "$D/MANIFEST" ] || die "gecerli bir HR360 yedegi degil (MANIFEST yok)"
@@ -118,4 +129,23 @@ fi
 
 echo "Servisler baslatiliyor..."
 docker compose up -d >/dev/null 2>&1 || docker compose up -d
+
+# KVKK: yedekten sonra imha edilen kayitlar geri gelmis olabilir; saklama politikalari yeniden calisir.
+TOKEN="$(grep -E '^INTERNAL_SERVICE_TOKEN=' .env | tail -1 | cut -d= -f2- || true)"
+if [ -n "$TOKEN" ]; then
+  printf 'KVKK: saklama politikalari yeniden calistiriliyor ... '
+  done_ok=0
+  for _ in $(seq 1 40); do
+    if out="$(docker compose exec -T gateway wget -qO- --header "X-Internal-Token: $TOKEN" --post-data '' \
+         http://governance-service:8080/api/internal/retention/run 2>/dev/null)"; then
+      echo "tamam ($out)"; done_ok=1; break
+    fi
+    sleep 5
+  done
+  [ "$done_ok" = 1 ] || echo "yapilamadi. Panelden KVKK > Saklama politikalari > Simdi calistir ile elle calistirin." >&2
+else
+  echo "UYARI: INTERNAL_SERVICE_TOKEN yok; saklama politikalarini panelden (KVKK > Saklama politikalari) yeniden calistirin." >&2
+fi
 echo "Geri yukleme tamamlandi. Servislerin acilmasi 1-2 dakika surebilir."
+echo "NOT: Yedek tarihinden sonra yerine getirilen silme/anonimlestirme talepleri (ilgili kisi basvurulari)"
+echo "     geri gelmis olabilir; KVKK > Basvurular ekranindan kontrol edip yeniden uygulayin."

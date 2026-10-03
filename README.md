@@ -125,14 +125,16 @@ kayıt ekranından açılır. Demo şirketini `platform.admin` hesabıyla askıy
 | Keycloak paneli erişimi | `scripts/keycloak-admin-access.sh open / ip <IP,...> / port [IP,...] / status` |
 | E-posta (SMTP) sunucusu | `scripts/smtp.sh set --from ik@sirket.com --password '…'` (sunucu adresten bulunur), `scripts/smtp.sh set` (soru sorar), `scripts/smtp.sh test adres@sirket.com`, `scripts/smtp.sh status`, `scripts/smtp.sh mailpit` |
 | Keycloak giriş ekranı teması (HR360 görünümü + Türkçe) | Kurulum ve güncelleme (`./install.sh`) sırasında otomatik uygulanır. Elle: `scripts/keycloak-theme.sh`; Keycloak'ın kendi temasına dönmek için `scripts/keycloak-theme.sh default` |
-| Yeni sürüme güncelleme | `git pull && ./install.sh` ("sırları yeniden üretelim mi?" sorusuna **Hayır**; veritabanı göçleri otomatik uygulanır) |
+| Yeni sürüme güncelleme (tek komut, otomatik geri dönüş) | `scripts/update.sh` (önce yedek, sonra sürüm, göçler, imajlar ve tüm servislerin sağlık denetimi; denetim geçmezse önceki sürüme döner). `scripts/update.sh --ref v2.1`, `scripts/update.sh rollback`, `scripts/update.sh status` |
 | İzleme (Prometheus + Grafana + Loki + Alertmanager) | `scripts/monitoring.sh enable / status / password / disable / purge` |
 | Alarm kanalları (e-posta, Slack, Teams) | `scripts/monitoring.sh alerts status / email … / slack … / teams … / test` |
 | Testler | `scripts/test.sh unit / integration / e2e / all` (ayrıntı: [tests/README.md](tests/README.md)) |
 | Yük testi | `scripts/loadtest.sh smoke / load / stress` |
 | Güvenlik taraması | `scripts/security-scan.sh repo / deps / images` (Trivy, npm audit, NuGet) |
 | Yedek al | `scripts/backup.sh [--keep 14] [--with-env] [--no-minio] [--out DİZİN]` |
-| Yedekten dön | `scripts/restore.sh backups/hr360-….tar.gz [--with-env] [--only-db] [--yes]` |
+| Gece yedeği + haftalık geri yükleme testi | `scripts/backup.sh schedule --at 03:15 --keep 30 --verify-weekly`, kaldırmak için `unschedule`, durum `scripts/backup.sh status` |
+| Yedeği doğrula (geçici veritabanına geri yükler) | `scripts/backup.sh verify [arşiv]` |
+| Yedekten dön | `scripts/restore.sh backups/hr360-….tar.gz[.enc] [--with-env] [--only-db] [--yes]` |
 
 ### Yedekleme
 
@@ -149,11 +151,25 @@ servisleri başlatır. Boş bir sunucuya taşırken önce `./install.sh`, sonra
 `scripts/restore.sh <arşiv> --with-env` çalıştırın; veritabanı rol parolası
 geri yüklenen `.env` ile eşitlenir.
 
-Gece yedeği için cron örneği:
+**Şifreleme (KVKK m.12).** Kurulum `.env`'e `BACKUP_ENCRYPTION_KEY` yazar; arşiv
+AES-256 ile şifrelenir (`hr360-….tar.gz.enc`). Anahtar olmadan yedek açılamaz: anahtarı
+yedeklerden ayrı bir yerde (parola kasası) saklayın.
 
-```
-15 3 * * * cd /opt/hr360-enterprise && scripts/backup.sh --keep 30 >> backups/backup.log 2>&1
-```
+**Zamanlama ve doğrulama.** `scripts/backup.sh schedule --at 03:15 --keep 30 --verify-weekly`
+her gece yedek alır, Pazar günleri son yedeği ağa bağlı olmayan geçici bir PostgreSQL
+konteynerine geri yükleyip tabloları sayar (`backups/verify.log`, `DOGRULANDI`/`DOGRULANAMADI`).
+Üretim veritabanına dokunulmaz.
+
+**Dış depo.** `.env`'e `BACKUP_S3_ENDPOINT`, `BACKUP_S3_BUCKET`, `BACKUP_S3_ACCESS_KEY`,
+`BACKUP_S3_SECRET_KEY` (isteğe bağlı `BACKUP_S3_PREFIX`) yazılırsa her yedek S3 uyumlu depoya
+(MinIO, Ceph, yerli bulut) da gönderilir. Yalnızca şifreli arşiv gönderilir. Uç nokta yurt
+dışındaki bilinen bir sağlayıcıysa (AWS, Azure, GCP, Backblaze, Wasabi, Cloudflare R2…) KVKK
+m.9 dayanağı olmadan gönderilmez; dayanak varsa `BACKUP_S3_ABROAD_OK=1`.
+
+**Geri yüklemede KVKK.** Yedekten sonra imha edilmiş kayıtlar geri gelebileceği için
+`restore.sh` bittiğinde etkin saklama politikaları hemen yeniden çalışır (imha tutanağında
+"Geri yükleme sonrası"). Yedek tarihinden sonra yerine getirilmiş silme başvurularını KVKK ›
+Başvurular ekranından kontrol edin.
 
 Arşive girmeyen ama ayrıca saklanması gerekenler: `deploy/keycloak/realm-export.json`
 ve sertifikalar (`deploy/letsencrypt/`, kendi sertifikanızı kullanıyorsanız
@@ -206,6 +222,56 @@ sunucunun kendisinden erişilebilir.
   girilir; adım adım yönerge ekrandadır. Google ve Microsoft yönlendirme adresi
   için HTTPS gerekir.
 - Uçtan uca test (sahte Google/Graph/Zoom ile): `tests/integration/test_calendar.py`.
+
+### Bordro, fazla mesai ve giriş-çıkış
+
+- **Bordro dönemi** (Ücret › Bordro, `/panel/bordro`): ay açılır, hesaplanır, kontrol edilip
+  kapatılır. Brütten nete: SGK işçi %14 ve işsizlik %1 (tavan asgari ücretin 9 katı), kümülatif
+  matrahla gelir vergisi (2026 ücret tarifesi 190 bin / 400 bin / 1,5 milyon / 5,3 milyon),
+  asgari ücret GV ve damga istisnası, işveren SGK %21,75 − teşvik puanı. Girdiler: onaylı
+  ücretsiz izin günleri (eksik gün), **yalnızca onaylı** fazla mesai (saatlik ücretin %150'si)
+  ve döneme özel ek ödeme/kesintiler. Parametreler yıl başına değiştirilebilir. Kapanan dönem
+  değiştirilemez; yeniden açmayı yalnızca kiracı yöneticisi gerekçeyle yapar (denetim kaydına
+  yazılır). Doğrulama: 2026 asgari ücret neti 28.075,50 TL, işveren maliyeti 40.214,03 TL.
+- **Bordrolarım** (`/panel/bordrolarim`): çalışan, dönem kapanınca kendi pusulasını görür ve
+  yazdırır/PDF alır. KVKK: pusulayı yalnızca çalışan ve bordro yetkilisi görür, İK'nın listeyi
+  açması erişim kaydına yazılır, pusulalar 10 yıl saklanıp imha edilir.
+- **Fazla mesai** (Puantaj sayfası): talep onay akışına gider; günde en fazla 4 saat, yılda
+  270 saat (İş Kanunu m.41) aşılamaz. Gerekçede sağlık bilgisi istenmez.
+- **Giriş-çıkış** (`/panel/giris-cikis`, yönetim `/panel/giris-cikis/yonetim`): ofisteki
+  kiosk ekranında dakikada bir değişen QR kod, kart okuyucu ya da sicil kodu + PIN terminali
+  (`POST /api/timeshift/time-clock/terminal/punch`, `X-Device-Key`). **Biyometri yoktur**
+  (KVKK Kurulu 2026/921). Konum denetimi nokta başına isteğe bağlıdır; koordinat yalnızca o
+  istekte "noktada mı" hesabında kullanılır, saklanmaz. Kart numarası ve PIN özet olarak
+  tutulur; 5 hatalı PIN'de 15 dakika kilit.
+
+### Belge talebi, onay akışları ve vekâlet
+
+- **Belge talebi** (`/panel/belge-talebi`): çalışma belgesi, maaş yazısı gibi şablonları
+  çalışan kendisi ister; İK şablonda "çalışan talep edebilir" ve "İK onayı gerekir" seçer.
+  Düzenlenen belge şifreli saklanır, altında doğrulama kodu bulunur. `/belge-dogrula/<kod>`
+  oturumsuz doğrular; kişisel veri göstermez (belge türü, tarih, baş harfler).
+- **Onay akışları** (`/panel/onay-akislari`): talep türüne göre çok adımlı zincir — bölüm başı,
+  üst bölüm başı, belirli kişi; gün/tutar/saat koşulları; adım başına karar süresi. KVKK:
+  belirli kişiye giden adım için uyarı, onaycılardan gizlenecek alanlar (ör. izin gerekçesi).
+- **Vekâlet** (Onay kutusu › Vekâlet): tarih aralığında onaylar vekile geçer; vekil yalnızca
+  kendisine düşen kaydı görür, süre bitince ya da geri alınınca adımlar asıl onaycıya döner;
+  vekilin kararı geçmişte "(vekâleten)" diye görünür.
+- **Toplu onay** (Onay kutusunda seçip), **süre aşımında üst yöneticiye iletme** ve
+  **e-postadan tek tıkla karar**: onaycı e-postasında tek kullanımlık (72 saat) bağlantı;
+  sayfa ayrıca onay ister, böylece e-posta tarayıcıları karar veremez. E-postada talep konusu
+  yazmaz (yalnızca tür ve talep eden).
+- **İzin**: saatlik izin (tek gün, 0,5 saat adımlarla; gün = saat / 7,5, `LEAVE_DAY_HOURS`),
+  kıdeme ve yaşa göre yasal yıllık izin hakkı (İş Kanunu m.53) ön izleme ve bakiyelere yazma,
+  kullanılmayan iznin sonraki yıla devri (isteğe bağlı üst sınır; tekrar çalıştırılabilir).
+
+### Mobil uygulama (PWA)
+
+Uygulama telefona kurulur (Hesap menüsü › Uygulama olarak yükle). **Profilim › Güvenlik ›
+Bu cihaz** ekranından anlık bildirim açılır: Web Push (VAPID, RFC 8291 şifreleme; harici
+servis yok). Bildirimde kişisel veri yer almaz ("Yeni bir bildiriminiz var"). İnternet yokken
+izin ve fazla mesai talepleri cihazda sıraya alınır, bağlantı gelince gönderilir. Oturum
+kapatılınca bu cihazın aboneliği ve sıradaki talepler silinir.
 
 ### Slack ve Microsoft Teams'ten onay
 

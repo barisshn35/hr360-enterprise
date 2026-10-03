@@ -54,6 +54,8 @@ export interface LeaveRequest {
   startDate: string
   endDate: string
   days: number
+  /** Saatlik izin (tek gün) */
+  hours?: number | null
   reason: string | null
   workflowRequestId: string | null
   createdAt: string
@@ -67,6 +69,8 @@ export interface CreateLeaveRequestInput {
   days: number
   reason?: string
   workflowRequestId?: string
+  /** Saatlik izin: yalnızca tek gün; gün = saat / 7,5 */
+  hours?: number
 }
 
 export interface CreateLeaveBalanceInput {
@@ -118,6 +122,14 @@ export const leaveApi = {
 
   getRequest: (id: string, signal?: AbortSignal) =>
     apiFetch<LeaveRequest>(`${BASE}/leave-requests/${id}`, { signal }),
+
+  /** İK: kıdeme ve yaşa göre yasal yıllık izin (İş Kanunu m.53) ön izlemesi. */
+  statutory: (year: number, signal?: AbortSignal) =>
+    apiFetch<Array<{ employeeId: string; serviceYears: number; anniversary: string; statutoryDays: number; ageRule: boolean; currentEntitled: number | null; carriedOver: number }>>(
+      `${BASE}/leave-balances/statutory?year=${year}`, { signal }),
+  applyStatutory: (year: number) => apiFetch<{ changed: number }>(`${BASE}/leave-balances/statutory/apply`, { method: 'POST', body: { year } }),
+  carryOver: (fromYear: number, maxDays?: number) =>
+    apiFetch<{ employees: number; days: number }>(`${BASE}/leave-balances/carry-over`, { method: 'POST', body: { fromYear, maxDays } }),
 
   createRequest: (input: CreateLeaveRequestInput) =>
     apiFetch<LeaveRequest>(`${BASE}/leave-requests`, { method: 'POST', body: input }),

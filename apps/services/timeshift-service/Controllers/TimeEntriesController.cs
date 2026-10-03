@@ -11,8 +11,6 @@ namespace TimeShiftService.Controllers;
 [Authorize]
 public class TimeEntriesController : ControllerBase
 {
-    private const int StandardWorkMinutes = 480; // 8 saat
-
     private readonly TimeShiftDbContext _db;
     private readonly TimeShiftService.Services.EmployeeDirectoryClient _employees;
     public TimeEntriesController(TimeShiftDbContext db, TimeShiftService.Services.EmployeeDirectoryClient employees)
@@ -25,28 +23,6 @@ public class TimeEntriesController : ControllerBase
     private bool IsTimekeeper => User.IsInRole("manager") || User.IsInRole("hr-admin")
         || User.IsInRole("tenant-admin") || User.IsInRole("platform-admin")
         || User.IsInRole("ext-timeshift-manage");
-
-    /// <summary>
-    /// Bir vardiyanin azami suresi. Daha eski acik kayit "unutulmus cikis" sayilir:
-    /// calisan onu kapatamaz (23 saatlik sahte mesai olusmasin), yeniden giris
-    /// yapabilir; eski kaydi yonetici/IK duzeltir. Arayuz (TimesheetPage) ayni siniri
-    /// kullanir - aksi halde "Cikis yap" dugmesi kalici olarak takili kaliyordu.
-    /// </summary>
-    private const int MaxShiftHours = 16;
-
-    /// <summary>
-    /// Is gunu, UTC tarihine gore degil isletmenin saat dilimine gore belirlenir
-    /// (HR360_TIMEZONE, varsayilan Europe/Istanbul). Onceden 00:00-03:00 arasi
-    /// yapilan giris bir onceki gune yaziliyordu.
-    /// </summary>
-    private static readonly TimeZoneInfo BusinessZone = ResolveZone();
-    private static TimeZoneInfo ResolveZone()
-    {
-        try { return TimeZoneInfo.FindSystemTimeZoneById(Environment.GetEnvironmentVariable("HR360_TIMEZONE") ?? "Europe/Istanbul"); }
-        catch (Exception) { return TimeZoneInfo.Utc; }
-    }
-    private static DateOnly WorkDate(DateTimeOffset utc) =>
-        DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(utc, BusinessZone).DateTime);
 
     /// <summary>
     /// GUVENLIK: EmployeeId, saat (At) ve kaynak (Source) tamamen istemciden geliyordu -
@@ -101,26 +77,9 @@ public class TimeEntriesController : ControllerBase
     {
         var (error, employeeId, at, source) = await ResolveClockAsync(request, ct);
         if (error is not null) return error;
-
-        // Kapatilmamis (cikisi yapilmamis) bir onceki kayit varsa once o kapatilmali.
-        var open = await _db.TimeEntries.AnyAsync(t =>
-            t.EmployeeId == employeeId && t.ClockIn != null && t.ClockOut == null
-            && t.ClockIn > at.AddHours(-MaxShiftHours) && t.ClockIn <= at, ct);
-        if (open) return Conflict("Açık bir giriş kaydınız var; önce çıkış yapın");
-
-        var date = WorkDate(at);
-        var entry = await _db.TimeEntries.FirstOrDefaultAsync(t =>
-            t.EmployeeId == employeeId && t.Date == date, ct);
-
-        if (entry is not null && entry.ClockIn is not null)
-            return Conflict("Bu gun icin giris kaydi zaten var");
-
-        entry ??= new TimeEntry { EmployeeId = employeeId, Date = date };
-        entry.ClockIn = at;
-        entry.Source = source;
-
-        if (_db.Entry(entry).State == EntityState.Detached) _db.TimeEntries.Add(entry);
-        await _db.SaveChangesAsync();
+        var (msg, entry) = await TimeShiftService.Services.ClockCore.ClockInAsync(_db, employeeId, at, source, ct);
+        if (msg is not null) return Conflict(msg);
+        await _db.SaveChangesAsync(ct);
         return Ok(entry);
     }
 
@@ -129,24 +88,9 @@ public class TimeEntriesController : ControllerBase
     {
         var (error, employeeId, at, _) = await ResolveClockAsync(request, ct);
         if (error is not null) return error;
-
-        // NOT: Onceden cikis, cikis saatinin (UTC) TARIHINE ait kayitta araniyordu -
-        // gece vardiyasi (22:00 giris, ertesi gun 06:00 cikis) hic kapatilamiyordu
-        // ("Once giris kaydi olusturulmali"). Artik son MaxShiftHours icindeki acik kayit kapatilir.
-        var entry = await _db.TimeEntries
-            .Where(t => t.EmployeeId == employeeId && t.ClockIn != null && t.ClockOut == null
-                && t.ClockIn > at.AddHours(-MaxShiftHours) && t.ClockIn <= at)
-            .OrderByDescending(t => t.ClockIn)
-            .FirstOrDefaultAsync(ct);
-
-        if (entry?.ClockIn is null) return BadRequest("Önce giriş kaydı oluşturulmalı");
-
-        entry.ClockOut = at;
-        var worked = (int)(at - entry.ClockIn.Value).TotalMinutes;
-        entry.WorkedMinutes = worked;
-        entry.OvertimeMinutes = Math.Max(0, worked - StandardWorkMinutes);
-
-        await _db.SaveChangesAsync();
+        var (msg, entry) = await TimeShiftService.Services.ClockCore.ClockOutAsync(_db, employeeId, at, ct);
+        if (msg is not null) return BadRequest(msg);
+        await _db.SaveChangesAsync(ct);
         return Ok(entry);
     }
 

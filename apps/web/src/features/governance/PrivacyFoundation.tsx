@@ -201,7 +201,7 @@ export function DestructionLogsPanel() {
                     <td className="py-2 pr-3">{r.label}{r.retentionMonths ? ` (${r.retentionMonths} ${tx('ay')})` : ''}</td>
                     <td className="py-2 pr-3">{r.method}</td>
                     <td className="tabular py-2 pr-3">{r.affected}</td>
-                    <td className="py-2 pr-3">{r.trigger === 'Periodic' ? tx('Periyodik') : tx('Elle')} · {r.actor}</td>
+                    <td className="py-2 pr-3">{r.trigger === 'Periodic' ? tx('Periyodik') : r.trigger === 'Restore' ? tx('Geri yükleme sonrası') : r.trigger === 'Request' ? tx('Başvuru') : tx('Elle')} · {r.actor}</td>
                   </tr>
                 ))}
               </tbody>

@@ -28,7 +28,13 @@ public record WorkflowSubmittedEvent(
     string ApproverEmail,
     string ApproverFirstName,
     DateTimeOffset? SlaDueAt,
-    DateTimeOffset OccurredAt);
+    DateTimeOffset OccurredAt,
+    // E-postadan tek tıkla karar için tek kullanımlık jeton (yalnızca e-posta bildirimi kullanır).
+    string? ActionToken = null,
+    // Adım vekile geçtiyse asıl onaycı (bilgi amaçlı).
+    Guid? OnBehalfOfEmployeeId = null,
+    // Süre aşımıyla üst yöneticiye iletildiyse true.
+    bool Escalated = false);
 
 /// <summary>
 /// Onay akisi sonuclandiginda yayinlanir. Talebi baslatan servisler

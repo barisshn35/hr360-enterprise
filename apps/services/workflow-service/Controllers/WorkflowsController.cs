@@ -16,11 +16,13 @@ public class WorkflowsController : ControllerBase
 {
     private readonly WorkflowDbContext _db;
     private readonly EmployeeDirectoryClient _employees;
+    private readonly WorkflowRouting _routing;
 
-    public WorkflowsController(WorkflowDbContext db, EmployeeDirectoryClient employees)
+    public WorkflowsController(WorkflowDbContext db, EmployeeDirectoryClient employees, WorkflowRouting routing)
     {
         _db = db;
         _employees = employees;
+        _routing = routing;
     }
 
     /// <summary>Tum is akislarini gorebilen/yonetebilen roller.</summary>
@@ -63,8 +65,30 @@ public class WorkflowsController : ControllerBase
             if (me is null) return Forbid();
             q = VisibleTo(q, me.Value);
         }
-        var wf = await q.FirstOrDefaultAsync(w => w.Id == id, ct);
-        return wf is null ? NotFound() : Ok(wf);
+        var wf = await q.AsNoTracking().FirstOrDefaultAsync(w => w.Id == id, ct);
+        if (wf is null) return NotFound();
+        // KVKK: akış tanımında onaycılardan gizlenen alanlar (ör. izin gerekçesi) talep sahibi ve
+        // İK dışındakilere gösterilmez.
+        if (!IsHr && wf.Payload is { Length: > 0 } && await _employees.FindMyEmployeeIdAsync(ct) != wf.RequesterEmployeeId)
+        {
+            var hidden = await _db.Definitions.AsNoTracking().Where(d => d.Type == wf.Type && d.IsActive).Select(d => d.HiddenFieldsJson).FirstOrDefaultAsync(ct);
+            var fields = hidden is null ? new List<string>() : JsonSerializer.Deserialize<List<string>>(hidden) ?? new();
+            if (fields.Count > 0)
+            {
+                try
+                {
+                    var node = System.Text.Json.Nodes.JsonNode.Parse(wf.Payload)?.AsObject();
+                    if (node is not null)
+                    {
+                        foreach (var k in node.Select(p => p.Key).ToList())
+                            if (fields.Any(f => string.Equals(f, k, StringComparison.OrdinalIgnoreCase))) node.Remove(k);
+                        wf.Payload = node.ToJsonString();
+                    }
+                }
+                catch (JsonException) { }
+            }
+        }
+        return Ok(wf);
     }
 
     [HttpPost]
@@ -113,7 +137,10 @@ public class WorkflowsController : ControllerBase
 
     private async Task<(IActionResult? Error, WorkflowRequest? Wf)> CreateCoreAsync(CreateWorkflowRequest request, CancellationToken ct)
     {
-        var approvers = request.ApproverEmployeeIds ?? new List<Guid>();
+        var tenant = _db.CurrentTenantSlug ?? "";
+        // Kiracının bu tür için etkin akış tanımı varsa onaycı zinciri ondan kurulur (Y22).
+        var chain = await _routing.ResolveAsync(tenant, request.Type, request.RequesterEmployeeId, request.Payload, ct);
+        var approvers = chain?.Select(c => c.Approver).ToList() ?? request.ApproverEmployeeIds ?? new List<Guid>();
         if (approvers.Count == 0 || approvers.Count > 10)
             return (BadRequest(new { message = "En az 1, en fazla 10 onaycı gerekli" }), null);
         if (approvers.Contains(Guid.Empty) || approvers.Distinct().Count() != approvers.Count)
@@ -141,45 +168,28 @@ public class WorkflowsController : ControllerBase
         {
             wf.Steps.Add(new ApprovalStep
             {
-                Order = order++,
-                ApproverEmployeeId = approverId
+                Order = order,
+                ApproverEmployeeId = approverId,
+                SlaHours = chain?[order - 1].SlaHours,
             });
+            order++;
         }
 
         _db.WorkflowRequests.Add(wf);
 
-        // Ilk adimin onaycisina "karar bekleyen bir talebiniz var" e-postasi.
-        // Sirali onay oldugu icin SADECE ilk adim su an aktif - sonraki
-        // adimlarin onaycilari kendi siralari geldiginde (Decide metodunda)
-        // bilgilendirilir.
-        var firstStep = wf.Steps.OrderBy(s => s.Order).FirstOrDefault();
-        if (firstStep is not null)
-        {
-            var approver = await LookupEmployeeAsync(firstStep.ApproverEmployeeId, ct);
-            var requester = await LookupEmployeeAsync(request.RequesterEmployeeId, ct);
-            if (approver is not null)
-            {
-                _db.OutboxMessages.Add(new OutboxMessage
-                {
-                    Topic = WorkflowTopics.Events,
-                    EventType = WorkflowEventTypes.Submitted,
-                    PartitionKey = wf.Id.ToString(),
-                    Payload = JsonSerializer.Serialize(new WorkflowSubmittedEvent(
-                        _db.CurrentTenantSlug ?? "",
-                        wf.Id, wf.Type.ToString(), wf.RequesterEmployeeId,
-                        requester is null ? null : $"{requester.FirstName} {requester.LastName}",
-                        wf.Subject, firstStep.ApproverEmployeeId,
-                        approver.Email, approver.FirstName, wf.SlaDueAt, DateTimeOffset.UtcNow)),
-                });
-            }
-        }
+        // Sirali onay: SADECE ilk adim su an aktif; sonraki adimlarin onaycilari kendi siralari
+        // geldiginde (ApplyDecisionAsync) bilgilendirilir. Vekalet ve e-posta karar jetonu burada uygulanir.
+        var firstStep = wf.Steps.OrderBy(s => s.Order).First();
+        await _routing.AssignAsync(wf, firstStep, tenant, ct);
 
         await _db.SaveChangesAsync(ct);
         return (null, wf);
     }
 
+    // NOT: Onceden RequireManagerOrAbove politikasi vardi; akis tanimlariyla (Y22) belirli bir kisi
+    // ve vekalet (Y23) ile yonetici olmayan biri de onayci/vekil olabiliyor. Asagidaki acik kontrol
+    // (onayci ya da vekil; IK idari mudahalesi; kendi talebi asla) yeterli ve daha siki.
     [HttpPost("{id}/steps/{stepId}/decide")]
-    [Authorize(Policy = "RequireManagerOrAbove")]
     public async Task<IActionResult> Decide(Guid id, Guid stepId, [FromBody] DecideRequest request, CancellationToken ct)
     {
         // NOT: Onceden "Delegated"/"Pending" da kabul ediliyordu - "Delegated" adimi
@@ -227,7 +237,11 @@ public class WorkflowsController : ControllerBase
             && myEmployeeId.Value != step.DelegatedToEmployeeId)
             return Forbid();
 
-        var error = await ApplyDecisionAsync(wf, step, request.Decision, request.Comment, myEmployeeId.Value, ct);
+        var comment = request.Comment;
+        // Vekilin verdiği karar onay geçmişinde ayrıca belirtilir (denetim izi).
+        if (myEmployeeId.Value == step.DelegatedToEmployeeId && myEmployeeId.Value != step.ApproverEmployeeId)
+            comment = string.IsNullOrWhiteSpace(comment) ? (step.EscalatedAt is null ? "(vekâleten)" : "(üst yönetici)") : $"{comment} ({(step.EscalatedAt is null ? "vekâleten" : "üst yönetici")})";
+        var error = await ApplyDecisionAsync(wf, step, request.Decision, comment, myEmployeeId.Value, ct);
         if (error is not null) return BadRequest(error);
         await _db.SaveChangesAsync();
         return Ok(wf);
@@ -282,30 +296,6 @@ public class WorkflowsController : ControllerBase
         return Ok(new { wf.Id, status = wf.Status.ToString(), wf.Subject, stepOrder = step.Order });
     }
 
-    /// <summary>
-    /// Calisan adi/e-postasi. Web isteginde kullanicinin jetonuyla employee-service'e
-    /// sorulur; servisler arasi (jetonsuz) cagride ayni veritabanindaki tablodan,
-    /// kiraci filtresiyle okunur.
-    /// </summary>
-    private async Task<EmployeeDirectoryClient.EmployeeDto?> LookupEmployeeAsync(Guid id, CancellationToken ct)
-    {
-        if (!string.IsNullOrEmpty(Request.Headers.Authorization.ToString()))
-            return await _employees.GetByIdAsync(id, ct);
-        var tenant = _db.CurrentTenantSlug ?? "";
-        var row = await _db.Database
-            .SqlQuery<EmployeeRow>($"SELECT \"Id\", \"FirstName\", \"LastName\", \"Email\" FROM employee_employees WHERE \"Id\" = {id} AND \"TenantSlug\" = {tenant}")
-            .FirstOrDefaultAsync(ct);
-        return row is null ? null : new EmployeeDirectoryClient.EmployeeDto(row.Id, row.FirstName, row.LastName, row.Email);
-    }
-
-    private sealed class EmployeeRow
-    {
-        public Guid Id { get; set; }
-        public string FirstName { get; set; } = "";
-        public string LastName { get; set; } = "";
-        public string Email { get; set; } = "";
-    }
-
     /// <summary>Yetki kontrolleri yapildiktan sonra karari uygular (kaydetmez). Hata metni ya da null.</summary>
     private async Task<string?> ApplyDecisionAsync(WorkflowRequest wf, ApprovalStep step, StepDecision decision, string? comment,
         Guid actorEmployeeId, CancellationToken ct)
@@ -319,6 +309,7 @@ public class WorkflowsController : ControllerBase
         step.Decision = request.Decision;
         step.Comment = request.Comment;
         step.DecidedAt = DateTimeOffset.UtcNow;
+        step.ActionTokenHash = null; // e-posta bağlantısı artık geçersiz
 
         if (request.Decision == StepDecision.Rejected)
         {
@@ -342,25 +333,7 @@ public class WorkflowsController : ControllerBase
                     .OrderBy(s => s.Order)
                     .FirstOrDefault();
                 if (nextStep is not null)
-                {
-                    var approver = await LookupEmployeeAsync(nextStep.ApproverEmployeeId, ct);
-                    var requester = await LookupEmployeeAsync(wf.RequesterEmployeeId, ct);
-                    if (approver is not null)
-                    {
-                        _db.OutboxMessages.Add(new OutboxMessage
-                        {
-                            Topic = WorkflowTopics.Events,
-                            EventType = WorkflowEventTypes.Submitted,
-                            PartitionKey = wf.Id.ToString(),
-                            Payload = JsonSerializer.Serialize(new WorkflowSubmittedEvent(
-                                _db.CurrentTenantSlug ?? "",
-                                wf.Id, wf.Type.ToString(), wf.RequesterEmployeeId,
-                                requester is null ? null : $"{requester.FirstName} {requester.LastName}",
-                                wf.Subject, nextStep.ApproverEmployeeId,
-                                approver.Email, approver.FirstName, wf.SlaDueAt, DateTimeOffset.UtcNow)),
-                        });
-                    }
-                }
+                    await _routing.AssignAsync(wf, nextStep, _db.CurrentTenantSlug ?? wf.TenantSlug, ct);
             }
         }
 
@@ -393,6 +366,93 @@ public class WorkflowsController : ControllerBase
     /// leave-service onun jetonuyla cagirir) ya da IK. Onceden iptal ucu yoktu: iptal edilen
     /// iznin akisi onaycinin kutusunda acik kaliyordu.
     /// </summary>
+    public record BulkItem(Guid WorkflowId, Guid StepId);
+    public record BulkDecideRequest(List<BulkItem> Items, StepDecision Decision, string? Comment);
+
+    /// <summary>
+    /// Toplu onay/ret (G10): her kalem tek tek, tekil karar ucuyla AYNI kurallarla işlenir;
+    /// yetkisiz ya da sırası gelmemiş kalemler atlanır ve sonuçta bildirilir. En fazla 50 kalem.
+    /// </summary>
+    [HttpPost("bulk-decide")]
+    public async Task<IActionResult> BulkDecide([FromBody] BulkDecideRequest request, CancellationToken ct)
+    {
+        if (request.Decision is not (StepDecision.Approved or StepDecision.Rejected))
+            return BadRequest(new { message = "Karar yalnızca Approved ya da Rejected olabilir" });
+        if (request.Items is null || request.Items.Count is 0 or > 50)
+            return BadRequest(new { message = "1-50 talep seçin" });
+        var me = await _employees.FindMyEmployeeIdAsync(ct);
+        if (me is null) return Forbid();
+        var results = new List<object>();
+        var done = 0;
+        foreach (var item in request.Items.DistinctBy(i => i.StepId))
+        {
+            var wf = await _db.WorkflowRequests.Include(w => w.Steps).FirstOrDefaultAsync(w => w.Id == item.WorkflowId, ct);
+            var step = wf?.Steps.FirstOrDefault(x => x.Id == item.StepId);
+            string? error = null;
+            if (wf is null || step is null) error = "Talep bulunamadı";
+            else if (wf.Status != WorkflowStatus.Pending || step.Decision != StepDecision.Pending) error = "Zaten karara bağlanmış";
+            else if (wf.RequesterEmployeeId == me) error = "Kendi talebinize karar veremezsiniz";
+            else if (me != step.ApproverEmployeeId && me != step.DelegatedToEmployeeId) error = "Bu adımın onaycısı siz değilsiniz";
+            else
+            {
+                var comment = string.IsNullOrWhiteSpace(request.Comment) ? "(toplu karar)" : $"{request.Comment.Trim()} (toplu karar)";
+                error = await ApplyDecisionAsync(wf, step, request.Decision, comment, me.Value, ct);
+                if (error is not null) error = "Önceki onay adımları henüz tamamlanmadı";
+            }
+            if (error is null) { await _db.SaveChangesAsync(ct); done++; }
+            else _db.ChangeTracker.Clear();
+            results.Add(new { item.WorkflowId, item.StepId, ok = error is null, error });
+        }
+        return Ok(new { done, results });
+    }
+
+    /// <summary>
+    /// E-postadaki tek kullanımlık bağlantının ön izlemesi (oturum gerekmez). KVKK: kişisel veri
+    /// yerine yalnızca talep türü ve tarih döner; ayrıntı için HR360'a giriş gerekir.
+    /// </summary>
+    [HttpGet("email-action/{token}")]
+    [AllowAnonymous]
+    public async Task<IActionResult> EmailActionPreview(string token, CancellationToken ct)
+    {
+        var step = await _routing.StepForTokenAsync(token, ct);
+        if (step?.WorkflowRequest is not { } wf || step.Decision != StepDecision.Pending || wf.Status != WorkflowStatus.Pending)
+            return NotFound(new { message = "Bağlantının süresi dolmuş ya da daha önce kullanılmış", code = "invalid_link" });
+        return Ok(new { type = wf.Type.ToString(), createdAt = wf.CreatedAt, stepOrder = step.Order, stepCount = wf.Steps.Count, workflowId = wf.Id });
+    }
+
+    public record EmailActionRequest(string Token, StepDecision Decision, string? Comment);
+
+    /// <summary>
+    /// E-postadan tek tıkla karar. Bağlantı adıma ve onaycıya özeldir, 72 saat geçerlidir ve
+    /// TEK KULLANIMLIKTIR; karar web arayüzüyle aynı kurallarla (sıra, kendi talebi) uygulanır.
+    /// E-posta tarayıcılarının bağlantıyı açması karar vermez: karar ayrı bir onay adımıyla
+    /// (POST) verilir.
+    /// </summary>
+    [HttpPost("email-action")]
+    [AllowAnonymous]
+    public async Task<IActionResult> EmailAction([FromBody] EmailActionRequest request, [FromServices] Tenancy.TenantContext tenant, CancellationToken ct)
+    {
+        if (request.Decision is not (StepDecision.Approved or StepDecision.Rejected))
+            return BadRequest(new { message = "Karar yalnızca Approved ya da Rejected olabilir" });
+        var found = await _routing.StepForTokenAsync(request.Token, ct);
+        if (found?.WorkflowRequest is null)
+            return NotFound(new { message = "Bağlantının süresi dolmuş ya da daha önce kullanılmış", code = "invalid_link" });
+        tenant.TenantSlug = found.TenantSlug;
+        tenant.IsPlatformAdmin = false;
+        _db.ChangeTracker.Clear();
+        var wf = await _db.WorkflowRequests.Include(w => w.Steps).FirstAsync(w => w.Id == found.WorkflowRequestId, ct);
+        var step = wf.Steps.First(x => x.Id == found.Id);
+        if (wf.Status != WorkflowStatus.Pending || step.Decision != StepDecision.Pending)
+            return Conflict(new { message = "Bu talep zaten karara bağlanmış.", code = "already_decided" });
+        var actor = step.DelegatedToEmployeeId ?? step.ApproverEmployeeId;
+        if (actor == wf.RequesterEmployeeId) return StatusCode(403, new { message = "Kendi talebinizi onaylayamazsınız." });
+        var comment = string.IsNullOrWhiteSpace(request.Comment) ? "(e-posta üzerinden)" : $"{request.Comment.Trim()[..Math.Min(request.Comment.Trim().Length, 500)]} (e-posta üzerinden)";
+        var error = await ApplyDecisionAsync(wf, step, request.Decision, comment, actor, ct);
+        if (error is not null) return Conflict(new { message = "Önceki onay adımları henüz tamamlanmadı.", code = "previous_pending" });
+        await _db.SaveChangesAsync(ct);
+        return Ok(new { status = wf.Status.ToString(), decision = request.Decision.ToString() });
+    }
+
     [HttpPost("{id}/cancel")]
     public async Task<IActionResult> Cancel(Guid id, CancellationToken ct)
     {

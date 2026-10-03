@@ -59,18 +59,61 @@ function BulkModal({ t, onClose }: { t: DocTemplate; onClose: () => void }) {
   )
 }
 
+/** İK: çalışanların belge talepleri (onay bekleyenler ve son düzenlenenler). */
+function DocRequestsPanel() {
+  const dir = useDirectory()
+  const nameOf = (id: string) => dir.data?.find((d) => d.id === id)?.fullName ?? '—'
+  const q = useQuery({ queryKey: ['doc-requests', 'all'], queryFn: ({ signal }) => governanceApi.docRequests(undefined, signal) })
+  const decide = useAction(({ id, ok }: { id: string; ok: boolean }) => governanceApi.decideDocRequest(id, ok), { success: tx('Karar kaydedildi; çalışana bildirildi'), invalidate: [['doc-requests']] })
+  const open = useAction((id: string) => governanceApi.docRequestDocument(id), { onDone: (d) => printDocuments(d.templateName, [{ employeeId: '', name: '', html: d.html }]) })
+  const pending = (q.data ?? []).filter((r) => r.status === 'Pending')
+  const recent = (q.data ?? []).filter((r) => r.status !== 'Pending').slice(0, 10)
+  return (
+    <Panel>
+      <PanelHead title={tx('Belge talepleri')} note={tx('Çalışanlar "çalışan talep edebilir" işaretli şablonları kendileri ister. Belge şifreli saklanır ve doğrulama koduyla doğrulanır; açtığınız belge erişim kaydına yazılır.')} />
+      <PanelBody className="space-y-3">
+        {q.isPending ? <RowsSkeleton rows={2} /> : !q.data?.length ? <p className="text-[13px] text-muted-foreground">{tx('Henüz belge talebi yok.')}</p> : (
+          <>
+            {pending.length > 0 && (
+              <ul className="divide-y divide-border text-[13px]">
+                {pending.map((r) => (
+                  <li key={r.id} className="flex flex-wrap items-center gap-2 py-2">
+                    <span className="min-w-0 flex-1">{nameOf(r.employeeId)} · {r.templateName}{r.purpose ? ` · ${r.purpose}` : ''}</span>
+                    <Button size="sm" onClick={() => decide.mutate({ id: r.id, ok: true })}>{tx('Düzenle')}</Button>
+                    <Button size="sm" variant="outline" onClick={() => decide.mutate({ id: r.id, ok: false })}>{tx('Reddet')}</Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {recent.length > 0 && (
+              <ul className="divide-y divide-border text-[12.5px] text-muted-foreground">
+                {recent.map((r) => (
+                  <li key={r.id} className="flex items-center gap-2 py-1.5">
+                    <span className="min-w-0 flex-1 truncate">{nameOf(r.employeeId)} · {r.templateName} · {r.status === 'Issued' ? tx('Düzenlendi') : tx('Reddedildi')}</span>
+                    {r.status === 'Issued' && <Button size="xs" variant="ghost" onClick={() => open.mutate(r.id)}><Printer className="size-3.5" /></Button>}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        )}
+      </PanelBody>
+    </Panel>
+  )
+}
+
 export function DocTemplatesPage() {
   const list = useQuery({ queryKey: ['doc-templates'], queryFn: ({ signal }) => governanceApi.templates(signal) })
   const ph = useQuery({ queryKey: ['doc-placeholders'], queryFn: ({ signal }) => governanceApi.placeholders(signal), staleTime: Infinity })
   const [selId, setSelId] = useState<string | null>(null)
   const sel = list.data?.find((t) => t.id === selId) ?? null
-  const [f, setF] = useState({ name: '', category: 'Genel', body: '' })
+  const [f, setF] = useState({ name: '', category: 'Genel', body: '', selfService: false, requiresApproval: true })
   const [bulk, setBulk] = useState<DocTemplate | null>(null)
   const area = useRef<HTMLTextAreaElement>(null)
-  useEffect(() => { if (sel) setF({ name: sel.name, category: sel.category, body: sel.body }) }, [sel])
+  useEffect(() => { if (sel) setF({ name: sel.name, category: sel.category, body: sel.body, selfService: sel.selfService, requiresApproval: sel.requiresApproval }) }, [sel])
   const samples = useAction(() => governanceApi.sampleTemplates(), { success: (r) => tx('{0} hazır şablon eklendi', [r.added]), invalidate: [['doc-templates']] })
   const save = useAction(() => (sel ? governanceApi.updateTemplate(sel.id, f) : governanceApi.createTemplate(f)), { success: tx('Şablon kaydedildi'), invalidate: [['doc-templates']], onDone: (t) => setSelId(t.id) })
-  const del = useAction(() => governanceApi.deleteTemplate(sel!.id), { success: tx('Silindi'), invalidate: [['doc-templates']], onDone: () => { setSelId(null); setF({ name: '', category: 'Genel', body: '' }) } })
+  const del = useAction(() => governanceApi.deleteTemplate(sel!.id), { success: tx('Silindi'), invalidate: [['doc-templates']], onDone: () => { setSelId(null); setF({ name: '', category: 'Genel', body: '', selfService: false, requiresApproval: true }) } })
   const insert = (key: string) => {
     const el = area.current
     const token = `{{${key}}}`
@@ -84,7 +127,7 @@ export function DocTemplatesPage() {
 
   return (
     <PlanGate feature="documents">
-      <PageHeader title={tx('Belge şablonları')} description={tx('Çalışma belgesi, görev değişikliği, ücret yazısı… Yer tutuculu şablonlardan tek tıkla toplu belge ve PDF.')} actions={<Button onClick={() => { setSelId(null); setF({ name: '', category: 'Genel', body: '' }) }}><Plus className="size-4" />{' '}{tx('Yeni şablon')}</Button>} />
+      <PageHeader title={tx('Belge şablonları')} description={tx('Çalışma belgesi, görev değişikliği, ücret yazısı… Yer tutuculu şablonlardan tek tıkla toplu belge ve PDF.')} actions={<Button onClick={() => { setSelId(null); setF({ name: '', category: 'Genel', body: '', selfService: false, requiresApproval: true }) }}><Plus className="size-4" />{' '}{tx('Yeni şablon')}</Button>} />
       <div className="grid gap-6 xl:grid-cols-[280px_1fr]">
         <Panel>
           <PanelHead title={tx('Şablonlar')} action={(list.data?.length ?? 0) < 4 && <Button size="xs" variant="outline" onClick={() => samples.mutate(undefined)}>{tx('Hazır şablonlar')}</Button>} />
@@ -110,6 +153,10 @@ export function DocTemplatesPage() {
             </div>} />
             <PanelBody className="space-y-4">
               <div className="grid gap-3 sm:grid-cols-[1fr_200px]"><TextField label={tx('Ad')} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /><TextField label={tx('Kategori')} value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })} /></div>
+              <div className="flex flex-wrap gap-5 text-[13px]">
+                <label className="flex items-center gap-2"><Checkbox checked={f.selfService} onCheckedChange={(v) => setF({ ...f, selfService: v === true })} /> {tx('Çalışan kendisi talep edebilir')}</label>
+                {f.selfService && <label className="flex items-center gap-2"><Checkbox checked={f.requiresApproval} onCheckedChange={(v) => setF({ ...f, requiresApproval: v === true })} /> {tx('İK onayından sonra düzenlensin')}</label>}
+              </div>
               <div>
                 <p className="mb-1.5 text-[12.5px] text-muted-foreground">{tx('Yer tutucu eklemek için tıklayın:')}</p>
                 <div className="flex flex-wrap gap-1">{ph.data?.map((p) => <button key={p.key} onClick={() => insert(p.key)} className="cursor-pointer rounded-md border border-border bg-muted/40 px-2 py-0.5 font-mono text-[11px] hover:border-primary/50" title={p.label}>{`{{${p.key}}}`}</button>)}</div>
@@ -127,6 +174,7 @@ export function DocTemplatesPage() {
               <InfoNote>{tx('Güvenlik: kaydedilirken betik, iframe ve olay öznitelikleri (onclick vb.) sunucuda temizlenir; değerler HTML olarak kaçışlanır.')}</InfoNote>
             </PanelBody>
           </Panel>
+          <DocRequestsPanel />
         </div>
       </div>
       {bulk && <BulkModal t={bulk} onClose={() => setBulk(null)} />}

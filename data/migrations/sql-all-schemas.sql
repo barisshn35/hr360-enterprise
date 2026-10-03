@@ -1678,3 +1678,237 @@ CREATE INDEX IF NOT EXISTS "IX_governance_chat_outbox_due" ON governance_chat_ou
 -- Sabah özeti (uygulama ayarı) ve kişi başına günde bir gönderim takibi.
 ALTER TABLE governance_chat_apps ADD COLUMN IF NOT EXISTS "DailyDigest" boolean NOT NULL DEFAULT true;
 ALTER TABLE governance_chat_identities ADD COLUMN IF NOT EXISTS "LastDigestOn" date;
+
+-- ==== 2026-10-05: scripts/sql/2026-10-05_payroll_time.sql ile ayni (ilk kurulum icin) ====
+-- Bordro dönemi (compensation-service), fazla mesai talebi ve giriş-çıkış (timeshift-service).
+CREATE TABLE IF NOT EXISTS compensation_payroll_periods (
+    "Id" uuid PRIMARY KEY,
+    "TenantSlug" character varying(64) NOT NULL,
+    "Year" integer NOT NULL,
+    "Month" integer NOT NULL,
+    "Status" text NOT NULL,
+    "CalculatedAt" timestamptz,
+    "ClosedAt" timestamptz,
+    "ClosedBy" text,
+    "CreatedAt" timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "IX_compensation_payroll_periods_TenantSlug_Year_Month" ON compensation_payroll_periods ("TenantSlug", "Year", "Month");
+
+CREATE TABLE IF NOT EXISTS compensation_payroll_parameters (
+    "Id" uuid PRIMARY KEY,
+    "TenantSlug" character varying(64) NOT NULL,
+    "Year" integer NOT NULL,
+    "MinimumWageGross" numeric NOT NULL,
+    "SgkEmployerRate" numeric NOT NULL,
+    "EmployerIncentivePoints" numeric NOT NULL,
+    "StampTaxRate" numeric NOT NULL,
+    "SgkCeilingMultiplier" numeric NOT NULL,
+    "BracketsJson" text NOT NULL,
+    "UpdatedAt" timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "IX_compensation_payroll_parameters_TenantSlug_Year" ON compensation_payroll_parameters ("TenantSlug", "Year");
+
+CREATE TABLE IF NOT EXISTS compensation_payroll_adjustments (
+    "Id" uuid PRIMARY KEY,
+    "TenantSlug" character varying(64) NOT NULL,
+    "PeriodId" uuid NOT NULL,
+    "EmployeeId" uuid NOT NULL,
+    "Kind" text NOT NULL,
+    "Amount" numeric NOT NULL,
+    "Description" text NOT NULL,
+    "SourceId" uuid,
+    "CreatedAt" timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS "IX_compensation_payroll_adjustments_PeriodId_EmployeeId" ON compensation_payroll_adjustments ("PeriodId", "EmployeeId");
+
+CREATE TABLE IF NOT EXISTS compensation_payslips (
+    "Id" uuid PRIMARY KEY,
+    "TenantSlug" character varying(64) NOT NULL,
+    "PeriodId" uuid NOT NULL,
+    "EmployeeId" uuid NOT NULL,
+    "Year" integer NOT NULL,
+    "Month" integer NOT NULL,
+    "Currency" text NOT NULL,
+    "MonthlyBaseGross" numeric NOT NULL,
+    "PaidDays" integer NOT NULL,
+    "UnpaidDays" integer NOT NULL,
+    "OvertimeHours" numeric NOT NULL,
+    "BaseGross" numeric NOT NULL,
+    "OvertimePay" numeric NOT NULL,
+    "Additions" numeric NOT NULL,
+    "Gross" numeric NOT NULL,
+    "SgkBase" numeric NOT NULL,
+    "SgkEmployee" numeric NOT NULL,
+    "UnemploymentEmployee" numeric NOT NULL,
+    "TaxBase" numeric NOT NULL,
+    "CumulativeTaxBase" numeric NOT NULL,
+    "IncomeTax" numeric NOT NULL,
+    "IncomeTaxExemption" numeric NOT NULL,
+    "StampTax" numeric NOT NULL,
+    "StampTaxExemption" numeric NOT NULL,
+    "Deductions" numeric NOT NULL,
+    "Net" numeric NOT NULL,
+    "SgkEmployer" numeric NOT NULL,
+    "UnemploymentEmployer" numeric NOT NULL,
+    "EmployerCost" numeric NOT NULL,
+    "CreatedAt" timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "IX_compensation_payslips_PeriodId_EmployeeId" ON compensation_payslips ("PeriodId", "EmployeeId");
+CREATE INDEX IF NOT EXISTS "IX_compensation_payslips_EmployeeId_Year" ON compensation_payslips ("EmployeeId", "Year");
+
+CREATE TABLE IF NOT EXISTS timeshift_overtime_requests (
+    "Id" uuid PRIMARY KEY,
+    "TenantSlug" character varying(64) NOT NULL,
+    "EmployeeId" uuid NOT NULL,
+    "Date" date NOT NULL,
+    "Hours" numeric NOT NULL,
+    "Reason" text,
+    "Status" text NOT NULL,
+    "WorkflowRequestId" uuid,
+    "CreatedBy" text,
+    "CreatedAt" timestamptz NOT NULL DEFAULT now(),
+    "DecidedAt" timestamptz
+);
+CREATE INDEX IF NOT EXISTS "IX_timeshift_overtime_requests_EmployeeId_Date" ON timeshift_overtime_requests ("EmployeeId", "Date");
+CREATE INDEX IF NOT EXISTS "IX_timeshift_overtime_requests_WorkflowRequestId" ON timeshift_overtime_requests ("WorkflowRequestId");
+
+CREATE TABLE IF NOT EXISTS timeshift_clock_sites (
+    "Id" uuid PRIMARY KEY,
+    "TenantSlug" character varying(64) NOT NULL,
+    "Name" text NOT NULL,
+    "AllowQr" boolean NOT NULL DEFAULT true,
+    "AllowTerminal" boolean NOT NULL DEFAULT true,
+    "CheckLocation" boolean NOT NULL DEFAULT false,
+    "Latitude" double precision,
+    "Longitude" double precision,
+    "RadiusMeters" integer NOT NULL DEFAULT 200,
+    "QrSecret" text NOT NULL,
+    "DeviceKeyHash" text,
+    "IsActive" boolean NOT NULL DEFAULT true,
+    "CreatedAt" timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS timeshift_clock_credentials (
+    "Id" uuid PRIMARY KEY,
+    "TenantSlug" character varying(64) NOT NULL,
+    "EmployeeId" uuid NOT NULL,
+    "BadgeCode" text,
+    "CardHash" text,
+    "PinHash" text,
+    "FailedPinAttempts" integer NOT NULL DEFAULT 0,
+    "LockedUntil" timestamptz,
+    "UpdatedAt" timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "IX_timeshift_clock_credentials_TenantSlug_EmployeeId" ON timeshift_clock_credentials ("TenantSlug", "EmployeeId");
+CREATE INDEX IF NOT EXISTS "IX_timeshift_clock_credentials_TenantSlug_BadgeCode" ON timeshift_clock_credentials ("TenantSlug", "BadgeCode");
+CREATE INDEX IF NOT EXISTS "IX_timeshift_clock_credentials_TenantSlug_CardHash" ON timeshift_clock_credentials ("TenantSlug", "CardHash");
+
+-- KVKK: koordinat sütunu bilinçli olarak yoktur; yalnızca "noktada mı" (OnSite) tutulur.
+CREATE TABLE IF NOT EXISTS timeshift_clock_punches (
+    "Id" uuid PRIMARY KEY,
+    "TenantSlug" character varying(64) NOT NULL,
+    "EmployeeId" uuid NOT NULL,
+    "SiteId" uuid,
+    "Kind" text NOT NULL,
+    "Method" text NOT NULL,
+    "OnSite" boolean,
+    "At" timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS "IX_timeshift_clock_punches_EmployeeId_At" ON timeshift_clock_punches ("EmployeeId", "At");
+
+-- ==== 2026-10-05: scripts/sql/2026-10-05_push_offline.sql ile ayni (ilk kurulum icin) ====
+-- PWA anlık bildirim (Web Push) abonelikleri ve VAPID anahtarı (notification-service).
+ALTER TABLE notification_messages ADD COLUMN IF NOT EXISTS "PushedAt" timestamptz;
+CREATE INDEX IF NOT EXISTS "IX_notification_messages_push_pending" ON notification_messages ("CreatedAt") WHERE "Channel" = 'InApp' AND "PushedAt" IS NULL;
+
+CREATE TABLE IF NOT EXISTS notification_push_subscriptions (
+    "Id" uuid PRIMARY KEY,
+    "TenantSlug" character varying(64) NOT NULL,
+    "EmployeeId" uuid NOT NULL,
+    "Endpoint" text NOT NULL,
+    "P256dh" text NOT NULL,
+    "Auth" text NOT NULL,
+    "Device" text,
+    "FailureCount" integer NOT NULL DEFAULT 0,
+    "LastSuccessAt" timestamptz,
+    "CreatedAt" timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "IX_notification_push_subscriptions_Endpoint" ON notification_push_subscriptions ("Endpoint");
+CREATE INDEX IF NOT EXISTS "IX_notification_push_subscriptions_TenantSlug_EmployeeId" ON notification_push_subscriptions ("TenantSlug", "EmployeeId");
+
+CREATE TABLE IF NOT EXISTS notification_vapid_keys (
+    "Id" integer PRIMARY KEY,
+    "PublicKey" text NOT NULL,
+    "PrivateKeyEnc" text NOT NULL
+);
+-- Eski bildirimler anlık bildirim olarak yeniden gönderilmesin.
+UPDATE notification_messages SET "PushedAt" = "CreatedAt" WHERE "PushedAt" IS NULL AND "CreatedAt" < now() - interval '30 minutes';
+
+-- E-postadaki eylem düğmesi (ör. tek kullanımlık karar sayfası).
+ALTER TABLE notification_messages ADD COLUMN IF NOT EXISTS "ActionUrl" text;
+ALTER TABLE notification_messages ADD COLUMN IF NOT EXISTS "ActionLabel" text;
+
+-- ==== 2026-10-05: scripts/sql/2026-10-05_documents_workflow.sql ile ayni (ilk kurulum icin) ====
+-- Çalışan belge talebi (governance-service).
+ALTER TABLE governance_doc_templates ADD COLUMN IF NOT EXISTS "SelfService" boolean NOT NULL DEFAULT false;
+ALTER TABLE governance_doc_templates ADD COLUMN IF NOT EXISTS "RequiresApproval" boolean NOT NULL DEFAULT true;
+UPDATE governance_doc_templates SET "SelfService" = true, "RequiresApproval" = false WHERE "Name" = 'Çalışma belgesi' AND "SelfService" = false;
+
+CREATE TABLE IF NOT EXISTS governance_document_requests (
+    "Id" uuid PRIMARY KEY,
+    "TenantSlug" character varying(64) NOT NULL,
+    "EmployeeId" uuid NOT NULL,
+    "TemplateId" uuid NOT NULL,
+    "TemplateName" text NOT NULL,
+    "Purpose" text,
+    "Status" text NOT NULL DEFAULT 'Pending',
+    "DecisionNote" text,
+    "DecidedBy" text,
+    "VerificationCode" text,
+    "DocumentEnc" text,
+    "DocumentHash" text,
+    "CreatedAt" timestamptz NOT NULL DEFAULT now(),
+    "IssuedAt" timestamptz
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "IX_governance_document_requests_VerificationCode" ON governance_document_requests ("VerificationCode");
+CREATE INDEX IF NOT EXISTS "IX_governance_document_requests_TenantSlug_EmployeeId" ON governance_document_requests ("TenantSlug", "EmployeeId");
+
+-- Onay akışı: görsel akış tanımları, vekâlet, süre aşımında üst yöneticiye iletme, e-postadan tek tıkla karar.
+ALTER TABLE workflow_approval_steps ADD COLUMN IF NOT EXISTS "SlaHours" integer;
+ALTER TABLE workflow_approval_steps ADD COLUMN IF NOT EXISTS "DelegationId" uuid;
+ALTER TABLE workflow_approval_steps ADD COLUMN IF NOT EXISTS "EscalatedAt" timestamptz;
+ALTER TABLE workflow_approval_steps ADD COLUMN IF NOT EXISTS "ActionTokenHash" text;
+ALTER TABLE workflow_approval_steps ADD COLUMN IF NOT EXISTS "ActionTokenExpiresAt" timestamptz;
+CREATE INDEX IF NOT EXISTS "IX_workflow_approval_steps_DelegationId" ON workflow_approval_steps ("DelegationId") WHERE "DelegationId" IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS workflow_definitions (
+    "Id" uuid PRIMARY KEY,
+    "TenantSlug" character varying(64) NOT NULL,
+    "Type" text NOT NULL,
+    "Name" text NOT NULL,
+    "IsActive" boolean NOT NULL DEFAULT true,
+    "StepsJson" text NOT NULL DEFAULT '[]',
+    "HiddenFieldsJson" text NOT NULL DEFAULT '[]',
+    "UpdatedAt" timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS "IX_workflow_definitions_TenantSlug_Type" ON workflow_definitions ("TenantSlug", "Type");
+
+CREATE TABLE IF NOT EXISTS workflow_delegations (
+    "Id" uuid PRIMARY KEY,
+    "TenantSlug" character varying(64) NOT NULL,
+    "FromEmployeeId" uuid NOT NULL,
+    "ToEmployeeId" uuid NOT NULL,
+    "StartDate" date NOT NULL,
+    "EndDate" date NOT NULL,
+    "Reason" text,
+    "CreatedBy" text,
+    "CreatedAt" timestamptz NOT NULL DEFAULT now(),
+    "RevokedAt" timestamptz
+);
+CREATE INDEX IF NOT EXISTS "IX_workflow_delegations_TenantSlug_FromEmployeeId" ON workflow_delegations ("TenantSlug", "FromEmployeeId");
+
+-- ==== 2026-10-05: scripts/sql/2026-10-05_leave_hours.sql ile ayni (ilk kurulum icin) ====
+-- İzin: saatlik izin ve devreden izin (leave-service).
+ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS "Hours" numeric;
+ALTER TABLE leave_balances ADD COLUMN IF NOT EXISTS "CarriedOverDays" numeric NOT NULL DEFAULT 0;
+ALTER TABLE leave_balances ADD COLUMN IF NOT EXISTS "CarriedOutDays" numeric NOT NULL DEFAULT 0;

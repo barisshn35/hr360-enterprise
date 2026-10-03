@@ -1,6 +1,6 @@
 # YALNIZCA TEST: governance-service'i Slack, Teams, Microsoft, Google ve Zoom uclarinin sahtesine
 # (tests/integration/chatmock.py) yonlendirir. Uretimde KULLANMAYIN.
-#   docker compose -f docker-compose.yml -f deploy/testing/chat-mock.yml up -d governance-service
+#   docker compose -f docker-compose.yml -f deploy/testing/chat-mock.yml up -d governance-service notification-service
 services:
   governance-service:
     environment:
@@ -22,3 +22,12 @@ services:
       LLM_QUOTA_WINDOW_MINUTES: "1"
       # Gonderilemeyen sohbet mesajlari 2, 10, 30... sn sonra yeniden denenir.
       CHAT_RETRY_BASE_SECONDS: "2"
+  notification-service:
+    environment:
+      # Sahte Web Push servisine (chatmock) gonderime izin; anlik bildirim turu 2 sn.
+      PUSH_ALLOWED_HOSTS: "chatmock"
+      PUSH_POLL_SECONDS: "2"
+  workflow-service:
+    environment:
+      # Vekalet ve sure asimi isleri 5 sn'de bir (uretimde 5 dk).
+      WORKFLOW_JOBS_SECONDS: "5"

@@ -134,8 +134,37 @@ public class DocTemplate : ITenantOwned
     public string Category { get; set; } = "Genel";
     /// <summary>{{calisan.ad}} gibi yer tutucular içeren HTML/metin.</summary>
     public string Body { get; set; } = "";
+    /// <summary>Çalışan bu belgeyi kendisi talep edebilir (Profilim › Belge talebi).</summary>
+    public bool SelfService { get; set; }
+    /// <summary>Talep İK onayından sonra düzenlenir; false ise hemen üretilir.</summary>
+    public bool RequiresApproval { get; set; } = true;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>
+/// Çalışanın belge talebi (çalışma belgesi, maaş yazısı...). Düzenlenen belge şifreli saklanır
+/// ve doğrulama koduyla (kişisel veri göstermeden) doğrulanabilir. KVKK: belgeyi yalnızca
+/// çalışan ve İK açar; saklama süresi dolunca silinir ("Belge talepleri").
+/// </summary>
+public class DocumentRequest : ITenantOwned
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string TenantSlug { get; set; } = "";
+    public Guid EmployeeId { get; set; }
+    public Guid TemplateId { get; set; }
+    public string TemplateName { get; set; } = "";
+    public string? Purpose { get; set; }
+    /// <summary>Pending | Issued | Rejected</summary>
+    public string Status { get; set; } = "Pending";
+    public string? DecisionNote { get; set; }
+    public string? DecidedBy { get; set; }
+    public string? VerificationCode { get; set; }
+    /// <summary>Düzenlenen belgenin HTML'i (SecretBox ile şifreli).</summary>
+    public string? DocumentEnc { get; set; }
+    public string? DocumentHash { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? IssuedAt { get; set; }
 }
 
 /* ========================================================== Kural motoru */

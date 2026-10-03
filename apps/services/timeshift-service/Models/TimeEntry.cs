@@ -2,7 +2,7 @@ using TimeShiftService.Tenancy;
 
 namespace TimeShiftService.Models;
 
-public enum TimeEntrySource { Manual, Device, Import }
+public enum TimeEntrySource { Manual, Device, Import, Qr, Card, Pin, Web }
 
 public class TimeEntry : ITenantOwned
 {

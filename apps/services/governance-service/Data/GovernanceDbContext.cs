@@ -29,6 +29,7 @@ public class GovernanceDbContext : DbContext, ITenantAwareContext
     public DbSet<DestructionLog> DestructionLogs => Set<DestructionLog>();
     public DbSet<AnalysisObjection> AnalysisObjections => Set<AnalysisObjection>();
     public DbSet<DocTemplate> DocTemplates => Set<DocTemplate>();
+    public DbSet<DocumentRequest> DocumentRequests => Set<DocumentRequest>();
     public DbSet<Rule> Rules => Set<Rule>();
     public DbSet<RuleRun> RuleRuns => Set<RuleRun>();
     public DbSet<Webhook> Webhooks => Set<Webhook>();
@@ -61,6 +62,9 @@ public class GovernanceDbContext : DbContext, ITenantAwareContext
         b.Entity<DestructionLog>().ToTable("governance_destruction_logs").ConfigureTenantColumn();
         b.Entity<AnalysisObjection>().ToTable("governance_analysis_objections").ConfigureTenantColumn();
         b.Entity<DocTemplate>().ToTable("governance_doc_templates").ConfigureTenantColumn();
+        b.Entity<DocumentRequest>().ToTable("governance_document_requests").ConfigureTenantColumn();
+        b.Entity<DocumentRequest>().HasIndex(r => r.VerificationCode).IsUnique();
+        b.Entity<DocumentRequest>().HasIndex(r => new { r.TenantSlug, r.EmployeeId });
         b.Entity<Rule>().ToTable("governance_rules").ConfigureTenantColumn();
         b.Entity<Rule>().Property(x => x.Conditions).HasColumnType("jsonb");
         b.Entity<Rule>().Property(x => x.Actions).HasColumnType("jsonb");

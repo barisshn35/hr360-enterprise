@@ -305,13 +305,14 @@ public class DocumentTemplatesController : AppController
     public async Task<IActionResult> List(CancellationToken ct) =>
         Ok(await _db.DocTemplates.AsNoTracking().OrderBy(t => t.Category).ThenBy(t => t.Name).ToListAsync(ct));
 
-    public record TemplateInput(string Name, string Category, string Body);
+    public record TemplateInput(string Name, string Category, string Body, bool? SelfService = null, bool? RequiresApproval = null);
 
     [HttpPost]
     public async Task<IActionResult> Create(TemplateInput body, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(body.Name) || string.IsNullOrWhiteSpace(body.Body)) return BadRequest(new { message = "Ad ve içerik zorunlu." });
-        var t = new DocTemplate { Name = body.Name.Trim(), Category = body.Category?.Trim() is { Length: > 0 } c ? c : "Genel", Body = Sanitize(body.Body) };
+        var t = new DocTemplate { Name = body.Name.Trim(), Category = body.Category?.Trim() is { Length: > 0 } c ? c : "Genel", Body = Sanitize(body.Body),
+            SelfService = body.SelfService ?? false, RequiresApproval = body.RequiresApproval ?? true };
         _db.DocTemplates.Add(t);
         await _db.SaveChangesAsync(ct);
         return Ok(t);
@@ -325,6 +326,8 @@ public class DocumentTemplatesController : AppController
         t.Name = body.Name.Trim();
         t.Category = body.Category?.Trim() is { Length: > 0 } c ? c : t.Category;
         t.Body = Sanitize(body.Body);
+        if (body.SelfService is { } ss) t.SelfService = ss;
+        if (body.RequiresApproval is { } ra) t.RequiresApproval = ra;
         t.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
         return Ok(t);
@@ -362,6 +365,13 @@ public class DocumentTemplatesController : AppController
                 <p>Merhaba {{calisan.ad}},</p><p>{{bugun}} itibarıyla <b>{{izin.kalanYillik}} gün</b> kullanılmamış yıllık izniniz bulunmaktadır.
                 Dinlenme hakkınızı yıl içine yaymanızı öneririz.</p><p>İK ekibi</p>
                 """),
+            ("Maaş yazısı", "Resmî yazılar", """
+                <h2 style="text-align:center">MAAŞ YAZISI</h2>
+                <p>Şirketimiz <b>{{sirket.ad}}</b> çalışanı <b>{{calisan.adSoyad}}</b>, <b>{{calisan.iseGiris}}</b> tarihinden bu yana
+                <b>{{calisan.pozisyon}}</b> olarak çalışmakta olup güncel aylık brüt ücreti <b>{{ucret.brut}}</b>'dir.</p>
+                <p>Bu yazı, ilgilinin talebi üzerine ve yalnızca belirtilen amaçla kullanılmak üzere düzenlenmiştir.</p>
+                <p style="margin-top:48px">{{bugun}}<br/>Belge no: {{belge.no}}</p><p style="text-align:right">İnsan Kaynakları<br/>{{sirket.ad}}</p>
+                """),
             ("Ücret bilgilendirme yazısı", "Gizli", """
                 <p>Sayın {{calisan.adSoyad}},</p><p>{{bugun}} itibarıyla güncel aylık brüt ücretiniz <b>{{ucret.brut}}</b> olarak belirlenmiştir.</p>
                 <p>Bu yazı kişiye özeldir.</p><p>{{sirket.ad}}</p>
@@ -370,7 +380,9 @@ public class DocumentTemplatesController : AppController
         var added = 0;
         foreach (var s in samples.Where(s => !have.Contains(s.Name)))
         {
-            _db.DocTemplates.Add(new DocTemplate { Name = s.Name, Category = s.Cat, Body = s.Body.Trim() });
+            // Çalışma belgesi onaysız, maaş yazısı İK onayıyla çalışanın kendisince talep edilebilir.
+            _db.DocTemplates.Add(new DocTemplate { Name = s.Name, Category = s.Cat, Body = s.Body.Trim(),
+                SelfService = s.Name is "Çalışma belgesi" or "Maaş yazısı", RequiresApproval = s.Name != "Çalışma belgesi" });
             added++;
         }
         await _db.SaveChangesAsync(ct);
@@ -385,28 +397,49 @@ public class DocumentTemplatesController : AppController
         var t = await _db.DocTemplates.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
         if (t is null) return NotFound();
         if (body.EmployeeIds.Count is 0 or > 500) return BadRequest(new { message = "1–500 çalışan seçin." });
-        var people = (await People.ListAsync(Tenant, ct, includeTerminated: true)).ToDictionary(p => p.Id);
-        var company = (await Db.QueryAsync("SELECT \"Name\", \"TaxNumber\" FROM platform_tenants WHERE \"Slug\" = $1",
-            r => (Name: r.GetString(0), Tax: r.Str(1)), ct, Tenant)).FirstOrDefault();
-        var ids = body.EmployeeIds.ToArray();
-        var phones = (await Db.QueryAsync("SELECT \"Id\", \"Phone\" FROM employee_employees WHERE \"TenantSlug\" = $1 AND \"Id\" = ANY($2)",
-            r => (Id: r.GetGuid(0), Phone: r.Str(1)), ct, Tenant, ids)).ToDictionary(x => x.Id, x => x.Phone);
-        var leave = (await Db.QueryAsync("""
+        var canSeePay = Me.IsHr || Me.Roles.Contains("ext-compensation-view");
+        var docs = await DocRenderer.RenderAsync(Db, People, Tenant, t.Body, body.EmployeeIds, canSeePay, ct);
+        return Ok(new { template = t.Name, documents = docs.Select(d => new { employeeId = d.EmployeeId, name = d.Name, html = d.Html }) });
+    }
+
+    /// <summary>Şablon HTML'inde betik ve olay öznitelikleri kabul edilmez.</summary>
+    public static string Sanitize(string html)
+    {
+        var s = Regex.Replace(html, @"<\s*(script|iframe|object|embed|style)[^>]*>.*?<\s*/\s*\1\s*>", "", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+        s = Regex.Replace(s, @"<\s*(script|iframe|object|embed)[^>]*/?>", "", RegexOptions.IgnoreCase);
+        s = Regex.Replace(s, @"\son\w+\s*=\s*(""[^""]*""|'[^']*'|[^\s>]+)", "", RegexOptions.IgnoreCase);
+        s = Regex.Replace(s, @"javascript\s*:", "", RegexOptions.IgnoreCase);
+        return s.Trim();
+    }
+}
+
+/// <summary>Belge şablonu doldurma (toplu üretim ve çalışan belge talebi ortak kullanır).</summary>
+public static class DocRenderer
+{
+    public static async Task<List<(Guid EmployeeId, string Name, string Html)>> RenderAsync(Sql db, PeopleDirectory directory, string tenant,
+        string templateBody, IEnumerable<Guid> employeeIds, bool canSeePay, CancellationToken ct)
+    {
+        var people = (await directory.ListAsync(tenant, ct, includeTerminated: true)).ToDictionary(p => p.Id);
+        var company = (await db.QueryAsync("SELECT \"Name\", \"TaxNumber\" FROM platform_tenants WHERE \"Slug\" = $1",
+            r => (Name: r.GetString(0), Tax: r.Str(1)), ct, tenant)).FirstOrDefault();
+        var ids = employeeIds.Distinct().ToArray();
+        var phones = (await db.QueryAsync("SELECT \"Id\", \"Phone\" FROM employee_employees WHERE \"TenantSlug\" = $1 AND \"Id\" = ANY($2)",
+            r => (Id: r.GetGuid(0), Phone: r.Str(1)), ct, tenant, ids)).ToDictionary(x => x.Id, x => x.Phone);
+        var leave = (await db.QueryAsync("""
             SELECT "EmployeeId", sum("EntitledDays" - "UsedDays") FROM leave_balances
             WHERE "TenantSlug" = $1 AND "EmployeeId" = ANY($2) AND "Type" = 'Annual' AND "Year" = $3 GROUP BY 1
-            """, r => (Id: r.GetGuid(0), Days: r.Dec(1) ?? 0), ct, Tenant, ids, DateTime.UtcNow.Year)).ToDictionary(x => x.Id, x => x.Days);
-        var canSeePay = Me.IsHr || Me.Roles.Contains("ext-compensation-view");
+            """, r => (Id: r.GetGuid(0), Days: r.Dec(1) ?? 0), ct, tenant, ids, DateTime.UtcNow.Year)).ToDictionary(x => x.Id, x => x.Days);
         var pay = canSeePay
-            ? (await Db.QueryAsync("""
+            ? (await db.QueryAsync("""
                 SELECT DISTINCT ON ("EmployeeId") "EmployeeId", "BaseSalary", "Currency" FROM compensation_records
                 WHERE "TenantSlug" = $1 AND "EmployeeId" = ANY($2) ORDER BY "EmployeeId", "EffectiveFrom" DESC
-                """, r => (Id: r.GetGuid(0), Pay: r.GetDecimal(1), Cur: r.Str(2) ?? "TRY"), ct, Tenant, ids)).ToDictionary(x => x.Id)
+                """, r => (Id: r.GetGuid(0), Pay: r.GetDecimal(1), Cur: r.Str(2) ?? "TRY"), ct, tenant, ids)).ToDictionary(x => x.Id)
             : new();
         var tr = new System.Globalization.CultureInfo("tr-TR");
         var today = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(3));
-        var docs = new List<object>();
+        var docs = new List<(Guid EmployeeId, string Name, string Html)>();
         var seq = 0;
-        foreach (var eid in body.EmployeeIds.Distinct())
+        foreach (var eid in ids)
         {
             if (!people.TryGetValue(eid, out var p)) continue;
             var head = p.DepartmentHeadId is { } h && people.TryGetValue(h, out var hp) ? hp.Name : "—";
@@ -421,22 +454,12 @@ public class DocumentTemplatesController : AppController
                 ["calisan.yoneticisi"] = head,
                 ["izin.kalanYillik"] = leave.GetValueOrDefault(p.Id).ToString("0.#", tr),
                 ["ucret.brut"] = pay.TryGetValue(p.Id, out var pr) ? pr.Pay.ToString("N2", tr) + " " + pr.Cur : "—",
-                ["sirket.ad"] = company.Name ?? Tenant, ["sirket.vergiNo"] = company.Tax ?? "—",
+                ["sirket.ad"] = company.Name ?? tenant, ["sirket.vergiNo"] = company.Tax ?? "—",
                 ["bugun"] = today.ToString("dd.MM.yyyy"), ["belge.no"] = $"{DateTime.UtcNow:yyMMdd}-{++seq:000}",
             };
-            var html = Regex.Replace(t.Body, @"\{\{\s*([\w.]+)\s*\}\}", m => values.TryGetValue(m.Groups[1].Value, out var v) ? WebUtility.HtmlEncode(v) : m.Value);
-            docs.Add(new { employeeId = p.Id, name = p.Name, html });
+            var html = Regex.Replace(templateBody, @"\{\{\s*([\w.]+)\s*\}\}", m => values.TryGetValue(m.Groups[1].Value, out var v) ? WebUtility.HtmlEncode(v) : m.Value);
+            docs.Add((p.Id, p.Name, html));
         }
-        return Ok(new { template = t.Name, documents = docs });
-    }
-
-    /// <summary>Şablon HTML'inde betik ve olay öznitelikleri kabul edilmez.</summary>
-    private static string Sanitize(string html)
-    {
-        var s = Regex.Replace(html, @"<\s*(script|iframe|object|embed|style)[^>]*>.*?<\s*/\s*\1\s*>", "", RegexOptions.IgnoreCase | RegexOptions.Singleline);
-        s = Regex.Replace(s, @"<\s*(script|iframe|object|embed)[^>]*/?>", "", RegexOptions.IgnoreCase);
-        s = Regex.Replace(s, @"\son\w+\s*=\s*(""[^""]*""|'[^']*'|[^\s>]+)", "", RegexOptions.IgnoreCase);
-        s = Regex.Replace(s, @"javascript\s*:", "", RegexOptions.IgnoreCase);
-        return s.Trim();
+        return docs;
     }
 }

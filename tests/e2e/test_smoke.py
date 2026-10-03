@@ -5,7 +5,8 @@ import pytest
 from conftest import BASE_URL, users
 
 ROUTES = [
-    "/panel", "/panel/bildirimler", "/panel/calisanlar", "/panel/dokumanlar", "/panel/egitim", "/panel/ik-vakalari",
+    "/panel", "/panel/bordro", "/panel/bordrolarim", "/panel/giris-cikis", "/panel/giris-cikis/yonetim", "/panel/belge-talebi",
+    "/panel/onay-akislari", "/panel/profil?sekme=guvenlik", "/panel/bildirimler", "/panel/calisanlar", "/panel/dokumanlar", "/panel/egitim", "/panel/ik-vakalari",
     "/panel/ise-alim", "/panel/ise-alim/adaylar", "/panel/izin", "/panel/masraf", "/panel/onaylar", "/panel/onboarding",
     "/panel/organizasyon", "/panel/organizasyon/ekipler", "/panel/performans/benim", "/panel/performans/hedefler",
     "/panel/performans/geri-bildirim", "/panel/performans/degerlendirme", "/panel/puantaj", "/panel/ucret",

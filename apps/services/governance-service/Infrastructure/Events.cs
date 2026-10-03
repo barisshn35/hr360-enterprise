@@ -430,6 +430,9 @@ public static class Retention
         ["AiUsage"] = ("Yapay zekâ kullanım kayıtları", new[] { "Delete" }, 12),
         ["ChatMessages"] = ("Sohbet botu mesaj kayıtları", new[] { "Delete" }, 6),
         ["WebhookDeliveries"] = ("Webhook gönderim kayıtları", new[] { "Delete" }, 3),
+        // SGK ve vergi mevzuatı: ücret bordroları 10 yıl saklanır (5510 s. K. m.86, VUK m.253).
+        ["Payslips"] = ("Bordro pusulaları (kapanmış dönemler)", new[] { "Delete" }, 120),
+        ["DocumentRequests"] = ("Çalışan belge talepleri ve düzenlenen belgeler", new[] { "Delete" }, 24),
     };
 
     public static string MethodOf(string action) => action == "Anonymize"
@@ -477,6 +480,14 @@ public static class Retention
                 return await sql.ExecuteAsync("DELETE FROM governance_ai_usage WHERE \"TenantSlug\" = $1 AND \"At\" < now() - make_interval(months => $2)", ct, t, months);
             case "ChatMessages":
                 return await sql.ExecuteAsync("DELETE FROM governance_chat_messages WHERE \"TenantSlug\" = $1 AND \"State\" <> 'Open' AND \"CreatedAt\" < now() - make_interval(months => $2)", ct, t, months);
+            case "Payslips":
+                return await sql.ExecuteAsync("""
+                    DELETE FROM compensation_payslips s USING compensation_payroll_periods p
+                    WHERE s."PeriodId" = p."Id" AND p."Status" = 'Closed' AND s."TenantSlug" = $1
+                      AND make_date(s."Year", s."Month", 1) < (now() - make_interval(months => $2))::date
+                    """, ct, t, months);
+            case "DocumentRequests":
+                return await sql.ExecuteAsync("DELETE FROM governance_document_requests WHERE \"TenantSlug\" = $1 AND \"Status\" <> 'Pending' AND \"CreatedAt\" < now() - make_interval(months => $2)", ct, t, months);
             case "WebhookDeliveries":
                 return await sql.ExecuteAsync("DELETE FROM governance_webhook_deliveries WHERE \"TenantSlug\" = $1 AND \"OccurredAt\" < now() - make_interval(months => $2)", ct, t, months);
             default:

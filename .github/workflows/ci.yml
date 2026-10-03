@@ -164,6 +164,8 @@ jobs:
           shellcheck -x -S error install.sh scripts/*.sh scripts/lib/*.sh tests/install/*.sh
       - name: Kurulum otomasyonu (HTTPS, DNS, SMTP; sahte docker/curl ile)
         run: tests/install/test_install.sh
+      - name: Yedek ve guncelleme (sifreleme, dis depo, geri yukleme testi, otomatik geri donus)
+        run: tests/install/test_backup_update.sh
       - name: SQL semasi (bos Postgres'e uygulanir)
         run: |
           docker run -d --name pg -e POSTGRES_PASSWORD=ci -e POSTGRES_USER=hr360admin -e POSTGRES_DB=hr360_operational postgres:18-alpine

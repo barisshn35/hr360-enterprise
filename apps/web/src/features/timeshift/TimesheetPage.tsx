@@ -19,6 +19,7 @@ import type { TimeEntry } from '@/api/types'
 import { formatDate, formatNumber } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { tx, appLocale } from '@/lib/i18n'
+import { OvertimePanel } from './OvertimePanel'
 
 /** Dakikayı "7s 30dk" biçimine çevirir. */
 function hm(minutes: number): string {
@@ -328,6 +329,8 @@ export function TimesheetPage() {
           emptyDetail={tx('Seçili ay için giriş/çıkış kaydı bulunmuyor.')}
         />
       )}
+
+      {can('timeshift:clock') && <OvertimePanel />}
     </div>
   )
 }

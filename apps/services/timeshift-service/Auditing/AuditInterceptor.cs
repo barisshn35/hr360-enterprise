@@ -36,6 +36,8 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
     {
         "salary", "iban", "nationalid", "tckn", "identitynumber", "password", "secret",
         "keyhash", "token", "bankaccount", "privatenotes",
+        // Giriş-çıkış: kart/PIN özetleri ve QR anahtarı.
+        "hash", "pin",
     };
 
     /// <summary>Teknik/altyapı tabloları denetlenmez (gürültü olur).</summary>

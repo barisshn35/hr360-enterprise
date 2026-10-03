@@ -110,6 +110,8 @@ builder.Services.AddControllers()
         options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
     });
 builder.Services.AddHostedService<OutboxPublisher>();
+builder.Services.AddScoped<WorkflowService.Services.WorkflowRouting>();
+builder.Services.AddHostedService<WorkflowService.Services.WorkflowJobsWorker>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 

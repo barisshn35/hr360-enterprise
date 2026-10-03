@@ -34,13 +34,35 @@ public static class NotificationTexts
         : ("Departman atamanız güncellendi",
            $"Merhaba {first}, {D(from, lang)} tarihinden geçerli olmak üzere yeni pozisyonunuz: {position ?? "(belirtilmemiş)"}.");
 
-    public static (string Subject, string Body) Submitted(string lang, string approverFirst, string? requester, string subject, DateTimeOffset? sla) => lang == "en"
-        ? ("A request is awaiting your approval",
-           $"Hello {approverFirst}, a request titled \"{subject}\" from {(string.IsNullOrWhiteSpace(requester) ? "an employee" : requester)} is awaiting your approval."
-           + (sla is null ? "" : $" Decision due: {Dt(sla.Value, lang)}."))
-        : ("Onayınızı bekleyen bir talep var",
-           $"Merhaba {approverFirst}, {(string.IsNullOrWhiteSpace(requester) ? "Bir çalışan" : requester)} tarafından \"{subject}\" konulu bir talep onayınızı bekliyor."
-           + (sla is null ? "" : $" Son karar tarihi: {Dt(sla.Value, lang)}."));
+    /// <summary>
+    /// Onaycıya giden e-posta. KVKK: talep konusu (ör. "3 günlük hastalık izni") e-postaya
+    /// yazılmaz; yalnızca talep türü ve talep eden. Ayrıntı HR360'ta, giriş yapınca görülür.
+    /// </summary>
+    public static (string Subject, string Body) Submitted(string lang, string approverFirst, string? requester, string workflowType,
+        DateTimeOffset? sla, bool escalated = false, bool delegated = false, bool hasLink = false)
+    {
+        var en = lang == "en";
+        var type = TypeLabel(workflowType, en);
+        var who = string.IsNullOrWhiteSpace(requester) ? (en ? "an employee" : "Bir çalışan") : requester;
+        var why = escalated
+            ? (en ? " It was forwarded to you because the decision deadline passed." : " Karar süresi aşıldığı için size iletildi.")
+            : delegated ? (en ? " You are deciding as a delegate." : " Vekâleten karar vereceksiniz.") : "";
+        var link = hasLink
+            ? (en ? " You can approve or reject with the button below (single-use link, valid for 72 hours) or in HR360."
+                  : " Aşağıdaki düğmeyle (tek kullanımlık, 72 saat geçerli) ya da HR360'ta onaylayabilir veya reddedebilirsiniz.")
+            : "";
+        return en
+            ? ("A request is awaiting your approval",
+               $"Hello {approverFirst}, a {type} request from {who} is awaiting your approval.{why}" + (sla is null ? "" : $" Decision due: {Dt(sla.Value, lang)}.") + link)
+            : ("Onayınızı bekleyen bir talep var",
+               $"Merhaba {approverFirst}, {who} tarafından açılan bir {type} talebi onayınızı bekliyor.{why}" + (sla is null ? "" : $" Son karar tarihi: {Dt(sla.Value, lang)}.") + link);
+    }
+
+    public static string TypeLabel(string? type, bool en) => en
+        ? type switch { "LeaveRequest" => "leave", "ExpenseClaim" => "expense", "PositionChange" => "position change", "AssetRequest" => "asset",
+            "Overtime" => "overtime", "DocumentRequest" => "document", _ => "approval" }
+        : type switch { "LeaveRequest" => "izin", "ExpenseClaim" => "masraf", "PositionChange" => "pozisyon değişikliği", "AssetRequest" => "zimmet",
+            "Overtime" => "fazla mesai", "DocumentRequest" => "belge", _ => "onay" };
 
     public static (string Subject, string Body) Decided(string lang, bool approved, string subject, string? comment) => lang == "en"
         ? ($"Your request was {(approved ? "approved" : "rejected")}",

@@ -26,6 +26,7 @@ import {
 import { formatDate, formatNumber } from '@/lib/format'
 import { NewBalanceModal } from './NewBalanceModal'
 import { HolidaysModal } from './HolidaysModal'
+import { StatutoryModal } from './StatutoryModal'
 import { NewLeaveRequestModal } from './NewLeaveRequestModal'
 import { tx } from '@/lib/i18n'
 
@@ -99,6 +100,7 @@ export function LeavePage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [balanceOpen, setBalanceOpen] = useState(false)
   const [holidaysOpen, setHolidaysOpen] = useState(false)
+  const [statutoryOpen, setStatutoryOpen] = useState(false)
 
   const year = new Date().getFullYear()
   const balances = useLeaveBalances(employeeId || undefined, year, Boolean(employeeId))
@@ -177,6 +179,11 @@ export function LeavePage() {
             {can('leave:manageBalance') && (
               <Button variant="outline" className="cursor-pointer" onClick={() => setHolidaysOpen(true)}>
                 {tx('Resmi tatiller')}
+              </Button>
+            )}
+            {can('leave:manageBalance') && (
+              <Button variant="outline" className="cursor-pointer" onClick={() => setStatutoryOpen(true)}>
+                {tx('Yasal hak ve devir')}
               </Button>
             )}
             {can('leave:manageBalance') && (
@@ -283,6 +290,7 @@ export function LeavePage() {
       />
 
       <HolidaysModal open={holidaysOpen} onClose={() => setHolidaysOpen(false)} year={year} />
+      {statutoryOpen && <StatutoryModal onClose={() => setStatutoryOpen(false)} />}
 
       <NewBalanceModal
         open={balanceOpen}

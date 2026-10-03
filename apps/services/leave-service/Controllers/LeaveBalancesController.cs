@@ -74,6 +74,115 @@ public class LeaveBalancesController : ControllerBase
         await _db.SaveChangesAsync();
         return Ok(existing);
     }
+
+    private sealed class EmpRow
+    {
+        public Guid Id { get; set; }
+        public DateOnly HireDate { get; set; }
+        public DateOnly? BirthDate { get; set; }
+    }
+
+    private async Task<List<(Guid Id, DateOnly Hire, int Days, int ServiceYears, bool AgeRule)>> StatutoryAsync(int year, CancellationToken ct)
+    {
+        var rows = await _db.Database.SqlQueryRaw<EmpRow>("""
+            SELECT e."Id", e."HireDate", p."BirthDate" FROM employee_employees e
+            LEFT JOIN engagement_profiles p ON p."EmployeeId" = e."Id" AND p."TenantSlug" = e."TenantSlug"
+            WHERE e."TenantSlug" = {0} AND e."Status" <> 'Terminated'
+            """, _db.CurrentTenantSlug ?? "").ToListAsync(ct);
+        return rows.Select(r =>
+        {
+            var (days, years, ageRule) = LeaveEntitlement.Statutory(r.HireDate, r.BirthDate, year);
+            return (r.Id, r.HireDate, days, years, ageRule);
+        }).ToList();
+    }
+
+    /// <summary>
+    /// Yasal yıllık izin hakkı ön izlemesi (İş Kanunu m.53, kıdeme ve yaşa göre). Doğum tarihi
+    /// yanıtta yer almaz; yalnızca yaş kuralının uygulandığı belirtilir.
+    /// </summary>
+    [HttpGet("statutory")]
+    [Authorize(Policy = "RequireHrAdmin")]
+    public async Task<IActionResult> Statutory([FromQuery] int year, CancellationToken ct)
+    {
+        if (year is < 2000 or > 2100) return BadRequest(new { message = "Geçersiz yıl" });
+        var list = await StatutoryAsync(year, ct);
+        var balances = await _db.LeaveBalances.AsNoTracking().Where(b => b.Year == year && b.Type == LeaveType.Annual).ToListAsync(ct);
+        return Ok(list.Select(x =>
+        {
+            var b = balances.FirstOrDefault(y => y.EmployeeId == x.Id);
+            return new
+            {
+                employeeId = x.Id, x.ServiceYears, anniversary = LeaveEntitlement.Anniversary(x.Hire, year), statutoryDays = x.Days,
+                ageRule = x.AgeRule, currentEntitled = b?.EntitledDays, carriedOver = b?.CarriedOverDays ?? 0,
+            };
+        }));
+    }
+
+    /// <summary>Yasal hakkı bakiyeye yazar: bakiye yoksa açar, yasal günün altındaysa yükseltir (asla düşürmez).</summary>
+    [HttpPost("statutory/apply")]
+    [Authorize(Policy = "RequireHrAdmin")]
+    public async Task<IActionResult> ApplyStatutory([FromBody] ApplyStatutoryRequest body, CancellationToken ct)
+    {
+        if (body.Year is < 2000 or > 2100) return BadRequest(new { message = "Geçersiz yıl" });
+        var list = await StatutoryAsync(body.Year, ct);
+        var balances = await _db.LeaveBalances.Where(b => b.Year == body.Year && b.Type == LeaveType.Annual).ToListAsync(ct);
+        var changed = 0;
+        foreach (var x in list.Where(x => x.Days > 0))
+        {
+            var b = balances.FirstOrDefault(y => y.EmployeeId == x.Id);
+            if (b is null)
+            {
+                _db.LeaveBalances.Add(new LeaveBalance { EmployeeId = x.Id, Year = body.Year, Type = LeaveType.Annual, EntitledDays = x.Days });
+                changed++;
+            }
+            else if (b.EntitledDays + b.CarriedOutDays - b.CarriedOverDays < x.Days)
+            {
+                // Devreden/devredilen günler korunur; yalnızca bu yılın kendi hakkı yasal güne çıkarılır.
+                b.EntitledDays = x.Days + b.CarriedOverDays - b.CarriedOutDays;
+                b.UpdatedAt = DateTimeOffset.UtcNow;
+                changed++;
+            }
+        }
+        await _db.SaveChangesAsync(ct);
+        return Ok(new { changed });
+    }
+
+    /// <summary>
+    /// Kullanılmayan yıllık izni sonraki yıla devreder (yasal olarak yıllık izin yanmaz; isteğe
+    /// bağlı üst sınır). Tekrar çalıştırılabilir: yalnızca fark aktarılır.
+    /// </summary>
+    [HttpPost("carry-over")]
+    [Authorize(Policy = "RequireHrAdmin")]
+    public async Task<IActionResult> CarryOver([FromBody] CarryOverRequest body, CancellationToken ct)
+    {
+        if (body.FromYear is < 2000 or > 2099) return BadRequest(new { message = "Geçersiz yıl" });
+        if (body.MaxDays is < 0 or > 365) return BadRequest(new { message = "Üst sınır 0-365 gün olmalı" });
+        var from = await _db.LeaveBalances.Where(b => b.Year == body.FromYear && b.Type == LeaveType.Annual).ToListAsync(ct);
+        var next = await _db.LeaveBalances.Where(b => b.Year == body.FromYear + 1 && b.Type == LeaveType.Annual).ToListAsync(ct);
+        var moved = 0m;
+        var people = 0;
+        foreach (var b in from)
+        {
+            var unused = Math.Max(0, b.EntitledDays - b.UsedDays - b.PendingDays + b.CarriedOutDays);
+            var carry = body.MaxDays is { } max ? Math.Min(unused, max) : unused;
+            var delta = carry - b.CarriedOutDays;
+            if (delta == 0) continue;
+            var n = next.FirstOrDefault(x => x.EmployeeId == b.EmployeeId);
+            if (n is null)
+            {
+                n = new LeaveBalance { EmployeeId = b.EmployeeId, Year = body.FromYear + 1, Type = LeaveType.Annual };
+                _db.LeaveBalances.Add(n);
+                next.Add(n);
+            }
+            n.EntitledDays += delta; n.CarriedOverDays += delta; n.UpdatedAt = DateTimeOffset.UtcNow;
+            b.CarriedOutDays += delta; b.EntitledDays -= delta; b.UpdatedAt = DateTimeOffset.UtcNow;
+            moved += delta; people++;
+        }
+        await _db.SaveChangesAsync(ct);
+        return Ok(new { employees = people, days = moved });
+    }
 }
 
 public record UpsertBalanceRequest(Guid EmployeeId, int Year, LeaveType Type, decimal EntitledDays);
+public record ApplyStatutoryRequest(int Year);
+public record CarryOverRequest(int FromYear, decimal? MaxDays);

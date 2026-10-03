@@ -25,6 +25,8 @@ public class NotificationDbContext : DbContext, ITenantAwareContext
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<ProcessedEvent> ProcessedEvents => Set<ProcessedEvent>();
     public DbSet<NotificationPreference> Preferences => Set<NotificationPreference>();
+    public DbSet<PushSubscription> PushSubscriptions => Set<PushSubscription>();
+    public DbSet<VapidKeyRow> VapidKeys => Set<VapidKeyRow>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -50,6 +52,14 @@ public class NotificationDbContext : DbContext, ITenantAwareContext
         modelBuilder.Entity<NotificationPreference>().ConfigureTenantColumn();
         modelBuilder.Entity<NotificationPreference>().ToTable("notification_preferences");
         modelBuilder.Entity<NotificationPreference>().HasKey(p => new { p.TenantSlug, p.EmployeeId });
+
+        modelBuilder.Entity<PushSubscription>().ConfigureTenantColumn();
+        modelBuilder.Entity<PushSubscription>().ToTable("notification_push_subscriptions");
+        modelBuilder.Entity<PushSubscription>().HasIndex(p => p.Endpoint).IsUnique();
+        modelBuilder.Entity<PushSubscription>().HasIndex(p => new { p.TenantSlug, p.EmployeeId });
+
+        modelBuilder.Entity<VapidKeyRow>().ToTable("notification_vapid_keys");
+        modelBuilder.Entity<VapidKeyRow>().Property(v => v.Id).ValueGeneratedNever();
 
         modelBuilder.ApplyTenantFilters(this);
     }

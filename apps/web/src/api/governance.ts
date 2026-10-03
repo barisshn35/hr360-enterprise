@@ -135,7 +135,13 @@ export interface RetentionPolicy {
 }
 
 /* -------------------------------------------------------- belge şablonları */
-export interface DocTemplate { id: string; name: string; category: string; body: string; createdAt: string; updatedAt: string }
+export interface DocTemplate { id: string; name: string; category: string; body: string; selfService: boolean; requiresApproval: boolean; createdAt: string; updatedAt: string }
+export type DocRequestStatus = 'Pending' | 'Issued' | 'Rejected'
+export interface DocRequest {
+  id: string; employeeId: string; templateId: string; templateName: string; purpose: string | null; status: DocRequestStatus
+  decisionNote: string | null; createdAt: string; issuedAt: string | null; verificationCode: string | null
+}
+export interface DocVerification { valid: boolean; document?: string; issuedAt?: string; holder?: string; company?: string | null; hash?: string }
 export interface RenderedDoc { employeeId: string; name: string; html: string }
 
 /* ---------------------------------------------------------- kural motoru */
@@ -466,7 +472,7 @@ export interface DestructionLogRow {
   action: 'Anonymize' | 'Delete'
   affected: number
   retentionMonths: number
-  trigger: 'Periodic' | 'Manual' | 'Request'
+  trigger: 'Periodic' | 'Manual' | 'Request' | 'Restore'
   actor: string
   method: string
   ranAt: string
@@ -570,11 +576,24 @@ export const governanceApi = {
   /* belge şablonları */
   templates: (signal?: AbortSignal) => apiFetch<DocTemplate[]>(`${BASE}/documents/templates`, { signal }),
   placeholders: (signal?: AbortSignal) => apiFetch<Array<{ key: string; label: string }>>(`${BASE}/documents/templates/placeholders`, { signal }),
-  createTemplate: (body: { name: string; category: string; body: string }) =>
+  createTemplate: (body: { name: string; category: string; body: string; selfService?: boolean; requiresApproval?: boolean }) =>
     apiFetch<DocTemplate>(`${BASE}/documents/templates`, { method: 'POST', body }),
-  updateTemplate: (id: string, body: { name: string; category: string; body: string }) =>
+  updateTemplate: (id: string, body: { name: string; category: string; body: string; selfService?: boolean; requiresApproval?: boolean }) =>
     apiFetch<DocTemplate>(`${BASE}/documents/templates/${id}`, { method: 'PUT', body }),
   deleteTemplate: (id: string) => apiFetch<void>(`${BASE}/documents/templates/${id}`, { method: 'DELETE' }),
+  requestableTemplates: (signal?: AbortSignal) =>
+    apiFetch<Array<{ id: string; name: string; category: string; requiresApproval: boolean }>>(`${BASE}/documents/requests/templates`, { signal }),
+  myDocRequests: (signal?: AbortSignal) => apiFetch<DocRequest[]>(`${BASE}/documents/requests/mine`, { signal }),
+  docRequests: (status?: DocRequestStatus, signal?: AbortSignal) =>
+    apiFetch<DocRequest[]>(`${BASE}/documents/requests${status ? `?status=${status}` : ''}`, { signal }),
+  requestDocument: (templateId: string, purpose?: string) =>
+    apiFetch<DocRequest>(`${BASE}/documents/requests`, { method: 'POST', body: { templateId, purpose } }),
+  decideDocRequest: (id: string, approve: boolean, note?: string) =>
+    apiFetch<DocRequest>(`${BASE}/documents/requests/${id}/decide`, { method: 'POST', body: { approve, note } }),
+  docRequestDocument: (id: string) =>
+    apiFetch<{ templateName: string; html: string; verificationCode: string; issuedAt: string }>(`${BASE}/documents/requests/${id}/document`),
+  verifyDocument: (code: string, signal?: AbortSignal) =>
+    apiFetch<DocVerification>(`${BASE}/documents/verify/${encodeURIComponent(code)}`, { signal, anonymous: true }),
   sampleTemplates: () => apiFetch<{ added: number }>(`${BASE}/documents/templates/samples`, { method: 'POST' }),
   renderTemplate: (id: string, employeeIds: string[]) =>
     apiFetch<{ template: string; documents: RenderedDoc[] }>(`${BASE}/documents/templates/${id}/render`, { method: 'POST', body: { employeeIds } }),

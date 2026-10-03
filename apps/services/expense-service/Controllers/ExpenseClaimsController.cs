@@ -153,7 +153,9 @@ public class ExpenseClaimsController : ControllerBase
         // baglayip onaylayarak KENDI beyanini onaylatabiliyordu (canli dogrulandi).
         // Onay akisini yalnizca sunucu, departman basina yonlendirerek baslatir.
         claim.WorkflowRequestId =
-            await _approvals.StartExpenseApprovalAsync(claim.EmployeeId, claim.Title, ct);
+            await _approvals.StartExpenseApprovalAsync(claim.EmployeeId, claim.Title, ct,
+                // Akış tanımındaki tutar koşulları (ör. 10.000 TL üstü finans onayı) için.
+                System.Text.Json.JsonSerializer.Serialize(new { expenseClaimId = claim.Id, amount = claim.TotalAmount, currency = claim.Currency }));
 
         await _db.SaveChangesAsync();
         return Ok(claim);

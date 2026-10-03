@@ -47,11 +47,17 @@ Her biri için hukuki dayanak kaydedilir: standart sözleşme, yeterlilik karar�
 
 Saklama politikaları: olumsuz sonuçlanan aday başvuruları, ayrılmış çalışanlar, denetim
 kayıtları, bildirim geçmişi, yapay zekâ kullanım kayıtları, sohbet botu mesaj kayıtları,
-webhook gönderim kayıtları. "Otomatik" işaretli politikalar günde bir çalışır; Silme, Yok Etme
+webhook gönderim kayıtları, bordro pusulaları (kapanmış dönemler, varsayılan 10 yıl), çalışan
+belge talepleri (varsayılan 24 ay). "Otomatik" işaretli politikalar günde bir çalışır; Silme, Yok Etme
 veya Anonim Hale Getirme Yönetmeliği'ndeki en geç 6 aylık periyodik imha süresinin içinde kalır.
 
 Her silme ve anonimleştirme **imha tutanağına** yazılır: tarih, veri kategorisi, yöntem,
-etkilenen kayıt sayısı, tetikleyen (periyodik / elle). Tutanaklar silinmez (yönetmelik en az
+etkilenen kayıt sayısı, tetikleyen (periyodik / elle / yedekten geri yükleme sonrası).
+
+**Yedekler:** `scripts/backup.sh` arşivi AES-256 ile şifreler (`BACKUP_ENCRYPTION_KEY`); dış
+depoya yalnızca şifreli arşiv gider, yurt dışı depo m.9 dayanağı ister. Yedekten geri
+yükleme yapılınca etkin saklama politikaları hemen yeniden çalışır; yedekten sonra imha
+edilmiş kayıtlar yeniden silinir (bkz. README › Yedekleme). Tutanaklar silinmez (yönetmelik en az
 3 yıl ister); ekrandan tarih aralığıyla yazdırılabilir.
 
 ## Hassas veri: şifreleme, maskeleme, erişim kaydı
@@ -67,6 +73,19 @@ etkilenen kayıt sayısı, tetikleyen (periyodik / elle). Tutanaklar silinmez (y
   kişisel veri dökümü, otomatik analiz. Çalışan kendi kaydını **Profilim › Gizlilik ›
   Verilerime erişenler** bölümünde görür.
 
+## Modüllere özel önlemler
+
+| Modül | Önlem |
+|---|---|
+| Giriş-çıkış | Biyometri yok (Kurul 2026/921). Konum isteğe bağlı, yalnızca o an "noktada mı" hesabı; koordinat saklanmaz, denetim kaydına yazılmaz. Kart no ve PIN özet olarak tutulur. |
+| Bordro | Pusulayı çalışan (dönem kapanınca) ve bordro yetkilisi görür; liste/pusula görüntülemesi erişim kaydında; tutarlar denetim kaydına yazılmaz. |
+| Fazla mesai | Gerekçede sağlık bilgisi istenmez. |
+| Belge talebi | Belge şifreli saklanır; doğrulama sayfası yalnızca belge türü, tarih ve baş harfler gösterir; İK'nın belgeyi açması erişim kaydında. |
+| Onay akışları | Belirli kişiye giden adım için uyarı; onaycılardan gizlenecek alanlar; onaycı e-postasında talep konusu yazmaz. |
+| Vekâlet | Vekil yalnızca kendisine düşen kaydı görür; süre bitince erişim kapanır; kararları "(vekâleten)" diye kaydedilir. |
+| Anlık bildirim (PWA) | Push içeriğinde kişisel veri yok; oturum kapanınca cihaz aboneliği ve çevrimdışı kuyruk silinir. |
+| Yasal izin hakkı | Doğum tarihi yalnızca yaş kuralı için kullanılır, gösterilmez. |
+
 ## Otomatik analize itiraz (m.11/1-g)
 
 Yalnızca otomatik sistemlerle yapılan analizler: işten ayrılma riski tahmini, otomatik
@@ -81,5 +100,7 @@ performans puanı, yapay zekâ özetleri. Çalışan **Profilim › Gizlilik**'t
 
 ## Test
 
-`tests/integration/test_kvkk.py` uyum durumu, envanter, aktarım kilidi ve 5 iş günü kuralı,
+`tests/integration/test_payroll_time.py`, `test_workflow_docs.py` ve `test_push.py` modül
+önlemlerini (koordinat ve kart numarasının saklanmaması, pusula/belge erişim kaydı, push içeriği,
+gizlenen alanlar) denetler. `tests/integration/test_kvkk.py` uyum durumu, envanter, aktarım kilidi ve 5 iş günü kuralı,
 imha tutanağı, şifreleme, gerekçe zorunluluğu, erişim kaydı ve itiraz akışını uçtan uca denetler.

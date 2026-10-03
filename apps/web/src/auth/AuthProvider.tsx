@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { clearDeviceData } from '@/lib/push'
 import { ApiError } from '@/api/client'
 import { useMyTenant, useTenants } from '@/api/queries-tenant'
 import { applyTenantBrandColor } from '@/lib/tenant-brand'
@@ -164,7 +165,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return
     }
     writePreferredTenant(null)
-    void keycloak.logout({ redirectUri: window.location.origin })
+    // KVKK: bu cihazdaki çevrimdışı kuyruk ve anlık bildirim aboneliği silinir.
+    void clearDeviceData().finally(() => keycloak.logout({ redirectUri: window.location.origin }))
   }, [])
 
   /**

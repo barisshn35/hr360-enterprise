@@ -44,15 +44,16 @@ integration() {
   docker rm -f chatmock >/dev/null 2>&1 || true
   docker run -d --name chatmock --network hr360-net -v "$ROOT/tests/integration:/t:ro" python:3.11-slim \
     sh -c "pip install -q cryptography pyjwt 2>/dev/null && python -u /t/chatmock.py" >/dev/null
-  docker compose -f docker-compose.yml -f deploy/testing/chat-mock.yml up -d governance-service >/dev/null
+  docker compose -f docker-compose.yml -f deploy/testing/chat-mock.yml up -d governance-service notification-service workflow-service >/dev/null
   for _ in $(seq 1 60); do docker logs chatmock 2>&1 | grep -q "chatmock :8000" && break; sleep 2; done
   sleep 10
-  for t in test_chat test_calendar test_ai_llm test_cache test_report_lang test_email_lang test_kvkk; do
+  for t in test_chat test_calendar test_ai_llm test_cache test_report_lang test_email_lang test_kvkk \
+           test_payroll_time test_push test_workflow_docs; do
     step "Entegrasyon: $t"
     run python3 "tests/integration/$t.py"
   done
-  step "Temizlik: governance-service normal ayarlarla"
-  docker compose up -d governance-service >/dev/null
+  step "Temizlik: servisler normal ayarlarla"
+  docker compose up -d governance-service notification-service workflow-service >/dev/null
   docker rm -f chatmock >/dev/null 2>&1 || true
 }
 

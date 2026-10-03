@@ -61,6 +61,7 @@ export function NewLeaveRequestModal({
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [reason, setReason] = useState('')
+  const [hours, setHours] = useState('')
   const [errors, setErrors] = useState<Errors>({})
   const [submitted, setSubmitted] = useState(false)
 
@@ -72,6 +73,7 @@ export function NewLeaveRequestModal({
       setStartDate('')
       setEndDate('')
       setReason('')
+      setHours('')
       setErrors({})
       setSubmitted(false)
     }
@@ -83,7 +85,10 @@ export function NewLeaveRequestModal({
   // Resmi tatiller de düşülür (backend aynı takvimi kullanıyor).
   const holidays = useLeaveHolidays(year, open)
   const holidaySet = useMemo(() => new Set((holidays.data ?? []).map((h) => h.date.slice(0, 10))), [holidays.data])
-  const days = useMemo(() => daysBetween(startDate, endDate, holidaySet), [startDate, endDate, holidaySet])
+  const singleDay = !!startDate && startDate === endDate
+  const hourValue = singleDay && hours ? Number(hours.replace(',', '.')) : 0
+  // Saatlik izin (tek gün): gün = saat / 7,5 (backend aynı kuralı uygular, LEAVE_DAY_HOURS).
+  const days = useMemo(() => (hourValue > 0 ? Math.round((hourValue / 7.5) * 100) / 100 : daysBetween(startDate, endDate, holidaySet)), [startDate, endDate, holidaySet, hourValue])
   const balance = balances.data?.find((b) => b.type === type)
   /**
    * Backend kuralıyla aynı: bakiye yetersizse talep reddedilir; yıllık izin için
@@ -102,6 +107,7 @@ export function NewLeaveRequestModal({
         endDate,
         days,
         reason: reason.trim() || undefined,
+        hours: hourValue > 0 ? hourValue : undefined,
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['leave'] })
@@ -232,6 +238,17 @@ export function NewLeaveRequestModal({
             onBlur={() => submitted && setErrors(validate())}
           />
         </div>
+
+        {singleDay && (
+          <TextField
+            id="leave-hours"
+            label={tx('Saatlik izin (isteğe bağlı)')}
+            inputMode="decimal"
+            value={hours}
+            onChange={(e) => setHours(e.target.value)}
+            hint={tx('Günün bir kısmı için: 0,5 saatlik adımlarla, 7,5 saatten az. Boş bırakırsanız tam gün.')}
+          />
+        )}
 
         {/* Bakiye özeti: kullanıcı göndermeden önce durumu görsün */}
         {employeeId && (
