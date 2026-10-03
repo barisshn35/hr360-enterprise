@@ -23,6 +23,15 @@ SIGNING = "slack-signing-secret"
 ensure_transfers("slack", "microsoft")
 
 
+
+def plain(body):
+    """Slack form gövdesi: URL kodu + JSON \\uXXXX kaçışları çözülmüş düz metin."""
+    t = urllib.parse.unquote_plus(body)
+    try:
+        return t.encode("latin-1", "backslashreplace").decode("unicode_escape").encode("utf-16", "surrogatepass").decode("utf-16")
+    except Exception:
+        return t
+
 def slack_post(app_id, kind, form=None, raw=None, secret=SIGNING, ts=None):
     body = raw if raw is not None else urllib.parse.urlencode(form)
     ts = str(ts or int(time.time()))
@@ -44,7 +53,7 @@ def new_leave(day, reason):
         start = (_dt.date(2028, 1, 3) + _dt.timedelta(weeks=RUN_WEEK + extra, days=day % 5)).isoformat()
         code, r = api("ayse", "POST", "/api/leave/leave-requests",
                       {"employeeId": AYSE, "type": "Unpaid", "startDate": start, "endDate": start, "days": 0, "reason": reason})
-        if code != 400 or "çakışan" not in json.dumps(r, ensure_ascii=False):
+        if code not in (400, 409) or "çakışan" not in json.dumps(r, ensure_ascii=False):
             break
     check(f"izin talebi oluşturuldu ({reason})", code in (200, 201), r)
     return r["workflowRequestId"]
@@ -194,7 +203,105 @@ if val:
     check("Slack: komuttan reddedildi", wf_status(wf2)["status"] == "Rejected")
     rej = wait_for("/api/chat.postMessage", lambda c: "D_U_AYSE" in c["body"] and "reddedildi" in urllib.parse.unquote_plus(c["body"]), t4)
     check("Slack: talep sahibine 'reddedildi' DM'i", bool(rej))
-for w in (wf_prompt,):
+
+# ====================================================================== SLACK: dil, doğal dil, form, gerekçe, ana sayfa, özet
+def free_day(offset):
+    import datetime as _dt
+    return (_dt.date(2029, 1, 1) + _dt.timedelta(weeks=RUN_WEEK, days=offset)).isoformat()
+
+
+def pref(who, lang):
+    return api(who, "PUT", "/api/notification/notifications/preferences/me", {"language": lang})
+
+
+code, r = slack_post(slack_id, "commands", {"user_id": "U_AYSE", "text": "sonraki resmi tatil ne zaman?"})
+check("Slack: doğal dil sorusu asistana gider", code == 200 and "tatil" in r["text"].lower() and "tanımadım" not in r["text"], r)
+pref("ayse", "en")
+code, r = slack_post(slack_id, "commands", {"user_id": "U_AYSE", "text": "balance"})
+check("Slack: İngilizce tercihte İngilizce yanıt", code == 200 and "leave balance" in r["text"] and "bakiye" not in r["text"], r)
+code, r = slack_post(slack_id, "commands", {"user_id": "U_AYSE", "text": "help"})
+check("Slack: İngilizce komut listesi", code == 200 and "request leave" in r["text"], r)
+pref("ayse", "tr")
+code, r = slack_post(slack_id, "commands", {"user_id": "U_AYSE", "text": "özet"})
+check("Slack: özet komutu", code == 200 and "Özetiniz" in r["text"], r)
+
+# izin formu: düğme -> pencere -> gönder
+code, r = slack_post(slack_id, "commands", {"user_id": "U_AYSE", "text": "izin al"})
+form_btn = [e for b in (r or {}).get("blocks", []) if b.get("type") == "actions" for e in b["elements"] if e.get("action_id") == "hr360_leave_form"]
+check("Slack: 'izin al' form düğmesi verir", code == 200 and bool(form_btn), r)
+tf = time.time()
+slack_post(slack_id, "interactions", {"payload": json.dumps({"type": "block_actions", "user": {"id": "U_AYSE"}, "trigger_id": "TRIG1",
+                                                             "actions": [{"action_id": "hr360_leave_form", "value": "leave"}]})})
+opened = wait_for("/api/views.open", lambda c: "TRIG1" in c["body"], tf)
+modal = json.loads(urllib.parse.parse_qs(opened[0]["body"])["view"][0]) if opened else {}
+check("Slack: izin penceresi açıldı (bakiye ve sağlık uyarısı)", modal.get("callback_id") == "hr360_leave"
+      and "Sağlık bilgisi" in json.dumps(modal, ensure_ascii=False), modal.get("callback_id"))
+
+
+def leave_submit(start, end, reason):
+    view = {"callback_id": "hr360_leave", "state": {"values": {
+        "type": {"v": {"selected_option": {"value": "Unpaid"}}}, "start": {"v": {"selected_date": start}},
+        "end": {"v": {"selected_date": end}}, "reason": {"v": {"value": reason}}}}}
+    return slack_post(slack_id, "interactions", {"payload": json.dumps({"type": "view_submission", "user": {"id": "U_AYSE"}, "view": view})})
+
+
+code, r = leave_submit(free_day(3), free_day(1), "ters-tarih")
+check("Slack formu: hatalı tarih pencerede hata olarak döner", code == 200 and r.get("response_action") == "errors", r)
+tl = time.time()
+for wk in range(0, 30, 3):
+    d = free_day(4 + wk * 7)
+    code, r = leave_submit(d, d, "slack-formdan-izin")
+    if r and r.get("response_action") == "clear":
+        break
+check("Slack formu: izin talebi oluşturuldu", code == 200 and r.get("response_action") == "clear", r)
+conf = wait_for("/api/chat.postMessage", lambda c: "D_U_AYSE" in c["body"] and "oluşturuldu" in urllib.parse.unquote_plus(c["body"]), tl)
+check("Slack formu: talep sahibine onay mesajı", bool(conf), mock_calls("chat.postMessage", tl)[-2:])
+appr = wait_for("/api/chat.postMessage", lambda c: "D_U_MEHMET" in c["body"] and "hr360_reject" in urllib.parse.unquote_plus(c["body"]), tl)
+appr_txt = plain(appr[0]["body"]) if appr else ""
+check("Slack formu: onaycıya kart gitti (gün sayısıyla)", bool(appr) and "1 gün" in appr_txt, appr_txt[:300])
+
+# gerekçeli ret: düğme -> pencere -> gönder; gerekçe sohbete yazılmaz
+if appr:
+    blocks = json.loads(urllib.parse.parse_qs(appr[0]["body"])["blocks"][0])
+    val = next(e["value"] for b in blocks if b["type"] == "actions" for e in b["elements"] if e.get("action_id") == "hr360_reject")
+    wf_form = val.split("|")[0]
+    tg2 = time.time()
+    slack_post(slack_id, "interactions", {"payload": json.dumps({"type": "block_actions", "user": {"id": "U_MEHMET"}, "trigger_id": "TRIG2",
+                                                                 "actions": [{"action_id": "hr360_reject", "value": val}]})})
+    rm = wait_for("/api/views.open", lambda c: "TRIG2" in c["body"], tg2)
+    rview = json.loads(urllib.parse.parse_qs(rm[0]["body"])["view"][0]) if rm else {}
+    check("Slack: Reddet gerekçe penceresi açar", rview.get("callback_id") == "hr360_reject", rview)
+    check("Slack: pencere açılınca henüz karar verilmedi", wf_status(wf_form)["status"] == "Pending")
+    code, r = slack_post(slack_id, "interactions", {"payload": json.dumps({"type": "view_submission", "user": {"id": "U_MEHMET"},
+        "view": {"callback_id": "hr360_reject", "private_metadata": rview.get("private_metadata", ""),
+                 "state": {"values": {"reason": {"v": {"value": "Takvim uygun degil"}}}}}})})
+    time.sleep(4)
+    st = wf_status(wf_form)
+    check("Slack: gerekçeyle reddedildi", st["status"] == "Rejected" and any("Takvim uygun degil" in (x.get("comment") or "") for x in st["steps"]), st.get("steps"))
+    rej_dm = wait_for("/api/chat.postMessage", lambda c: "D_U_AYSE" in c["body"] and wf_form in urllib.parse.unquote_plus(c["body"]) or
+                      ("D_U_AYSE" in c["body"] and "reddedildi" in urllib.parse.unquote_plus(c["body"])), tg2)
+    rej_txt = urllib.parse.unquote_plus(rej_dm[-1]["body"]) if rej_dm else ""
+    check("Slack: gerekçe sohbete yazılmadı, HR360'a yönlendirildi", bool(rej_dm) and "Takvim uygun" not in rej_txt and "Karar notu" in rej_txt, rej_txt[:300])
+
+# kişisel ana sayfa
+th = time.time()
+slack_post(slack_id, "events", raw=json.dumps({"type": "event_callback", "event": {"type": "app_home_opened", "user": "U_AYSE", "tab": "home"}}))
+home = wait_for("/api/views.publish", lambda c: "U_AYSE" in c["body"], th)
+check("Slack: ana sayfa yayınlandı (özet + izin düğmesi)", bool(home) and "Özetiniz" in plain(home[0]["body"])
+      and "hr360_leave_form" in urllib.parse.unquote_plus(home[0]["body"]), home)
+code, man = api("admin", "GET", f"{G}/chat-apps/{slack_id}/slack-manifest")
+check("Slack manifesti: ana sayfa ve app_home_opened", man["features"]["app_home"]["home_tab_enabled"] and "app_home_opened" in man["settings"]["event_subscriptions"]["bot_events"], man["features"]["app_home"])
+
+# sabah özeti
+wf_dig = new_leave(19, "sabah-ozeti")
+time.sleep(3)
+td = time.time()
+code, r = api("admin", "POST", f"{G}/chat-apps/{slack_id}/digest")
+dig = wait_for("/api/chat.postMessage", lambda c: "D_U_MEHMET" in c["body"] and "Günaydın" in urllib.parse.unquote_plus(c["body"]), td)
+dig_txt = urllib.parse.unquote_plus(dig[0]["body"]) if dig else ""
+check("Sabah özeti: onaycıya gitti, ad ve izin türü yok", code == 200 and r["sent"] >= 1 and bool(dig) and "Ayşe" not in dig_txt and "Ücretsiz" not in dig_txt, (r, dig_txt[:200]))
+
+for w in (wf_prompt, wf_dig):
     code, r = slack_post(slack_id, "commands", {"user_id": "U_MEHMET", "text": "onaylarım"})
     v = next((e["value"] for b in (r or {}).get("blocks", []) if b.get("type") == "actions" for e in b["elements"]
               if e.get("action_id") == "hr360_reject" and w in e["value"]), None)
@@ -329,6 +436,32 @@ if card:
     check("Teams: kart 'Reddettiniz' olarak güncellendi", bool(put) and "Action.Submit" not in put[0]["body"], put)
     dm = wait_for("/teams/v3/conversations/a:conv-ayse.yilmaz/activities", lambda c: "reddedildi" in c["body"], t8)
     check("Teams: talep sahibine 'reddedildi' bildirimi", bool(dm), dm)
+
+
+# Teams: izin kartı ve gerekçeli ret
+tl2 = time.time()
+teams_post(act("ayse.yilmaz", "izin al"))
+lc = wait_for("/teams/v3/conversations/a:conv-ayse.yilmaz/activities", lambda c: "Input.Date" in c["body"], tl2)
+check("Teams: izin kartı geldi", bool(lc), lc)
+created = None
+for wk in range(0, 30, 3):
+    d = free_day(2 + wk * 7 + 21)
+    tsub = time.time()
+    teams_post(act("ayse.yilmaz", value={"hr360": "leave", "type": "Unpaid", "start": d, "end": d, "reason": "teams-kartindan"}))
+    res = wait_for("/teams/v3/conversations/a:conv-ayse.yilmaz/activities", lambda c: "oluşturuldu" in json.loads(c["body"])["summary"] or "⚠" in json.loads(c["body"])["summary"], tsub)
+    if res and "oluşturuldu" in json.loads(res[-1]["body"])["summary"]:
+        created = res
+        break
+check("Teams: karttan izin talebi oluşturuldu", bool(created), res)
+tc = wait_for("/teams/v3/conversations/a:conv-mehmet.demir/activities", lambda c: "teams-kartindan" not in c["body"] and "Input.Text" in c["body"] and "decide" in c["body"], tl2)
+if tc:
+    cbody = json.loads(tc[-1]["body"])
+    data = next(a["data"] for a in cbody["attachments"][0]["content"]["actions"] if a.get("title") == "Reddet")
+    wf_t = data["wf"]
+    teams_post(act("mehmet.demir", value={**data, "reason": "Ekip yogun"}))
+    time.sleep(4)
+    st = wf_status(wf_t)
+    check("Teams: karttaki gerekçeyle reddedildi", st["status"] == "Rejected" and any("Ekip yogun" in (x.get("comment") or "") for x in st["steps"]), st.get("steps"))
 
 code, ids = api("admin", "GET", f"{G}/chat-apps/{teams_id}/identities")
 check("Teams: eşleşen kullanıcılar", code == 200 and sum(1 for i in ids if i["employeeId"] and i["canReceive"]) >= 2, ids)

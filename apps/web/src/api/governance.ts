@@ -310,6 +310,7 @@ export interface ChatApp {
   knownUsers: number
   requireVerifiedIdentity: boolean
   messageDetail: 'Minimal' | 'Standard'
+  dailyDigest: boolean
   endpoints: { commands?: string; interactivity?: string; events?: string; messaging?: string }
   publicOriginIsHttps: boolean
 }
@@ -326,6 +327,7 @@ export interface ChatAppInput {
   teamsAzureTenantId?: string
   requireVerifiedIdentity?: boolean
   messageDetail?: 'Minimal' | 'Standard'
+  dailyDigest?: boolean
 }
 export interface MyChatIdentity {
   id: string
@@ -622,6 +624,7 @@ export const governanceApi = {
   deleteChatApp: (id: string) => apiFetch<void>(`${BASE}/chat-apps/${id}`, { method: 'DELETE' }),
   testChatApp: (id: string) => apiFetch<{ sent: boolean }>(`${BASE}/chat-apps/${id}/test`, { method: 'POST' }),
   chatIdentities: (id: string, signal?: AbortSignal) => apiFetch<ChatIdentityRow[]>(`${BASE}/chat-apps/${id}/identities`, { signal }),
+  sendChatDigest: (appId: string) => apiFetch<{ sent: number }>(`${BASE}/chat-apps/${appId}/digest`, { method: 'POST' }),
   revokeChatIdentity: (appId: string, identityId: string) => apiFetch<void>(`${BASE}/chat-apps/${appId}/identities/${identityId}/revoke`, { method: 'POST' }),
   chatLinkPreview: (code: string, signal?: AbortSignal) => apiFetch<ChatLinkPreview>(`${BASE}/chat/link/${encodeURIComponent(code)}`, { signal }),
   chatLink: (code: string) => apiFetch<{ linked: boolean; platform: ChatPlatform }>(`${BASE}/chat/link`, { method: 'POST', body: { code } }),

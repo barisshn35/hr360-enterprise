@@ -152,9 +152,14 @@ check("İptal: Zoom toplantısı ve Outlook etkinliği silindi", bool(dz) and bo
 
 # ---------------------------------------------------------------- boş / dolu
 # İzin/1:1 kaydı olmayan uzak bir hafta içi gün (öneriler yalnızca hafta içi iş saatlerinde).
-frm = dt.datetime(2033, 3, 7) + dt.timedelta(weeks=random.randint(0, 100))
-code, av = api("mehmet", "POST", f"{G}/meetings/availability", {"employeeIds": [MEHMET, AYSE], "from": frm.isoformat() + "Z",
-                                                                "to": (frm + dt.timedelta(days=1)).isoformat() + "Z", "durationMinutes": 60})
+# Rastgele hafta resmî tatile ya da önceki çalıştırmaların izinlerine denk gelirse öneri
+# çıkmaz; birkaç hafta denenir (öneri mantığı yine aşağıda doğrulanır).
+for _try in range(5):
+    frm = dt.datetime(2033, 3, 7) + dt.timedelta(weeks=random.randint(0, 100))
+    code, av = api("mehmet", "POST", f"{G}/meetings/availability", {"employeeIds": [MEHMET, AYSE], "from": frm.isoformat() + "Z",
+                                                                    "to": (frm + dt.timedelta(days=1)).isoformat() + "Z", "durationMinutes": 60})
+    if code != 200 or (av or {}).get("suggestions"):
+        break
 people = {p["name"]: p for p in (av or {}).get("people", [])}
 check("Boş/dolu: iki kişi, takvimleri bağlı", code == 200 and all(p["calendarConnected"] for p in people.values()) and len(people) == 2, av)
 busy = [(b["start"], b["end"]) for p in people.values() for b in p["busy"] if b["source"] == "takvim"]

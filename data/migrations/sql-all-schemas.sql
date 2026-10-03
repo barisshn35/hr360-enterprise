@@ -1674,3 +1674,7 @@ CREATE TABLE IF NOT EXISTS governance_chat_outbox (
     "CreatedAt" timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS "IX_governance_chat_outbox_due" ON governance_chat_outbox ("NextAttemptAt");
+
+-- Sabah özeti (uygulama ayarı) ve kişi başına günde bir gönderim takibi.
+ALTER TABLE governance_chat_apps ADD COLUMN IF NOT EXISTS "DailyDigest" boolean NOT NULL DEFAULT true;
+ALTER TABLE governance_chat_identities ADD COLUMN IF NOT EXISTS "LastDigestOn" date;

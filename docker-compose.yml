@@ -280,6 +280,8 @@ services:
       EMPLOYEE_SERVICE_URL: "http://employee-service:8080"
       ORGANIZATION_SERVICE_URL: "http://organization-service:8080"
       WORKFLOW_SERVICE_URL: "http://workflow-service:8080"
+      # Sohbet botundan (Slack/Teams) izin talebi icin servisler arasi ic uc anahtari.
+      INTERNAL_SERVICE_TOKEN: "${INTERNAL_SERVICE_TOKEN:-}"
       ASPNETCORE_ENVIRONMENT: "Production"
     mem_limit: "512m"
 
@@ -388,6 +390,7 @@ services:
       # Entegrasyon sirlari (bot jetonlari, OAuth) bu anahtarla sifrelenir.
       TENANT_SECRET_KEY: "${TENANT_SECRET_KEY}"
       ML_INFERENCE_URL: "http://ml-inference:8000"
+      LEAVE_SERVICE_URL: "http://leave-service:8080"
       # KVKK uyum ekrani: SMTP saglayicisi yurt disindaysa uyari verir.
       SMTP_HOST: "${SMTP_HOST:-mailpit}"
       # Yapay zeka (istege bagli): anthropic | openai | ollama. Bos ise kapali.

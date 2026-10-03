@@ -104,22 +104,52 @@ public class LeaveRequestsController : ControllerBase
                 return StatusCode(StatusCodes.Status403Forbidden,
                     new { message = "Yalnızca kendi adınıza izin talebi oluşturabilirsiniz" });
         }
+        var (error, leave) = await CreateCoreAsync(request, internalCall: false, ct);
+        return error ?? CreatedAtAction(nameof(GetById), new { id = leave!.Id }, leave);
+    }
 
+    /// <summary>
+    /// Sohbet botundan (Slack/Teams) açılan izin talebi. Web ucuyla aynı kurallar uygulanır;
+    /// çalışan, botun doğrulanmış sohbet hesabından gelir. Onay akışı da servisler arası
+    /// açılır. Gateway /api/*/internal/ yollarını dışarıya kapatır; anahtar yoksa uç kapalıdır.
+    /// </summary>
+    [HttpPost("/api/internal/leave-requests")]
+    [AllowAnonymous]
+    public async Task<IActionResult> CreateInternal([FromBody] InternalCreateLeaveRequest request,
+        [FromServices] Tenancy.TenantContext tenant, CancellationToken ct)
+    {
+        var expected = Environment.GetEnvironmentVariable("INTERNAL_SERVICE_TOKEN");
+        var given = Request.Headers["X-Internal-Token"].FirstOrDefault() ?? "";
+        if (string.IsNullOrEmpty(expected)
+            || !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+                System.Text.Encoding.UTF8.GetBytes(expected), System.Text.Encoding.UTF8.GetBytes(given)))
+            return NotFound();
+        if (string.IsNullOrWhiteSpace(request.TenantSlug)) return BadRequest(new { message = "Kiracı belirtilmedi" });
+        tenant.TenantSlug = request.TenantSlug;
+        tenant.IsPlatformAdmin = false;
+        var (error, leave) = await CreateCoreAsync(new CreateLeaveRequest(request.EmployeeId, request.Type, request.StartDate, request.EndDate,
+            request.Days, request.Reason, null), internalCall: true, ct);
+        return error ?? Ok(new { leave!.Id, leave.Days, leave.WorkflowRequestId, status = leave.Status.ToString() });
+    }
+
+    private async Task<(IActionResult? Error, LeaveRequest? Leave)> CreateCoreAsync(CreateLeaveRequest request, bool internalCall, CancellationToken ct)
+    {
+        IActionResult Bad(string m) => BadRequest(new { message = m });
         if (request.EndDate < request.StartDate)
-            return BadRequest("Bitis tarihi baslangictan once olamaz");
+            return (Bad("Bitiş tarihi başlangıçtan önce olamaz"), null);
         if (request.EndDate.DayNumber - request.StartDate.DayNumber > 365)
-            return BadRequest("Tek bir izin talebi en fazla 1 yıl sürebilir");
+            return (Bad("Tek bir izin talebi en fazla 1 yıl sürebilir"), null);
         if (request.StartDate.Year != request.EndDate.Year)
-            return BadRequest("Yıl sonunu aşan izni iki ayrı talep olarak girin (bakiyeler yıllıktır)");
+            return (Bad("Yıl sonunu aşan izni iki ayrı talep olarak girin (bakiyeler yıllıktır)"), null);
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         if (request.StartDate < today.AddDays(-90))
-            return BadRequest("90 günden daha eski bir tarih için izin talebi açılamaz");
+            return (Bad("90 günden daha eski bir tarih için izin talebi açılamaz"), null);
         if (request.Reason is { Length: > 1000 })
-            return BadRequest("Gerekçe en fazla 1000 karakter olabilir");
+            return (Bad("Gerekçe en fazla 1000 karakter olabilir"), null);
 
         var workingDays = await WorkingDaysAsync(request.StartDate, request.EndDate, ct);
         if (workingDays == 0)
-            return BadRequest("Seçilen aralıkta iş günü yok");
+            return (Bad("Seçilen aralıkta iş günü yok"), null);
         // Yarim gun: yalnizca tek gunluk taleplerde istemcinin 0.5 bildirmesine izin var.
         var days = request.StartDate == request.EndDate && request.Days == 0.5m
             ? 0.5m
@@ -131,7 +161,7 @@ public class LeaveRequestsController : ControllerBase
             (r.Status == LeaveRequestStatus.Submitted || r.Status == LeaveRequestStatus.Approved) &&
             r.StartDate <= request.EndDate && r.EndDate >= request.StartDate, ct);
         if (overlaps)
-            return Conflict(new { message = "Bu tarihlerle çakışan bekleyen ya da onaylı bir izniniz var" });
+            return (Conflict(new { message = "Bu tarihlerle çakışan bekleyen ya da onaylı bir izniniz var" }), null);
 
         var balance = await _db.LeaveBalances.FirstOrDefaultAsync(b =>
             b.EmployeeId == request.EmployeeId &&
@@ -139,12 +169,12 @@ public class LeaveRequestsController : ControllerBase
             b.Type == request.Type);
 
         if (balance is not null && balance.RemainingDays < days)
-            return BadRequest($"Yetersiz bakiye. Kalan: {balance.RemainingDays} gun");
+            return (Bad($"Yetersiz bakiye. Kalan: {balance.RemainingDays} gün"), null);
         // Yillik izin bakiye tanimi olmadan acilamaz (onceden bakiye satiri yoksa kontrol
         // tamamen atlaniyor, sinirsiz yillik izin alinabiliyordu). Diger turler
         // (hastalik, ucretsiz vb.) bakiyesiz olabilir.
         if (balance is null && request.Type == LeaveType.Annual)
-            return BadRequest($"{request.StartDate.Year} yılı için yıllık izin bakiyeniz tanımlı değil. İK ile iletişime geçin.");
+            return (Bad($"{request.StartDate.Year} yılı için yıllık izin bakiyeniz tanımlı değil. İK ile iletişime geçin."), null);
 
         var leave = new LeaveRequest
         {
@@ -174,23 +204,29 @@ public class LeaveRequestsController : ControllerBase
         }
         catch (DbUpdateConcurrencyException)
         {
-            return Conflict(new { message = "Bakiyeniz aynı anda başka bir işlemle güncellendi; lütfen tekrar deneyin." });
+            return (Conflict(new { message = "Bakiyeniz aynı anda başka bir işlemle güncellendi; lütfen tekrar deneyin." }), null);
         }
 
         // Departman basina onay workflow'u ac - bulunamazsa (bas atanmamis,
         // cross-service cagri hatasi) talep yine de Submitted olarak kalir
         // ve mevcut /resolve ucuyla elle sonuclandirilabilir.
-        var workflowId = await _approvals.StartLeaveApprovalAsync(
-            leave.EmployeeId,
-            $"{days} günlük {leave.Type} talebi ({leave.StartDate:dd.MM.yyyy} - {leave.EndDate:dd.MM.yyyy})",
-            ct);
+        var subject = $"{days} günlük {leave.Type} talebi ({leave.StartDate:dd.MM.yyyy} - {leave.EndDate:dd.MM.yyyy})";
+        // Onay mesajlarında (web, e-posta, sohbet) tarih ve gün sayısı gösterilebilsin diye.
+        var payload = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            leaveRequestId = leave.Id, type = leave.Type.ToString(), startDate = leave.StartDate.ToString("yyyy-MM-dd"),
+            endDate = leave.EndDate.ToString("yyyy-MM-dd"), days = leave.Days,
+        });
+        var workflowId = internalCall
+            ? await _approvals.StartLeaveApprovalInternalAsync(_db, leave.EmployeeId, subject, ct, payload)
+            : await _approvals.StartLeaveApprovalAsync(leave.EmployeeId, subject, ct, payload);
         if (workflowId is not null)
         {
             leave.WorkflowRequestId = workflowId;
             await _db.SaveChangesAsync();
         }
 
-        return CreatedAtAction(nameof(GetById), new { id = leave.Id }, leave);
+        return (null, leave);
     }
 
     /// <summary>
@@ -315,3 +351,5 @@ public record CreateLeaveRequest(
     decimal Days, string? Reason, Guid? WorkflowRequestId);
 
 public record ResolveLeaveRequest(bool Approved);
+public record InternalCreateLeaveRequest(string TenantSlug, Guid EmployeeId, LeaveType Type, DateOnly StartDate, DateOnly EndDate,
+    decimal Days, string? Reason);

@@ -13,17 +13,21 @@ public static class ChatFormat
     public const string ApproveAction = "hr360_approve";
     public const string RejectAction = "hr360_reject";
 
-    private static string Title(PendingApproval p)
+    private static readonly CultureInfo En = CultureInfo.GetCultureInfo("en-GB");
+    private static string T(bool en, string tr, string enText) => en ? enText : tr;
+
+    private static string Title(PendingApproval p, bool en)
     {
-        var label = ChatService.TypeLabel(p.Type);
-        return $"{char.ToUpper(label[0], Tr)}{label[1..]} talebi onayınızı bekliyor";
+        var label = ChatService.TypeLabel(p.Type, en);
+        return en ? $"{char.ToUpper(label[0], En)}{label[1..]} request awaiting your approval"
+                  : $"{char.ToUpper(label[0], Tr)}{label[1..]} talebi onayınızı bekliyor";
     }
 
-    private static string? Sla(PendingApproval p) =>
-        p.SlaDueAt is { } d ? d.AddHours(3).ToString("d MMMM HH:mm", Tr) : null;
+    private static string? Sla(PendingApproval p, bool en) =>
+        p.SlaDueAt is { } d ? d.AddHours(3).ToString(en ? "d MMMM HH:mm" : "d MMMM HH:mm", en ? En : Tr) : null;
 
-    public static string ApprovalFallback(PendingApproval p) =>
-        $"{Title(p)}: {p.Requester ?? "Bir çalışan"}" + (p.Subject is null ? "" : $" — {p.Subject}");
+    public static string ApprovalFallback(PendingApproval p, bool en = false) =>
+        $"{Title(p, en)}: {p.Requester ?? T(en, "Bir çalışan", "An employee")}" + (p.Subject is null ? "" : $" — {p.Subject}");
 
     public static string StatusFallback(string status, PendingApproval p) =>
         p.Subject is null ? status : $"{status}: {p.Subject}";
@@ -31,16 +35,16 @@ public static class ChatFormat
     /// <summary>Slack mrkdwn kaçışı (&amp; &lt; &gt;).</summary>
     private static string E(string? s) => (s ?? "").Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
 
-    public static JsonArray SlackApproval(PendingApproval p, string? status)
+    public static JsonArray SlackApproval(PendingApproval p, string? status, bool en = false)
     {
-        var lines = $"*{E(Title(p))}*\n*{E(p.Requester ?? "Bir çalışan")}*" + (p.Subject is null ? "" : $" · {E(p.Subject)}");
+        var lines = $"*{E(Title(p, en))}*\n*{E(p.Requester ?? T(en, "Bir çalışan", "An employee"))}*" + (p.Subject is null ? "" : $" · {E(p.Subject)}");
         if (p.Details is not null) lines += $"\n{E(p.Details)}";
         var blocks = new JsonArray
         {
             new JsonObject { ["type"] = "section", ["text"] = new JsonObject { ["type"] = "mrkdwn", ["text"] = lines } },
         };
         var context = new List<string>();
-        if (Sla(p) is { } sla && status is null) context.Add($"⏱ Son karar: {sla}");
+        if (Sla(p, en) is { } sla && status is null) context.Add(T(en, $"⏱ Son karar: {sla}", $"⏱ Decide by: {sla}"));
         if (status is not null) context.Add(E(status));
         if (context.Count > 0)
             blocks.Add(new JsonObject { ["type"] = "context", ["elements"] = new JsonArray(context.Select(c => (JsonNode)new JsonObject { ["type"] = "mrkdwn", ["text"] = c }).ToArray()) });
@@ -48,44 +52,81 @@ public static class ChatFormat
         var elements = new JsonArray();
         if (status is null)
         {
-            elements.Add(new JsonObject { ["type"] = "button", ["action_id"] = ApproveAction, ["style"] = "primary", ["value"] = value, ["text"] = PlainText("Onayla") });
-            elements.Add(new JsonObject
-            {
-                ["type"] = "button", ["action_id"] = RejectAction, ["style"] = "danger", ["value"] = value, ["text"] = PlainText("Reddet"),
-                ["confirm"] = new JsonObject
-                {
-                    ["title"] = PlainText("Talep reddedilsin mi?"),
-                    ["text"] = new JsonObject { ["type"] = "mrkdwn", ["text"] = "Gerekçe eklemek isterseniz HR360'ta açıp oradan reddedin." },
-                    ["confirm"] = PlainText("Reddet"), ["deny"] = PlainText("Vazgeç"), ["style"] = "danger",
-                },
-            });
+            elements.Add(new JsonObject { ["type"] = "button", ["action_id"] = ApproveAction, ["style"] = "primary", ["value"] = value, ["text"] = PlainText(T(en, "Onayla", "Approve")) });
+            // Reddet: gerekçe penceresi açılır (gerekçe yalnızca HR360'ta saklanır).
+            elements.Add(new JsonObject { ["type"] = "button", ["action_id"] = RejectAction, ["style"] = "danger", ["value"] = value, ["text"] = PlainText(T(en, "Reddet", "Reject")) });
         }
-        elements.Add(new JsonObject { ["type"] = "button", ["action_id"] = "hr360_open", ["url"] = ChatService.WorkflowUrl(p.WorkflowId), ["text"] = PlainText("HR360'ta aç") });
+        elements.Add(new JsonObject { ["type"] = "button", ["action_id"] = "hr360_open", ["url"] = ChatService.WorkflowUrl(p.WorkflowId), ["text"] = PlainText(T(en, "HR360'ta aç", "Open in HR360")) });
         blocks.Add(new JsonObject { ["type"] = "actions", ["block_id"] = $"wf_{p.StepId:N}", ["elements"] = elements });
         return blocks;
     }
 
     private static JsonObject PlainText(string t) => new() { ["type"] = "plain_text", ["text"] = t, ["emoji"] = true };
 
-    public static JsonArray SlackText(string text, string? link)
+    public static JsonArray SlackText(string text, string? link, bool en = false)
     {
         var blocks = new JsonArray { new JsonObject { ["type"] = "section", ["text"] = new JsonObject { ["type"] = "mrkdwn", ["text"] = text } } };
         if (link is not null)
-            blocks.Add(new JsonObject { ["type"] = "actions", ["elements"] = new JsonArray { new JsonObject { ["type"] = "button", ["action_id"] = "hr360_open", ["url"] = link, ["text"] = PlainText("HR360'ta aç") } } });
+            blocks.Add(new JsonObject { ["type"] = "actions", ["elements"] = new JsonArray { new JsonObject { ["type"] = "button", ["action_id"] = "hr360_open", ["url"] = link, ["text"] = PlainText(T(en, "HR360'ta aç", "Open in HR360")) } } });
         return blocks;
     }
 
-    /// <summary>Komut yanıtı: metin + her bekleyen onay için ayrı düğme bloğu.</summary>
+    public const string LeaveFormAction = "hr360_leave_form";
+
+    /// <summary>Komut yanıtı: metin + her bekleyen onay için ayrı düğme bloğu (+ izin formu düğmesi).</summary>
     public static JsonArray SlackReply(ChatReply reply)
     {
-        var blocks = SlackText(reply.Text, null);
+        var blocks = SlackText(reply.Text, reply.Link, reply.En);
+        if (reply.Form == ChatForm.Leave)
+            blocks.Add(new JsonObject { ["type"] = "actions", ["elements"] = new JsonArray { new JsonObject { ["type"] = "button", ["action_id"] = LeaveFormAction, ["style"] = "primary", ["value"] = "leave", ["text"] = PlainText(T(reply.En, "İzin talebi oluştur", "Request leave")) } } });
         foreach (var p in reply.Approvals)
         {
             blocks.Add(new JsonObject { ["type"] = "divider" });
-            foreach (var b in SlackApproval(p, null)) blocks.Add(b!.DeepClone());
+            foreach (var b in SlackApproval(p, null, reply.En)) blocks.Add(b!.DeepClone());
         }
         return blocks;
     }
+
+    public static readonly string[] LeaveTypes = { "Annual", "Unpaid", "Sick", "Marriage", "Paternity", "Bereavement" };
+
+    /// <summary>Slack izin talebi penceresi. Bakiye bilgisi bağlamda gösterilir.</summary>
+    public static JsonObject SlackLeaveModal(IReadOnlyList<string> balanceLines, bool en)
+    {
+        var today = DateTime.UtcNow.AddHours(3).ToString("yyyy-MM-dd");
+        JsonObject Opt(string t) => new() { ["text"] = PlainText(ChatService.LeaveTypeLabel(t, en)), ["value"] = t };
+        var blocks = new JsonArray();
+        if (balanceLines.Count > 0)
+            blocks.Add(new JsonObject { ["type"] = "context", ["elements"] = new JsonArray { new JsonObject { ["type"] = "mrkdwn", ["text"] = string.Join("\n", balanceLines) } } });
+        blocks.Add(new JsonObject { ["type"] = "input", ["block_id"] = "type", ["label"] = PlainText(T(en, "İzin türü", "Leave type")),
+            ["element"] = new JsonObject { ["type"] = "static_select", ["action_id"] = "v", ["initial_option"] = Opt("Annual"),
+                ["options"] = new JsonArray(LeaveTypes.Select(t => (JsonNode)Opt(t)).ToArray()) } });
+        blocks.Add(new JsonObject { ["type"] = "input", ["block_id"] = "start", ["label"] = PlainText(T(en, "Başlangıç", "Start date")),
+            ["element"] = new JsonObject { ["type"] = "datepicker", ["action_id"] = "v", ["initial_date"] = today } });
+        blocks.Add(new JsonObject { ["type"] = "input", ["block_id"] = "end", ["label"] = PlainText(T(en, "Bitiş", "End date")),
+            ["element"] = new JsonObject { ["type"] = "datepicker", ["action_id"] = "v", ["initial_date"] = today } });
+        blocks.Add(new JsonObject { ["type"] = "input", ["block_id"] = "reason", ["optional"] = true, ["label"] = PlainText(T(en, "Açıklama", "Note")),
+            ["hint"] = PlainText(T(en, "Sağlık bilgisi yazmayın; rapor gerekiyorsa İK'ya iletin.", "Do not include health details; send any medical report to HR.")),
+            ["element"] = new JsonObject { ["type"] = "plain_text_input", ["action_id"] = "v", ["max_length"] = 500 } });
+        return new JsonObject
+        {
+            ["type"] = "modal", ["callback_id"] = "hr360_leave",
+            ["title"] = PlainText(T(en, "İzin talebi", "Leave request")), ["submit"] = PlainText(T(en, "Gönder", "Submit")), ["close"] = PlainText(T(en, "Vazgeç", "Cancel")),
+            ["blocks"] = blocks,
+        };
+    }
+
+    /// <summary>Slack reddetme gerekçesi penceresi. Gerekçe bot mesajına yazılmaz, HR360'ta saklanır.</summary>
+    public static JsonObject SlackRejectModal(string metadata, bool en) => new()
+    {
+        ["type"] = "modal", ["callback_id"] = "hr360_reject", ["private_metadata"] = metadata,
+        ["title"] = PlainText(T(en, "Talebi reddet", "Reject request")), ["submit"] = PlainText(T(en, "Reddet", "Reject")), ["close"] = PlainText(T(en, "Vazgeç", "Cancel")),
+        ["blocks"] = new JsonArray
+        {
+            new JsonObject { ["type"] = "input", ["block_id"] = "reason", ["optional"] = true, ["label"] = PlainText(T(en, "Gerekçe", "Reason")),
+                ["hint"] = PlainText(T(en, "Talep sahibi gerekçeyi HR360'ta görür; sohbete yazılmaz.", "The requester sees the reason in HR360; it is not posted to chat.")),
+                ["element"] = new JsonObject { ["type"] = "plain_text_input", ["action_id"] = "v", ["multiline"] = true, ["max_length"] = 500 } },
+        },
+    };
 
     // ------------------------------------------------------------------ Teams
 
@@ -116,44 +157,64 @@ public static class ChatFormat
         return o;
     }
 
-    public static JsonObject TeamsApprovalCard(PendingApproval p, string? status)
+    public static JsonObject TeamsApprovalCard(PendingApproval p, string? status, bool en = false)
     {
         var facts = new JsonArray
         {
-            new JsonObject { ["title"] = "Talep eden", ["value"] = p.Requester ?? "—" },
+            new JsonObject { ["title"] = T(en, "Talep eden", "Requested by"), ["value"] = p.Requester ?? "—" },
         };
-        if (p.Subject is not null) facts.Add(new JsonObject { ["title"] = "Konu", ["value"] = p.Subject });
-        if (p.Details is not null) facts.Add(new JsonObject { ["title"] = "Ayrıntı", ["value"] = p.Details });
-        if (Sla(p) is { } sla && status is null) facts.Add(new JsonObject { ["title"] = "Son karar", ["value"] = sla });
-        var body = new JsonArray { Text(Title(p), bold: true), new JsonObject { ["type"] = "FactSet", ["facts"] = facts } };
+        if (p.Subject is not null) facts.Add(new JsonObject { ["title"] = T(en, "Konu", "Subject"), ["value"] = p.Subject });
+        if (p.Details is not null) facts.Add(new JsonObject { ["title"] = T(en, "Ayrıntı", "Details"), ["value"] = p.Details });
+        if (Sla(p, en) is { } sla && status is null) facts.Add(new JsonObject { ["title"] = T(en, "Son karar", "Decide by"), ["value"] = sla });
+        var body = new JsonArray { Text(Title(p, en), bold: true), new JsonObject { ["type"] = "FactSet", ["facts"] = facts } };
         if (status is not null) body.Add(Text(status, bold: true, color: status.StartsWith('⛔') ? "Attention" : "Good"));
         var actions = new JsonArray();
         if (status is null)
         {
-            actions.Add(new JsonObject { ["type"] = "Action.Submit", ["title"] = "Onayla", ["style"] = "positive",
+            // Reddederken isteğe bağlı gerekçe: yalnızca HR360'ta saklanır, sohbete yazılmaz.
+            body.Add(new JsonObject { ["type"] = "Input.Text", ["id"] = "reason", ["isMultiline"] = true, ["maxLength"] = 500,
+                ["placeholder"] = T(en, "Reddetme gerekçesi (isteğe bağlı)", "Reason for rejection (optional)") });
+            actions.Add(new JsonObject { ["type"] = "Action.Submit", ["title"] = T(en, "Onayla", "Approve"), ["style"] = "positive",
                 ["data"] = new JsonObject { ["hr360"] = "decide", ["decision"] = "approve", ["wf"] = p.WorkflowId.ToString(), ["step"] = p.StepId.ToString() } });
-            actions.Add(new JsonObject { ["type"] = "Action.Submit", ["title"] = "Reddet", ["style"] = "destructive",
+            actions.Add(new JsonObject { ["type"] = "Action.Submit", ["title"] = T(en, "Reddet", "Reject"), ["style"] = "destructive",
                 ["data"] = new JsonObject { ["hr360"] = "decide", ["decision"] = "reject", ["wf"] = p.WorkflowId.ToString(), ["step"] = p.StepId.ToString() } });
         }
-        actions.Add(new JsonObject { ["type"] = "Action.OpenUrl", ["title"] = "HR360'ta aç", ["url"] = ChatService.WorkflowUrl(p.WorkflowId) });
+        actions.Add(new JsonObject { ["type"] = "Action.OpenUrl", ["title"] = T(en, "HR360'ta aç", "Open in HR360"), ["url"] = ChatService.WorkflowUrl(p.WorkflowId) });
         return Card(body, actions);
     }
 
     /// <summary>Teams metni: Slack'in *kalın* biçimi **kalın**'a çevrilir.</summary>
     private static string Md(string s) => System.Text.RegularExpressions.Regex.Replace(s, @"(?<!\*)\*([^*\n]+)\*(?!\*)", "**$1**");
 
-    public static JsonObject TeamsTextCard(string text, string? link)
+    public static JsonObject TeamsTextCard(string text, string? link, bool en = false)
     {
         var body = new JsonArray(Md(text).Split('\n').Select(l => (JsonNode)Text(l)).ToArray());
-        var actions = link is null ? null : new JsonArray { new JsonObject { ["type"] = "Action.OpenUrl", ["title"] = "HR360'ta aç", ["url"] = link } };
+        var actions = link is null ? null : new JsonArray { new JsonObject { ["type"] = "Action.OpenUrl", ["title"] = T(en, "HR360'ta aç", "Open in HR360"), ["url"] = link } };
+        return Card(body, actions);
+    }
+
+    /// <summary>Teams izin talebi kartı (tür, tarihler, açıklama).</summary>
+    public static JsonObject TeamsLeaveCard(IReadOnlyList<string> balanceLines, bool en)
+    {
+        var today = DateTime.UtcNow.AddHours(3).ToString("yyyy-MM-dd");
+        var body = new JsonArray { Text(T(en, "İzin talebi", "Leave request"), bold: true) };
+        foreach (var l in balanceLines) body.Add(Text(Md(l), subtle: true));
+        body.Add(new JsonObject { ["type"] = "Input.ChoiceSet", ["id"] = "type", ["label"] = T(en, "İzin türü", "Leave type"), ["value"] = "Annual",
+            ["choices"] = new JsonArray(LeaveTypes.Select(t => (JsonNode)new JsonObject { ["title"] = ChatService.LeaveTypeLabel(t, en), ["value"] = t }).ToArray()) });
+        body.Add(new JsonObject { ["type"] = "Input.Date", ["id"] = "start", ["label"] = T(en, "Başlangıç", "Start date"), ["value"] = today });
+        body.Add(new JsonObject { ["type"] = "Input.Date", ["id"] = "end", ["label"] = T(en, "Bitiş", "End date"), ["value"] = today });
+        body.Add(new JsonObject { ["type"] = "Input.Text", ["id"] = "reason", ["label"] = T(en, "Açıklama (sağlık bilgisi yazmayın)", "Note (no health details)"), ["maxLength"] = 500 });
+        var actions = new JsonArray { new JsonObject { ["type"] = "Action.Submit", ["title"] = T(en, "Gönder", "Submit"), ["data"] = new JsonObject { ["hr360"] = "leave" } } };
         return Card(body, actions);
     }
 
     public static IEnumerable<JsonObject> TeamsReply(ChatReply reply)
     {
-        yield return TeamsActivity(TeamsTextCard(reply.Text, null), reply.Text);
+        yield return TeamsActivity(TeamsTextCard(reply.Text, reply.Link, reply.En), reply.Text);
+        if (reply.Form == ChatForm.Leave)
+            yield return TeamsActivity(TeamsLeaveCard(reply.FormLines ?? Array.Empty<string>(), reply.En), reply.Text);
         foreach (var p in reply.Approvals)
-            yield return TeamsActivity(TeamsApprovalCard(p, null), ApprovalFallback(p));
+            yield return TeamsActivity(TeamsApprovalCard(p, null, reply.En), ApprovalFallback(p, reply.En));
     }
 
     /// <summary>Gelen webhook (Teams Workflows / Power Automate) için kanal mesajı.</summary>

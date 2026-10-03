@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 
 namespace LeaveService.Services;
 
@@ -72,7 +73,7 @@ public class ApprovalWorkflowClient
     /// (departman yok, bas atanmamis, cross-service cagri hatasi) null doner.
     /// </summary>
     public async Task<Guid?> StartLeaveApprovalAsync(
-        Guid employeeId, string? subject, CancellationToken ct)
+        Guid employeeId, string? subject, CancellationToken ct, string? payload = null)
     {
         try
         {
@@ -99,7 +100,7 @@ public class ApprovalWorkflowClient
                     Type: 0, // WorkflowType.LeaveRequest
                     RequesterEmployeeId: employeeId,
                     Subject: subject,
-                    Payload: null,
+                    Payload: payload,
                     ApproverEmployeeIds: new List<Guid> { dept.HeadEmployeeId.Value },
                     SlaHours: null)), ct);
             if (!wfResp.IsSuccessStatusCode) return null;
@@ -112,6 +113,42 @@ public class ApprovalWorkflowClient
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// Servisler arasi (jetonsuz) yol: departman basi ayni veritabanindaki tablolardan
+    /// (kiraci filtresiyle) bulunur, akis workflow-service'in ic ucuyla acilir.
+    /// </summary>
+    public async Task<Guid?> StartLeaveApprovalInternalAsync(Data.LeaveDbContext db, Guid employeeId, string? subject, CancellationToken ct, string? payload = null)
+    {
+        var token = Environment.GetEnvironmentVariable("INTERNAL_SERVICE_TOKEN");
+        var tenant = db.CurrentTenantSlug;
+        if (string.IsNullOrEmpty(token) || string.IsNullOrEmpty(tenant)) return null;
+        try
+        {
+            var head = await db.Database.SqlQueryRaw<Guid?>(
+                """
+                SELECT d."HeadEmployeeId" AS "Value" FROM employee_assignments a
+                JOIN organization_departments d ON d."Id" = a."DepartmentId"
+                WHERE a."TenantSlug" = {0} AND a."EmployeeId" = {1} AND a."EffectiveTo" IS NULL
+                ORDER BY a."EffectiveFrom" DESC LIMIT 1
+                """, tenant, employeeId).FirstOrDefaultAsync(ct);
+            if (head is null || head == employeeId) return null;
+            using var req = new HttpRequestMessage(HttpMethod.Post, $"{_workflowServiceUrl}/api/internal/workflows")
+            {
+                Content = new StringContent(JsonSerializer.Serialize(new
+                {
+                    tenantSlug = tenant, type = 0, requesterEmployeeId = employeeId, subject, payload,
+                    approverEmployeeIds = new[] { head.Value }, slaHours = (int?)null,
+                }), Encoding.UTF8, "application/json"),
+            };
+            req.Headers.Add("X-Internal-Token", token);
+            using var resp = await _http.SendAsync(req, ct);
+            if (!resp.IsSuccessStatusCode) return null;
+            var created = JsonSerializer.Deserialize<WorkflowCreatedDto>(await resp.Content.ReadAsStringAsync(ct), JsonOpts);
+            return created?.Id;
+        }
+        catch (Exception) { return null; }
     }
 
     /// <summary>

@@ -162,7 +162,7 @@ public class ChatFormatTests
         var ids = Buttons(blocks).Select(b => (string?)b["action_id"]).ToList();
         Assert.Equal(new[] { ChatFormat.ApproveAction, ChatFormat.RejectAction, "hr360_open" }, ids);
         Assert.Equal($"{P.WorkflowId}|{P.StepId}", (string?)Buttons(blocks).First()["value"]);
-        Assert.NotNull(Buttons(blocks).ElementAt(1)["confirm"]);                          // Reddet onay ister
+        Assert.Null(Buttons(blocks).ElementAt(1)["confirm"]);                             // Reddet gerekçe penceresi açar (ayrı onay yok)
         var section = (string)blocks[0]!["text"]!["text"]!;
         Assert.Contains("&lt;test&gt;", section);                                            // mrkdwn kaçışı
         Assert.StartsWith("*İzin talebi onayınızı bekliyor*", section);

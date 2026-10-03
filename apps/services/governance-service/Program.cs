@@ -42,9 +42,11 @@ builder.Services.AddSingleton<GovernanceService.Infrastructure.Calendar.ZoomApi>
 builder.Services.AddSingleton<GovernanceService.Infrastructure.Calendar.CalendarService>();
 builder.Services.AddSingleton<GovernanceService.Infrastructure.Ai.LlmClient>();
 builder.Services.AddScoped<GovernanceService.Infrastructure.Ai.AiGateway>();
+builder.Services.AddScoped<GovernanceService.Infrastructure.HrAssistant>();
 builder.Services.AddHostedService<GovernanceService.Infrastructure.EventConsumer>();
 builder.Services.AddHostedService<GovernanceService.Infrastructure.Housekeeping>();
 builder.Services.AddHostedService<GovernanceService.Infrastructure.Chat.ChatOutboxWorker>();
+builder.Services.AddHostedService<GovernanceService.Infrastructure.Chat.ChatDigestWorker>();
 
 
 

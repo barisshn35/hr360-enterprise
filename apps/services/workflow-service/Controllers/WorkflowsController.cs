@@ -83,17 +83,47 @@ public class WorkflowsController : ControllerBase
                 return StatusCode(StatusCodes.Status403Forbidden,
                     new { message = "Yalnızca kendi adınıza talep oluşturabilirsiniz" });
         }
+        var (error, wf) = await CreateCoreAsync(request, ct);
+        return error ?? CreatedAtAction(nameof(GetById), new { id = wf!.Id }, wf);
+    }
+
+    /// <summary>
+    /// Servisler arası (jetonsuz) akış başlatma: sohbet botundan açılan izin talebi gibi.
+    /// Web ucuyla aynı doğrulamalar uygulanır; talep eden gövdeden gelir (çağıran servis
+    /// kişiyi doğrulamıştır). Gateway /api/*/internal/ yollarını dışarıya kapatır.
+    /// </summary>
+    [HttpPost("/api/internal/workflows")]
+    [AllowAnonymous]
+    public async Task<IActionResult> CreateInternal([FromBody] InternalCreateWorkflowRequest request,
+        [FromServices] Tenancy.TenantContext tenant, CancellationToken ct)
+    {
+        var expected = Environment.GetEnvironmentVariable("INTERNAL_SERVICE_TOKEN");
+        var given = Request.Headers["X-Internal-Token"].FirstOrDefault() ?? "";
+        if (string.IsNullOrEmpty(expected)
+            || !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+                System.Text.Encoding.UTF8.GetBytes(expected), System.Text.Encoding.UTF8.GetBytes(given)))
+            return NotFound();
+        if (string.IsNullOrWhiteSpace(request.TenantSlug)) return BadRequest(new { message = "Kiracı belirtilmedi" });
+        tenant.TenantSlug = request.TenantSlug;
+        tenant.IsPlatformAdmin = false;
+        var (error, wf) = await CreateCoreAsync(new CreateWorkflowRequest(request.Type, request.RequesterEmployeeId, request.Subject,
+            request.Payload, request.ApproverEmployeeIds ?? new List<Guid>(), request.SlaHours), ct);
+        return error ?? Ok(new { wf!.Id });
+    }
+
+    private async Task<(IActionResult? Error, WorkflowRequest? Wf)> CreateCoreAsync(CreateWorkflowRequest request, CancellationToken ct)
+    {
         var approvers = request.ApproverEmployeeIds ?? new List<Guid>();
         if (approvers.Count == 0 || approvers.Count > 10)
-            return BadRequest(new { message = "En az 1, en fazla 10 onaycı gerekli" });
+            return (BadRequest(new { message = "En az 1, en fazla 10 onaycı gerekli" }), null);
         if (approvers.Contains(Guid.Empty) || approvers.Distinct().Count() != approvers.Count)
-            return BadRequest(new { message = "Onaycı listesi geçersiz ya da tekrar içeriyor" });
+            return (BadRequest(new { message = "Onaycı listesi geçersiz ya da tekrar içeriyor" }), null);
         if (approvers.Contains(request.RequesterEmployeeId))
-            return BadRequest(new { message = "Talep eden kendi talebinin onaycısı olamaz" });
+            return (BadRequest(new { message = "Talep eden kendi talebinin onaycısı olamaz" }), null);
         if (request.SlaHours is < 1 or > 24 * 90)
-            return BadRequest(new { message = "SLA 1 saat ile 90 gün arasında olmalı" });
+            return (BadRequest(new { message = "SLA 1 saat ile 90 gün arasında olmalı" }), null);
         if (request.Subject is { Length: > 300 })
-            return BadRequest(new { message = "Konu en fazla 300 karakter olabilir" });
+            return (BadRequest(new { message = "Konu en fazla 300 karakter olabilir" }), null);
 
         var wf = new WorkflowRequest
         {
@@ -125,8 +155,8 @@ public class WorkflowsController : ControllerBase
         var firstStep = wf.Steps.OrderBy(s => s.Order).FirstOrDefault();
         if (firstStep is not null)
         {
-            var approver = await _employees.GetByIdAsync(firstStep.ApproverEmployeeId, ct);
-            var requester = await _employees.GetByIdAsync(request.RequesterEmployeeId, ct);
+            var approver = await LookupEmployeeAsync(firstStep.ApproverEmployeeId, ct);
+            var requester = await LookupEmployeeAsync(request.RequesterEmployeeId, ct);
             if (approver is not null)
             {
                 _db.OutboxMessages.Add(new OutboxMessage
@@ -144,8 +174,8 @@ public class WorkflowsController : ControllerBase
             }
         }
 
-        await _db.SaveChangesAsync();
-        return CreatedAtAction(nameof(GetById), new { id = wf.Id }, wf);
+        await _db.SaveChangesAsync(ct);
+        return (null, wf);
     }
 
     [HttpPost("{id}/steps/{stepId}/decide")]
@@ -252,7 +282,6 @@ public class WorkflowsController : ControllerBase
         return Ok(new { wf.Id, status = wf.Status.ToString(), wf.Subject, stepOrder = step.Order });
     }
 
-    /// <summary>Yetki kontrolleri yapildiktan sonra karari uygular (kaydetmez). Hata metni ya da null.</summary>
     /// <summary>
     /// Calisan adi/e-postasi. Web isteginde kullanicinin jetonuyla employee-service'e
     /// sorulur; servisler arasi (jetonsuz) cagride ayni veritabanindaki tablodan,
@@ -277,6 +306,7 @@ public class WorkflowsController : ControllerBase
         public string Email { get; set; } = "";
     }
 
+    /// <summary>Yetki kontrolleri yapildiktan sonra karari uygular (kaydetmez). Hata metni ya da null.</summary>
     private async Task<string?> ApplyDecisionAsync(WorkflowRequest wf, ApprovalStep step, StepDecision decision, string? comment,
         Guid actorEmployeeId, CancellationToken ct)
     {
@@ -439,5 +469,7 @@ public record CreateWorkflowRequest(
     int? SlaHours);
 
 public record DecideRequest(StepDecision Decision, string? Comment);
+public record InternalCreateWorkflowRequest(string TenantSlug, WorkflowType Type, Guid RequesterEmployeeId, string? Subject, string? Payload,
+    List<Guid>? ApproverEmployeeIds, int? SlaHours);
 public record InternalDecideRequest(string TenantSlug, Guid ActorEmployeeId, StepDecision Decision, string? Comment, string? Channel);
 public record DelegateRequest(Guid DelegateToEmployeeId, string? Comment);

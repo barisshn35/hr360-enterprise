@@ -329,6 +329,8 @@ public class ChatApp : ITenantOwned
     public bool RequireVerifiedIdentity { get; set; } = true;
     /// <summary>Minimal: onay mesajında ad kısaltılır, konu yazılmaz. Standard: tam bilgi.</summary>
     public string MessageDetail { get; set; } = "Minimal";
+    /// <summary>Hafta içi sabah özeti (kararı bekleyen talepler, ekipten izinde olanlar).</summary>
+    public bool DailyDigest { get; set; } = true;
 }
 
 /// <summary>Gönderilemeyen sohbet mesajı; arka planda artan aralıklarla yeniden denenir.</summary>
@@ -367,6 +369,7 @@ public class ChatIdentity : ITenantOwned
     public DateTime? VerifiedAt { get; set; }
     public string? LinkCodeHash { get; set; }
     public DateTime? LinkCodeExpiresAt { get; set; }
+    public DateOnly? LastDigestOn { get; set; }
 }
 
 /// <summary>Gönderilen onay mesajı; karar verilince mesaj güncellenir.</summary>

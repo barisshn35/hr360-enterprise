@@ -212,7 +212,20 @@ sunucunun kendisinden erişilebilir.
 Onaycıya izin, masraf ve diğer talepler **Onayla / Reddet** düğmeli kişisel mesaj
 olarak gider; karar verilince mesaj güncellenir, talep sahibine sonuç bildirilir.
 Komutlar (Slack'te `/hr360 …` ya da bota DM, Teams'te bota mesaj): `onaylarım`,
-`bakiye`, `izindekiler`, `kimnerede`, `bekleyen`, `ben`.
+`bakiye`, `izindekiler`, `kimnerede`, `bekleyen`, `ben`, `izin al`, `özet`, `yardım`.
+Komut dışındaki her soru ("kaç gün iznim kaldı?", "masraf politikası ne?") web'deki
+İK asistanına gider ve aynı yetki kurallarıyla yanıtlanır. Dil, kişinin HR360 bildirim
+tercihine göre seçilir; İngilizce komutlar da çalışır (`approvals`, `balance`, `leave`,
+`home`, `help`).
+
+- **İzin formu:** `izin al` Slack'te bir form (modal), Teams'te Adaptive Card açar; talep
+  sohbetten oluşturulur, onay akışı web'deki gibi başlar.
+- **Gerekçeli ret:** Reddet'e basınca gerekçe sorulur; gerekçe onay geçmişine yazılır,
+  talep sahibine giden sohbet mesajında yer almaz (yalnızca "karar notu var" denir).
+- **Ana sayfa:** Slack App Home sekmesi ve `özet` komutu bekleyen onayları, izin
+  bakiyesini ve bugün izinde olan ekip arkadaşlarını gösterir.
+- **Sabah özeti:** İş günleri `CHAT_DIGEST_HOUR` saatinde
+  (varsayılan 09:00) bekleyen onaylar ve bugünün özeti kişiye gönderilir; uygulama ayarından kapatılabilir.
 
 - Kişiler **e-posta adresiyle** eşleşir, ama e-posta eşleşmesi tek başına yetmez:
   bot ilk kez yazan ya da onay alacak kişiye tek kullanımlık bir bağlantı gönderir; kişi

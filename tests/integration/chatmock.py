@@ -277,6 +277,12 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {"ok": True, "channel": f["channel"], "ts": f"1700000000.{SEQ[0]:06d}"})
         if method == "chat.update":
             return self._send(200, {"ok": True, "channel": f["channel"], "ts": f["ts"]})
+        if method == "views.open":
+            if not f.get("trigger_id"):
+                return self._send(200, {"ok": False, "error": "invalid_trigger_id"})
+            return self._send(200, {"ok": True, "view": {"id": "V_" + f["trigger_id"]}})
+        if method == "views.publish":
+            return self._send(200, {"ok": True, "view": {"id": "V_HOME_" + f.get("user_id", "")}})
         self._send(200, {"ok": False, "error": "unknown_method"})
 
 

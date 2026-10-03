@@ -83,6 +83,14 @@ public sealed class SlackApi
     public Task UpdateAsync(string token, string channel, string ts, string text, JsonArray? blocks, CancellationToken ct) =>
         CallAsync(token, "chat.update", new() { ["channel"] = channel, ["ts"] = ts, ["text"] = text, ["blocks"] = blocks?.ToJsonString() ?? "[]" }, ct);
 
+    /// <summary>Etkileşimden (düğme) form penceresi açar; trigger_id 3 sn geçerlidir.</summary>
+    public Task OpenViewAsync(string token, string triggerId, JsonObject view, CancellationToken ct) =>
+        CallAsync(token, "views.open", new() { ["trigger_id"] = triggerId, ["view"] = view.ToJsonString() }, ct);
+
+    /// <summary>Kişinin App Home sekmesini yayınlar (yalnızca o kişi görür).</summary>
+    public Task PublishHomeAsync(string token, string userId, JsonObject view, CancellationToken ct) =>
+        CallAsync(token, "views.publish", new() { ["user_id"] = userId, ["view"] = view.ToJsonString() }, ct);
+
     /// <summary>Slack istek imzasi (v0, HMAC-SHA256, 5 dk zaman penceresi).</summary>
     public static bool VerifySignature(string secret, string timestamp, string signature, string rawBody)
     {

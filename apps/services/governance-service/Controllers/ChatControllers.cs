@@ -46,7 +46,7 @@ public class ChatAppsController : AppController
         a.SlackTeamId, a.SlackTeamName, a.TeamsAppId, a.TeamsAzureTenantId,
         hasSlackToken = a.SlackBotTokenEnc != null, hasSigningSecret = a.SlackSigningSecretEnc != null, hasTeamsPassword = a.TeamsAppPasswordEnc != null,
         a.LastError, a.LastActivityAt, a.CreatedAt, linkedUsers = linked, knownUsers = total,
-        a.RequireVerifiedIdentity, a.MessageDetail,
+        a.RequireVerifiedIdentity, a.MessageDetail, a.DailyDigest,
         endpoints = Endpoints(a),
         publicOriginIsHttps = ChatService.PublicOrigin.StartsWith("https://", StringComparison.OrdinalIgnoreCase),
     };
@@ -66,7 +66,7 @@ public class ChatAppsController : AppController
 
     public record ChatAppInput(string Platform, string Name, bool IsEnabled, bool NotifyApprovals, bool NotifyRequesters,
         string? SlackBotToken, string? SlackSigningSecret, string? TeamsAppId, string? TeamsAppPassword, string? TeamsAzureTenantId,
-        bool? RequireVerifiedIdentity = null, string? MessageDetail = null);
+        bool? RequireVerifiedIdentity = null, string? MessageDetail = null, bool? DailyDigest = null);
 
     private async Task<string?> ApplyAsync(ChatApp a, ChatAppInput body, bool creating, CancellationToken ct)
     {
@@ -77,6 +77,7 @@ public class ChatAppsController : AppController
         a.NotifyApprovals = body.NotifyApprovals;
         a.NotifyRequesters = body.NotifyRequesters;
         if (body.RequireVerifiedIdentity is { } rv) a.RequireVerifiedIdentity = rv;
+        if (body.DailyDigest is { } dd) a.DailyDigest = dd;
         if (body.MessageDetail is not null)
         {
             if (body.MessageDetail is not ("Minimal" or "Standard")) return "Mesaj ayrıntısı Minimal ya da Standard olmalı.";
@@ -160,6 +161,15 @@ public class ChatAppsController : AppController
         }));
     }
 
+    /// <summary>Sabah özetini hemen gönderir (deneme; bugün gönderilmiş olsa da).</summary>
+    [HttpPost("{id:guid}/digest")]
+    public async Task<IActionResult> Digest(Guid id, CancellationToken ct)
+    {
+        var a = await _db.ChatApps.FirstOrDefaultAsync(x => x.Id == id && x.IsEnabled, ct);
+        if (a is null) return NotFound();
+        return Ok(new { sent = await _chat.SendDigestsAsync(_db, a, force: true, ct) });
+    }
+
     /// <summary>Sohbet hesabının bağını kaldırır; kişi yeniden bağlayana kadar veri almaz.</summary>
     [HttpPost("{id:guid}/identities/{identityId:guid}/revoke")]
     public async Task<IActionResult> Revoke(Guid id, Guid identityId, CancellationToken ct)
@@ -222,11 +232,11 @@ public class ChatAppsController : AppController
             },
             ["features"] = new JsonObject
             {
-                ["app_home"] = new JsonObject { ["home_tab_enabled"] = false, ["messages_tab_enabled"] = true, ["messages_tab_read_only_enabled"] = false },
+                ["app_home"] = new JsonObject { ["home_tab_enabled"] = true, ["messages_tab_enabled"] = true, ["messages_tab_read_only_enabled"] = false },
                 ["bot_user"] = new JsonObject { ["display_name"] = "HR360", ["always_online"] = true },
                 ["slash_commands"] = new JsonArray
                 {
-                    new JsonObject { ["command"] = "/hr360", ["url"] = $"{baseUrl}/commands", ["description"] = "HR360 komutları", ["usage_hint"] = "onaylarım | bakiye | izindekiler | kimnerede", ["should_escape"] = false },
+                    new JsonObject { ["command"] = "/hr360", ["url"] = $"{baseUrl}/commands", ["description"] = "HR360 komutları", ["usage_hint"] = "onaylarım | bakiye | izin al | özet | izindekiler | soru", ["should_escape"] = false },
                 },
             },
             ["oauth_config"] = new JsonObject
@@ -235,7 +245,7 @@ public class ChatAppsController : AppController
             },
             ["settings"] = new JsonObject
             {
-                ["event_subscriptions"] = new JsonObject { ["request_url"] = $"{baseUrl}/events", ["bot_events"] = new JsonArray("message.im") },
+                ["event_subscriptions"] = new JsonObject { ["request_url"] = $"{baseUrl}/events", ["bot_events"] = new JsonArray("message.im", "app_home_opened") },
                 ["interactivity"] = new JsonObject { ["is_enabled"] = true, ["request_url"] = $"{baseUrl}/interactions" },
                 ["org_deploy_enabled"] = false, ["socket_mode_enabled"] = false, ["token_rotation_enabled"] = false,
             },
@@ -358,7 +368,9 @@ public class ChatLinkController : AppController
         var app = await _db.ChatApps.FirstOrDefaultAsync(a => a.Id == i.AppId, ct);
         if (app is not null)
         {
-            try { await _chat.SendTextToEmployeeAsync(_db, app, me.Id, "✅ Hesabınız HR360'a bağlandı. Onay talepleriniz buraya gelecek.\n" + ChatService.Help, null, ct); await _db.SaveChangesAsync(ct); }
+            var en = await _chat.EnAsync(app.TenantSlug, me.Id, ct);
+            var hello = (en ? "✅ Your account is linked to HR360. Approval requests will come here.\n" : "✅ Hesabınız HR360'a bağlandı. Onay talepleriniz buraya gelecek.\n") + ChatService.HelpOf(en);
+            try { await _chat.SendTextToEmployeeAsync(_db, app, me.Id, hello, null, ct); await _db.SaveChangesAsync(ct); }
             catch (Exception) { /* bilgilendirme mesajı gönderilemezse bağlama yine geçerli */ }
         }
         return Ok(new { linked = true, platform = i.Platform });
@@ -438,7 +450,7 @@ public class SlackEndpointsController : ControllerBase
         try
         {
             var who = await _chat.EnsureSlackIdentityAsync(_db, app, userId, ct);
-            reply = await _chat.CommandAsync(_db, app, who, FormValue(raw, "text"), ct);
+            reply = await _chat.CommandAsync(_db, app, who, FormValue(raw, "text"), ct, HttpContext.RequestServices.GetRequiredService<HrAssistant>());
         }
         catch (ChatApiException ex)
         {
@@ -456,15 +468,79 @@ public class SlackEndpointsController : ControllerBase
         JsonElement payload;
         try { payload = JsonDocument.Parse(FormValue(raw, "payload") ?? "").RootElement.Clone(); }
         catch (JsonException) { return BadRequest(); }
-        if (payload.GetProperty("type").GetString() != "block_actions") return Ok();
+        var kind = payload.GetProperty("type").GetString();
+        if (kind == "view_submission") return await ViewSubmissionAsync(app, payload, ct);
+        if (kind != "block_actions") return Ok();
         var action = payload.GetProperty("actions")[0];
         var actionId = action.GetProperty("action_id").GetString();
+        var userId = payload.GetProperty("user").GetProperty("id").GetString()!;
+        var triggerId = payload.TryGetProperty("trigger_id", out var tid) ? tid.GetString() : null;
+        var token = SecretBox.Unprotect(app.SlackBotTokenEnc)!;
+
+        if (actionId == ChatFormat.LeaveFormAction)
+        {
+            // İzin formu: bakiye bağlamda gösterilir; yalnızca doğrulanmış hesap.
+            var who = await _chat.EnsureSlackIdentityAsync(_db, app, userId, ct);
+            var en = await _chat.EnAsync(app.TenantSlug, who.EmployeeId, ct);
+            if (!ChatService.Trusted(app, who) || triggerId is null) return Ok();
+            var lines = await _chat.BalanceLinesAsync(app.TenantSlug, who.EmployeeId!.Value, DateTime.UtcNow.AddHours(3).Year, en, ct);
+            try { await _slack.OpenViewAsync(token, triggerId, ChatFormat.SlackLeaveModal(lines, en), ct); }
+            catch (ChatApiException ex) { _log.LogWarning("Slack izin formu açılamadı: {Message}", ex.Message); }
+            return Ok();
+        }
         if (actionId is not (ChatFormat.ApproveAction or ChatFormat.RejectAction)) return Ok();
         var parts = (action.GetProperty("value").GetString() ?? "").Split('|');
         if (parts.Length != 2 || !Guid.TryParse(parts[0], out var wfId) || !Guid.TryParse(parts[1], out var stepId)) return BadRequest();
-        var userId = payload.GetProperty("user").GetProperty("id").GetString()!;
         var responseUrl = payload.TryGetProperty("response_url", out var ru) ? ru.GetString() : null;
         var approve = actionId == ChatFormat.ApproveAction;
+        if (!approve && triggerId is not null)
+        {
+            // Reddet: gerekçe penceresi. Karar pencere gönderilince verilir.
+            var who = await _chat.EnsureSlackIdentityAsync(_db, app, userId, ct);
+            var en = await _chat.EnAsync(app.TenantSlug, who.EmployeeId, ct);
+            try { await _slack.OpenViewAsync(token, triggerId, ChatFormat.SlackRejectModal($"{wfId}|{stepId}|{responseUrl}", en), ct); return Ok(); }
+            catch (ChatApiException ex) { _log.LogInformation("Gerekçe penceresi açılamadı, doğrudan reddediliyor: {Message}", ex.Message); }
+        }
+        return DecideInBackground(app, userId, wfId, stepId, approve, responseUrl, null);
+    }
+
+    /// <summary>Slack form pencereleri: izin talebi ve reddetme gerekçesi.</summary>
+    private async Task<IActionResult> ViewSubmissionAsync(ChatApp app, JsonElement payload, CancellationToken ct)
+    {
+        var view = payload.GetProperty("view");
+        var callback = view.TryGetProperty("callback_id", out var cb) ? cb.GetString() : null;
+        var userId = payload.GetProperty("user").GetProperty("id").GetString()!;
+        string? V(string block, string field = "value")
+        {
+            if (!view.TryGetProperty("state", out var st) || !st.GetProperty("values").TryGetProperty(block, out var b) || !b.TryGetProperty("v", out var v)) return null;
+            return field switch
+            {
+                "selected_option" => v.TryGetProperty("selected_option", out var o) && o.ValueKind == JsonValueKind.Object ? o.GetProperty("value").GetString() : null,
+                "selected_date" => v.TryGetProperty("selected_date", out var d) ? d.GetString() : null,
+                _ => v.TryGetProperty("value", out var x) && x.ValueKind == JsonValueKind.String ? x.GetString() : null,
+            };
+        }
+        if (callback == "hr360_leave")
+        {
+            var who = await _chat.EnsureSlackIdentityAsync(_db, app, userId, ct);
+            var (ok, message) = await _chat.CreateLeaveAsync(_db, app, who, V("type", "selected_option"), V("start", "selected_date"), V("end", "selected_date"), V("reason"), ct);
+            if (!ok) return Ok(new { response_action = "errors", errors = new Dictionary<string, string> { ["start"] = message } });
+            try { await _chat.SendTextToEmployeeAsync(_db, app, who.EmployeeId!.Value, message, $"{ChatService.PublicOrigin}/panel/izin", ct); await _db.SaveChangesAsync(ct); }
+            catch (Exception ex) when (ex is ChatApiException or HttpRequestException) { _log.LogInformation("İzin onay mesajı gönderilemedi: {Message}", ex.Message); }
+            return Ok(new { response_action = "clear" });
+        }
+        if (callback == "hr360_reject")
+        {
+            var meta = (view.TryGetProperty("private_metadata", out var m) ? m.GetString() : "")?.Split('|', 3) ?? Array.Empty<string>();
+            if (meta.Length < 2 || !Guid.TryParse(meta[0], out var wfId) || !Guid.TryParse(meta[1], out var stepId)) return Ok(new { response_action = "clear" });
+            DecideInBackground(app, userId, wfId, stepId, false, meta.Length == 3 && meta[2].Length > 0 ? meta[2] : null, V("reason"));
+            return Ok(new { response_action = "clear" });
+        }
+        return Ok();
+    }
+
+    private IActionResult DecideInBackground(ChatApp app, string userId, Guid wfId, Guid stepId, bool approve, string? responseUrl, string? comment)
+    {
         var tenant = app.TenantSlug;
         var appKey = app.Id;
 
@@ -481,7 +557,7 @@ public class SlackEndpointsController : ControllerBase
                 var a = await db.ChatApps.FirstAsync(x => x.Id == appKey, bg);
                 var who = await chat.EnsureSlackIdentityAsync(db, a, userId, bg);
                 var tracked = await db.ChatMessages.AnyAsync(m => m.AppId == a.Id && m.StepId == stepId && m.State == "Open", bg);
-                var result = await chat.DecideAsync(db, a, who, wfId, stepId, approve, bg);
+                var result = await chat.DecideAsync(db, a, who, wfId, stepId, approve, bg, comment);
                 if (responseUrl is null) return;
                 if (result.Ok && !tracked)
                 {
@@ -524,6 +600,29 @@ public class SlackEndpointsController : ControllerBase
         if (type == "url_verification") return Ok(new { challenge = root.GetProperty("challenge").GetString() });
         if (type != "event_callback" || Request.Headers.ContainsKey("X-Slack-Retry-Num")) return Ok();
         var ev = root.GetProperty("event");
+        if (ev.GetProperty("type").GetString() == "app_home_opened")
+        {
+            // Kişisel ana sayfa: yalnızca o kişinin göreceği özet (bakiye, onaylar, yaklaşan izinler).
+            var homeUser = ev.GetProperty("user").GetString()!;
+            var homeTenant = app.TenantSlug;
+            var homeApp = app.Id;
+            _ = Task.Run(async () =>
+            {
+                using var scope = _scopes.CreateScope();
+                scope.ServiceProvider.GetRequiredService<TenantContext>().TenantSlug = homeTenant;
+                var db = scope.ServiceProvider.GetRequiredService<GovernanceDbContext>();
+                var chat = scope.ServiceProvider.GetRequiredService<ChatService>();
+                var slack = scope.ServiceProvider.GetRequiredService<SlackApi>();
+                try
+                {
+                    var a = await db.ChatApps.FirstAsync(x => x.Id == homeApp);
+                    var who = await chat.EnsureSlackIdentityAsync(db, a, homeUser, CancellationToken.None);
+                    await slack.PublishHomeAsync(SecretBox.Unprotect(a.SlackBotTokenEnc)!, homeUser, await chat.SlackHomeViewAsync(a, who, CancellationToken.None), CancellationToken.None);
+                }
+                catch (Exception ex) { _log.LogWarning(ex, "Slack ana sayfası yayınlanamadı"); }
+            });
+            return Ok();
+        }
         if (ev.GetProperty("type").GetString() != "message" || ev.TryGetProperty("bot_id", out _) || ev.TryGetProperty("subtype", out _)) return Ok();
         if (!ev.TryGetProperty("channel_type", out var ctp) || ctp.GetString() != "im") return Ok();
         var user = ev.GetProperty("user").GetString()!;
@@ -544,7 +643,7 @@ public class SlackEndpointsController : ControllerBase
                 var who = await chat.EnsureSlackIdentityAsync(db, a, user, CancellationToken.None);
                 who.ConversationId ??= channel;
                 await db.SaveChangesAsync();
-                var reply = await chat.CommandAsync(db, a, who, text, CancellationToken.None);
+                var reply = await chat.CommandAsync(db, a, who, text, CancellationToken.None, scope.ServiceProvider.GetRequiredService<HrAssistant>());
                 await slack.PostAsync(SecretBox.Unprotect(a.SlackBotTokenEnc)!, channel, reply.Text, ChatFormat.SlackReply(reply), CancellationToken.None);
             }
             catch (Exception ex) { _log.LogWarning(ex, "Slack DM komutu işlenemedi"); }
@@ -610,7 +709,7 @@ public class TeamsEndpointsController : ControllerBase
                     var hello = who.EmployeeId is null
                         ? $"Merhaba! HR360'a hoş geldiniz. Microsoft hesabınız ({who.Email ?? "e-posta görünmüyor"}) bir çalışan kaydıyla eşleşmedi; İK'nızdan e-postanızı kontrol etmesini isteyin."
                         : ChatService.Trusted(app, who)
-                            ? "Merhaba! Onay talepleriniz artık buraya gelecek.\n" + ChatService.Help
+                            ? "Merhaba! Onay talepleriniz artık buraya gelecek.\n" + ChatService.HelpOf(await _chat.EnAsync(app.TenantSlug, who.EmployeeId, ct))
                             : "Merhaba! Onay talepleriniz buraya gelecek. " + ChatService.LinkPrompt(await _chat.LinkUrlAsync(_db, who, TimeSpan.FromHours(24), ct));
                     await _teams.PostActivityAsync(token, serviceUrl, conversationId, ChatFormat.TeamsActivity(ChatFormat.TeamsTextCard(hello, null), hello), ct);
                 }
@@ -619,13 +718,21 @@ public class TeamsEndpointsController : ControllerBase
             if (type != "message") return Ok();
 
             var identity = await _chat.EnsureTeamsIdentityAsync(_db, app, fromId, S(activity, "from", "aadObjectId"), serviceUrl, conversationId, personal, ct);
+            if (activity.TryGetProperty("value", out var leaveValue) && S(leaveValue, "hr360") == "leave")
+            {
+                var (created, message) = await _chat.CreateLeaveAsync(_db, app, identity, S(leaveValue, "type"), S(leaveValue, "start"), S(leaveValue, "end"), S(leaveValue, "reason"), ct);
+                var card = ChatFormat.TeamsTextCard((created ? "" : "⚠️ ") + message, created ? $"{ChatService.PublicOrigin}/panel/izin" : null, await _chat.EnAsync(app.TenantSlug, identity.EmployeeId, ct));
+                await _teams.PostActivityAsync(token, serviceUrl, conversationId, ChatFormat.TeamsActivity(card, message), ct);
+                return Ok();
+            }
             if (activity.TryGetProperty("value", out var value) && S(value, "hr360") == "decide")
             {
                 if (!Guid.TryParse(S(value, "wf"), out var wfId) || !Guid.TryParse(S(value, "step"), out var stepId)) return Ok();
                 var approve = S(value, "decision") == "approve";
                 var replyToId = S(activity, "replyToId") ?? "";
                 var tracked = await _db.ChatMessages.AnyAsync(x => x.AppId == app.Id && x.StepId == stepId && x.State == "Open" && x.MessageId == replyToId, ct);
-                var result = await _chat.DecideAsync(_db, app, identity, wfId, stepId, approve, ct);
+                // Karttaki isteğe bağlı gerekçe (yalnızca reddederken); HR360'ta saklanır, sohbete yazılmaz.
+                var result = await _chat.DecideAsync(_db, app, identity, wfId, stepId, approve, ct, approve ? null : S(value, "reason"));
                 var replyTo = S(activity, "replyToId");
                 if (result.Ok && !tracked && replyTo is not null)
                 {
@@ -640,7 +747,7 @@ public class TeamsEndpointsController : ControllerBase
                 return Ok();
             }
 
-            var reply = await _chat.CommandAsync(_db, app, identity, S(activity, "text"), ct);
+            var reply = await _chat.CommandAsync(_db, app, identity, S(activity, "text"), ct, HttpContext.RequestServices.GetRequiredService<HrAssistant>());
             if (!personal)
             {
                 // Grup sohbeti / kanal: kişisel yanıt herkesin göreceği yere yazılmaz. Kişiye özel
