@@ -20,6 +20,14 @@ builder.Services.AddDbContext<RecruitmentDbContext>(options =>
     options.UseNpgsql(connectionString)
         .AddInterceptors(new RecruitmentService.Auditing.AuditInterceptor("recruitment-service")));
 
+// Dalga 5c: teklif onay akışı (workflow-service, kullanıcının jetonuyla), Kafka karar olayları,
+// kariyer sayfası istek sınırı (bellekte) ve aday verisi imha işçisi.
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddHttpClient<RecruitmentService.Services.ApprovalWorkflowClient>(c => c.Timeout = TimeSpan.FromSeconds(15));
+builder.Services.AddSingleton<RecruitmentService.Services.PublicRateLimiter>();
+builder.Services.AddHostedService<RecruitmentService.Messaging.WorkflowEventConsumer>();
+builder.Services.AddHostedService<RecruitmentService.Services.RetentionWorker>();
+
 var keycloakAuthority = Environment.GetEnvironmentVariable("KEYCLOAK_AUTHORITY")
     ?? "http://keycloak:8080/auth/realms/hr360";
 

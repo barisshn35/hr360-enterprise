@@ -34,6 +34,9 @@ public class TimeShiftDbContext : DbContext, ITenantAwareContext
     public DbSet<TimeClockSite> TimeClockSites => Set<TimeClockSite>();
     public DbSet<TimeClockCredential> TimeClockCredentials => Set<TimeClockCredential>();
     public DbSet<TimeClockPunch> TimeClockPunches => Set<TimeClockPunch>();
+    public DbSet<ShiftPreference> ShiftPreferences => Set<ShiftPreference>();
+    public DbSet<ShiftSwapRequest> ShiftSwapRequests => Set<ShiftSwapRequest>();
+    public DbSet<TimesheetSettings> TimesheetSettings => Set<TimesheetSettings>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -112,6 +115,14 @@ public class TimeShiftDbContext : DbContext, ITenantAwareContext
         modelBuilder.Entity<TimeClockPunch>().Property(p => p.Kind).HasConversion<string>();
         modelBuilder.Entity<TimeClockPunch>().Property(p => p.Method).HasConversion<string>();
         modelBuilder.Entity<TimeClockPunch>().HasIndex(p => new { p.EmployeeId, p.At });
+
+        // Dalga 5c (G6/G7): scripts/sql/2026-10-08_ops_plus.sql
+        modelBuilder.Entity<ShiftPreference>().ConfigureTenantColumn();
+        modelBuilder.Entity<ShiftPreference>().ToTable("timeshift_shift_preferences");
+        modelBuilder.Entity<ShiftSwapRequest>().ConfigureTenantColumn();
+        modelBuilder.Entity<ShiftSwapRequest>().ToTable("timeshift_swap_requests");
+        modelBuilder.Entity<TimesheetSettings>().ConfigureTenantColumn();
+        modelBuilder.Entity<TimesheetSettings>().ToTable("timeshift_settings");
 
         modelBuilder.ApplyTenantFilters(this);
     }

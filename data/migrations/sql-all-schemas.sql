@@ -2229,3 +2229,721 @@ CREATE TABLE IF NOT EXISTS expense_travel_requests (
     "CreatedAt" timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS "IX_travel_employee" ON expense_travel_requests ("TenantSlug", "EmployeeId");
+
+-- ===== 2026-10-08_workplace_compliance
+-- Dalga 5c (governance-service): işyeri uyumu
+--   Y14 duyurular + okudum onayı, G19 doküman kütüphanesi (sürüm + tam metin arama),
+--   Y15 etik/ihbar hattı (anonim), Y6 iş sağlığı ve güvenliği (İSG), Y7 disiplin süreci.
+-- Idempotent: tekrar çalıştırılabilir.
+
+-- ---------------------------------------------------------------- Y14 duyurular
+CREATE TABLE IF NOT EXISTS governance_announcements (
+    "Id" uuid PRIMARY KEY,
+    "TenantSlug" character varying(64) NOT NULL,
+    "Title" text NOT NULL,
+    "Body" text NOT NULL,
+    -- All | Departments
+    "Audience" text NOT NULL DEFAULT 'All',
+    "DepartmentIds" uuid[] NOT NULL DEFAULT '{}',
+    "PublishAt" timestamptz NOT NULL DEFAULT now(),
+    "ExpireAt" timestamptz,
+    "RequiresAck" boolean NOT NULL DEFAULT false,
+    -- Yayım bildirimi bir kez gönderilir (ileri tarihli duyurularda yayım anında).
+    "NotifiedAt" timestamptz,
+    "CreatedBy" text NOT NULL DEFAULT '',
+    "CreatedAt" timestamptz NOT NULL DEFAULT now(),
+    "UpdatedAt" timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS "IX_announcements_tenant" ON governance_announcements ("TenantSlug", "PublishAt" DESC);
+
+-- ---------------------------------------------------------------- G19 doküman kütüphanesi
+CREATE TABLE IF NOT EXISTS governance_library_documents (
+    "Id" uuid PRIMARY KEY,
+    "TenantSlug" character varying(64) NOT NULL,
+    "Title" text NOT NULL,
+    "Category" text NOT NULL DEFAULT 'Policy',
+    -- All | Managers | Hr | Departments
+    "Audience" text NOT NULL DEFAULT 'All',
+    "DepartmentIds" uuid[] NOT NULL DEFAULT '{}',
+    "RequiresAck" boolean NOT NULL DEFAULT false,
+    "CurrentVersionId" uuid,
+    "CurrentVersionNo" integer NOT NULL DEFAULT 0,
+    "Archived" boolean NOT NULL DEFAULT false,
+    "CreatedBy" text NOT NULL DEFAULT '',
+    "CreatedAt" timestamptz NOT NULL DEFAULT now(),
+    "UpdatedAt" timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS "IX_library_documents_tenant" ON governance_library_documents ("TenantSlug", "Title");
+
+CREATE TABLE IF NOT EXISTS governance_library_versions (
+    "Id" uuid PRIMARY KEY,
+    "TenantSlug" character varying(64) NOT NULL,
+    "DocumentId" uuid NOT NULL REFERENCES governance_library_documents("Id") ON DELETE CASCADE,
+    "VersionNo" integer NOT NULL,
+    "Title" text NOT NULL,
+    "Body" text NOT NULL DEFAULT '',
+    "ExternalUrl" text,
+    "StorageKey" text,
+    "ChangeNote" text,
+    "PublishedBy" text NOT NULL DEFAULT '',
+    "PublishedAt" timestamptz NOT NULL DEFAULT now(),
+    -- Türkçe noktasız ı / noktalı İ farkı aramayı bozmasın: dizinde ve sorguda ı→i katlanır.
+    "SearchVector" tsvector GENERATED ALWAYS AS (
+        setweight(to_tsvector('simple'::regconfig, translate(lower(coalesce("Title", '')), 'ı', 'i')), 'A') ||
+        setweight(to_tsvector('simple'::regconfig, translate(lower(coalesce("Body", '')), 'ı', 'i')), 'B')
+    ) STORED
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "UX_library_versions_no" ON governance_library_versions ("DocumentId", "VersionNo");
+CREATE INDEX IF NOT EXISTS "IX_library_versions_tenant" ON governance_library_versions ("TenantSlug");
+CREATE INDEX IF NOT EXISTS "IX_library_versions_search" ON governance_library_versions USING GIN ("SearchVector");
+
+-- ---------------------------------------------------------------- Y14 + G19 okudum / kabul kayıtları
+-- Bu bir RIZA kaydı DEĞİLDİR (governance_consents ayrı): yalnızca "okudum/kabul ettim" beyanı.
+CREATE TABLE IF NOT EXISTS governance_acknowledgements (
+    "Id" uuid PRIMARY KEY,
+    "TenantSlug" character varying(64) NOT NULL,
+    -- Announcement | LibraryDocument
+    "SubjectType" text NOT NULL,
+    "SubjectId" uuid NOT NULL,
+    -- Doküman sürüm numarası (duyurularda 0). Yeni sürüm yeniden onay ister.
+    "Version" integer NOT NULL DEFAULT 0,
+    "UserId" text NOT NULL,
+    "EmployeeId" uuid,
+    "PersonName" text NOT NULL DEFAULT '',
+    "AcknowledgedAt" timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "UX_acknowledgements" ON governance_acknowledgements ("TenantSlug", "SubjectType", "SubjectId", "Version", "UserId");
+
+-- ---------------------------------------------------------------- Y15 etik hattı
+CREATE TABLE IF NOT EXISTS governance_ethics_committee (
+    "Id" uuid PRIMARY KEY,
+    "TenantSlug" character varying(64) NOT NULL,
+    "UserId" text NOT NULL,
+    "EmployeeId" uuid,
+    "Name" text NOT NULL DEFAULT '',
+    "AddedBy" text NOT NULL DEFAULT '',
+    "AddedAt" timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "UX_ethics_committee_user" ON governance_ethics_committee ("TenantSlug", "UserId");
+
+-- ANONİMLİK: IP, kullanıcı kimliği, tarayıcı bilgisi tutulmaz. Alındığı an gün
+-- hassasiyetinde saklanır (saat bilgisi diğer kayıtlarla eşleştirmeye yaramasın).
+-- Takip kodunun yalnızca SHA-256 özeti saklanır.
+CREATE TABLE IF NOT EXISTS governance_ethics_reports (
+    "Id" uuid PRIMARY KEY,
+    "TenantSlug" character varying(64) NOT NULL,
+    "Category" text NOT NULL,
+    "Description" text NOT NULL,
+    -- İhbarcı isterse bıraktığı iletişim bilgisi (şifreli).
+    "ContactEnc" text,
+    "CodeHash" text NOT NULL,
+    -- Received | InReview | Closed
+    "Status" text NOT NULL DEFAULT 'Received',
+    "Outcome" text,
+    "ReceivedOn" date NOT NULL DEFAULT current_date,
+    "UpdatedAt" timestamptz NOT NULL DEFAULT now(),
+    "ClosedAt" timestamptz
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "UX_ethics_reports_code" ON governance_ethics_reports ("CodeHash");
+CREATE INDEX IF NOT EXISTS "IX_ethics_reports_tenant" ON governance_ethics_reports ("TenantSlug", "Status");
+
+CREATE TABLE IF NOT EXISTS governance_ethics_messages (
+    "Id" uuid PRIMARY KEY,
+    "Seq" bigserial,
+    "TenantSlug" character varying(64) NOT NULL,
+    "ReportId" uuid NOT NULL REFERENCES governance_ethics_reports("Id") ON DELETE CASCADE,
+    "FromReporter" boolean NOT NULL,
+    -- Kurul üyesi yanıtında görünen ad ("Etik Kurulu"); ihbarcıda boş.
+    "Author" text,
+    "Body" text NOT NULL,
+    -- İhbarcı mesajlarında gün hassasiyeti.
+    "CreatedOn" date NOT NULL DEFAULT current_date
+);
+CREATE INDEX IF NOT EXISTS "IX_ethics_messages_report" ON governance_ethics_messages ("ReportId", "Seq");
+
+-- ---------------------------------------------------------------- Y6 İSG
+CREATE TABLE IF NOT EXISTS governance_osh_incidents (
+    "Id" uuid PRIMARY KEY,
+    "TenantSlug" character varying(64) NOT NULL,
+    -- Accident | NearMiss
+    "Kind" text NOT NULL,
+    "OccurredOn" date NOT NULL,
+    "OccurredTime" text,
+    "Location" text NOT NULL DEFAULT '',
+    "Description" text NOT NULL,
+    "InjuredEmployeeId" uuid,
+    "LostDays" integer NOT NULL DEFAULT 0,
+    "RootCause" text,
+    "CorrectiveActions" text,
+    "SgkNotifiedOn" date,
+    "SgkReference" text,
+    -- Open | Closed
+    "Status" text NOT NULL DEFAULT 'Open',
+    "CreatedBy" text NOT NULL DEFAULT '',
+    "CreatedAt" timestamptz NOT NULL DEFAULT now(),
+    "UpdatedAt" timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS "IX_osh_incidents_tenant" ON governance_osh_incidents ("TenantSlug", "OccurredOn" DESC);
+
+-- Sağlık notları ÖZEL NİTELİKLİ veridir (KVKK m.6): şifreli, yalnızca işyeri hekimi okur.
+CREATE TABLE IF NOT EXISTS governance_osh_exams (
+    "Id" uuid PRIMARY KEY,
+    "TenantSlug" character varying(64) NOT NULL,
+    "EmployeeId" uuid NOT NULL,
+    -- PreEmployment | Periodic | ReturnToWork | JobChange
+    "ExamType" text NOT NULL DEFAULT 'Periodic',
+    "ExamDate" date NOT NULL,
+    "NextDueDate" date,
+    -- Fit | Unfit | Conditional
+    "Result" text NOT NULL,
+    "NotesEnc" text,
+    "RecordedBy" text NOT NULL DEFAULT '',
+    "CreatedAt" timestamptz NOT NULL DEFAULT now(),
+    "UpdatedAt" timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS "IX_osh_exams_employee" ON governance_osh_exams ("TenantSlug", "EmployeeId", "ExamDate" DESC);
+
+CREATE TABLE IF NOT EXISTS governance_osh_trainings (
+    "Id" uuid PRIMARY KEY,
+    "TenantSlug" character varying(64) NOT NULL,
+    "Topic" text NOT NULL,
+    "TrainingDate" date NOT NULL,
+    "DurationHours" numeric(6,1) NOT NULL DEFAULT 0,
+    "ValidityMonths" integer,
+    "ExpiresOn" date,
+    "Trainer" text,
+    "ParticipantIds" uuid[] NOT NULL DEFAULT '{}',
+    "CreatedBy" text NOT NULL DEFAULT '',
+    "CreatedAt" timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS "IX_osh_trainings_tenant" ON governance_osh_trainings ("TenantSlug", "TrainingDate" DESC);
+
+-- ---------------------------------------------------------------- Y7 disiplin
+-- Adli sicil / mahkûmiyet bilgisi TUTULMAZ (arayüz uyarısı + sunucu uyarısı).
+CREATE TABLE IF NOT EXISTS governance_disciplinary_cases (
+    "Id" uuid PRIMARY KEY,
+    "TenantSlug" character varying(64) NOT NULL,
+    "EmployeeId" uuid NOT NULL,
+    "IncidentDate" date NOT NULL,
+    "Category" text NOT NULL,
+    "Description" text NOT NULL,
+    -- Open | DefenceRequested | DefenceReceived | Decided | Closed
+    "Status" text NOT NULL DEFAULT 'Open',
+    "DefenceNotice" text,
+    "DefenceRequestedAt" timestamptz,
+    "DefenceDeadline" date,
+    "DefenceText" text,
+    "DefenceSubmittedAt" timestamptz,
+    "MinutesText" text,
+    "Witnesses" text,
+    -- Warning | WrittenWarning | NoAction | TerminationRecommendation
+    "Decision" text,
+    "DecisionNote" text,
+    "DecidedBy" text,
+    "DecidedAt" timestamptz,
+    "ClosedAt" timestamptz,
+    "CreatedBy" text NOT NULL DEFAULT '',
+    "CreatedAt" timestamptz NOT NULL DEFAULT now(),
+    "UpdatedAt" timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS "IX_disciplinary_cases_employee" ON governance_disciplinary_cases ("TenantSlug", "EmployeeId");
+CREATE INDEX IF NOT EXISTS "IX_disciplinary_cases_status" ON governance_disciplinary_cases ("TenantSlug", "Status");
+
+-- ===== 2026-10-08_recruitment_plus
+-- Dalga 5c — İşe alım+: kariyer sayfası ve aday öz-hizmeti (Y16), tekrar aday tespiti ve
+-- kanban (G13), mülakat puan kartı ve planlama (Y17), teklif mektubu ve onayı (Y18).
+-- İdempotent: tekrar çalıştırılabilir.
+
+-- ------------------------------------------------------------------ adaylar
+ALTER TABLE recruitment_candidates ADD COLUMN IF NOT EXISTS "NormalizedEmail" text;
+ALTER TABLE recruitment_candidates ADD COLUMN IF NOT EXISTS "NormalizedPhone" text;
+ALTER TABLE recruitment_candidates ADD COLUMN IF NOT EXISTS "Skills" text[] NOT NULL DEFAULT '{}';
+ALTER TABLE recruitment_candidates ADD COLUMN IF NOT EXISTS "ResumeText" text;
+-- KVKK m.5/1: aday havuzunda saklama yalnızca AÇIK RIZA ile (aydınlatmadan ayrı).
+ALTER TABLE recruitment_candidates ADD COLUMN IF NOT EXISTS "TalentPoolConsent" boolean NOT NULL DEFAULT false;
+ALTER TABLE recruitment_candidates ADD COLUMN IF NOT EXISTS "TalentPoolConsentAt" timestamptz;
+ALTER TABLE recruitment_candidates ADD COLUMN IF NOT EXISTS "AnonymizedAt" timestamptz;
+
+-- Mevcut kayıtların karşılaştırma anahtarları (uygulama ile aynı kural: küçük harf, +etiket atılır;
+-- telefon yalnızca rakam, son 10 hane).
+UPDATE recruitment_candidates
+   SET "NormalizedEmail" = lower(regexp_replace(trim("Email"), '\+[^@]*@', '@'))
+ WHERE "NormalizedEmail" IS NULL AND "Email" NOT LIKE 'anon-%';
+UPDATE recruitment_candidates
+   SET "NormalizedPhone" = right(regexp_replace("Phone", '\D', '', 'g'), 10)
+ WHERE "NormalizedPhone" IS NULL AND "Phone" IS NOT NULL AND length(regexp_replace("Phone", '\D', '', 'g')) >= 7;
+
+CREATE INDEX IF NOT EXISTS "IX_recruitment_candidates_norm_email" ON recruitment_candidates ("TenantSlug", "NormalizedEmail");
+CREATE INDEX IF NOT EXISTS "IX_recruitment_candidates_norm_phone" ON recruitment_candidates ("TenantSlug", "NormalizedPhone");
+
+-- ------------------------------------------------------------------ başvurular
+ALTER TABLE recruitment_applications ADD COLUMN IF NOT EXISTS "Channel" text NOT NULL DEFAULT 'Manual';
+ALTER TABLE recruitment_applications ADD COLUMN IF NOT EXISTS "CoverNote" text;
+-- Öz-hizmet bağlantısının yalnızca SHA-256 özeti tutulur; bağlantının kendisi hiçbir yerde saklanmaz.
+ALTER TABLE recruitment_applications ADD COLUMN IF NOT EXISTS "SelfServiceTokenHash" text;
+ALTER TABLE recruitment_applications ADD COLUMN IF NOT EXISTS "OwnsCandidate" boolean NOT NULL DEFAULT false;
+ALTER TABLE recruitment_applications ADD COLUMN IF NOT EXISTS "PrivacyNoticeVersion" text;
+ALTER TABLE recruitment_applications ADD COLUMN IF NOT EXISTS "DuplicateReason" text;
+CREATE UNIQUE INDEX IF NOT EXISTS "IX_recruitment_applications_token"
+    ON recruitment_applications ("SelfServiceTokenHash") WHERE "SelfServiceTokenHash" IS NOT NULL;
+
+-- ------------------------------------------------------------------ mülakatlar
+ALTER TABLE recruitment_interviews ADD COLUMN IF NOT EXISTS "DurationMinutes" integer NOT NULL DEFAULT 60;
+ALTER TABLE recruitment_interviews ADD COLUMN IF NOT EXISTS "Location" text;
+ALTER TABLE recruitment_interviews ADD COLUMN IF NOT EXISTS "MeetingUrl" text;
+ALTER TABLE recruitment_interviews ADD COLUMN IF NOT EXISTS "InterviewerIds" uuid[] NOT NULL DEFAULT '{}';
+ALTER TABLE recruitment_interviews ADD COLUMN IF NOT EXISTS "CandidateNotifiedAt" timestamptz;
+UPDATE recruitment_interviews SET "InterviewerIds" = ARRAY["InterviewerEmployeeId"]
+ WHERE cardinality("InterviewerIds") = 0;
+CREATE INDEX IF NOT EXISTS "IX_recruitment_interviews_tenant_at" ON recruitment_interviews ("TenantSlug", "ScheduledAt");
+
+-- ------------------------------------------------------------------ puan kartları
+CREATE TABLE IF NOT EXISTS recruitment_scorecard_templates (
+    "Id" uuid NOT NULL,
+    "TenantSlug" character varying(64) NOT NULL,
+    "JobPostingId" uuid NOT NULL REFERENCES recruitment_job_postings ("Id") ON DELETE CASCADE,
+    "CriteriaJson" text NOT NULL DEFAULT '[]',
+    "UpdatedAt" timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_recruitment_scorecard_templates" PRIMARY KEY ("Id")
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "IX_recruitment_scorecard_templates_posting" ON recruitment_scorecard_templates ("TenantSlug", "JobPostingId");
+
+CREATE TABLE IF NOT EXISTS recruitment_scorecards (
+    "Id" uuid NOT NULL,
+    "TenantSlug" character varying(64) NOT NULL,
+    "InterviewId" uuid NOT NULL REFERENCES recruitment_interviews ("Id") ON DELETE CASCADE,
+    "InterviewerEmployeeId" uuid NOT NULL,
+    "ScoresJson" text NOT NULL DEFAULT '[]',
+    "OverallScore" numeric(4,2),
+    "Recommendation" text,
+    "Notes" text,
+    "SubmittedAt" timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_recruitment_scorecards" PRIMARY KEY ("Id")
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "IX_recruitment_scorecards_interview_person" ON recruitment_scorecards ("InterviewId", "InterviewerEmployeeId");
+CREATE INDEX IF NOT EXISTS "IX_recruitment_scorecards_TenantSlug" ON recruitment_scorecards ("TenantSlug");
+
+-- ------------------------------------------------------------------ teklifler
+CREATE TABLE IF NOT EXISTS recruitment_offer_templates (
+    "Id" uuid NOT NULL,
+    "TenantSlug" character varying(64) NOT NULL,
+    "Body" text NOT NULL,
+    "UpdatedAt" timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_recruitment_offer_templates" PRIMARY KEY ("Id")
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "IX_recruitment_offer_templates_tenant" ON recruitment_offer_templates ("TenantSlug");
+
+CREATE TABLE IF NOT EXISTS recruitment_offers (
+    "Id" uuid NOT NULL,
+    "TenantSlug" character varying(64) NOT NULL,
+    "ApplicationId" uuid NOT NULL REFERENCES recruitment_applications ("Id") ON DELETE CASCADE,
+    "PositionTitle" text NOT NULL,
+    "GrossSalary" numeric(14,2) NOT NULL,
+    "Currency" text NOT NULL DEFAULT 'TRY',
+    "StartDate" date NOT NULL,
+    "Benefits" text,
+    "ExpiresAt" date NOT NULL,
+    "LetterText" text NOT NULL,
+    "Status" text NOT NULL,
+    "WorkflowRequestId" uuid,
+    "ApproverEmployeeId" uuid,
+    "DecidedByEmployeeId" uuid,
+    "DecidedByUserId" text,
+    "DecisionNote" text,
+    "DecidedAt" timestamptz,
+    "SentAt" timestamptz,
+    "RespondedAt" timestamptz,
+    "CreatedByUserId" text,
+    "CreatedAt" timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_recruitment_offers" PRIMARY KEY ("Id")
+);
+CREATE INDEX IF NOT EXISTS "IX_recruitment_offers_TenantSlug" ON recruitment_offers ("TenantSlug");
+CREATE INDEX IF NOT EXISTS "IX_recruitment_offers_ApplicationId" ON recruitment_offers ("ApplicationId");
+CREATE INDEX IF NOT EXISTS "IX_recruitment_offers_Workflow" ON recruitment_offers ("WorkflowRequestId") WHERE "WorkflowRequestId" IS NOT NULL;
+
+-- ===== 2026-10-08_learning_performance
+-- Dalga 5c: yetkinlik matrisi ve eğitim önerisi (Y19), eğitim içeriği / sınav / SCORM 1.2 (Y20),
+-- sertifika bitiş hatırlatmaları (G17), performans 9-kutu ve dönem şablonları (G12).
+-- Idempotent: tekrar çalıştırılabilir.
+
+/* ============================================================ Y19 yetkinlik matrisi */
+
+CREATE TABLE IF NOT EXISTS learning_competencies (
+    "Id"          uuid PRIMARY KEY,
+    "TenantSlug"  character varying(64) NOT NULL,
+    "Name"        character varying(150) NOT NULL,
+    "Description" text NULL,
+    "Category"    character varying(80) NULL,
+    "IsActive"    boolean NOT NULL DEFAULT true,
+    "CreatedAt"   timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS "IX_learning_competencies_TenantSlug" ON learning_competencies ("TenantSlug");
+CREATE UNIQUE INDEX IF NOT EXISTS "UX_learning_competencies_name" ON learning_competencies ("TenantSlug", lower("Name"));
+
+-- Rol profili: bir pozisyon unvanı YA DA departman için yetkinlik başına beklenen seviye (1-5).
+CREATE TABLE IF NOT EXISTS learning_role_profiles (
+    "Id"            uuid PRIMARY KEY,
+    "TenantSlug"    character varying(64) NOT NULL,
+    "CompetencyId"  uuid NOT NULL REFERENCES learning_competencies("Id") ON DELETE CASCADE,
+    "PositionTitle" character varying(150) NULL,
+    "DepartmentId"  uuid NULL,
+    "RequiredLevel" integer NOT NULL CHECK ("RequiredLevel" BETWEEN 1 AND 5),
+    "CreatedAt"     timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT "CK_learning_role_profiles_target" CHECK (("PositionTitle" IS NULL) <> ("DepartmentId" IS NULL))
+);
+CREATE INDEX IF NOT EXISTS "IX_learning_role_profiles_TenantSlug" ON learning_role_profiles ("TenantSlug");
+CREATE UNIQUE INDEX IF NOT EXISTS "UX_learning_role_profiles_target"
+    ON learning_role_profiles ("TenantSlug", "CompetencyId", coalesce(lower("PositionTitle"), ''), coalesce("DepartmentId", '00000000-0000-0000-0000-000000000000'::uuid));
+
+-- Değerlendirme geçmişi: öz / yönetici / İK; güncel seviye = en son kayıt.
+CREATE TABLE IF NOT EXISTS learning_competency_assessments (
+    "Id"                   uuid PRIMARY KEY,
+    "TenantSlug"           character varying(64) NOT NULL,
+    "EmployeeId"           uuid NOT NULL,
+    "CompetencyId"         uuid NOT NULL REFERENCES learning_competencies("Id") ON DELETE CASCADE,
+    "Level"                integer NOT NULL CHECK ("Level" BETWEEN 1 AND 5),
+    "Source"               character varying(16) NOT NULL,
+    "AssessedByEmployeeId" uuid NULL,
+    "AssessedByName"       character varying(200) NULL,
+    "Note"                 character varying(500) NULL,
+    "AssessedAt"           timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS "IX_learning_competency_assessments_TenantSlug" ON learning_competency_assessments ("TenantSlug");
+CREATE INDEX IF NOT EXISTS "IX_learning_competency_assessments_emp" ON learning_competency_assessments ("EmployeeId", "CompetencyId", "AssessedAt" DESC);
+
+-- Eğitimin geliştirdiği yetkinlik ve hedef seviye.
+CREATE TABLE IF NOT EXISTS learning_course_competencies (
+    "Id"           uuid PRIMARY KEY,
+    "TenantSlug"   character varying(64) NOT NULL,
+    "CourseId"     uuid NOT NULL REFERENCES learning_courses("Id") ON DELETE CASCADE,
+    "CompetencyId" uuid NOT NULL REFERENCES learning_competencies("Id") ON DELETE CASCADE,
+    "TargetLevel"  integer NOT NULL CHECK ("TargetLevel" BETWEEN 1 AND 5)
+);
+CREATE INDEX IF NOT EXISTS "IX_learning_course_competencies_TenantSlug" ON learning_course_competencies ("TenantSlug");
+CREATE UNIQUE INDEX IF NOT EXISTS "UX_learning_course_competencies" ON learning_course_competencies ("CourseId", "CompetencyId");
+
+/* ============================================================ Y20 içerik, sınav, SCORM */
+
+ALTER TABLE learning_courses ADD COLUMN IF NOT EXISTS "CertificateValidityMonths" integer NULL;
+
+-- Sertifika kaydı: eğitim tamamlanınca otomatik üretilir (doğrulama kodu ile).
+ALTER TABLE learning_certifications ADD COLUMN IF NOT EXISTS "CourseId" uuid NULL;
+ALTER TABLE learning_certifications ADD COLUMN IF NOT EXISTS "EnrollmentId" uuid NULL;
+ALTER TABLE learning_certifications ADD COLUMN IF NOT EXISTS "VerificationCode" character varying(32) NULL;
+ALTER TABLE learning_certifications ADD COLUMN IF NOT EXISTS "IsMandatory" boolean NOT NULL DEFAULT false;
+CREATE UNIQUE INDEX IF NOT EXISTS "UX_learning_certifications_code" ON learning_certifications ("VerificationCode") WHERE "VerificationCode" IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS "UX_learning_certifications_enrollment" ON learning_certifications ("EnrollmentId") WHERE "EnrollmentId" IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS learning_scorm_packages (
+    "Id"                 uuid PRIMARY KEY,
+    "TenantSlug"         character varying(64) NOT NULL,
+    "Title"              character varying(200) NOT NULL,
+    "ManifestIdentifier" character varying(200) NULL,
+    "EntryPoint"         character varying(500) NOT NULL,
+    "FileCount"          integer NOT NULL,
+    "TotalBytes"         bigint NOT NULL,
+    "UploadedBy"         character varying(200) NULL,
+    "CreatedAt"          timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS "IX_learning_scorm_packages_TenantSlug" ON learning_scorm_packages ("TenantSlug");
+
+-- Paket dosyaları (MinIO/S3 olmadığı için Postgres bytea; paket + yol anahtarlı).
+CREATE TABLE IF NOT EXISTS learning_scorm_files (
+    "Id"          uuid PRIMARY KEY,
+    "TenantSlug"  character varying(64) NOT NULL,
+    "PackageId"   uuid NOT NULL REFERENCES learning_scorm_packages("Id") ON DELETE CASCADE,
+    "Path"        character varying(500) NOT NULL,
+    "ContentType" character varying(120) NOT NULL,
+    "Size"        integer NOT NULL,
+    "Content"     bytea NOT NULL
+);
+CREATE INDEX IF NOT EXISTS "IX_learning_scorm_files_TenantSlug" ON learning_scorm_files ("TenantSlug");
+CREATE UNIQUE INDEX IF NOT EXISTS "UX_learning_scorm_files_path" ON learning_scorm_files ("PackageId", "Path");
+
+CREATE TABLE IF NOT EXISTS learning_course_modules (
+    "Id"              uuid PRIMARY KEY,
+    "TenantSlug"      character varying(64) NOT NULL,
+    "CourseId"        uuid NOT NULL REFERENCES learning_courses("Id") ON DELETE CASCADE,
+    "Position"        integer NOT NULL DEFAULT 0,
+    "Title"           character varying(200) NOT NULL,
+    "Kind"            character varying(16) NOT NULL,
+    "VideoUrl"        character varying(1000) NULL,
+    "TextBody"        text NULL,
+    "PassMarkPercent" integer NULL,
+    "MaxAttempts"     integer NULL,
+    "ScormPackageId"  uuid NULL REFERENCES learning_scorm_packages("Id") ON DELETE SET NULL,
+    "CreatedAt"       timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS "IX_learning_course_modules_TenantSlug" ON learning_course_modules ("TenantSlug");
+CREATE INDEX IF NOT EXISTS "IX_learning_course_modules_course" ON learning_course_modules ("CourseId", "Position");
+
+-- Sınav soruları. Doğru seçenekler ("CorrectJson") istemciye hiçbir uçta gönderilmez (yalnızca İK cevap anahtarı).
+CREATE TABLE IF NOT EXISTS learning_quiz_questions (
+    "Id"          uuid PRIMARY KEY,
+    "TenantSlug"  character varying(64) NOT NULL,
+    "ModuleId"    uuid NOT NULL REFERENCES learning_course_modules("Id") ON DELETE CASCADE,
+    "Position"    integer NOT NULL DEFAULT 0,
+    "Text"        character varying(1000) NOT NULL,
+    "Kind"        character varying(16) NOT NULL,
+    "OptionsJson" jsonb NOT NULL,
+    "CorrectJson" jsonb NOT NULL
+);
+CREATE INDEX IF NOT EXISTS "IX_learning_quiz_questions_TenantSlug" ON learning_quiz_questions ("TenantSlug");
+CREATE INDEX IF NOT EXISTS "IX_learning_quiz_questions_module" ON learning_quiz_questions ("ModuleId", "Position");
+
+CREATE TABLE IF NOT EXISTS learning_quiz_attempts (
+    "Id"           uuid PRIMARY KEY,
+    "TenantSlug"   character varying(64) NOT NULL,
+    "ModuleId"     uuid NOT NULL REFERENCES learning_course_modules("Id") ON DELETE CASCADE,
+    "EnrollmentId" uuid NOT NULL REFERENCES learning_enrollments("Id") ON DELETE CASCADE,
+    "EmployeeId"   uuid NOT NULL,
+    "AttemptNo"    integer NOT NULL,
+    "AnswersJson"  jsonb NOT NULL,
+    "ScorePercent" numeric(5,2) NOT NULL,
+    "Passed"       boolean NOT NULL,
+    "SubmittedAt"  timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS "IX_learning_quiz_attempts_TenantSlug" ON learning_quiz_attempts ("TenantSlug");
+CREATE UNIQUE INDEX IF NOT EXISTS "UX_learning_quiz_attempts_no" ON learning_quiz_attempts ("EnrollmentId", "ModuleId", "AttemptNo");
+
+CREATE TABLE IF NOT EXISTS learning_module_progress (
+    "Id"           uuid PRIMARY KEY,
+    "TenantSlug"   character varying(64) NOT NULL,
+    "EnrollmentId" uuid NOT NULL REFERENCES learning_enrollments("Id") ON DELETE CASCADE,
+    "ModuleId"     uuid NOT NULL REFERENCES learning_course_modules("Id") ON DELETE CASCADE,
+    "EmployeeId"   uuid NOT NULL,
+    "Status"       character varying(16) NOT NULL,
+    "Score"        numeric(6,2) NULL,
+    "CompletedAt"  timestamptz NULL,
+    "UpdatedAt"    timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS "IX_learning_module_progress_TenantSlug" ON learning_module_progress ("TenantSlug");
+CREATE UNIQUE INDEX IF NOT EXISTS "UX_learning_module_progress" ON learning_module_progress ("EnrollmentId", "ModuleId");
+
+-- SCORM 1.2 çalışma zamanı değerleri (cmi.core.lesson_status, score.raw, suspend_data, lesson_location).
+CREATE TABLE IF NOT EXISTS learning_scorm_runtime (
+    "Id"             uuid PRIMARY KEY,
+    "TenantSlug"     character varying(64) NOT NULL,
+    "EnrollmentId"   uuid NOT NULL REFERENCES learning_enrollments("Id") ON DELETE CASCADE,
+    "ModuleId"       uuid NOT NULL REFERENCES learning_course_modules("Id") ON DELETE CASCADE,
+    "PackageId"      uuid NOT NULL,
+    "EmployeeId"     uuid NOT NULL,
+    "LessonStatus"   character varying(32) NOT NULL DEFAULT 'not attempted',
+    "ScoreRaw"       numeric(6,2) NULL,
+    "SuspendData"    text NULL,
+    "LessonLocation" character varying(255) NULL,
+    "SessionCount"   integer NOT NULL DEFAULT 0,
+    "UpdatedAt"      timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS "IX_learning_scorm_runtime_TenantSlug" ON learning_scorm_runtime ("TenantSlug");
+CREATE UNIQUE INDEX IF NOT EXISTS "UX_learning_scorm_runtime" ON learning_scorm_runtime ("EnrollmentId", "ModuleId");
+
+/* ============================================================ G17 sertifika hatırlatmaları */
+
+-- Gönderilmiş hatırlatmalar: aynı sertifika + tür + alıcı için ikinci bildirim gitmez.
+CREATE TABLE IF NOT EXISTS learning_cert_reminders (
+    "Id"                  uuid PRIMARY KEY,
+    "TenantSlug"          character varying(64) NOT NULL,
+    "CertificationId"     uuid NOT NULL REFERENCES learning_certifications("Id") ON DELETE CASCADE,
+    "Kind"                character varying(16) NOT NULL,
+    "RecipientEmployeeId" uuid NOT NULL,
+    "ExpiresOn"           date NOT NULL,
+    "SentAt"              timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS "IX_learning_cert_reminders_TenantSlug" ON learning_cert_reminders ("TenantSlug");
+-- ExpiresOn anahtarda: sertifika yenilenip bitiş tarihi değişirse yeni hatırlatmalar yeniden gider.
+CREATE UNIQUE INDEX IF NOT EXISTS "UX_learning_cert_reminders" ON learning_cert_reminders ("CertificationId", "Kind", "RecipientEmployeeId", "ExpiresOn");
+
+/* ============================================================ G12 9-kutu, dönem şablonları */
+
+ALTER TABLE performance_cycles ADD COLUMN IF NOT EXISTS "TemplateId" uuid NULL;
+ALTER TABLE performance_cycles ADD COLUMN IF NOT EXISTS "ConfigJson" jsonb NULL;
+
+CREATE TABLE IF NOT EXISTS performance_cycle_templates (
+    "Id"           uuid PRIMARY KEY,
+    "TenantSlug"   character varying(64) NOT NULL,
+    "Name"         character varying(150) NOT NULL,
+    "Description"  character varying(500) NULL,
+    "Period"       character varying(16) NOT NULL,
+    "DurationDays" integer NOT NULL,
+    "ConfigJson"   jsonb NOT NULL,
+    "CreatedBy"    character varying(200) NULL,
+    "CreatedAt"    timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS "IX_performance_cycle_templates_TenantSlug" ON performance_cycle_templates ("TenantSlug");
+CREATE UNIQUE INDEX IF NOT EXISTS "UX_performance_cycle_templates_name" ON performance_cycle_templates ("TenantSlug", lower("Name"));
+
+-- Potansiyel (1-3): yöneticinin girdiği değerlendirme; çalışana varsayılan olarak GÖSTERİLMEZ.
+CREATE TABLE IF NOT EXISTS performance_potential_ratings (
+    "Id"                  uuid PRIMARY KEY,
+    "TenantSlug"          character varying(64) NOT NULL,
+    "CycleId"             uuid NOT NULL REFERENCES performance_cycles("Id") ON DELETE CASCADE,
+    "EmployeeId"          uuid NOT NULL,
+    "Rating"              integer NOT NULL CHECK ("Rating" BETWEEN 1 AND 3),
+    "Note"                character varying(500) NULL,
+    "RatedByEmployeeId"   uuid NULL,
+    "RatedByName"         character varying(200) NULL,
+    "PublishedToEmployee" boolean NOT NULL DEFAULT false,
+    "UpdatedAt"           timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS "IX_performance_potential_ratings_TenantSlug" ON performance_potential_ratings ("TenantSlug");
+CREATE UNIQUE INDEX IF NOT EXISTS "UX_performance_potential_ratings" ON performance_potential_ratings ("CycleId", "EmployeeId");
+
+-- Kalibrasyon: İK'nın hücre düzeltmesi (gerekçeli, denetim kaydına yazılır; geçmiş korunur, en son geçerli).
+CREATE TABLE IF NOT EXISTS performance_ninebox_overrides (
+    "Id"               uuid PRIMARY KEY,
+    "TenantSlug"       character varying(64) NOT NULL,
+    "CycleId"          uuid NOT NULL REFERENCES performance_cycles("Id") ON DELETE CASCADE,
+    "EmployeeId"       uuid NOT NULL,
+    "PerformanceBand"  integer NOT NULL CHECK ("PerformanceBand" BETWEEN 1 AND 3),
+    "PotentialBand"    integer NOT NULL CHECK ("PotentialBand" BETWEEN 1 AND 3),
+    "Reason"           character varying(1000) NOT NULL,
+    "OverriddenBy"     character varying(200) NOT NULL,
+    "CreatedAt"        timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS "IX_performance_ninebox_overrides_TenantSlug" ON performance_ninebox_overrides ("TenantSlug");
+CREATE INDEX IF NOT EXISTS "IX_performance_ninebox_overrides_emp" ON performance_ninebox_overrides ("CycleId", "EmployeeId", "CreatedAt" DESC);
+
+-- ===== 2026-10-08_ops_plus
+-- Dalga 5c (G14, G15, G16, G18, G6, G7): işe alışma şablonları ve "buddy", ilk gün karşılama,
+-- zimmet QR/iade hatırlatma/bakım, offboarding hesap kapatma + zimmet kontrolü + imha planı,
+-- vardiya tercihleri ve takas, puantaj geç kalma/fazla mesai ayarları.
+-- Idempotent: tekrar çalıştırılabilir.
+
+/* ============================================================ G14 onboarding */
+
+CREATE TABLE IF NOT EXISTS onboarding_task_templates (
+    "Id"            uuid PRIMARY KEY,
+    "TenantSlug"    character varying(64) NOT NULL,
+    "Name"          text NOT NULL,
+    -- Eşleşme: unvan ve/veya departman (ikisi de boşsa herkese uygulanır).
+    "PositionTitle" text NULL,
+    "DepartmentId"  uuid NULL,
+    "IsActive"      boolean NOT NULL DEFAULT true,
+    "CreatedAt"     timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS "IX_onboarding_task_templates_TenantSlug" ON onboarding_task_templates ("TenantSlug");
+
+CREATE TABLE IF NOT EXISTS onboarding_task_template_items (
+    "Id"          uuid PRIMARY KEY,
+    "TenantSlug"  character varying(64) NOT NULL,
+    "TemplateId"  uuid NOT NULL REFERENCES onboarding_task_templates("Id") ON DELETE CASCADE,
+    "Title"       text NOT NULL,
+    "Category"    text NOT NULL DEFAULT 'Other',
+    -- HR | Manager | IT | Buddy | Employee
+    "OwnerRole"   text NOT NULL DEFAULT 'HR',
+    -- Başlangıç tarihine göre gün (negatif: başlamadan önce).
+    "OffsetDays"  integer NOT NULL DEFAULT 0,
+    "Order"       integer NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS "IX_onboarding_task_template_items_TemplateId" ON onboarding_task_template_items ("TemplateId");
+CREATE INDEX IF NOT EXISTS "IX_onboarding_task_template_items_TenantSlug" ON onboarding_task_template_items ("TenantSlug");
+
+ALTER TABLE onboarding_tasks ADD COLUMN IF NOT EXISTS "OwnerRole" text NULL;
+
+ALTER TABLE onboarding_plans ADD COLUMN IF NOT EXISTS "BuddyEmployeeId" uuid NULL;
+ALTER TABLE onboarding_plans ADD COLUMN IF NOT EXISTS "Location" text NULL;
+ALTER TABLE onboarding_plans ADD COLUMN IF NOT EXISTS "AppliedTemplates" text NULL;
+ALTER TABLE onboarding_plans ADD COLUMN IF NOT EXISTS "WelcomeSentAt" timestamptz NULL;
+
+-- Kiracı ayarları: ilk gün karşılama şablonu ve zimmet hatırlatmalarının İK sorumlusu.
+CREATE TABLE IF NOT EXISTS onboarding_settings (
+    "Id"                  uuid PRIMARY KEY,
+    "TenantSlug"          character varying(64) NOT NULL,
+    "WelcomeSubject"      text NULL,
+    "WelcomeBody"         text NULL,
+    "HrContactEmployeeId" uuid NULL,
+    "ReminderDaysBefore"  integer NOT NULL DEFAULT 3,
+    "UpdatedAt"           timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "UX_onboarding_settings_TenantSlug" ON onboarding_settings ("TenantSlug");
+
+/* ============================================================ G16 zimmet */
+
+-- QR etiketi: kişisel veri içermeyen, tahmin edilemez demirbaş kodu.
+ALTER TABLE onboarding_assets ADD COLUMN IF NOT EXISTS "QrCode" text NULL;
+UPDATE onboarding_assets SET "QrCode" = upper(substr(md5(random()::text || "Id"::text || clock_timestamp()::text), 1, 16))
+ WHERE "QrCode" IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS "UX_onboarding_assets_QrCode" ON onboarding_assets ("TenantSlug", "QrCode") WHERE "QrCode" IS NOT NULL;
+
+ALTER TABLE onboarding_asset_assignments ADD COLUMN IF NOT EXISTS "ExpectedReturnOn" date NULL;
+ALTER TABLE onboarding_asset_assignments ADD COLUMN IF NOT EXISTS "ReminderBeforeSentAt" timestamptz NULL;
+ALTER TABLE onboarding_asset_assignments ADD COLUMN IF NOT EXISTS "ReminderOverdueSentAt" timestamptz NULL;
+
+CREATE TABLE IF NOT EXISTS onboarding_asset_maintenance (
+    "Id"                uuid PRIMARY KEY,
+    "TenantSlug"        character varying(64) NOT NULL,
+    "AssetId"           uuid NOT NULL REFERENCES onboarding_assets("Id") ON DELETE CASCADE,
+    "Date"              date NOT NULL,
+    -- Periodic | Repair | Inspection | Other
+    "Type"              text NOT NULL DEFAULT 'Periodic',
+    "Cost"              numeric(12,2) NULL,
+    "Vendor"            text NULL,
+    "Notes"             text NULL,
+    "NextMaintenanceOn" date NULL,
+    "CreatedBy"         text NULL,
+    "CreatedAt"         timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS "IX_onboarding_asset_maintenance_AssetId" ON onboarding_asset_maintenance ("AssetId");
+CREATE INDEX IF NOT EXISTS "IX_onboarding_asset_maintenance_TenantSlug" ON onboarding_asset_maintenance ("TenantSlug");
+
+/* ============================================================ G15 offboarding */
+
+ALTER TABLE engagement_offboarding_cases ADD COLUMN IF NOT EXISTS "AssetChecks" jsonb NOT NULL DEFAULT '[]'::jsonb;
+-- Disabled | NoAccount | Failed | Skipped
+ALTER TABLE engagement_offboarding_cases ADD COLUMN IF NOT EXISTS "AccountStatus" text NULL;
+ALTER TABLE engagement_offboarding_cases ADD COLUMN IF NOT EXISTS "AccountDisabledAt" timestamptz NULL;
+ALTER TABLE engagement_offboarding_cases ADD COLUMN IF NOT EXISTS "AccountNote" text NULL;
+ALTER TABLE engagement_offboarding_cases ADD COLUMN IF NOT EXISTS "RetentionMonths" integer NULL;
+ALTER TABLE engagement_offboarding_cases ADD COLUMN IF NOT EXISTS "PlannedAnonymizationOn" date NULL;
+
+/* ============================================================ G6 vardiya tercihleri ve takas */
+
+CREATE TABLE IF NOT EXISTS timeshift_shift_preferences (
+    "Id"                  uuid PRIMARY KEY,
+    "TenantSlug"          character varying(64) NOT NULL,
+    "EmployeeId"          uuid NOT NULL,
+    -- ISO gün numaraları: 1 = Pazartesi ... 7 = Pazar
+    "PreferredDays"       integer[] NOT NULL DEFAULT '{}',
+    "UnavailableDays"     integer[] NOT NULL DEFAULT '{}',
+    -- Day | Night
+    "PreferredShiftTypes" text[] NOT NULL DEFAULT '{}',
+    "AvoidShiftTypes"     text[] NOT NULL DEFAULT '{}',
+    "MaxNightsPerWeek"    integer NULL,
+    "Note"                text NULL,
+    "UpdatedAt"           timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "UX_timeshift_shift_preferences_emp" ON timeshift_shift_preferences ("TenantSlug", "EmployeeId");
+
+CREATE TABLE IF NOT EXISTS timeshift_swap_requests (
+    "Id"                    uuid PRIMARY KEY,
+    "TenantSlug"            character varying(64) NOT NULL,
+    "RequesterEmployeeId"   uuid NOT NULL,
+    "RequesterAssignmentId" uuid NOT NULL,
+    "TargetEmployeeId"      uuid NOT NULL,
+    -- NULL: devretme (karşılığında vardiya alınmaz)
+    "TargetAssignmentId"    uuid NULL,
+    -- PendingPeer | PendingApproval | Approved | Rejected | Declined | Cancelled
+    "Status"                text NOT NULL,
+    "Note"                  text NULL,
+    "PeerRespondedAt"       timestamptz NULL,
+    "DecidedBy"             text NULL,
+    "DecidedAt"             timestamptz NULL,
+    "RejectReason"          text NULL,
+    "CreatedAt"             timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS "IX_timeshift_swap_requests_TenantSlug" ON timeshift_swap_requests ("TenantSlug");
+CREATE INDEX IF NOT EXISTS "IX_timeshift_swap_requests_people" ON timeshift_swap_requests ("RequesterEmployeeId", "TargetEmployeeId");
+
+/* ============================================================ G7 puantaj ayarları */
+
+CREATE TABLE IF NOT EXISTS timeshift_settings (
+    "Id"                  uuid PRIMARY KEY,
+    "TenantSlug"          character varying(64) NOT NULL,
+    "LateGraceMinutes"    integer NOT NULL DEFAULT 5,
+    "DefaultStart"        time without time zone NOT NULL DEFAULT '09:00',
+    "DefaultEnd"          time without time zone NOT NULL DEFAULT '18:00',
+    "DefaultBreakMinutes" integer NOT NULL DEFAULT 60,
+    "UpdatedAt"           timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "UX_timeshift_settings_TenantSlug" ON timeshift_settings ("TenantSlug");

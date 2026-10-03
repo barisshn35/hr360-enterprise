@@ -78,6 +78,8 @@ const PERMISSION_LABELS: Record<Permission, string> = {
   'case:manage': tx('İK vakalarını yönetir, sonuçlandırır'),
   'notification:view': tx('Kendine gelen bildirimleri görüntüler'),
   'notification:manage': tx('Bildirim şablonlarını oluşturur / düzenler'),
+  'osh:physician': tx('İşyeri hekimi: muayene sağlık notlarını görür ve yazar'),
+  'osh:specialist': tx('İSG uzmanı: iş kazası ve İSG eğitim kayıtlarını yönetir'),
   'platform:manage': tx('Platformdaki tüm kiracıları yönetir'),
   'tenant:manage': tx('Kendi şirketinin (kiracının) ayarlarını yönetir'),
 }
@@ -113,6 +115,8 @@ const PERMISSIONS_WITH_BACKEND_SUPPORT = new Set<Permission>([
   'organization:manage',
   'team:manage',
   'performance:manage',
+  'osh:physician',
+  'osh:specialist',
   'workflow:decide',
   'timeshift:manage',
   'tenant:manage',

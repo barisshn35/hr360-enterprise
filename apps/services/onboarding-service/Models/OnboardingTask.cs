@@ -17,5 +17,7 @@ public class OnboardingTask : ITenantOwned
     public Guid? AssigneeEmployeeId { get; set; }
     public OnboardingTaskStatus Status { get; set; } = OnboardingTaskStatus.Pending;
     public int Order { get; set; }
+    /// <summary>Gorevin sahibi rol: HR | Manager | IT | Buddy | Employee (sablondan gelir).</summary>
+    public string? OwnerRole { get; set; }
     public DateTimeOffset? CompletedAt { get; set; }
 }

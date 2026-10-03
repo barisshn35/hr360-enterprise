@@ -289,6 +289,9 @@ services:
     <<: *dotnet-service
     build: ./apps/services/recruitment-service
     environment:
+      # Teklif onay akisi (workflow-service) ve karar olaylari (Kafka).
+      KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
+      WORKFLOW_SERVICE_URL: "http://workflow-service:8080"
       RECRUITMENT_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=12"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
       KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
@@ -344,6 +347,8 @@ services:
     build: ./apps/services/learning-service
     environment:
       EMPLOYEE_SERVICE_URL: "http://employee-service:8080"
+      # SCORM iframe başlatma jetonu (imzalı çerez) bu anahtardan türetilir.
+      TENANT_SECRET_KEY: "${TENANT_SECRET_KEY}"
       LEARNING_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=12"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
       KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
@@ -363,6 +368,9 @@ services:
       KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
       TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=3"
       EMPLOYEE_SERVICE_URL: "http://employee-service:8080"
+      # Offboarding: ayrilan calisanin hesabini tenant-service ic ucuyla kapatir (G15).
+      TENANT_SERVICE_URL: "http://tenant-service:8080"
+      INTERNAL_SERVICE_TOKEN: "${INTERNAL_SERVICE_TOKEN:-}"
       # KVKK m.12: profildeki TCKN ve IBAN bu anahtarla veritabaninda sifrelenir.
       TENANT_SECRET_KEY: "${TENANT_SECRET_KEY}"
       # Paylasilan onbellek (dizin, ofis dolulugu, ekip sagligi). Bos ise kapali.
@@ -494,6 +502,8 @@ services:
       KEYCLOAK_ADMIN_USER: ${KEYCLOAK_ADMIN_USER}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
       TENANT_SECRET_KEY: ${TENANT_SECRET_KEY}
+      # /internal/users/disable (offboarding hesap kapatma) yalnizca bu jetonla.
+      INTERNAL_SERVICE_TOKEN: "${INTERNAL_SERVICE_TOKEN:-}"
       EMPLOYEE_SERVICE_URL: "http://employee-service:8080"
       MINIO_ENDPOINT_URL: "http://minio:9000"
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}

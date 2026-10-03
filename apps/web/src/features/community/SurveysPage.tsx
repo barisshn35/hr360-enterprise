@@ -18,6 +18,7 @@ import { formatDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { Metric, PlanGate, useAction } from '@/features/shared/kit'
 import { tx, pct } from '@/lib/i18n'
+import { EnpsTrendPanel, SentimentSummary } from './SurveyInsights'
 
 const SCALE_FACES = ['😞', '🙁', '😐', '🙂', '😄']
 const statusTone = { Draft: 'neutral', Open: 'success', Closed: 'info' } as const
@@ -111,8 +112,13 @@ function ResultsModal({ survey, onClose }: { survey: Survey; onClose: () => void
   const r = q.data
   const nps = r?.questions.find((x) => x.type === 'Nps')
   return (
-    <Modal open onClose={onClose} size="xl" title={tx('Sonuçlar — {0}', [survey.title])} note={tx('Anonimlik eşiği: {0} yanıtın altındaki kırılımlar ve serbest metinler gizlenir.', [r?.anonymityThreshold ?? 3])}>
-      {q.isPending ? <RowsSkeleton /> : q.isError ? <ErrorState message={(q.error as Error).message} /> : r && (
+    <Modal open onClose={onClose} size="xl" title={tx('Sonuçlar — {0}', [survey.title])} note={tx('Anonimlik eşiği: {0} yanıtın altındaki kırılımlar ve serbest metinler gizlenir.', [r?.anonymityThreshold ?? 5])}>
+      {q.isPending ? <RowsSkeleton /> : q.isError ? <ErrorState message={(q.error as Error).message} /> : r?.hidden ? (
+        <div className="space-y-3">
+          <Metric label={tx('Yanıt')} value={r.responseCount} hint={tx('{0} kişiden', [r.eligible])} />
+          <InfoNote>{tx('Anonimliği korumak için sonuçlar en az {0} yanıt toplandığında gösterilir.', [r.anonymityThreshold])}</InfoNote>
+        </div>
+      ) : r && (
         <div className="space-y-6">
           <div className="grid gap-3 sm:grid-cols-3">
             <Metric label={tx('Yanıt')} value={r.responseCount} hint={tx('{0} kişiden', [r.eligible])} />
@@ -153,9 +159,12 @@ function ResultsModal({ survey, onClose }: { survey: Survey; onClose: () => void
                 </div>
               )}
               {x.type === 'Text' && (x.hiddenForAnonymity ? (
-                <p className="flex items-center gap-1.5 text-[12.5px] text-muted-foreground"><Lock className="size-3.5" />{' '}{tx('Anonimliği korumak için {0} yorum gizlendi (en az 3 gerekli).', [x.count])}</p>
+                <p className="flex items-center gap-1.5 text-[12.5px] text-muted-foreground"><Lock className="size-3.5" />{' '}{tx('Anonimliği korumak için {0} yorum gizlendi (en az {1} gerekli).', [x.count, r.anonymityThreshold])}</p>
               ) : (
-                <ul className="space-y-1.5">{x.texts?.map((t, i) => <li key={i} className="rounded-lg bg-muted/50 px-3 py-2 text-[13px]">“{t}”</li>)}</ul>
+                <>
+                  <SentimentSummary q={x} />
+                  <ul className="space-y-1.5">{x.texts?.map((t, i) => <li key={i} className="rounded-lg bg-muted/50 px-3 py-2 text-[13px]">“{t}”</li>)}</ul>
+                </>
               ))}
             </div>
           ))}
@@ -166,7 +175,7 @@ function ResultsModal({ survey, onClose }: { survey: Survey; onClose: () => void
               <tbody>
                 {r.byDepartment.map((d) => (
                   <tr key={d.department} className="border-t border-border">
-                    <td className="py-1.5">{d.department}</td><td className="tabular">{d.count}</td>
+                    <td className="py-1.5">{d.department}</td><td className="tabular">{d.count ?? <span className="text-muted-foreground">{tx('gizli')}</span>}</td>
                     <td className="tabular">{d.hidden ? <span className="text-muted-foreground">{tx('gizli')}</span> : d.enps ?? '—'}</td>
                     <td className="tabular">{d.hidden ? <span className="text-muted-foreground">{tx('gizli')}</span> : d.favorable != null ? pct(d.favorable) : '—'}</td>
                   </tr>
@@ -257,6 +266,7 @@ export function SurveysPage() {
         )
       ) : (
         <div className="space-y-4">
+          <EnpsTrendPanel />
           <InfoNote>{tx('Hazır şablonlar:')}{' '}<button className="cursor-pointer font-medium text-primary underline-offset-2 hover:underline" onClick={() => tpl.mutate('enps')}>{tx('eNPS anketi')}</button> · <button className="cursor-pointer font-medium text-primary underline-offset-2 hover:underline" onClick={() => tpl.mutate('pulse')}>{tx('haftalık nabız')}</button>{tx('. Taslak oluşur, “Yayınla” ile açılır.')}</InfoNote>
           <Panel>
             <PanelHead title={tx('Tüm anketler')} />

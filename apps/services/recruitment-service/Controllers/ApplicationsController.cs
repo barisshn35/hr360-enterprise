@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using RecruitmentService.Data;
 using RecruitmentService.Models;
+using RecruitmentService.Services;
 
 namespace RecruitmentService.Controllers;
 
@@ -65,23 +66,14 @@ public class ApplicationsController : ControllerBase
     {
         var app = await _db.Applications.FirstOrDefaultAsync(a => a.Id == id);
         if (app is null) return NotFound();
-        if (app.Status is ApplicationStatus.Hired or ApplicationStatus.Rejected
-                       or ApplicationStatus.Withdrawn)
-            return BadRequest("Sonuclanmis basvurunun durumu degistirilemez");
 
         // NOT: Onceden herhangi bir gecis serbestti (Basvuru -> Ise alindi, kapali ilana
         // ise alim). Ise alim yalnizca Teklif asamasindan ve acik bir ilanda yapilir;
         // asamalar arasi geri tasima (yeniden degerlendirme) serbest birakildi.
-        if (request.Status == app.Status)
-            return BadRequest("Başvuru zaten bu aşamada");
-        if (request.Status == ApplicationStatus.Hired)
-        {
-            if (app.Status != ApplicationStatus.Offer)
-                return BadRequest("İşe alım yalnızca teklif aşamasındaki başvurudan yapılabilir");
-            var posting = await _db.JobPostings.FirstOrDefaultAsync(p => p.Id == app.JobPostingId);
-            if (posting is null || posting.Status == JobPostingStatus.Closed)
-                return BadRequest("Kapalı ilana işe alım yapılamaz");
-        }
+        // G13: kural kanban tasima ucuyla ortak (PipelineRules).
+        var posting = await _db.JobPostings.AsNoTracking().FirstOrDefaultAsync(p => p.Id == app.JobPostingId);
+        var error = PipelineRules.CheckMove(app.Status, request.Status, posting is null || posting.Status == JobPostingStatus.Closed);
+        if (error is not null) return BadRequest(error);
 
         app.Status = request.Status;
         app.StatusChangedAt = DateTimeOffset.UtcNow;
@@ -91,19 +83,116 @@ public class ApplicationsController : ControllerBase
         return Ok(app);
     }
 
+    /// <summary>G13: kanban panosu — sıralı aşamalar ve ilan başvurularının kartları.</summary>
+    [HttpGet("pipeline")]
+    public async Task<IActionResult> Pipeline([FromQuery] Guid jobPostingId, CancellationToken ct)
+    {
+        var apps = await _db.Applications.AsNoTracking().Include(a => a.Candidate).Include(a => a.Interviews)
+            .Where(a => a.JobPostingId == jobPostingId)
+            .OrderBy(a => a.StatusChangedAt ?? a.AppliedAt)
+            .ToListAsync(ct);
+        var ids = apps.Select(a => a.Id).ToList();
+        var ivIds = apps.SelectMany(a => a.Interviews).Select(i => i.Id).ToList();
+        var scores = await _db.Scorecards.AsNoTracking().Where(s => ivIds.Contains(s.InterviewId) && s.OverallScore != null)
+            .Select(s => new { s.InterviewId, s.OverallScore }).ToListAsync(ct);
+        var offers = await _db.Offers.AsNoTracking().Where(o => ids.Contains(o.ApplicationId))
+            .OrderByDescending(o => o.CreatedAt).Select(o => new { o.ApplicationId, o.Status }).ToListAsync(ct);
+        return Ok(new
+        {
+            stages = PipelineRules.Stages.Select(s => new { key = s.ToString(), terminal = PipelineRules.IsTerminal(s) }),
+            cards = apps.Select(a =>
+            {
+                var ivs = a.Interviews.Select(i => i.Id).ToHashSet();
+                var sc = scores.Where(s => ivs.Contains(s.InterviewId)).Select(s => s.OverallScore!.Value).ToList();
+                return new
+                {
+                    a.Id, a.CandidateId, candidateName = a.Candidate is null ? null : $"{a.Candidate.FirstName} {a.Candidate.LastName}",
+                    status = a.Status.ToString(), a.AppliedAt, a.StatusChangedAt, a.Channel, a.DuplicateReason,
+                    interviewCount = a.Interviews.Count,
+                    nextInterviewAt = a.Interviews.Where(i => i.Result == InterviewResult.Pending && i.ScheduledAt > DateTimeOffset.UtcNow)
+                        .OrderBy(i => i.ScheduledAt).Select(i => (DateTimeOffset?)i.ScheduledAt).FirstOrDefault(),
+                    averageScore = sc.Count == 0 ? (decimal?)null : Math.Round(sc.Average(), 2),
+                    offerStatus = offers.FirstOrDefault(o => o.ApplicationId == a.Id)?.Status.ToString(),
+                };
+            }),
+        });
+    }
+
+    public record MoveRequest(ApplicationStatus Status, string? Notes);
+
+    /// <summary>G13: kanban sürükle-bırak — ChangeStatus ile aynı kurallar, hata gövdesi JSON.</summary>
+    [HttpPost("{id}/move")]
+    public async Task<IActionResult> Move(Guid id, [FromBody] MoveRequest request, CancellationToken ct)
+    {
+        var app = await _db.Applications.FirstOrDefaultAsync(a => a.Id == id, ct);
+        if (app is null) return NotFound(new { message = "Başvuru bulunamadı" });
+        var posting = await _db.JobPostings.AsNoTracking().FirstOrDefaultAsync(p => p.Id == app.JobPostingId, ct);
+        var error = PipelineRules.CheckMove(app.Status, request.Status, posting is null || posting.Status == JobPostingStatus.Closed);
+        if (error is not null) return BadRequest(new { message = error });
+        var from = app.Status;
+        app.Status = request.Status;
+        app.StatusChangedAt = DateTimeOffset.UtcNow;
+        if (!string.IsNullOrWhiteSpace(request.Notes)) app.Notes = request.Notes.Trim();
+        await _db.SaveChangesAsync(ct);
+        return Ok(new { app.Id, from = from.ToString(), status = app.Status.ToString(), app.StatusChangedAt });
+    }
+
+    /// <summary>
+    /// Y17: mülakat planlama. Birden çok görüşmeci, süre, yer/çevrim içi bağlantı. Görüşmecilerden
+    /// biri aynı zaman aralığında başka bir mülakattaysa 409. Görüşmecilere uygulama içi bildirim,
+    /// adaya (isteğe bağlı) e-posta daveti; kopyalanabilir davet metni de döner.
+    /// </summary>
     [HttpPost("{id}/interviews")]
     public async Task<IActionResult> ScheduleInterview(
-        Guid id, [FromBody] ScheduleInterviewRequest request)
+        Guid id, [FromBody] ScheduleInterviewRequest request, CancellationToken ct)
     {
-        var app = await _db.Applications.FirstOrDefaultAsync(a => a.Id == id);
+        var app = await _db.Applications.Include(a => a.Candidate).Include(a => a.JobPosting).FirstOrDefaultAsync(a => a.Id == id, ct);
         if (app is null) return NotFound();
+        if (PipelineRules.IsTerminal(app.Status)) return BadRequest(new { message = "Sonuçlanmış başvuru için mülakat planlanamaz" });
+
+        var interviewers = (request.InterviewerEmployeeIds ?? new())
+            .Prepend(request.InterviewerEmployeeId ?? Guid.Empty)
+            .Where(g => g != Guid.Empty).Distinct().ToList();
+        if (interviewers.Count is 0 or > 6) return BadRequest(new { message = "1-6 görüşmeci seçin" });
+        var duration = request.DurationMinutes ?? 60;
+        if (duration is < 15 or > 480) return BadRequest(new { message = "Süre 15-480 dakika olmalı" });
+        if (request.ScheduledAt < DateTimeOffset.UtcNow.AddMinutes(-5)) return BadRequest(new { message = "Geçmiş bir zamana mülakat planlanamaz" });
+        if (request.Location is { Length: > 300 } || request.MeetingUrl is { Length: > 500 })
+            return BadRequest(new { message = "Yer/bağlantı çok uzun" });
+        if (!string.IsNullOrWhiteSpace(request.MeetingUrl)
+            && !(Uri.TryCreate(request.MeetingUrl.Trim(), UriKind.Absolute, out var u) && (u.Scheme == Uri.UriSchemeHttps || u.Scheme == Uri.UriSchemeHttp)))
+            return BadRequest(new { message = "Toplantı bağlantısı http(s) ile başlayan geçerli bir adres olmalı" });
+
+        var tenant = app.TenantSlug;
+        var people = await _db.PeopleAsync(tenant, interviewers, ct);
+        if (people.Count != interviewers.Count) return BadRequest(new { message = "Görüşmecilerden biri bulunamadı" });
+
+        // Çakışma: aynı görüşmecinin (birincil ya da panel) beklemedeki bir mülakatıyla zaman aralığı kesişiyor mu?
+        var windowStart = request.ScheduledAt.AddHours(-8);
+        var windowEnd = request.ScheduledAt.AddMinutes(duration);
+        var near = await _db.Interviews.AsNoTracking()
+            .Where(i => i.Result == InterviewResult.Pending && i.ScheduledAt > windowStart && i.ScheduledAt < windowEnd)
+            .ToListAsync(ct);
+        var conflicts = near
+            .Where(i => ScorecardRules.Overlaps(request.ScheduledAt, duration, i.ScheduledAt, i.DurationMinutes))
+            .SelectMany(i => i.AllInterviewers().Where(interviewers.Contains).Select(p => new { interviewerId = p, interviewId = i.Id, i.ScheduledAt, i.DurationMinutes }))
+            .ToList();
+        if (conflicts.Count > 0)
+        {
+            var names = people.Where(p => conflicts.Any(c => c.interviewerId == p.Id)).Select(p => $"{p.FirstName} {p.LastName}");
+            return Conflict(new { message = $"Görüşmecinin bu saatte başka bir mülakatı var: {string.Join(", ", names)}", code = "interviewer_busy", conflicts });
+        }
 
         var interview = new Interview
         {
             ApplicationId = id,
             Type = request.Type,
             ScheduledAt = request.ScheduledAt,
-            InterviewerEmployeeId = request.InterviewerEmployeeId
+            InterviewerEmployeeId = interviewers[0],
+            InterviewerIds = interviewers,
+            DurationMinutes = duration,
+            Location = string.IsNullOrWhiteSpace(request.Location) ? null : request.Location.Trim(),
+            MeetingUrl = string.IsNullOrWhiteSpace(request.MeetingUrl) ? null : request.MeetingUrl.Trim(),
         };
         _db.Interviews.Add(interview);
 
@@ -113,8 +202,30 @@ public class ApplicationsController : ControllerBase
             app.StatusChangedAt = DateTimeOffset.UtcNow;
         }
 
-        await _db.SaveChangesAsync();
-        return CreatedAtAction(nameof(GetById), new { id }, interview);
+        var company = (await _db.TenantAsync(tenant, ct))?.Name ?? "Şirketimiz";
+        var when = InterviewTexts.When(request.ScheduledAt);
+        var where = InterviewTexts.Where(interview.Location, interview.MeetingUrl);
+        var invitation = InterviewTexts.Invitation(app.Candidate?.FirstName ?? "", company, app.JobPosting?.Title ?? "", when, duration, where);
+        if (request.NotifyCandidate && app.Candidate is { AnonymizedAt: null })
+            interview.CandidateNotifiedAt = DateTimeOffset.UtcNow;
+
+        await _db.SaveChangesAsync(ct);
+
+        // KVKK: görüşmeci bildiriminde aday adı yok; ayrıntı İK360'ta.
+        foreach (var p in interviewers)
+            await _db.NotifyAsync(tenant, p, "Mülakat planlandı",
+                $"{when} tarihinde \"{app.JobPosting?.Title}\" pozisyonu için bir mülakata görüşmeci olarak atandınız ({duration} dk, {where}). Puan kartını Mülakatlarım ekranından doldurabilirsiniz.",
+                "recruitment.interview.scheduled", ct);
+        if (interview.CandidateNotifiedAt is not null && app.Candidate is not null)
+            await _db.EmailCandidateAsync(tenant, app.Candidate.Email, $"Mülakat daveti — {company}", invitation, "recruitment.interview.invite", ct);
+
+        return CreatedAtAction(nameof(GetById), new { id }, new
+        {
+            interview.Id, interview.ApplicationId, interview.Type, interview.ScheduledAt, interview.DurationMinutes, interview.Location,
+            interview.MeetingUrl, interview.InterviewerEmployeeId, interview.InterviewerIds, interview.Result,
+            candidateNotified = interview.CandidateNotifiedAt is not null,
+            invitationText = invitation,
+        });
     }
 
     [HttpPost("{id}/interviews/{interviewId}/result")]
@@ -129,12 +240,46 @@ public class ApplicationsController : ControllerBase
         interview.Score = request.Score;
         interview.Notes = request.Notes;
         await _db.SaveChangesAsync();
-        return Ok(interview);
+        // Y17: özel nitelikli veri uyarısı (engellemez).
+        return Ok(new
+        {
+            interview.Id, interview.ApplicationId, interview.Type, interview.ScheduledAt, interview.InterviewerEmployeeId,
+            interview.Result, interview.Score, interview.Notes,
+            warnings = SensitiveNoteDetector.Detect(request.Notes),
+        });
     }
+}
+
+public static class InterviewTexts
+{
+    private static readonly System.Globalization.CultureInfo Tr = new("tr-TR");
+    private static readonly TimeZoneInfo Istanbul = Find();
+
+    private static TimeZoneInfo Find()
+    {
+        try { return TimeZoneInfo.FindSystemTimeZoneById("Europe/Istanbul"); }
+        catch (Exception) { return TimeZoneInfo.CreateCustomTimeZone("TRT", TimeSpan.FromHours(3), "TRT", "TRT"); }
+    }
+
+    public static string When(DateTimeOffset at) =>
+        TimeZoneInfo.ConvertTime(at, Istanbul).ToString("dd.MM.yyyy HH:mm", Tr);
+
+    public static string Where(string? location, string? url) =>
+        url is not null && location is not null ? $"{location} / çevrim içi: {url}"
+        : url is not null ? $"çevrim içi: {url}"
+        : location ?? "yer daha sonra bildirilecek";
+
+    public static string Invitation(string firstName, string company, string posting, string when, int minutes, string where) =>
+        $"Merhaba {firstName},\n\n{company} bünyesindeki \"{posting}\" pozisyonu başvurunuz için sizi mülakata davet ediyoruz.\n\n"
+        + $"Tarih ve saat: {when} (Türkiye saati)\nSüre: yaklaşık {minutes} dakika\nYer: {where}\n\n"
+        + "Bu zaman size uygun değilse lütfen İnsan Kaynakları ile iletişime geçin.\n\nSaygılarımızla,\n"
+        + $"{company} İnsan Kaynakları";
 }
 
 public record CreateApplicationRequest(Guid JobPostingId, Guid CandidateId, string? Notes);
 public record ChangeStatusRequest(ApplicationStatus Status, string? Notes);
 public record ScheduleInterviewRequest(
-    InterviewType Type, DateTimeOffset ScheduledAt, Guid InterviewerEmployeeId);
+    InterviewType Type, DateTimeOffset ScheduledAt, Guid? InterviewerEmployeeId,
+    List<Guid>? InterviewerEmployeeIds = null, int? DurationMinutes = null, string? Location = null,
+    string? MeetingUrl = null, bool NotifyCandidate = false);
 public record InterviewResultRequest(InterviewResult Result, int? Score, string? Notes);

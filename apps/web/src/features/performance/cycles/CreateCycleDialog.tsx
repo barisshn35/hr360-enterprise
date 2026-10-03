@@ -4,12 +4,14 @@
  */
 
 import { useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AnimatePresence, motion } from 'motion/react'
 import { CalendarPlus, Info, TriangleAlert } from 'lucide-react'
 import { CYCLE_PERIODS, cyclePeriodLabels, useCreateCycle, type CyclePeriod, type ReviewCycle } from '@/api/performance'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/button'
-import { TextField } from '@/components/ui/Field'
+import { SelectField, TextField } from '@/components/ui/Field'
+import { performanceExtrasApi } from '@/api/performanceExtras'
 import { useToast } from '@/components/ui/Toast'
 import { formatDate } from '@/lib/format'
 import { Segmented, errorText } from '../components/controls'
@@ -26,6 +28,12 @@ export function CreateCycleDialog({ cycles, onClose }: { cycles: ReviewCycle[]; 
   const [form, setForm] = useState(() => defaultsFor(suggestion.year, suggestion.period))
   const [edited, setEdited] = useState({ name: false, dates: false })
   const [error, setError] = useState<string | null>(null)
+  // G12: şablondan dönem — bölümler/sorular, ağırlıklar ve ölçek şablondan kopyalanır.
+  const qc = useQueryClient()
+  const templates = useQuery({ queryKey: ['perf', 'cycle-templates'], queryFn: ({ signal }) => performanceExtrasApi.templates(signal) })
+  const [templateId, setTemplateId] = useState('')
+  const [fromTemplatePending, setFromTemplatePending] = useState(false)
+  const template = templates.data?.find((t) => t.id === templateId)
 
   const apply = (y: number, p: CyclePeriod) => {
     const d = defaultsFor(y, p)
@@ -43,6 +51,19 @@ export function CreateCycleDialog({ cycles, onClose }: { cycles: ReviewCycle[]; 
 
   const submit = () => {
     if (!form.name.trim() || invalidDates || !form.startDate || !form.endDate) return
+    if (templateId) {
+      setFromTemplatePending(true)
+      performanceExtrasApi
+        .createFromTemplate({ templateId, name: form.name.trim(), year, period, startDate: form.startDate, endDate: form.endDate })
+        .then((c) => {
+          void qc.invalidateQueries({ queryKey: ['perf', 'cycles'] })
+          toast.ok(tx('«{0}» şablondan taslak olarak oluşturuldu.', [c.name]))
+          onClose()
+        })
+        .catch((e) => setError(errorText(e)))
+        .finally(() => setFromTemplatePending(false))
+      return
+    }
     create.mutate(
       { name: form.name.trim(), year, period, startDate: form.startDate, endDate: form.endDate },
       {
@@ -67,7 +88,7 @@ export function CreateCycleDialog({ cycles, onClose }: { cycles: ReviewCycle[]; 
           <Button variant="outline" onClick={onClose} disabled={create.isPending}>
             {tx('Vazgeç')}
           </Button>
-          <Button onClick={submit} disabled={create.isPending || invalidDates || !form.name.trim()}>
+          <Button onClick={submit} disabled={create.isPending || fromTemplatePending || invalidDates || !form.name.trim()}>
             <CalendarPlus aria-hidden />
             {create.isPending ? tx('Oluşturuluyor…') : tx('Dönemi oluştur')}
           </Button>
@@ -90,6 +111,32 @@ export function CreateCycleDialog({ cycles, onClose }: { cycles: ReviewCycle[]; 
       </AnimatePresence>
 
       <div className="flex flex-col gap-5">
+        {(templates.data?.length ?? 0) > 0 && (
+          <div className="space-y-1.5">
+            <SelectField
+              label={tx('Şablon')}
+              value={templateId || '__none__'}
+              onChange={(v) => {
+                const id = v === '__none__' ? '' : v
+                setTemplateId(id)
+                const t = templates.data?.find((x) => x.id === id)
+                if (t) {
+                  setPeriod(t.period)
+                  const d = defaultsFor(year, t.period)
+                  setForm((f) => ({ ...f, startDate: d.startDate, endDate: d.endDate }))
+                }
+              }}
+              options={[{ value: '__none__', label: tx('Şablonsuz (boş dönem)') }, ...(templates.data ?? []).map((t) => ({ value: t.id, label: t.name }))]}
+              hint={tx('Şablon seçilirse bölümler, sorular, ağırlıklar ve ölçek kopyalanır.')}
+            />
+            {template?.config && (
+              <p className="text-[12px] text-muted-foreground">
+                {tx('Ölçek {0}-{1}', [template.config.scale.min, template.config.scale.max])}
+                {template.config.sections.length > 0 && ` · ${template.config.sections.map((s) => `${s.title} %${s.weight}`).join(', ')}`}
+              </p>
+            )}
+          </div>
+        )}
         <div className="flex flex-wrap items-end gap-4">
           <div>
             <p className="mb-1.5 text-[13px] font-medium">{tx('Yıl')}</p>

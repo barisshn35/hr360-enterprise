@@ -14,6 +14,8 @@ public class Asset : ITenantOwned
     public string? Model { get; set; }
     public string? SerialNumber { get; set; }
     public AssetStatus Status { get; set; } = AssetStatus.Available;
+    /// <summary>QR etiketi icin opak kod (kisisel veri icermez, tahmin edilemez). Bkz. AssetCodes.</summary>
+    public string? QrCode { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public List<AssetAssignment> Assignments { get; set; } = new();
 }

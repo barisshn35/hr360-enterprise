@@ -286,6 +286,8 @@ export interface Survey {
 export interface SurveyAnswer { questionId: string; score?: number | null; choice?: string | null; text?: string | null }
 export interface SurveyResults {
   survey: { id: string; title: string; kind: string; status: string; isAnonymous: boolean; closesAt: string | null }
+  /** G18: toplam yanıt en küçük grup sayısının (5) altındaysa hiçbir kırılım dönmez. */
+  hidden?: boolean
   responseCount: number
   eligible: number
   participation: number
@@ -305,8 +307,10 @@ export interface SurveyResults {
     options?: Array<{ option: string; count: number }>
     texts?: string[]
     hiddenForAnonymity?: boolean
+    /** G18: yerel sözlük tabanlı duygu özeti (en az 5 metin yanıtta). */
+    sentiment?: { positive: number; negative: number; neutral: number; topKeywords: Array<{ word: string; count: number }>; method: string } | null
   }>
-  byDepartment: Array<{ department: string; count: number; hidden: boolean; enps: number | null; favorable: number | null }>
+  byDepartment: Array<{ department: string; count: number | null; hidden: boolean; enps: number | null; favorable: number | null }>
 }
 
 /* -------------------------------------------------------------- offboarding */
@@ -338,6 +342,9 @@ export interface OffboardingSummary {
   total: number
   done: number
   hasInterview: boolean
+  openAssets?: number
+  accountStatus?: import('./opsPlus').AccountStatus | null
+  plannedAnonymizationOn?: string | null
 }
 export interface OffboardingCase {
   id: string
@@ -351,6 +358,13 @@ export interface OffboardingCase {
   rehireEligible: boolean | null
   createdAt: string
   completedAt: string | null
+  /** G15: zimmet iade listesi, hesap kapatma durumu ve imha planı. */
+  assetChecks?: import('./opsPlus').AssetCheck[]
+  accountStatus?: import('./opsPlus').AccountStatus | null
+  accountDisabledAt?: string | null
+  accountNote?: string | null
+  retentionMonths?: number | null
+  plannedAnonymizationOn?: string | null
 }
 export interface Settlement {
   employee: string
@@ -540,7 +554,7 @@ export const engagementApi = {
   saveExitInterview: (id: string, interview: ExitInterview, rehireEligible: boolean | null) =>
     apiFetch<OffboardingCase>(`${BASE}/offboarding/${id}/exit-interview`, { method: 'PUT', body: { interview, rehireEligible } }),
   completeOffboarding: (id: string, terminate = true) =>
-    apiFetch<{ status: string; warning: string | null }>(`${BASE}/offboarding/${id}/complete${qs({ terminate })}`, { method: 'POST' }),
+    apiFetch<{ status: string; warning: string | null; accountStatus?: string | null; plannedAnonymizationOn?: string | null }>(`${BASE}/offboarding/${id}/complete${qs({ terminate })}`, { method: 'POST' }),
   cancelOffboarding: (id: string) => apiFetch<unknown>(`${BASE}/offboarding/${id}/cancel`, { method: 'POST' }),
   settlement: (id: string, signal?: AbortSignal) => apiFetch<Settlement>(`${BASE}/offboarding/${id}/settlement`, { signal }),
 

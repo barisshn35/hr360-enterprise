@@ -28,6 +28,9 @@ public class PerformanceDbContext : DbContext, ITenantAwareContext
     public DbSet<ReviewScore> ReviewScores => Set<ReviewScore>();
     public DbSet<Feedback> Feedback => Set<Feedback>();
     public DbSet<PerformanceSnapshot> Snapshots => Set<PerformanceSnapshot>();
+    public DbSet<PotentialRating> PotentialRatings => Set<PotentialRating>();
+    public DbSet<NineBoxOverride> NineBoxOverrides => Set<NineBoxOverride>();
+    public DbSet<CycleTemplate> CycleTemplates => Set<CycleTemplate>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -92,6 +95,17 @@ public class PerformanceDbContext : DbContext, ITenantAwareContext
         // Ekip karsilastirmasi ekip + zaman uzerinden.
         modelBuilder.Entity<PerformanceSnapshot>()
             .HasIndex(s => new { s.TeamId, s.CapturedAt });
+
+        // G12 (Dalga 5c) — tablolar scripts/sql/2026-10-08_learning_performance.sql'den.
+        modelBuilder.Entity<ReviewCycle>().Property(c => c.ConfigJson).HasColumnType("jsonb");
+        modelBuilder.Entity<PotentialRating>().ConfigureTenantColumn();
+        modelBuilder.Entity<PotentialRating>().ToTable("performance_potential_ratings");
+        modelBuilder.Entity<NineBoxOverride>().ConfigureTenantColumn();
+        modelBuilder.Entity<NineBoxOverride>().ToTable("performance_ninebox_overrides");
+        modelBuilder.Entity<CycleTemplate>().ConfigureTenantColumn();
+        modelBuilder.Entity<CycleTemplate>().ToTable("performance_cycle_templates");
+        modelBuilder.Entity<CycleTemplate>().Property(c => c.Period).HasConversion<string>();
+        modelBuilder.Entity<CycleTemplate>().Property(c => c.ConfigJson).HasColumnType("jsonb");
 
         modelBuilder.ApplyTenantFilters(this);
     }

@@ -20,7 +20,9 @@ public enum WorkflowType
     // Sona eklenir: sayısal değerler (0-4) servisler arası çağrılarda kullanılıyor.
     Overtime,
     DocumentRequest,
-    Travel
+    Travel,
+    // Dalga 5c (Y18): recruitment-service iş teklifi onayı (sayısal değer 8).
+    OfferApproval
 }
 
 public class WorkflowRequest : ITenantOwned

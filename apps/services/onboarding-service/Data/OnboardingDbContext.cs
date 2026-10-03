@@ -24,6 +24,10 @@ public class OnboardingDbContext : DbContext, ITenantAwareContext
     public DbSet<OnboardingTask> Tasks => Set<OnboardingTask>();
     public DbSet<Asset> Assets => Set<Asset>();
     public DbSet<AssetAssignment> AssetAssignments => Set<AssetAssignment>();
+    public DbSet<TaskTemplate> TaskTemplates => Set<TaskTemplate>();
+    public DbSet<TaskTemplateItem> TaskTemplateItems => Set<TaskTemplateItem>();
+    public DbSet<OnboardingSettings> Settings => Set<OnboardingSettings>();
+    public DbSet<AssetMaintenance> AssetMaintenance => Set<AssetMaintenance>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -57,6 +61,22 @@ public class OnboardingDbContext : DbContext, ITenantAwareContext
             .HasForeignKey(a => a.AssetId).OnDelete(DeleteBehavior.Cascade);
         modelBuilder.Entity<AssetAssignment>().HasIndex(a => a.EmployeeId);
     
+        // Dalga 5c tablolari: scripts/sql/2026-10-08_ops_plus.sql
+        modelBuilder.Entity<TaskTemplate>().ConfigureTenantColumn();
+        modelBuilder.Entity<TaskTemplate>().ToTable("onboarding_task_templates");
+        modelBuilder.Entity<TaskTemplateItem>().ConfigureTenantColumn();
+        modelBuilder.Entity<TaskTemplateItem>().ToTable("onboarding_task_template_items");
+        modelBuilder.Entity<TaskTemplateItem>().Property(i => i.Category).HasConversion<string>();
+        modelBuilder.Entity<TaskTemplateItem>()
+            .HasOne(i => i.Template).WithMany(t => t.Items)
+            .HasForeignKey(i => i.TemplateId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<OnboardingSettings>().ConfigureTenantColumn();
+        modelBuilder.Entity<OnboardingSettings>().ToTable("onboarding_settings");
+        modelBuilder.Entity<AssetMaintenance>().ConfigureTenantColumn();
+        modelBuilder.Entity<AssetMaintenance>().ToTable("onboarding_asset_maintenance");
+        modelBuilder.Entity<AssetMaintenance>().Property(m => m.Type).HasConversion<string>();
+        modelBuilder.Entity<AssetMaintenance>().Property(m => m.Cost).HasColumnType("numeric(12,2)");
+
         modelBuilder.ApplyTenantFilters(this);
     }
 }

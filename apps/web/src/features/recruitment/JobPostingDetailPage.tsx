@@ -12,21 +12,21 @@ import {
   JobPostingStatusBadge,
 } from '@/components/ui/ModuleBadges'
 import { Modal } from '@/components/ui/Modal'
-import { SelectField, TextAreaField, TextField } from '@/components/ui/Field'
+import { SelectField, TextAreaField } from '@/components/ui/Field'
 import { useToast } from '@/components/ui/Toast'
 import { useAuth } from '@/auth/useAuth'
 import { recruitmentApi } from '@/api/recruitment'
-import { useCandidates, useEmployees, useJobPosting } from '@/api/queries'
+import { useCandidates, useJobPosting } from '@/api/queries'
 import {
   applicationStatusLabels,
   employmentTypeLabels,
   interviewTypeLabels,
   type Application,
   type ApplicationStatus,
-  type InterviewType,
 } from '@/api/types'
-import { formatDate, formatDateTime, formatNumber, fullName } from '@/lib/format'
+import { formatDate, formatDateTime, formatNumber } from '@/lib/format'
 import { ApplicationFunnel } from './ApplicationFunnel'
+import { OfferModal, OffersPanel, PipelineBoard, ScheduleInterviewModal, ScorecardsModal, ScorecardTemplatePanel } from './RecruitmentPlus'
 import { MeetingPanel } from '@/features/shared/Meetings'
 import { tx } from '@/lib/i18n'
 
@@ -123,112 +123,6 @@ function StatusModal({
   )
 }
 
-function InterviewModal({
-  application,
-  onClose,
-}: {
-  application: Application | null
-  onClose: () => void
-}) {
-  const toast = useToast()
-  const queryClient = useQueryClient()
-  const employees = useEmployees()
-  const [type, setType] = useState<InterviewType>('Phone')
-  const [scheduledAt, setScheduledAt] = useState('')
-  const [interviewerEmployeeId, setInterviewer] = useState('')
-  const [error, setError] = useState<string | undefined>()
-
-  const mutation = useMutation({
-    mutationFn: () =>
-      recruitmentApi.scheduleInterview(application!.id, {
-        type,
-        scheduledAt,
-        interviewerEmployeeId,
-      }),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['recruitment'] })
-      toast.ok(tx('Mülakat planlandı'))
-      onClose()
-      setScheduledAt('')
-    },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Mülakat planlanamadı.')),
-  })
-
-  if (!application) return null
-
-  function submit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!scheduledAt) return setError(tx('Tarih ve saat zorunlu.'))
-    if (!interviewerEmployeeId) return setError(tx('Görüşmeci seçilmeli.'))
-    setError(undefined)
-    mutation.mutate()
-  }
-
-  return (
-    <Modal
-      open
-      onClose={onClose}
-      title={tx('Mülakat planla')}
-      note={tx('Görüşmeciye takvim daveti backend tarafında oluşturulur.')}
-      footer={
-        <>
-          <Button
-            variant="outline"
-            className="cursor-pointer"
-            onClick={onClose}
-            disabled={mutation.isPending}
-          >
-            {tx('Vazgeç')}
-          </Button>
-          <Button
-            type="submit"
-            form="new-interview"
-            className="cursor-pointer"
-            disabled={mutation.isPending}
-          >
-            {mutation.isPending && <LoaderCircle className="size-4 animate-spin" />}
-            {tx('Planla')}
-          </Button>
-        </>
-      }
-    >
-      <form id="new-interview" onSubmit={submit} noValidate className="space-y-4">
-        <SelectField
-          id="interview-type"
-          label={tx('Mülakat türü')}
-          value={type}
-          onChange={(v) => setType(v as InterviewType)}
-          options={(Object.keys(interviewTypeLabels) as InterviewType[]).map((t) => ({
-            value: t,
-            label: interviewTypeLabels[t],
-          }))}
-        />
-
-        <TextField
-          id="interview-at"
-          label={tx('Tarih ve saat')}
-          type="datetime-local"
-          required
-          value={scheduledAt}
-          onChange={(e) => setScheduledAt(e.target.value)}
-          error={error?.includes('Tarih') ? error : undefined}
-        />
-
-        <SelectField
-          id="interview-by"
-          label={tx('Görüşmeci')}
-          required
-          value={interviewerEmployeeId}
-          onChange={setInterviewer}
-          options={(employees.data ?? []).map((e) => ({ value: e.id, label: fullName(e) }))}
-          placeholder={tx('Çalışan seçin')}
-          error={error?.includes('Görüşmeci') ? error : undefined}
-        />
-      </form>
-    </Modal>
-  )
-}
-
 export function JobPostingDetailPage() {
   const { postingId } = useParams<{ postingId: string }>()
   const { can } = useAuth()
@@ -241,13 +135,21 @@ export function JobPostingDetailPage() {
     application: Application
     suggested?: ApplicationStatus
   } | null>(null)
-  const [interviewFor, setInterviewFor] = useState<Application | null>(null)
+  const [interviewFor, setInterviewFor] = useState<{ applicationId: string; candidateName: string } | null>(null)
+  const [offerFor, setOfferFor] = useState<{ applicationId: string; candidateName: string; postingTitle: string } | null>(null)
+  const [scorecardsFor, setScorecardsFor] = useState<string | null>(null)
 
   const candidateName = useMemo(() => {
     const map = new Map<string, string>()
     for (const c of candidates.data ?? []) map.set(c.id, `${c.firstName} ${c.lastName}`)
     return map
   }, [candidates.data])
+
+  const candidateByApplication = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const a of posting.data?.applications ?? []) map.set(a.id, candidateName.get(a.candidateId) ?? '')
+    return map
+  }, [posting.data, candidateName])
 
   const publish = useMutation({
     mutationFn: () => recruitmentApi.publishPosting(postingId!),
@@ -326,6 +228,21 @@ export function JobPostingDetailPage() {
         }
       />
 
+      {canManage && (
+        <Panel>
+          <PanelHead title={tx('Aday panosu')} note={tx('Kartları sürükleyip bırakarak aşama değiştirin (ya da kart üzerindeki "Taşı" listesini kullanın).')} />
+          <PanelBody>
+            <PipelineBoard
+              postingId={data.id}
+              canManage={canManage}
+              canOffer={canPublish}
+              onSchedule={(c) => setInterviewFor({ applicationId: c.id, candidateName: c.candidateName ?? '' })}
+              onOffer={(c) => setOfferFor({ applicationId: c.id, candidateName: c.candidateName ?? '', postingTitle: data.title })}
+            />
+          </PanelBody>
+        </Panel>
+      )}
+
       <div className="grid gap-4 xl:grid-cols-[1fr_1.15fr]">
         <Panel>
           <PanelHead title={tx('Başvuru hunisi')} note={tx('Aşamalar arası geçiş oranıyla')} />
@@ -386,6 +303,11 @@ export function JobPostingDetailPage() {
                             </span>
                             <span className="tabular">{formatDateTime(iv.scheduledAt)}</span>
                             <InterviewResultBadge result={iv.result} />
+                            {canManage && (
+                              <Button size="sm" variant="ghost" className="h-6 px-2 text-[11.5px]" onClick={() => setScorecardsFor(iv.id)}>
+                                {tx('Puan kartları')}
+                              </Button>
+                            )}
                             {iv.result === 'Pending' && new Date(iv.scheduledAt) > new Date() && (
                               <div className="w-full pt-1">
                                 <MeetingPanel sourceType="interview" sourceId={iv.id} canCreate={canManage} candidate />
@@ -418,7 +340,7 @@ export function JobPostingDetailPage() {
                           size="sm"
                           variant="ghost"
                           className="cursor-pointer"
-                          onClick={() => setInterviewFor(a)}
+                          onClick={() => setInterviewFor({ applicationId: a.id, candidateName: candidateName.get(a.candidateId) ?? '' })}
                         >
                           {tx('Mülakat planla')}
                         </Button>
@@ -443,8 +365,17 @@ export function JobPostingDetailPage() {
         </Panel>
       )}
 
+      {canManage && (
+        <div className="grid gap-4 xl:grid-cols-[1.4fr_1fr]">
+          <OffersPanel postingId={data.id} isHr={canPublish} names={candidateByApplication} />
+          <ScorecardTemplatePanel postingId={data.id} canEdit={canManage} />
+        </div>
+      )}
+
       <StatusModal state={statusFor} onClose={() => setStatusFor(null)} />
-      <InterviewModal application={interviewFor} onClose={() => setInterviewFor(null)} />
+      <ScheduleInterviewModal target={interviewFor} onClose={() => setInterviewFor(null)} />
+      <OfferModal target={offerFor} onClose={() => setOfferFor(null)} />
+      <ScorecardsModal interviewId={scorecardsFor} onClose={() => setScorecardsFor(null)} />
     </div>
   )
 }

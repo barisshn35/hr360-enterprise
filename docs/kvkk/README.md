@@ -91,6 +91,15 @@ edilmiş kayıtlar yeniden silinir (bkz. README › Yedekleme). Tutanaklar silin
 | Zam dönemi | Yönetici yalnızca kendi bölümünü görür; çalışma sayfası açılışı erişim kaydında; 5 kişiden az grup özette gizli. |
 | Seyahat | Pasaport no şifreli, yalnızca yurt dışında istenir, seyahat bitince 7 gün içinde silinir; açılışı kaydedilir. |
 | Fiş okuma | Yerel OCR; görüntü saklanmaz, ham metin döndürülmez. |
+| Duyuru/politika kabulü | "Okudum" kaydı açık rızadan ayrı tutulur; okumayanlar listesi yalnızca kabul gerektirenlerde. |
+| Etik hattı | IP/kullanıcı/tarayıcı tutulmaz, gateway kaydı kapalı, takip kodu özet olarak, iletişim bilgisi şifreli; yalnızca etik kurulu. |
+| İSG | Sağlık notları şifreli, yalnızca işyeri hekimi okur (her okuma kayıtlı); İK ve yönetici yalnızca uygun/uygun değil görür. |
+| Disiplin | İK, bölüm yöneticisi (görüntüleme kayıtlı) ve çalışanın kendisi; adli sicil tutulmaz; 24 ay sonra imha. |
+| Kariyer sayfası | Aydınlatma bilgi olarak, CV havuzu için ayrı açık rıza; aday kendi verisini silebilir; süre dolunca anonimleştirme; IP saklanmaz. |
+| Mülakat | Notlarda özel nitelikli veri uyarısı; maaş teklifi yalnızca İK ve onaycıya, görüntüleme kayıtlı. |
+| Yetkinlik/9-kutu | Yalnızca öneri ve tartışma aracı (otomatik karar yok); potansiyel puanı çalışana varsayılan gizli. |
+| Anketler | En az 5 yanıt; küçük grup çıkarımı engellenir; yorumlar ve duygu analizi yerel ve eşik üstünde. |
+| İşten ayrılış | Hesap kapatma, zimmet iadesi ve planlı anonimleştirme tarihi kayıtlı. |
 
 ## Aydınlatma ve açık rıza metinleri
 

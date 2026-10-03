@@ -24,6 +24,11 @@ public class RecruitmentDbContext : DbContext, ITenantAwareContext
     public DbSet<Candidate> Candidates => Set<Candidate>();
     public DbSet<Application> Applications => Set<Application>();
     public DbSet<Interview> Interviews => Set<Interview>();
+    public DbSet<ScorecardTemplate> ScorecardTemplates => Set<ScorecardTemplate>();
+    public DbSet<Scorecard> Scorecards => Set<Scorecard>();
+    public DbSet<Offer> Offers => Set<Offer>();
+    public DbSet<OfferTemplate> OfferTemplates => Set<OfferTemplate>();
+    public DbSet<RecruitmentService.Messaging.ProcessedEvent> ProcessedEvents => Set<RecruitmentService.Messaging.ProcessedEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -55,7 +60,29 @@ public class RecruitmentDbContext : DbContext, ITenantAwareContext
         modelBuilder.Entity<Interview>()
             .HasOne(i => i.Application).WithMany(a => a.Interviews)
             .HasForeignKey(i => i.ApplicationId).OnDelete(DeleteBehavior.Cascade);
-    
+
+        // Dalga 5c (scripts/sql/2026-10-08_recruitment_plus.sql)
+        modelBuilder.Entity<ScorecardTemplate>().ConfigureTenantColumn();
+        modelBuilder.Entity<ScorecardTemplate>().ToTable("recruitment_scorecard_templates");
+        modelBuilder.Entity<ScorecardTemplate>().Ignore(t => t.Criteria);
+
+        modelBuilder.Entity<Scorecard>().ConfigureTenantColumn();
+        modelBuilder.Entity<Scorecard>().ToTable("recruitment_scorecards");
+        modelBuilder.Entity<Scorecard>().Ignore(t => t.Scores);
+        modelBuilder.Entity<Scorecard>().Property(s => s.OverallScore).HasPrecision(4, 2);
+
+        modelBuilder.Entity<Offer>().ConfigureTenantColumn();
+        modelBuilder.Entity<Offer>().ToTable("recruitment_offers");
+        modelBuilder.Entity<Offer>().Property(o => o.Status).HasConversion<string>();
+        modelBuilder.Entity<Offer>().Property(o => o.GrossSalary).HasPrecision(14, 2);
+        modelBuilder.Entity<Offer>().Property(o => o.SalaryLetterText).HasColumnName("LetterText");
+
+        modelBuilder.Entity<OfferTemplate>().ConfigureTenantColumn();
+        modelBuilder.Entity<OfferTemplate>().ToTable("recruitment_offer_templates");
+
+        modelBuilder.Entity<RecruitmentService.Messaging.ProcessedEvent>().ToTable("messaging_processed_events");
+        modelBuilder.Entity<RecruitmentService.Messaging.ProcessedEvent>().HasKey(p => new { p.EventId, p.Consumer });
+
         modelBuilder.ApplyTenantFilters(this);
     }
 }

@@ -14,11 +14,13 @@ import { TextField } from '@/components/ui/Field'
 import { EmployeePicker } from '@/components/ui/EmployeePicker'
 import { useToast } from '@/components/ui/Toast'
 import { useAuth } from '@/auth/useAuth'
-import { onboardingApi } from '@/api/onboarding'
+import { opsApi } from '@/api/opsPlus'
 import { useEmployees, useOnboardingPlans } from '@/api/queries'
 import { planStatusLabels, type OnboardingPlan, type PlanStatus } from '@/api/types'
 import { formatDate, fullName } from '@/lib/format'
 import { tx } from '@/lib/i18n'
+import { PersonSelect } from '@/features/shared/kit'
+import { TemplatesPanel, WelcomeSettingsPanel } from './OnboardingOps'
 
 type TabKey = PlanStatus | 'all'
 
@@ -42,15 +44,21 @@ function NewPlanModal({ open, onClose }: { open: boolean; onClose: () => void })
   const [startDate, setStartDate] = useState('')
   const [templateName, setTemplateName] = useState('')
   const [useDefaultTasks, setUseDefaultTasks] = useState(true)
+  const [applyTemplates, setApplyTemplates] = useState(true)
+  const [buddyId, setBuddyId] = useState('')
+  const [location, setLocation] = useState('')
   const [error, setError] = useState<string | undefined>()
 
   const mutation = useMutation({
     mutationFn: () =>
-      onboardingApi.createPlan({
+      opsApi.createPlan({
         employeeId,
         startDate,
         templateName: templateName.trim() || undefined,
         useDefaultTasks,
+        applyTemplates,
+        buddyEmployeeId: buddyId || null,
+        location: location.trim() || null,
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['onboarding'] })
@@ -58,6 +66,8 @@ function NewPlanModal({ open, onClose }: { open: boolean; onClose: () => void })
       onClose()
       setStartDate('')
       setTemplateName('')
+      setBuddyId('')
+      setLocation('')
     },
     onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Plan oluşturulamadı.')),
   })
@@ -124,6 +134,38 @@ function NewPlanModal({ open, onClose }: { open: boolean; onClose: () => void })
           onChange={(e) => setTemplateName(e.target.value)}
         />
 
+        <PersonSelect
+          id="plan-buddy"
+          label={tx('Yol arkadaşı (buddy)')}
+          value={buddyId}
+          exclude={employeeId ? [employeeId] : []}
+          onChange={setBuddyId}
+          hint={tx('İsteğe bağlı. Seçilen kişiye görev listesi ve bildirim gider.')}
+        />
+
+        <TextField
+          id="plan-location"
+          label={tx('İlk gün buluşma yeri')}
+          hint={tx('İsteğe bağlı; karşılama iletisinde kullanılır. Örn. İstanbul ofis, 3. kat resepsiyon.')}
+          maxLength={200}
+          value={location}
+          onChange={(e) => setLocation(e.target.value)}
+        />
+
+        <label className="flex min-h-11 cursor-pointer items-start gap-2.5">
+          <Checkbox
+            checked={applyTemplates}
+            onCheckedChange={(v) => setApplyTemplates(v === true)}
+            className="mt-0.5"
+          />
+          <span className="text-[13px]">
+            {tx('Unvan ve departmana uyan rol şablonlarını uygula')}
+            <span className="block text-[12px] text-muted-foreground">
+              {tx('Görevler sahibine (yönetici, yol arkadaşı, yeni çalışan) otomatik atanır.')}
+            </span>
+          </span>
+        </label>
+
         <label className="flex min-h-11 cursor-pointer items-start gap-2.5">
           <Checkbox
             checked={useDefaultTasks}
@@ -147,6 +189,7 @@ export function OnboardingPage() {
   const navigate = useNavigate()
   const [tab, setTab] = useTabParam<TabKey>('durum', 'InProgress')
   const [modalOpen, setModalOpen] = useState(false)
+  const [configOpen, setConfigOpen] = useState(false)
   const plans = useOnboardingPlans({ status: tab === 'all' ? undefined : tab })
   const employees = useEmployees({ enabled: can('employee:viewAll') })
 
@@ -229,10 +272,15 @@ export function OnboardingPage() {
         description={tx('İşe yeni başlayanların görev planları ve ilerlemeleri.')}
         actions={
           canManage && (
-            <Button className="cursor-pointer" onClick={() => setModalOpen(true)}>
-              <Plus className="size-4" />
-              {tx('Yeni plan')}
-            </Button>
+            <>
+              <Button variant="outline" className="cursor-pointer" onClick={() => setConfigOpen(true)}>
+                {tx('Şablonlar ve karşılama')}
+              </Button>
+              <Button className="cursor-pointer" onClick={() => setModalOpen(true)}>
+                <Plus className="size-4" />
+                {tx('Yeni plan')}
+              </Button>
+            </>
           )
         }
       />
@@ -261,6 +309,15 @@ export function OnboardingPage() {
       />
 
       <NewPlanModal open={modalOpen} onClose={() => setModalOpen(false)} />
+      {configOpen && (
+        <Modal open size="xl" onClose={() => setConfigOpen(false)} title={tx('Şablonlar ve karşılama')}
+          note={tx('Rol şablonları plan açılırken otomatik uygulanır; karşılama iletisi başlangıç günü gönderilir.')}>
+          <div className="space-y-5">
+            <TemplatesPanel />
+            <WelcomeSettingsPanel />
+          </div>
+        </Modal>
+      )}
     </div>
   )
 }

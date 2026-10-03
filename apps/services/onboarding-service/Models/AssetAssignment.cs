@@ -13,5 +13,9 @@ public class AssetAssignment : ITenantOwned
     public DateOnly? ReturnedOn { get; set; }
     public string? ConditionOnReturn { get; set; }
     public string? Notes { get; set; }
+    /// <summary>Beklenen iade tarihi (istege bagli) - hatirlatma isi bu tarihe gore calisir.</summary>
+    public DateOnly? ExpectedReturnOn { get; set; }
+    public DateTimeOffset? ReminderBeforeSentAt { get; set; }
+    public DateTimeOffset? ReminderOverdueSentAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }

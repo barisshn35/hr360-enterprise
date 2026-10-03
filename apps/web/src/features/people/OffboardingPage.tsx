@@ -17,6 +17,7 @@ import { formatDate, formatMoney } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { Initials, PersonSelect, PlanGate, isoDate, useAction } from '@/features/shared/kit'
 import { tx } from '@/lib/i18n'
+import { AccountAndRetention, AssetReturnChecklist } from './OffboardingExtras'
 
 function StartModal({ onClose }: { onClose: () => void }) {
   const [emp, setEmp] = useState('')
@@ -24,7 +25,7 @@ function StartModal({ onClose }: { onClose: () => void }) {
   const [reason, setReason] = useState<OffboardingReason>('Resignation')
   const start = useAction(() => engagementApi.startOffboarding({ employeeId: emp, lastWorkingDay: day, reason }), { success: tx('Ayrılış süreci başlatıldı'), invalidate: [['offboarding']], onDone: onClose })
   return (
-    <Modal open onClose={onClose} title={tx('Ayrılış süreci başlat')} note={tx('Açık zimmetler kontrol listesine otomatik eklenir.')}
+    <Modal open onClose={onClose} title={tx('Ayrılış süreci başlat')} note={tx('Açık zimmetler iade listesine otomatik eklenir; süreç tamamlanınca giriş hesabı kapatılır.')}
       footer={<><Button variant="outline" onClick={onClose}>{tx('Vazgeç')}</Button><Button disabled={!emp || start.isPending} onClick={() => start.mutate(undefined)}>{tx('Başlat')}</Button></>}>
       <div className="space-y-4">
         <PersonSelect label={tx('Çalışan')} value={emp} onChange={setEmp} />
@@ -64,7 +65,7 @@ function CaseModal({ id, onClose }: { id: string; onClose: () => void }) {
   const [iv, setIv] = useState<ExitInterview>({})
   const [rehire, setRehire] = useState<boolean | null>(null)
   const saveIv = useAction(() => engagementApi.saveExitInterview(id, iv, rehire), { success: tx('Çıkış görüşmesi kaydedildi'), invalidate: [['offboarding']] })
-  const complete = useAction(() => engagementApi.completeOffboarding(id, true), { success: (r) => r.warning ?? tx('Süreç tamamlandı; çalışan “Ayrıldı” durumuna alındı'), invalidate: [['offboarding']], onDone: onClose })
+  const complete = useAction(() => engagementApi.completeOffboarding(id, true), { success: (r) => r.warning ?? tx('Süreç tamamlandı; çalışan “Ayrıldı” durumuna alındı, giriş hesabı kapatıldı'), invalidate: [['offboarding']], onDone: onClose })
   const c = q.data
   const showMoney = roles.some((r) => ['hr-admin', 'tenant-admin', 'platform-admin', 'ext-compensation-view'].includes(r))
   const Score = ({ k, label }: { k: keyof ExitInterview; label: string }) => (
@@ -73,7 +74,7 @@ function CaseModal({ id, onClose }: { id: string; onClose: () => void }) {
   )
   return (
     <Modal open onClose={onClose} size="xl" title={c ? tx('{0} — ayrılış', [c.employeeName]) : tx('Ayrılış')} note={c ? tx('{0} · son iş günü {1}', [offboardingReasonLabels[c.reason], formatDate(c.lastWorkingDay)]) : undefined}
-      footer={c?.status === 'Open' && <><Button variant="outline" onClick={onClose}>{tx('Kapat')}</Button><Button disabled={c.checklist.some((i) => !i.done) || complete.isPending} onClick={() => complete.mutate(undefined)}><LogOut className="size-4" />{' '}{tx('Süreci tamamla')}</Button></>}>
+      footer={c?.status === 'Open' && <><Button variant="outline" onClick={onClose}>{tx('Kapat')}</Button><Button disabled={c.checklist.some((i) => !i.done) || (c.assetChecks ?? []).some((a) => a.resolution === 'Open') || complete.isPending} onClick={() => complete.mutate(undefined)}><LogOut className="size-4" />{' '}{tx('Süreci tamamla')}</Button></>}>
       {!c ? <RowsSkeleton /> : (
         <div className="grid gap-6 lg:grid-cols-2">
           <div>
@@ -89,8 +90,10 @@ function CaseModal({ id, onClose }: { id: string; onClose: () => void }) {
                 </li>
               ))}
             </ul>
+            <div className="mt-6"><AssetReturnChecklist c={c} /></div>
           </div>
           <div className="space-y-6">
+            <AccountAndRetention c={c} />
             <div>
               <p className="mb-2 text-[14px] font-semibold">{tx('Çıkış görüşmesi')}</p>
               {c.exitInterview ? (
@@ -147,6 +150,9 @@ export function OffboardingPage() {
                     <div className="min-w-40 flex-1"><p className="text-[14px] font-medium">{c.employeeName}</p><p className="text-[12px] text-muted-foreground">{tx('{0} · son gün {1}', [offboardingReasonLabels[c.reason], formatDate(c.lastWorkingDay)])}</p></div>
                     <div className="w-48"><ProgressBar value={c.progress} tone={c.progress === 100 ? 'success' : 'info'} label={tx('{0}/{1} adım', [c.done, c.total])} /></div>
                     {c.hasInterview && <StatusBadge tone="info"><Check className="size-3" />{' '}{tx('görüşme')}</StatusBadge>}
+                    {(c.openAssets ?? 0) > 0 && <StatusBadge tone="warning">{tx('{0} zimmet bekliyor', [c.openAssets])}</StatusBadge>}
+                    {c.accountStatus === 'Disabled' && <StatusBadge tone="neutral">{tx('hesap kapalı')}</StatusBadge>}
+                    {c.status === 'Completed' && c.plannedAnonymizationOn && <span className="text-[12px] text-muted-foreground">{tx('imha: {0}', [formatDate(c.plannedAnonymizationOn)])}</span>}
                     <StatusBadge tone={c.status === 'Completed' ? 'success' : c.status === 'Open' ? 'warning' : 'neutral'}>{c.status === 'Completed' ? tx('Tamamlandı') : c.status === 'Open' ? tx('Açık') : tx('İptal')}</StatusBadge>
                   </button>
                 </motion.li>

@@ -11,14 +11,19 @@ namespace EngagementService.Controllers;
 
 /* ======================================================================
  * Anket ve eNPS. Anonim anketlerde yanıt, kişiyle eşleştirilemeyen bir
- * anahtarla (sha256) saklanır; departman kırılımı ve serbest metinler
- * yalnızca en az 3 yanıt olduğunda gösterilir (kimlik çıkarımını önler).
+ * anahtarla (sha256) saklanır. G18 (Dalga 5c): TÜM sonuç kırılımlarında en
+ * küçük grup 5 kişidir — toplam yanıt 5'ten azsa sonuç hiç gösterilmez,
+ * departman hücreleri 5'ten küçükse gizlenir (çıkarma saldırısına karşı
+ * ikincil gizleme de uygulanır), serbest metinler ve yerel duygu özeti
+ * yalnızca en az 5 metin yanıtta verilir. Duygu analizi sözlük tabanlıdır ve
+ * metin hiçbir dış servise gönderilmez.
  * ==================================================================== */
 [Route("api/surveys")]
 [Authorize]
 public class SurveysController : AppController
 {
-    public const int AnonymityThreshold = 3;
+    /// <summary>En küçük grup büyüklüğü (KVKK: kimlik çıkarımını önlemek için tüm kırılımlarda).</summary>
+    public const int AnonymityThreshold = 5;
     private readonly EngagementDbContext _db;
     public SurveysController(EngagementDbContext db) => _db = db;
 
@@ -160,6 +165,38 @@ public class SurveysController : AppController
         return Ok(new { ok = true });
     }
 
+    private async Task AuditViewAsync(Guid surveyId, string field, int count)
+    {
+        try
+        {
+            await Db.ExecuteAsync(
+                "INSERT INTO audit_log (\"TenantSlug\",\"Service\",\"EntityType\",\"EntityId\",\"Action\",\"Changes\",\"UserId\",\"UserName\",\"CorrelationId\",\"IpAddress\",\"OccurredAt\") " +
+                "VALUES ($1,'engagement-service','Survey',$2,'SensitiveViewed',$3::jsonb,$4,$5,$6,$7,now())", CancellationToken.None,
+                Tenant, surveyId.ToString(), System.Text.Json.JsonSerializer.Serialize(new { field, count }), Me.UserId, Me.Name,
+                Request.Headers["X-Correlation-Id"].FirstOrDefault() ?? HttpContext.TraceIdentifier, Request.Headers["X-Real-IP"].FirstOrDefault());
+        }
+        catch (Exception) { }
+    }
+
+    /// <summary>
+    /// Departman kırılımı: 5'ten küçük hücreler gizlenir. Gizlenen hücrelerin toplamı 1-4 ise
+    /// (toplamdan çıkarılarak bulunabilir) en küçük görünür hücre de gizlenir (ikincil gizleme).
+    /// Saf fonksiyon — birim testi var.
+    /// </summary>
+    public static HashSet<string> HiddenGroups(IReadOnlyDictionary<string, int> counts, int threshold = AnonymityThreshold)
+    {
+        var hidden = counts.Where(kv => kv.Value < threshold).Select(kv => kv.Key).ToHashSet();
+        var hiddenSum = counts.Where(kv => hidden.Contains(kv.Key)).Sum(kv => kv.Value);
+        while (hiddenSum is > 0 && hiddenSum < threshold)
+        {
+            var next = counts.Where(kv => !hidden.Contains(kv.Key)).OrderBy(kv => kv.Value).ThenBy(kv => kv.Key).FirstOrDefault();
+            if (next.Key is null) break;
+            hidden.Add(next.Key);
+            hiddenSum += next.Value;
+        }
+        return hidden;
+    }
+
     [HttpGet("{id:guid}/results")]
     [Authorize(Policy = "RequireHrAdmin")]
     public async Task<IActionResult> Results(Guid id, CancellationToken ct)
@@ -169,7 +206,18 @@ public class SurveysController : AppController
         var responses = await _db.SurveyResponses.AsNoTracking().Where(r => r.SurveyId == id).ToListAsync(ct);
         var n = responses.Count;
         var eligible = (await People.ListAsync(Tenant, ct)).Count;
+        var surveyDto = new { s.Id, s.Title, s.Kind, s.Status, s.IsAnonymous, s.ClosesAt };
 
+        // G18: 5'ten az yanıtta hiçbir kırılım (toplam dahil) gösterilmez.
+        if (n < AnonymityThreshold)
+            return Ok(new
+            {
+                survey = surveyDto, responseCount = n, eligible, participation = eligible == 0 ? 0 : (int)Math.Round(100.0 * n / eligible),
+                anonymityThreshold = AnonymityThreshold, hidden = true,
+                questions = Array.Empty<object>(), byDepartment = Array.Empty<object>(),
+            });
+
+        var textsShown = 0;
         object Summarize(SurveyQuestion q, IEnumerable<SurveyResponse> rs)
         {
             var ans = rs.SelectMany(r => r.Answers).Where(a => a.QuestionId == q.Id).ToList();
@@ -182,7 +230,7 @@ public class SurveysController : AppController
                     return new
                     {
                         q.Id, q.Text, q.Type, count = scores.Count,
-                        enps = scores.Count == 0 ? (int?)null : (int)Math.Round(100.0 * (promoters - detractors) / scores.Count),
+                        enps = scores.Count < AnonymityThreshold ? (int?)null : (int)Math.Round(100.0 * (promoters - detractors) / scores.Count),
                         promoters, passives = scores.Count - promoters - detractors, detractors,
                         distribution = Enumerable.Range(0, 11).Select(i => scores.Count(x => x == i)),
                     };
@@ -198,27 +246,78 @@ public class SurveysController : AppController
                     return new { q.Id, q.Text, q.Type, count = ans.Count, options = q.Options.Select(o => new { option = o, count = ans.Count(a => a.Choice == o) }) };
                 default:
                     var texts = ans.Where(a => a.Text != null).Select(a => a.Text!).OrderBy(_ => Random.Shared.Next()).ToList();
-                    return new { q.Id, q.Text, q.Type, count = texts.Count, texts = texts.Count >= AnonymityThreshold || !s.IsAnonymous ? texts : new List<string>(), hiddenForAnonymity = s.IsAnonymous && texts.Count is > 0 and < AnonymityThreshold };
+                    // Bireysel yorumlar ve duygu özeti yalnızca en az 5 metin yanıtta (anonim olsun olmasın).
+                    var enough = texts.Count >= AnonymityThreshold;
+                    if (enough) textsShown += texts.Count;
+                    TurkishSentiment.Summary? sum = enough ? TurkishSentiment.Summarize(texts) : null;
+                    return new
+                    {
+                        q.Id, q.Text, q.Type, count = texts.Count, texts = enough ? texts : new List<string>(),
+                        hiddenForAnonymity = texts.Count is > 0 and < AnonymityThreshold,
+                        sentiment = sum is null ? null : new
+                        {
+                            positive = sum.Positive, negative = sum.Negative, neutral = sum.Neutral,
+                            topKeywords = sum.TopKeywords.Select(k => new { word = k.Word, count = k.Count }),
+                            method = "Yerel sözlük tabanlı (metin dışarı gönderilmez)",
+                        },
+                    };
             }
         }
 
-        var byDept = responses.GroupBy(r => r.DepartmentName ?? "Belirtilmemiş")
+        var questions = s.Questions.Select(q => Summarize(q, responses)).ToList();
+        var groups = responses.GroupBy(r => r.DepartmentName ?? "Belirtilmemiş").ToDictionary(g => g.Key, g => g.ToList());
+        var hiddenDepts = HiddenGroups(groups.ToDictionary(g => g.Key, g => g.Value.Count));
+        var byDept = groups
             .Select(g => new
             {
-                department = g.Key, count = g.Count(),
-                hidden = g.Count() < AnonymityThreshold,
-                enps = g.Count() < AnonymityThreshold ? null : EnpsOf(s, g),
-                favorable = g.Count() < AnonymityThreshold ? null : FavorableOf(s, g),
-            }).OrderByDescending(x => x.count);
+                department = g.Key,
+                count = hiddenDepts.Contains(g.Key) ? (int?)null : g.Value.Count,
+                hidden = hiddenDepts.Contains(g.Key),
+                enps = hiddenDepts.Contains(g.Key) ? null : EnpsOf(s, g.Value),
+                favorable = hiddenDepts.Contains(g.Key) ? null : FavorableOf(s, g.Value),
+            }).OrderBy(x => x.hidden).ThenByDescending(x => x.count);
+        if (textsShown > 0) await AuditViewAsync(s.Id, "surveyComments", textsShown);
 
         return Ok(new
         {
-            survey = new { s.Id, s.Title, s.Kind, s.Status, s.IsAnonymous, s.ClosesAt },
+            survey = surveyDto,
             responseCount = n, eligible, participation = eligible == 0 ? 0 : (int)Math.Round(100.0 * n / eligible),
-            anonymityThreshold = AnonymityThreshold,
-            questions = s.Questions.Select(q => Summarize(q, responses)),
+            anonymityThreshold = AnonymityThreshold, hidden = false,
+            questions,
             byDepartment = byDept,
         });
+    }
+
+    /// <summary>
+    /// eNPS eğilimi: eNPS türündeki anketler zamana göre; yalnızca en az 5 eNPS yanıtı olanlar
+    /// (daha azı kimlik çıkarımına açık olduğundan "excluded" sayısına eklenir).
+    /// </summary>
+    [HttpGet("enps-trend")]
+    [Authorize(Policy = "RequireHrAdmin")]
+    public async Task<IActionResult> EnpsTrend(CancellationToken ct)
+    {
+        var surveys = await _db.Surveys.AsNoTracking().Where(x => x.Kind == "eNPS").ToListAsync(ct);
+        var ids = surveys.Select(x => x.Id).ToList();
+        var responses = await _db.SurveyResponses.AsNoTracking().Where(r => ids.Contains(r.SurveyId)).ToListAsync(ct);
+        var points = new List<object>();
+        var excluded = 0;
+        foreach (var sv in surveys.OrderBy(x => x.ClosesAt ?? x.CreatedAt))
+        {
+            var q = sv.Questions.FirstOrDefault(x => x.Type == "Nps");
+            if (q is null) continue;
+            var sc = responses.Where(r => r.SurveyId == sv.Id).SelectMany(r => r.Answers)
+                .Where(a => a.QuestionId == q.Id && a.Score != null).Select(a => a.Score!.Value).ToList();
+            if (sc.Count < AnonymityThreshold) { excluded++; continue; }
+            var pro = sc.Count(x => x >= 9);
+            var det = sc.Count(x => x <= 6);
+            points.Add(new
+            {
+                surveyId = sv.Id, sv.Title, date = sv.ClosesAt ?? sv.CreatedAt, responses = sc.Count,
+                enps = (int)Math.Round(100.0 * (pro - det) / sc.Count),
+                promotersPct = (int)Math.Round(100.0 * pro / sc.Count), detractorsPct = (int)Math.Round(100.0 * det / sc.Count),
+            });
+        }
+        return Ok(new { minResponses = AnonymityThreshold, points, excluded });
     }
 
     private static int? EnpsOf(Survey s, IEnumerable<SurveyResponse> rs)
@@ -264,13 +363,201 @@ public class OffboardingController : AppController
             c.Id, c.EmployeeId, c.EmployeeName, c.LastWorkingDay, c.Reason, c.Status, c.CreatedAt, c.CompletedAt,
             c.RehireEligible, progress = c.Checklist.Count == 0 ? 0 : (int)Math.Round(100.0 * c.Checklist.Count(i => i.Done) / c.Checklist.Count),
             total = c.Checklist.Count, done = c.Checklist.Count(i => i.Done), hasInterview = c.ExitInterview != null,
+            openAssets = c.AssetChecks.Count(a => a.Resolution == "Open"), c.AccountStatus, c.PlannedAnonymizationOn,
         }));
 
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> Get(Guid id, CancellationToken ct)
     {
-        var c = await _db.OffboardingCases.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
-        return c is null ? NotFound() : Ok(c);
+        var c = await _db.OffboardingCases.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (c is null) return NotFound();
+        if (c.Status == "Open" && await RefreshAssetsAsync(c, ct)) await _db.SaveChangesAsync(ct);
+        return Ok(c);
+    }
+
+    /* ------------------------------------------------------------ G15 yardımcılar */
+
+    private async Task AuditAsync(string entityId, string action, object changes)
+    {
+        try
+        {
+            await Db.ExecuteAsync(
+                "INSERT INTO audit_log (\"TenantSlug\",\"Service\",\"EntityType\",\"EntityId\",\"Action\",\"Changes\",\"UserId\",\"UserName\",\"CorrelationId\",\"IpAddress\",\"OccurredAt\") " +
+                "VALUES ($1,'engagement-service','OffboardingCase',$2,$3,$4::jsonb,$5,$6,$7,$8,now())", CancellationToken.None,
+                Tenant, entityId, action, System.Text.Json.JsonSerializer.Serialize(changes, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)),
+                Me.UserId, Me.Name, Request.Headers["X-Correlation-Id"].FirstOrDefault() ?? HttpContext.TraceIdentifier,
+                Request.Headers["X-Real-IP"].FirstOrDefault());
+        }
+        catch (Exception) { /* denetim yazılamazsa iş akışı bozulmaz */ }
+    }
+
+    /// <summary>"TerminatedEmployees" saklama politikası yoksa kullanılan süre (governance-service varsayılanıyla aynı).</summary>
+    public const int DefaultTerminatedRetentionMonths = 120;
+
+    /// <summary>Kiracının "TerminatedEmployees" saklama süresi (ay) ve son iş gününe göre anonimleştirme tarihi.</summary>
+    private async Task ApplyRetentionAsync(OffboardingCase c, CancellationToken ct)
+    {
+        var months = await Db.ScalarAsync(
+            """SELECT "RetentionMonths" FROM governance_retention_policies WHERE "TenantSlug" = $1 AND "Category" = 'TerminatedEmployees' LIMIT 1""",
+            ct, Tenant) is int m && m > 0 ? m : DefaultTerminatedRetentionMonths;
+        c.RetentionMonths = months;
+        c.PlannedAnonymizationOn = PlannedAnonymization(c.LastWorkingDay, months);
+    }
+
+    public static DateOnly PlannedAnonymization(DateOnly lastWorkingDay, int months) => lastWorkingDay.AddMonths(months);
+
+    /// <summary>
+    /// Zimmet listesini onboarding tablolarından yeniler: yeni açık zimmetler eklenir, iade
+    /// edilenler "Returned" olur; İK istisnası (Lost/WrittenOff) korunur. Değiştiyse true.
+    /// </summary>
+    private async Task<bool> RefreshAssetsAsync(OffboardingCase c, CancellationToken ct)
+    {
+        var rows = await Db.QueryAsync(
+            """
+            SELECT x."Id", x."AssetId", a."AssetTag", a."Type", a."Model", x."ReturnedOn", x."ConditionOnReturn"
+            FROM onboarding_asset_assignments x JOIN onboarding_assets a ON a."Id" = x."AssetId"
+            WHERE x."TenantSlug" = $1 AND x."EmployeeId" = $2 AND (x."ReturnedOn" IS NULL OR x."Id" = ANY($3))
+            """, r => (Id: r.GetGuid(0), AssetId: r.GetGuid(1), Tag: r.GetString(2), Type: r.GetString(3), Model: r.Str(4), Returned: r.Date(5), Cond: r.Str(6)),
+            ct, Tenant, c.EmployeeId, c.AssetChecks.Select(a => a.AssignmentId).ToArray());
+        var changed = false;
+        var list = c.AssetChecks.Select(a => new AssetCheck
+        {
+            AssignmentId = a.AssignmentId, AssetId = a.AssetId, AssetTag = a.AssetTag, Label = a.Label, Resolution = a.Resolution,
+            ReturnedOn = a.ReturnedOn, Note = a.Note, ResolvedBy = a.ResolvedBy, ResolvedAt = a.ResolvedAt,
+        }).ToList();
+        foreach (var r in rows)
+        {
+            var item = list.FirstOrDefault(a => a.AssignmentId == r.Id);
+            if (item is null)
+            {
+                list.Add(new AssetCheck
+                {
+                    AssignmentId = r.Id, AssetId = r.AssetId, AssetTag = r.Tag,
+                    Label = $"{r.Type}{(string.IsNullOrWhiteSpace(r.Model) ? "" : " " + r.Model)} ({r.Tag})",
+                    Resolution = r.Returned is null ? "Open" : "Returned", ReturnedOn = r.Returned,
+                });
+                changed = true;
+            }
+            else if (item.Resolution == "Open" && r.Returned is not null)
+            {
+                item.Resolution = "Returned";
+                item.ReturnedOn = r.Returned;
+                item.Note = r.Cond;
+                changed = true;
+            }
+        }
+        if (changed)
+        {
+            c.AssetChecks = list;
+            if (_db.Entry(c).State != EntityState.Detached) _db.Entry(c).Property(x => x.AssetChecks).IsModified = true;
+        }
+        return changed;
+    }
+
+    public record AssetOverrideInput(string Resolution, string Note);
+
+    /// <summary>
+    /// İK istisnası: iade edilemeyen zimmet "kayıp" ya da "kayıttan düşüldü" olarak işaretlenir
+    /// (gerekçe zorunlu, denetim kaydına yazılır). Zimmet kaydı onboarding-service'te de kapatılır.
+    /// </summary>
+    [HttpPatch("{id:guid}/assets/{assignmentId:guid}")]
+    public async Task<IActionResult> OverrideAsset(Guid id, Guid assignmentId, AssetOverrideInput body, CancellationToken ct)
+    {
+        if (!Me.IsHr) return StatusCode(403, new { message = "Zimmet istisnasını yalnızca İK işaretleyebilir" });
+        if (body.Resolution is not ("Lost" or "WrittenOff")) return BadRequest(new { message = "Durum Lost ya da WrittenOff olmalı" });
+        if (string.IsNullOrWhiteSpace(body.Note) || body.Note.Trim().Length < 5 || body.Note.Length > 500)
+            return BadRequest(new { message = "Gerekçe zorunlu (5-500 karakter)" });
+        var c = await _db.OffboardingCases.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (c is null) return NotFound();
+        if (c.Status != "Open") return BadRequest(new { message = "Süreç kapalı." });
+        await RefreshAssetsAsync(c, ct);
+        var item = c.AssetChecks.FirstOrDefault(a => a.AssignmentId == assignmentId);
+        if (item is null) return NotFound(new { message = "Zimmet bu süreçte yok" });
+        if (item.Resolution == "Returned") return Conflict(new { message = "Bu zimmet zaten iade edilmiş" });
+
+        string? warning = null;
+        var url = (Environment.GetEnvironmentVariable("ONBOARDING_SERVICE_URL") ?? "http://onboarding-service:8080") + $"/api/assets/{item.AssetId}/write-off";
+        var req = new HttpRequestMessage(HttpMethod.Post, url) { Content = JsonContent.Create(new { kind = body.Resolution, note = body.Note.Trim() }) };
+        req.Headers.TryAddWithoutValidation("Authorization", Request.Headers.Authorization.ToString());
+        try
+        {
+            var res = await _http.CreateClient().SendAsync(req, ct);
+            if (!res.IsSuccessStatusCode) warning = $"Zimmet kaydı güncellenemedi (HTTP {(int)res.StatusCode}); Zimmet ekranından elle kapatın.";
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException) { warning = "Zimmet servisine ulaşılamadı; Zimmet ekranından elle kapatın."; }
+
+        c.AssetChecks = c.AssetChecks.Select(a => a.AssignmentId == assignmentId
+            ? new AssetCheck { AssignmentId = a.AssignmentId, AssetId = a.AssetId, AssetTag = a.AssetTag, Label = a.Label, Resolution = body.Resolution,
+                Note = body.Note.Trim(), ResolvedBy = Me.Name, ResolvedAt = DateTime.UtcNow }
+            : a).ToList();
+        _db.Entry(c).Property(x => x.AssetChecks).IsModified = true;
+        await _db.SaveChangesAsync(ct);
+        await AuditAsync(c.Id.ToString(), "AssetOverride", new { assignmentId, item.AssetTag, resolution = body.Resolution, note = body.Note.Trim() });
+        return Ok(new { c.AssetChecks, warning });
+    }
+
+    /// <summary>Çalışanın Keycloak hesabını tenant-service iç ucuyla kapatır ve oturumlarını sonlandırır.</summary>
+    private async Task DisableAccountAsync(OffboardingCase c, CancellationToken ct)
+    {
+        var emp = await People.FindAsync(Tenant, c.EmployeeId, ct);
+        if (string.IsNullOrEmpty(emp?.UserId))
+        {
+            c.AccountStatus = "NoAccount";
+            c.AccountNote = "Çalışanın giriş hesabı yok";
+            await AuditAsync(c.Id.ToString(), "AccountDisableSkipped", new { reason = "noAccount" });
+            return;
+        }
+        var token = Environment.GetEnvironmentVariable("INTERNAL_SERVICE_TOKEN");
+        if (string.IsNullOrEmpty(token))
+        {
+            c.AccountStatus = "Failed";
+            c.AccountNote = "Sunucuda INTERNAL_SERVICE_TOKEN tanımlı değil; hesabı Güvenlik ekranından elle kapatın.";
+            await AuditAsync(c.Id.ToString(), "AccountDisableFailed", new { reason = "noInternalToken" });
+            return;
+        }
+        var url = (Environment.GetEnvironmentVariable("TENANT_SERVICE_URL") ?? "http://tenant-service:8080") + "/internal/users/disable";
+        var req = new HttpRequestMessage(HttpMethod.Post, url)
+        {
+            Content = JsonContent.Create(new { tenantSlug = Tenant, keycloakUserId = emp.UserId, reason = "offboarding" }),
+        };
+        req.Headers.Add("X-Internal-Token", token);
+        try
+        {
+            var res = await _http.CreateClient().SendAsync(req, ct);
+            if (res.IsSuccessStatusCode)
+            {
+                c.AccountStatus = "Disabled";
+                c.AccountDisabledAt = DateTime.UtcNow;
+                c.AccountNote = "Hesap kapatıldı, tüm oturumlar sonlandırıldı";
+                await AuditAsync(c.Id.ToString(), "AccountDisabled", new { sessionsEnded = true });
+            }
+            else
+            {
+                var detail = (int)res.StatusCode == 409 ? " (korumalı hesap)" : "";
+                c.AccountStatus = "Failed";
+                c.AccountNote = $"Hesap kapatılamadı (HTTP {(int)res.StatusCode}){detail}; Güvenlik ekranından elle kapatın.";
+                await AuditAsync(c.Id.ToString(), "AccountDisableFailed", new { status = (int)res.StatusCode });
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            c.AccountStatus = "Failed";
+            c.AccountNote = "Kimlik servisine ulaşılamadı; yeniden deneyin.";
+            await AuditAsync(c.Id.ToString(), "AccountDisableFailed", new { reason = "unreachable" });
+        }
+    }
+
+    /// <summary>Tamamlanmış süreçte başarısız olan hesap kapatmayı yeniden dener (İK).</summary>
+    [HttpPost("{id:guid}/disable-account")]
+    public async Task<IActionResult> RetryDisable(Guid id, CancellationToken ct)
+    {
+        if (!Me.IsHr) return Forbid();
+        var c = await _db.OffboardingCases.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (c is null) return NotFound();
+        if (c.Status != "Completed") return BadRequest(new { message = "Hesap, süreç tamamlanınca kapatılır." });
+        await DisableAccountAsync(c, ct);
+        await _db.SaveChangesAsync(ct);
+        return Ok(new { c.AccountStatus, c.AccountDisabledAt, c.AccountNote });
     }
 
     public record CreateInput(Guid EmployeeId, DateOnly LastWorkingDay, string Reason);
@@ -285,13 +572,6 @@ public class OffboardingController : AppController
         if (await _db.OffboardingCases.AnyAsync(c => c.EmployeeId == emp.Id && c.Status == "Open", ct))
             return Conflict(new { message = "Bu çalışan için açık bir ayrılış süreci var." });
 
-        var assets = await Db.QueryAsync(
-            """
-            SELECT a."AssetTag", a."Type", a."Model" FROM onboarding_asset_assignments x
-            JOIN onboarding_assets a ON a."Id" = x."AssetId"
-            WHERE x."TenantSlug" = $1 AND x."EmployeeId" = $2 AND x."ReturnedOn" IS NULL
-            """, r => $"{r.Str(1)} {r.Str(2)} ({r.Str(0)})".Trim(), ct, Tenant, emp.Id);
-
         var checklist = new List<ChecklistItem>
         {
             new() { Key = "handover", Title = "Devir-teslim planı ve dokümantasyon", Owner = "Yönetici" },
@@ -303,14 +583,17 @@ public class OffboardingController : AppController
             new() { Key = "certificate", Title = "Çalışma belgesi (İş K. m.28)", Owner = "İK" },
             new() { Key = "release", Title = "İbraname / ayrılış evrakı", Owner = "İK" },
         };
-        checklist.InsertRange(1, assets.Select((a, i) => new ChecklistItem { Key = $"asset-{i}", Title = $"Zimmet iadesi: {a}", Owner = "Çalışan" }));
-
+        // G15: zimmetler ayrı bir iade kontrol listesinde izlenir (AssetChecks) - iade edilmeden
+        // ya da İK istisnasıyla kapatılmadan süreç tamamlanamaz.
         var c = new OffboardingCase
         {
             EmployeeId = emp.Id, EmployeeName = emp.Name, LastWorkingDay = body.LastWorkingDay, Reason = body.Reason, Checklist = checklist,
         };
+        await RefreshAssetsAsync(c, ct);
+        await ApplyRetentionAsync(c, ct);
         _db.OffboardingCases.Add(c);
         await _db.SaveChangesAsync(ct);
+        await AuditAsync(c.Id.ToString(), "RetentionPlanned", new { c.RetentionMonths, c.PlannedAnonymizationOn, assets = c.AssetChecks.Count });
         return Ok(c);
     }
 
@@ -358,13 +641,23 @@ public class OffboardingController : AppController
     /// "Terminated" yapılır.
     /// </summary>
     [HttpPost("{id:guid}/complete")]
-    public async Task<IActionResult> Complete(Guid id, [FromQuery] bool terminate = true, CancellationToken ct = default)
+    public async Task<IActionResult> Complete(Guid id, [FromQuery] bool terminate = true, [FromQuery] bool disableAccount = true, CancellationToken ct = default)
     {
         var c = await _db.OffboardingCases.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (c is null) return NotFound();
         if (c.Status != "Open") return BadRequest(new { message = "Süreç zaten kapalı." });
         var open = c.Checklist.Where(i => !i.Done).Select(i => i.Title).ToList();
         if (open.Count > 0) return BadRequest(new { message = $"Tamamlanmamış adımlar var: {string.Join(", ", open.Take(3))}{(open.Count > 3 ? "…" : "")}" });
+
+        // G15 (2): zimmetlerin tamamı iade edilmiş ya da İK istisnasıyla kapatılmış olmalı.
+        await RefreshAssetsAsync(c, ct);
+        var openAssets = c.AssetChecks.Where(a => a.Resolution == "Open").Select(a => a.AssetTag).ToList();
+        if (openAssets.Count > 0)
+        {
+            await _db.SaveChangesAsync(ct);
+            return BadRequest(new { message = $"İade edilmemiş zimmetler var: {string.Join(", ", openAssets.Take(5))}. İade alın ya da İK olarak kayıp/kayıttan düşme işaretleyin.", code = "assets_open" });
+        }
+        await AuditAsync(c.Id.ToString(), "AssetsVerified", new { total = c.AssetChecks.Count, overrides = c.AssetChecks.Count(a => a.Resolution is "Lost" or "WrittenOff") });
 
         string? warning = null;
         if (terminate)
@@ -385,10 +678,26 @@ public class OffboardingController : AppController
                 warning = "Çalışan servisine ulaşılamadı; durumu elle güncelleyin.";
             }
         }
+
+        // G15 (1): giriş hesabını kapat, oturumları sonlandır.
+        if (disableAccount) await DisableAccountAsync(c, ct);
+        else
+        {
+            c.AccountStatus = "Skipped";
+            c.AccountNote = "Hesap kapatma bu tamamlamada atlandı";
+            await AuditAsync(c.Id.ToString(), "AccountDisableSkipped", new { reason = "requested" });
+        }
+        if (c.AccountStatus == "Failed") warning = string.Join(" ", new[] { warning, c.AccountNote }.Where(x => x is not null));
+
+        // G15 (3): imha planı - saklama süresi tamamlanma anındaki politikaya göre yeniden hesaplanır.
+        await ApplyRetentionAsync(c, ct);
+        await AuditAsync(c.Id.ToString(), "RetentionPlanned", new { c.RetentionMonths, c.PlannedAnonymizationOn });
+
         c.Status = "Completed";
         c.CompletedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
-        return Ok(new { c.Status, warning });
+        await AuditAsync(c.Id.ToString(), "Completed", new { terminate, c.AccountStatus });
+        return Ok(new { c.Status, warning, c.AccountStatus, c.AccountNote, c.PlannedAnonymizationOn, c.RetentionMonths });
     }
 
     [HttpPost("{id:guid}/cancel")]

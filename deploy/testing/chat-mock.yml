@@ -42,3 +42,18 @@ services:
   compensation-service:
     environment:
       EXPORT_PURGE_MINUTES: "1"
+  learning-service:
+    environment:
+      # Sertifika bitiş hatırlatmaları 3 sn'de bir (üretimde saatte bir).
+      CERT_REMINDER_SECONDS: "3"
+  recruitment-service:
+    environment:
+      # Kariyer sayfası istek sınırı testte kısa pencereli (üretimde 10 istek / 10 dk);
+      # imha işçisi dakikada bir (üretimde 6 saatte bir).
+      RECRUITMENT_PUBLIC_RATE_LIMIT: "25"
+      RECRUITMENT_PUBLIC_RATE_WINDOW_SECONDS: "30"
+      RECRUITMENT_RETENTION_INTERVAL_MINUTES: "1"
+  onboarding-service:
+    environment:
+      # Ilk gun karsilama ve zimmet iade hatirlatma isleri 3 sn'de bir (uretimde 15 dk).
+      ONBOARDING_JOBS_SECONDS: "3"

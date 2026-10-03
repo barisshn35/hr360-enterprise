@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { LoaderCircle, Plus } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -394,6 +395,7 @@ function ExpiringRow({ cert }: { cert: Certification }) {
 
 export function LearningPage() {
   const { can } = useAuth()
+  const navigate = useNavigate()
   const [tab, setTab] = useTabParam<TabKey>('gorunum', 'katalog')
   const [category, setCategory] = useState<string>(ALL)
   const [mandatoryOnly, setMandatoryOnly] = useState(false)
@@ -596,16 +598,19 @@ export function LearningPage() {
               <span className="text-[13px] whitespace-nowrap">{tx('Yalnızca zorunlu')}</span>
             </label>
           }
-          rowActions={
-            can('learning:enroll')
+          onRowClick={(c) => navigate(`/panel/egitim/${c.id}`)}
+          rowActions={[
+            // Y20: modüller (video, metin, sınav, SCORM) ve ilerleme.
+            { label: tx('İçeriği aç'), onSelect: (c) => navigate(`/panel/egitim/${c.id}`) },
+            ...(can('learning:enroll')
               ? [
                   {
                     label: tx('Bu eğitime kaydol'),
-                    onSelect: (c) => setEnrollFor({ id: c.id, title: c.title }),
+                    onSelect: (c: Course) => setEnrollFor({ id: c.id, title: c.title }),
                   },
                 ]
-              : undefined
-          }
+              : []),
+          ]}
         />
       )}
 
@@ -618,6 +623,7 @@ export function LearningPage() {
           error={certifications.error}
           onRetry={() => void certifications.refetch()}
           searchPlaceholder={tx('Sertifika, kurum, belge no veya çalışan')}
+          rowActions={[{ label: tx('Yazdırılabilir sertifika'), onSelect: (c) => navigate(`/panel/egitim/sertifika/${c.id}`) }]}
           exportFileName="sertifikalar"
           emptyTitle={tx('Sertifika kaydı yok')}
           emptyDetail={tx('Çalışanların aldığı sertifikaları buraya ekleyin.')}

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { LoaderCircle, Plus, Users } from 'lucide-react'
+import { ExternalLink, LoaderCircle, Plus, Users } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/button'
 import { DataTable, type Column } from '@/components/ui/DataTable'
@@ -214,7 +214,7 @@ function NewPostingModal({ open, onClose }: { open: boolean; onClose: () => void
 }
 
 export function JobPostingsPage() {
-  const { can } = useAuth()
+  const { can, tenantSlug } = useAuth()
   const navigate = useNavigate()
   const [tab, setTab] = useTabParam<TabKey>('durum', 'Published')
   const [modalOpen, setModalOpen] = useState(false)
@@ -281,6 +281,14 @@ export function JobPostingsPage() {
         description={tx('Açık ilanlar, başvurular ve mülakat süreci.')}
         actions={
           <>
+            {tenantSlug && (
+              <Button variant="ghost" className="cursor-pointer" asChild>
+                <a href={`/kariyer/${tenantSlug}`} target="_blank" rel="noreferrer noopener" title={tx('Yayındaki ilanlar oturum gerektirmeyen bu sayfada listelenir')}>
+                  <ExternalLink className="size-4" />
+                  {tx('Kariyer sayfası')}
+                </a>
+              </Button>
+            )}
             <Button variant="outline" className="cursor-pointer" asChild>
               <Link to="/panel/ise-alim/adaylar">
                 <Users className="size-4" />

@@ -1,4 +1,5 @@
 import { Suspense, lazy, type ComponentType, type ReactNode } from 'react'
+import { tx } from '@/lib/i18n'
 import { BrowserRouter, Navigate, Outlet, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ApiError } from '@/api/client'
@@ -8,7 +9,9 @@ import { RequirePermission } from '@/auth/RequirePermission'
 import type { Permission, Role } from '@/auth/roles'
 import { AppShell } from '@/components/layout/AppShell'
 import { ToastProvider } from '@/components/ui/Toast'
-import { CenteredSpinner, FullPageSpinner } from '@/components/ui/States'
+import { CenteredSpinner, EmptyState, FullPageSpinner } from '@/components/ui/States'
+import { useAuth } from '@/auth/useAuth'
+import { Building2 } from 'lucide-react'
 import { ErrorBoundary } from '@/app/ErrorBoundary'
 import { DashboardPage } from '@/features/dashboard/DashboardPage'
 import { NotFoundPage } from '@/features/NotFoundPage'
@@ -48,9 +51,14 @@ const EmployeeDetailPage = page(() => import('@/features/employees/EmployeeDetai
 const JobPostingsPage = page(() => import('@/features/recruitment/JobPostingsPage'), 'JobPostingsPage')
 const JobPostingDetailPage = page(() => import('@/features/recruitment/JobPostingDetailPage'), 'JobPostingDetailPage')
 const CandidatesPage = page(() => import('@/features/recruitment/CandidatesPage'), 'CandidatesPage')
+const CareerPage = page(() => import('@/features/recruitment/CareerPages'), 'CareerPage')
+const CandidateSelfServicePage = page(() => import('@/features/recruitment/CareerPages'), 'CandidateSelfServicePage')
+const MyInterviewsPage = page(() => import('@/features/recruitment/RecruitmentPlus'), 'MyInterviewsPage')
 const OnboardingPage = page(() => import('@/features/onboarding/OnboardingPage'), 'OnboardingPage')
 const OnboardingPlanPage = page(() => import('@/features/onboarding/OnboardingPlanPage'), 'OnboardingPlanPage')
 const AssetsPage = page(() => import('@/features/onboarding/AssetsPage'), 'AssetsPage')
+const AssetScanPage = page(() => import('@/features/onboarding/AssetOps'), 'AssetScanPage')
+const ShiftSwapPage = page(() => import('@/features/timeshift/ShiftSwapPage'), 'ShiftSwapPage')
 const PerformanceIndex = page(() => import('@/features/performance/PerformanceIndex'), 'PerformanceIndex')
 const MetricsPage = page(() => import('@/features/performance/metrics/MetricsPage'), 'MetricsPage')
 const TeamsPage = page(() => import('@/features/performance/teams/TeamsPage'), 'TeamsPage')
@@ -66,6 +74,10 @@ const RecommendationsPage = page(() => import('@/features/performance/recommenda
 const MyPerformancePage = page(() => import('@/features/performance/me/MyPerformancePage'), 'MyPerformancePage')
 const ScoringSettingsPage = page(() => import('@/features/performance/settings/ScoringSettingsPage'), 'ScoringSettingsPage')
 const LearningPage = page(() => import('@/features/learning/LearningPage'), 'LearningPage')
+const CoursePlayerPage = page(() => import('@/features/learning/CoursePlayerPage'), 'CoursePlayerPage')
+const CertificatePage = page(() => import('@/features/learning/CertificatePage'), 'CertificatePage')
+const CompetencyMatrixPage = page(() => import('@/features/learning/CompetencyMatrixPage'), 'CompetencyMatrixPage')
+const NineBoxPage = page(() => import('@/features/performance/ninebox/NineBoxPage'), 'NineBoxPage')
 const CompensationPage = page(() => import('@/features/compensation/CompensationPage'), 'CompensationPage')
 const PayrollPage = page(() => import('@/features/compensation/PayrollPage'), 'PayrollPage')
 const PayrollPeriodPage = page(() => import('@/features/compensation/PayrollPage'), 'PayrollPeriodPage')
@@ -118,6 +130,14 @@ const ApiDocsPage = page(() => import('@/features/governance/ApiDocsPage'), 'Api
 const BillingPage = page(() => import('@/features/governance/BillingPage'), 'BillingPage')
 const PlatformInvoicesPage = page(() => import('@/features/governance/BillingPage'), 'PlatformInvoicesPage')
 const OrgPresentationPage = page(() => import('@/features/organization/OrgPresentationPage'), 'OrgPresentationPage')
+// Dalga 5c — işyeri uyumu (governance-service)
+const AnnouncementsPage = page(() => import('@/features/compliance/AnnouncementsPage'), 'AnnouncementsPage')
+const LibraryPage = page(() => import('@/features/compliance/LibraryPage'), 'LibraryPage')
+const EthicsInboxPage = page(() => import('@/features/compliance/EthicsPages'), 'EthicsInboxPage')
+const PublicEthicsPage = page(() => import('@/features/compliance/EthicsPages'), 'PublicEthicsPage')
+const OshPage = page(() => import('@/features/compliance/OshPage'), 'OshPage')
+const DisciplinaryPage = page(() => import('@/features/compliance/DisciplinaryPage'), 'DisciplinaryPage')
+const MyDefencesPage = page(() => import('@/features/compliance/DisciplinaryPage'), 'MyDefencesPage')
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -134,6 +154,13 @@ const queryClient = new QueryClient({
 })
 
 /** Rota tanımlarını kısaltır; izin kontrolü tek kapıdan geçer. */
+/** Şirkete bağlı veri gösteren ekranlar: kiracısız oturumda (platform yöneticisi) boş durum gösterir. */
+function TenantOnly({ children }: { children: ReactNode }) {
+  const { tenantSlug } = useAuth()
+  if (!tenantSlug) return <EmptyState icon={Building2} title={tx('Şirket seçilmedi')} detail={tx('Bu ekran bir şirket seçildiğinde kullanılabilir.')} />
+  return <>{children}</>
+}
+
 function guarded(permission: Permission, element: ReactNode, requireRoles?: Role[]) {
   return (
     <RequirePermission permission={permission} requireRoles={requireRoles}>
@@ -174,7 +201,12 @@ export function App() {
                 {/* Belge doğrulama ve e-postadan tek tıkla karar: oturum gerekmez (kişisel veri göstermez). */}
                 <Route path="/belge-dogrula" element={<Suspense fallback={<FullPageSpinner />}><VerifyDocumentPage /></Suspense>} />
                 <Route path="/belge-dogrula/:code" element={<Suspense fallback={<FullPageSpinner />}><VerifyDocumentPage /></Suspense>} />
+                {/* Y15 anonim etik hattı: oturum gerektirmez */}
+                <Route path="/etik/:tenant" element={<Suspense fallback={<FullPageSpinner />}><PublicEthicsPage /></Suspense>} />
                 <Route path="/onay-eposta" element={<Suspense fallback={<FullPageSpinner />}><EmailDecisionPage /></Suspense>} />
+                {/* Kariyer sayfası ve aday öz-hizmeti (Y16): oturum gerekmez; aday bağlantısı yalnızca jeton özetiyle eşlenir. */}
+                <Route path="/kariyer/:tenant" element={<Suspense fallback={<FullPageSpinner />}><CareerPage /></Suspense>} />
+                <Route path="/kariyer/:tenant/basvuru/:token" element={<Suspense fallback={<FullPageSpinner />}><CandidateSelfServicePage /></Suspense>} />
 
                 {/* --------------------------- Oturum gerektiren --------------------------- */}
                 <Route
@@ -217,6 +249,7 @@ export function App() {
 
                     <Route path="puantaj" element={guarded('timeshift:view', <TimesheetPage />)} />
                     <Route path="giris-cikis" element={guarded('timeshift:clock', <TimeClockPage />)} />
+                    <Route path="vardiya-takasi" element={guarded('timeshift:view', <ShiftSwapPage />)} />
                     <Route path="giris-cikis/yonetim" element={guarded('employee:manage', <TimeClockAdminPage />)} />
                     <Route
                       path="vardiya-motoru"
@@ -247,6 +280,8 @@ export function App() {
                     />
 
                     {/* "adaylar" ilan kimliğinden ÖNCE eşleşmeli */}
+                    {/* Görüşmeci olan her çalışan (yönetici olmasa da) kendi mülakatlarını görür. */}
+                    <Route path="mulakatlarim" element={<MyInterviewsPage />} />
                     <Route path="ise-alim" element={guarded('recruitment:view', <JobPostingsPage />)} />
                     <Route
                       path="ise-alim/adaylar"
@@ -263,6 +298,7 @@ export function App() {
                       element={guarded('onboarding:view', <OnboardingPlanPage />)}
                     />
                     <Route path="zimmet" element={guarded('onboarding:view', <AssetsPage />)} />
+                    <Route path="zimmet/tara" element={<AssetScanPage />} />
 
                     {/* ------------------------------ Performans ------------------------------ */}
                     <Route path="performans" element={guarded('performance:view', <PerformanceIndex />)} />
@@ -287,8 +323,12 @@ export function App() {
                     <Route path="performans/geri-bildirim" element={guarded('performance:view', <FeedbackPage />)} />
                     <Route path="performans/oneriler" element={guarded('performance:manage', <RecommendationsPage />)} />
                     <Route path="performans/benim" element={guarded('performance:view', <MyPerformancePage />)} />
+                    <Route path="performans/dokuz-kutu" element={guarded('performance:manage', <NineBoxPage />)} />
 
                     <Route path="egitim" element={guarded('learning:view', <LearningPage />)} />
+                    <Route path="egitim/sertifika/:id" element={guarded('learning:view', <CertificatePage />)} />
+                    <Route path="egitim/:courseId" element={guarded('learning:view', <CoursePlayerPage />)} />
+                    <Route path="yetkinlikler" element={guarded('learning:view', <CompetencyMatrixPage />)} />
 
                     {/* Ücret hassas veri — yalnızca İK yönetimi */}
                     <Route path="ucret" element={guarded('compensation:view', <CompensationPage />)} />
@@ -375,6 +415,14 @@ export function App() {
                     <Route path="api-belgeleri" element={guarded('employee:manage', <ApiDocsPage />)} />
                     <Route path="abonelik" element={guarded('tenant:manage', <PlanGate feature="billing"><BillingPage /></PlanGate>)} />
                     <Route path="platform/faturalar" element={guarded('platform:manage', <PlanGate feature="billing"><PlatformInvoicesPage /></PlanGate>)} />
+
+                    {/* ---------------- İşyeri uyumu (Dalga 5c) ---------------- */}
+                    <Route path="duyurular" element={<TenantOnly><AnnouncementsPage /></TenantOnly>} />
+                    <Route path="belgeler-kutuphanesi" element={<TenantOnly><LibraryPage /></TenantOnly>} />
+                    <Route path="etik" element={<TenantOnly><EthicsInboxPage /></TenantOnly>} />
+                    <Route path="isg" element={<TenantOnly><OshPage /></TenantOnly>} />
+                    <Route path="disiplin" element={guarded('performance:manage', <TenantOnly><DisciplinaryPage /></TenantOnly>, ['manager', 'hr-admin', 'tenant-admin', 'platform-admin'])} />
+                    <Route path="disiplin/savunmalarim" element={<TenantOnly><MyDefencesPage /></TenantOnly>} />
 
                     <Route path="404" element={<NotFoundPage />} />
                     <Route path="*" element={<Navigate to="/panel/404" replace />} />

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { LoaderCircle, Plus } from 'lucide-react'
+import { LoaderCircle, Plus, Printer, ScanLine } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -24,6 +24,8 @@ import {
 import { formatDate, fullName } from '@/lib/format'
 import { localISODate } from '@/lib/dates'
 import { tx } from '@/lib/i18n'
+import { Link } from 'react-router-dom'
+import { AssetDuePanels, ExpectedReturnModal, MaintenanceModal, QrLabelsModal } from './AssetOps'
 
 type TabKey = AssetStatus | 'all'
 
@@ -145,6 +147,7 @@ function AssignModal({ asset, onClose }: { asset: Asset | null; onClose: () => v
   const queryClient = useQueryClient()
   const [employeeId, setEmployeeId] = useState('')
   const [assignedOn, setAssignedOn] = useState(localISODate())
+  const [expectedReturnOn, setExpectedReturnOn] = useState('')
   const [notes, setNotes] = useState('')
   const [error, setError] = useState<string | undefined>()
 
@@ -154,6 +157,7 @@ function AssignModal({ asset, onClose }: { asset: Asset | null; onClose: () => v
         employeeId,
         assignedOn,
         notes: notes.trim() || undefined,
+        expectedReturnOn: expectedReturnOn || undefined,
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['onboarding'] })
@@ -161,6 +165,7 @@ function AssignModal({ asset, onClose }: { asset: Asset | null; onClose: () => v
       onClose()
       setEmployeeId('')
       setNotes('')
+      setExpectedReturnOn('')
     },
     onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Zimmet atanamadı.')),
   })
@@ -216,6 +221,14 @@ function AssignModal({ asset, onClose }: { asset: Asset | null; onClose: () => v
           required
           value={assignedOn}
           onChange={(e) => setAssignedOn(e.target.value)}
+        />
+        <TextField
+          id="assign-expected"
+          label={tx('Beklenen iade tarihi')}
+          type="date"
+          hint={tx('İsteğe bağlı. Tarihten önce ve geçince hatırlatma gider.')}
+          value={expectedReturnOn}
+          onChange={(e) => setExpectedReturnOn(e.target.value)}
         />
         <TextAreaField
           id="assign-notes"
@@ -323,6 +336,9 @@ export function AssetsPage() {
   const [newOpen, setNewOpen] = useState(false)
   const [assignFor, setAssignFor] = useState<Asset | null>(null)
   const [returnFor, setReturnFor] = useState<Asset | null>(null)
+  const [labelsFor, setLabelsFor] = useState<Asset[] | null>(null)
+  const [maintFor, setMaintFor] = useState<Asset | null>(null)
+  const [expFor, setExpFor] = useState<Asset | null>(null)
 
   const assets = useAssets({ status: tab === 'all' ? undefined : tab })
   const employees = useEmployees({ enabled: can('employee:viewAll') })
@@ -405,12 +421,23 @@ export function AssetsPage() {
         title={tx('Zimmet')}
         description={tx('Demirbaş envanteri, atama ve iade kayıtları.')}
         actions={
-          canManage && (
-            <Button className="cursor-pointer" onClick={() => setNewOpen(true)}>
-              <Plus className="size-4" />
-              {tx('Yeni demirbaş')}
+          <>
+            <Button variant="outline" className="cursor-pointer" asChild>
+              <Link to="/panel/zimmet/tara"><ScanLine className="size-4" />{tx('QR okut')}</Link>
             </Button>
-          )
+            {canManage && (
+              <Button variant="outline" className="cursor-pointer" onClick={() => setLabelsFor(assets.data ?? [])} disabled={!assets.data?.length}>
+                <Printer className="size-4" />
+                {tx('Etiketleri yazdır')}
+              </Button>
+            )}
+            {canManage && (
+              <Button className="cursor-pointer" onClick={() => setNewOpen(true)}>
+                <Plus className="size-4" />
+                {tx('Yeni demirbaş')}
+              </Button>
+            )}
+          </>
         }
       />
 
@@ -448,12 +475,24 @@ export function AssetsPage() {
                   hidden: (a) => a.status !== 'Assigned',
                   onSelect: (a) => setReturnFor(a),
                 },
+                {
+                  label: tx('Beklenen iade tarihi'),
+                  hidden: (a) => a.status !== 'Assigned',
+                  onSelect: (a) => setExpFor(a),
+                },
+                { label: tx('QR etiketi'), onSelect: (a) => setLabelsFor([a]) },
+                { label: tx('Bakım kayıtları'), onSelect: (a) => setMaintFor(a) },
               ]
             : undefined
         }
       />
 
+      {canManage && <AssetDuePanels />}
+
       <NewAssetModal open={newOpen} onClose={() => setNewOpen(false)} />
+      {labelsFor && <QrLabelsModal assets={labelsFor} onClose={() => setLabelsFor(null)} />}
+      {maintFor && <MaintenanceModal asset={maintFor} onClose={() => setMaintFor(null)} />}
+      {expFor && <ExpectedReturnModal asset={expFor} onClose={() => setExpFor(null)} />}
       <AssignModal asset={assignFor} onClose={() => setAssignFor(null)} />
       <ReturnModal asset={returnFor} onClose={() => setReturnFor(null)} />
     </div>

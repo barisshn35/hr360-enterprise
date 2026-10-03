@@ -14,10 +14,15 @@ public class CoursesController : ControllerBase
 {
     private readonly LearningDbContext _db;
     private readonly EmployeeDirectoryClient _employees;
-    public CoursesController(LearningDbContext db, EmployeeDirectoryClient employees)
+    private readonly LearningDirectory _dir;
+    private readonly LearningService.Tenancy.ITenantContext _tenant;
+    public CoursesController(LearningDbContext db, EmployeeDirectoryClient employees, LearningDirectory dir,
+        LearningService.Tenancy.ITenantContext tenant)
     {
         _db = db;
         _employees = employees;
+        _dir = dir;
+        _tenant = tenant;
     }
 
     private bool IsManagerOrAbove => User.IsInRole("manager") || User.IsInRole("hr-admin")
@@ -47,6 +52,15 @@ public class CoursesController : ControllerBase
             var me = await _employees.FindMyEmployeeIdAsync(ct);
             c.Enrollments = c.Enrollments.Where(e => me is not null && e.EmployeeId == me.Value).ToList();
         }
+        else if (!User.IsHr())
+        {
+            // Y20: sonuçları çalışan, departman başkanı ve İK görür — İK olmayan yönetici yalnızca
+            // kendi ve başı olduğu departmandaki kayıtları görür.
+            var me = await _dir.MeAsync(ct);
+            var people = (await _dir.ActiveAsync(ct)).ToDictionary(p => p.Id);
+            c.Enrollments = c.Enrollments.Where(e => people.TryGetValue(e.EmployeeId, out var p)
+                && LearningDirectory.CanSee(p, me?.Id, false)).ToList();
+        }
         return Ok(c);
     }
 
@@ -61,7 +75,8 @@ public class CoursesController : ControllerBase
             Provider = request.Provider,
             DurationHours = request.DurationHours,
             Category = request.Category,
-            IsMandatory = request.IsMandatory
+            IsMandatory = request.IsMandatory,
+            CertificateValidityMonths = request.CertificateValidityMonths is > 0 and <= 120 ? request.CertificateValidityMonths : null,
         };
         _db.Courses.Add(course);
         await _db.SaveChangesAsync();
@@ -116,10 +131,22 @@ public class CoursesController : ControllerBase
             return StatusCode(StatusCodes.Status403Forbidden,
                 new { message = "Kendi eğitim sonucunuzu giremezsiniz" });
 
+        if (!User.IsHr())
+        {
+            // İK olmayan yönetici yalnızca başı olduğu departmandaki kaydı sonuçlandırır.
+            var target = await _dir.FindAsync(e.EmployeeId, ct);
+            if (target is null || target.HeadId is null || target.HeadId != (await _dir.MeAsync(ct))?.Id)
+                return StatusCode(StatusCodes.Status403Forbidden,
+                    new { message = "Yalnızca yönettiğiniz departmandaki kayıtları sonuçlandırabilirsiniz" });
+        }
+
         e.Status = request.Passed ? EnrollmentStatus.Completed : EnrollmentStatus.Failed;
         e.Score = request.Score;
         e.CompletedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync();
+        // Y20: elle tamamlanan kayıt da doğrulama kodlu sertifika alır.
+        if (e.Status == EnrollmentStatus.Completed)
+            await CourseCompletion.IssueCertificateAsync(_db, _tenant, e, _dir, ct);
         return Ok(e);
     }
 
@@ -153,6 +180,6 @@ public class CoursesController : ControllerBase
 
 public record CreateCourseRequest(
     string Title, string? Description, string? Provider,
-    decimal DurationHours, CourseCategory Category, bool IsMandatory);
+    decimal DurationHours, CourseCategory Category, bool IsMandatory, int? CertificateValidityMonths = null);
 public record EnrollRequest(Guid EmployeeId);
 public record CompleteEnrollmentRequest(bool Passed, decimal? Score);

@@ -68,6 +68,7 @@ public class EngagementDbContext : DbContext, ITenantAwareContext
         b.Entity<OffboardingCase>().ToTable("engagement_offboarding_cases").ConfigureTenantColumn();
         b.Entity<OffboardingCase>().Property(x => x.Checklist).HasColumnType("jsonb");
         b.Entity<OffboardingCase>().Property(x => x.ExitInterview).HasColumnType("jsonb");
+        b.Entity<OffboardingCase>().Property(x => x.AssetChecks).HasColumnType("jsonb");
 
         b.Entity<OrgScenario>().ToTable("engagement_org_scenarios").ConfigureTenantColumn();
         b.Entity<OrgScenario>().Property(x => x.Moves).HasColumnType("jsonb");

@@ -24,6 +24,7 @@ import {
 import { formatDate, formatNumber, fullName } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { tx } from '@/lib/i18n'
+import { BuddyPanel } from './OnboardingOps'
 
 const CATEGORY_ORDER: TaskCategory[] = ['IT', 'HR', 'Facility', 'Training', 'Legal', 'Other']
 
@@ -320,6 +321,8 @@ export function OnboardingPlanPage() {
           </p>
         </PanelBody>
       </Panel>
+
+      <BuddyPanel plan={data} canEdit={canEdit} />
 
       {tasks.length === 0 ? (
         <Panel>

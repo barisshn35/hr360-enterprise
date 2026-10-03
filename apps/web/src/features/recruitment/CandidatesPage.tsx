@@ -1,20 +1,25 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, LoaderCircle, Plus } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, FileUp, LoaderCircle, Plus } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/button'
 import { DataTable, type Column } from '@/components/ui/DataTable'
 import { ApplicationStatusBadge } from '@/components/ui/ModuleBadges'
 import { Modal } from '@/components/ui/Modal'
-import { TextField } from '@/components/ui/Field'
+import { TextAreaField, TextField } from '@/components/ui/Field'
 import { useToast } from '@/components/ui/Toast'
 import { useAuth } from '@/auth/useAuth'
 import { recruitmentApi } from '@/api/recruitment'
 import { useCandidates } from '@/api/queries'
 import type { Candidate } from '@/api/types'
 import { formatDate, formatNumber } from '@/lib/format'
+import { ApiError } from '@/api/client'
+import { aiApi } from '@/api/ai'
+import { ChipInput, errMsg } from '@/features/shared/kit'
 import { tx } from '@/lib/i18n'
+
+interface DuplicateInfo { message: string; existingCandidateId?: string; canForce?: boolean }
 
 function NewCandidateModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const toast = useToast()
@@ -24,29 +29,67 @@ function NewCandidateModal({ open, onClose }: { open: boolean; onClose: () => vo
   const [email, setEmail] = useState('')
   const [phone, setPhone] = useState('')
   const [source, setSource] = useState('')
+  const [skills, setSkills] = useState<string[]>([])
+  const [resumeText, setResumeText] = useState('')
   const [error, setError] = useState<string | undefined>()
+  const [duplicate, setDuplicate] = useState<DuplicateInfo | null>(null)
+  const [parsing, setParsing] = useState(false)
+
+  const reset = () => {
+    setFirstName(''); setLastName(''); setEmail(''); setPhone(''); setSource(''); setSkills([]); setResumeText(''); setDuplicate(null)
+  }
 
   const mutation = useMutation({
-    mutationFn: () =>
+    mutationFn: (force: boolean) =>
       recruitmentApi.createCandidate({
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         email: email.trim(),
         phone: phone.trim() || undefined,
         source: source.trim() || undefined,
+        skills: skills.length ? skills : undefined,
+        resumeText: resumeText.trim() || undefined,
+        force,
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['recruitment'] })
       toast.ok(tx('Aday kaydedildi'))
       onClose()
-      setFirstName('')
-      setLastName('')
-      setEmail('')
-      setPhone('')
-      setSource('')
+      reset()
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Aday kaydedilemedi.')),
+    onError: (e: unknown) => {
+      // G13: tekrar aday — 409 gövdesinde mevcut aday kimliği ve zorlanabilirlik bilgisi gelir.
+      if (e instanceof ApiError && e.status === 409 && e.detail && typeof e.detail === 'object') {
+        const d = e.detail as { message?: string; existingCandidateId?: string; canForce?: boolean }
+        setDuplicate({ message: errMsg(e), existingCandidateId: d.existingCandidateId, canForce: d.canForce })
+        return
+      }
+      toast.stop(e instanceof Error ? e.message : tx('Aday kaydedilemedi.'))
+    },
   })
+
+  /** CV'den ön doldurma (ml-inference CV ayrıştırma): ad, e-posta, telefon, beceriler. Dosya saklanmaz. */
+  async function parseCv(file: File) {
+    if (file.size > 5 * 1024 * 1024) return toast.stop(tx('Dosya 5 MB\'tan büyük olamaz'))
+    setParsing(true)
+    try {
+      const r = await aiApi.parseCv(file)
+      if (r.name && !firstName && !lastName) {
+        const parts = r.name.trim().split(/\s+/)
+        setLastName(parts.length > 1 ? parts.pop()! : '')
+        setFirstName(parts.join(' '))
+      }
+      if (r.email && !email) setEmail(r.email)
+      if (r.phone && !phone) setPhone(r.phone)
+      if (r.skills.length) setSkills((s) => Array.from(new Set([...s, ...r.skills])).slice(0, 40))
+      if (r.summary && !resumeText) setResumeText(r.summary)
+      toast.ok(r.warnings.length ? tx('CV okundu; kontrol edin: {0}', [r.warnings.join(' ')]) : tx('CV okundu, alanlar dolduruldu'))
+    } catch (e) {
+      toast.stop(errMsg(e, tx('CV okunamadı')))
+    } finally {
+      setParsing(false)
+    }
+  }
 
   function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -55,7 +98,8 @@ function NewCandidateModal({ open, onClose }: { open: boolean; onClose: () => vo
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim()))
       return setError(tx('Geçerli bir e-posta adresi girin.'))
     setError(undefined)
-    mutation.mutate()
+    setDuplicate(null)
+    mutation.mutate(false)
   }
 
   return (
@@ -88,6 +132,14 @@ function NewCandidateModal({ open, onClose }: { open: boolean; onClose: () => vo
       }
     >
       <form id="new-candidate" onSubmit={submit} noValidate className="space-y-4">
+        <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-dashed border-border px-3 py-2.5 text-[13px] hover:border-primary/50">
+          {parsing ? <LoaderCircle className="size-4 animate-spin" /> : <FileUp className="size-4 text-primary" />}
+          <span>{tx('CV\'den doldur (PDF, DOCX, TXT · en fazla 5 MB)')}</span>
+          <span className="ml-auto text-[11.5px] text-muted-foreground">{tx('Dosya saklanmaz')}</span>
+          <input type="file" accept=".pdf,.docx,.txt" className="sr-only" disabled={parsing}
+            onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void parseCv(f) }} />
+        </label>
+
         <div className="grid gap-4 sm:grid-cols-2">
           <TextField
             id="cand-first"
@@ -133,6 +185,27 @@ function NewCandidateModal({ open, onClose }: { open: boolean; onClose: () => vo
             onChange={(e) => setSource(e.target.value)}
           />
         </div>
+
+        <ChipInput id="cand-skills" label={tx('Beceriler')} value={skills} onChange={setSkills} />
+        <TextAreaField id="cand-summary" label={tx('Özgeçmiş özeti (isteğe bağlı)')} rows={3} maxLength={20000} value={resumeText}
+          onChange={(e) => setResumeText(e.target.value)} hint={tx('Özel nitelikli veri (sağlık, din, medeni hal…) eklemeyin.')} />
+
+        {duplicate && (
+          <div role="alert" className="space-y-2 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-[13px]">
+            <p className="flex items-center gap-1.5 font-medium"><AlertTriangle className="size-4 text-amber-600" />{tx('Olası tekrar aday')}</p>
+            <p>{duplicate.message}</p>
+            <div className="flex flex-wrap gap-2">
+              {duplicate.canForce && (
+                <Button type="button" size="sm" variant="outline" disabled={mutation.isPending} onClick={() => mutation.mutate(true)}>
+                  {tx('Yine de yeni aday olarak kaydet')}
+                </Button>
+              )}
+              <Button type="button" size="sm" variant="ghost" onClick={() => { setDuplicate(null); onClose() }}>
+                {tx('Vazgeç, mevcut adayı kullan')}
+              </Button>
+            </div>
+          </div>
+        )}
       </form>
     </Modal>
   )

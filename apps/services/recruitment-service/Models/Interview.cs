@@ -19,4 +19,14 @@ public class Interview : ITenantOwned
     public int? Score { get; set; }
     public string? Notes { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    // Y17: planlama ayrintilari. InterviewerIds TUM gorusmecileri (birincil dahil) icerir.
+    public int DurationMinutes { get; set; } = 60;
+    public string? Location { get; set; }
+    public string? MeetingUrl { get; set; }
+    public List<Guid> InterviewerIds { get; set; } = new();
+    public DateTimeOffset? CandidateNotifiedAt { get; set; }
+
+    public IEnumerable<Guid> AllInterviewers() =>
+        InterviewerIds.Append(InterviewerEmployeeId).Where(g => g != Guid.Empty).Distinct();
 }

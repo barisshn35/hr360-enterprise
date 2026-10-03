@@ -115,6 +115,11 @@ builder.Services.AddSwaggerGen();
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddHttpClient<LearningService.Services.EmployeeDirectoryClient>();
+// Dalga 5c: yetkinlik/icerik/SCORM icin dizin okuyucu; G17 sertifika hatirlatma isi.
+builder.Services.AddScoped<LearningService.Services.LearningDirectory>();
+builder.Services.AddHostedService<LearningService.Services.CertificateReminderWorker>();
+// SCORM paketleri 50 MB'a kadar (bkz. ScormController.Upload RequestSizeLimit).
+builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o => o.MultipartBodyLengthLimit = 52L * 1024 * 1024);
 
 var app = builder.Build();
 

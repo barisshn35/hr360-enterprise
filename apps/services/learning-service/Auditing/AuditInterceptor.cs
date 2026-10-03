@@ -36,6 +36,8 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
     {
         "salary", "iban", "nationalid", "tckn", "identitynumber", "password", "secret",
         "keyhash", "token", "bankaccount", "privatenotes",
+        // Sınav cevap anahtarı denetim kaydında da açık yazılmaz.
+        "correctjson",
     };
 
     /// <summary>Teknik/altyapı tabloları denetlenmez (gürültü olur).</summary>
@@ -46,6 +48,8 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         // Anonim anket yanıtı kimle ilişkilendirilmemeli: denetim satırı yanıtı
         // yanıtlayanla (UserId) eşleştirirdi.
         "SurveyResponse",
+        // SCORM paket dosyaları (yüzlerce ikili satır) ve sık güncellenen çalışma zamanı değerleri.
+        "ScormFile", "ScormRuntime",
     };
 
     private static readonly JsonSerializerOptions Json = new()

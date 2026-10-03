@@ -57,6 +57,8 @@ public class TeamMembersController : ControllerBase
         "document:manage",
         "case:view", "case:create", "case:manage",
         "notification:view", "notification:manage",
+        // İSG: işyeri hekimi sağlık notlarını okur/yazar; İSG uzmanı kaza ve eğitim kayıtlarını yönetir.
+        "osh:physician", "osh:specialist",
         "platform:manage",
         "tenant:manage",
     };

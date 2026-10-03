@@ -407,6 +407,8 @@ public sealed class Housekeeping : BackgroundService
                     Retention.Log(db, p.TenantSlug, p.Category, p.Action, p.LastAffected, p.RetentionMonths, "Periodic", "Sistem (periyodik imha)");
                 }
                 await db.SaveChangesAsync(ct);
+                // İleri tarihli duyuruların yayım bildirimi (liste açılışında da tetiklenir).
+                await Controllers.AnnouncementsController.PublishDueAsync(sql, scope.ServiceProvider.GetRequiredService<PeopleDirectory>(), null, ct);
                 if (FeatureFlags.Billing) await Billing.GenerateAsync(sql, db, DateTime.UtcNow, ct);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -433,6 +435,10 @@ public static class Retention
         // SGK ve vergi mevzuatı: ücret bordroları 10 yıl saklanır (5510 s. K. m.86, VUK m.253).
         ["Payslips"] = ("Bordro pusulaları (kapanmış dönemler)", new[] { "Delete" }, 120),
         ["DocumentRequests"] = ("Çalışan belge talepleri ve düzenlenen belgeler", new[] { "Delete" }, 24),
+        // Dalga 5c: işyeri uyumu
+        ["DisciplinaryCases"] = ("Kapatılmış disiplin vakaları (savunma, tutanak, karar)", new[] { "Delete" }, 24),
+        ["EthicsReports"] = ("Kapatılmış etik/ihbar bildirimleri ve yazışmaları", new[] { "Delete" }, 24),
+        ["Announcements"] = ("Süresi dolmuş duyurular ve okuma kayıtları", new[] { "Delete" }, 12),
     };
 
     public static string MethodOf(string action) => action == "Anonymize"
@@ -488,6 +494,18 @@ public static class Retention
                     """, ct, t, months);
             case "DocumentRequests":
                 return await sql.ExecuteAsync("DELETE FROM governance_document_requests WHERE \"TenantSlug\" = $1 AND \"Status\" <> 'Pending' AND \"CreatedAt\" < now() - make_interval(months => $2)", ct, t, months);
+            case "DisciplinaryCases":
+                return await sql.ExecuteAsync("DELETE FROM governance_disciplinary_cases WHERE \"TenantSlug\" = $1 AND \"Status\" = 'Closed' AND \"ClosedAt\" < now() - make_interval(months => $2)", ct, t, months);
+            case "EthicsReports":
+                // Mesajlar ON DELETE CASCADE ile silinir.
+                return await sql.ExecuteAsync("DELETE FROM governance_ethics_reports WHERE \"TenantSlug\" = $1 AND \"Status\" = 'Closed' AND \"ClosedAt\" < now() - make_interval(months => $2)", ct, t, months);
+            case "Announcements":
+                await sql.ExecuteAsync("""
+                    DELETE FROM governance_acknowledgements k USING governance_announcements a
+                    WHERE k."SubjectType" = 'Announcement' AND k."SubjectId" = a."Id" AND a."TenantSlug" = $1
+                      AND a."ExpireAt" IS NOT NULL AND a."ExpireAt" < now() - make_interval(months => $2)
+                    """, ct, t, months);
+                return await sql.ExecuteAsync("DELETE FROM governance_announcements WHERE \"TenantSlug\" = $1 AND \"ExpireAt\" IS NOT NULL AND \"ExpireAt\" < now() - make_interval(months => $2)", ct, t, months);
             case "WebhookDeliveries":
                 return await sql.ExecuteAsync("DELETE FROM governance_webhook_deliveries WHERE \"TenantSlug\" = $1 AND \"OccurredAt\" < now() - make_interval(months => $2)", ct, t, months);
             default:

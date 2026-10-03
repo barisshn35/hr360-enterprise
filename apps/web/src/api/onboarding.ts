@@ -59,6 +59,8 @@ export interface OnboardingTask {
   dueDate: string | null
   assigneeEmployeeId: string | null
   completedAt: string | null
+  /** G14: HR | Manager | IT | Buddy | Employee (şablondan gelir). */
+  ownerRole?: 'HR' | 'Manager' | 'IT' | 'Buddy' | 'Employee' | null
 }
 
 export interface OnboardingPlan {
@@ -69,6 +71,11 @@ export interface OnboardingPlan {
   status: PlanStatus
   createdAt: string
   tasks?: OnboardingTask[]
+  /** G14: yol arkadaşı, ilk gün buluşma yeri, uygulanan şablonlar, karşılama zamanı. */
+  buddyEmployeeId?: string | null
+  location?: string | null
+  appliedTemplates?: string | null
+  welcomeSentAt?: string | null
 }
 
 export interface Asset {
@@ -81,6 +88,9 @@ export interface Asset {
   /** Sadece acik (henuz iade edilmemis) atama varsa dolu - bkz. AssetsController.GetAll/GetById. */
   assignedEmployeeId: string | null
   assignedOn: string | null
+  /** G16: QR etiketinin opak kodu ve açık zimmetin beklenen iade tarihi. */
+  qrCode?: string | null
+  expectedReturnOn?: string | null
 }
 
 /** `GET /assets/by-employee/{id}` ve zimmet atama/iade uclarinin donus tipi -
@@ -94,6 +104,7 @@ export interface AssetAssignment {
   returnedOn: string | null
   conditionOnReturn: string | null
   notes: string | null
+  expectedReturnOn?: string | null
 }
 
 export interface CreatePlanInput {
@@ -121,6 +132,8 @@ export interface AssignAssetInput {
   employeeId: string
   assignedOn: string
   notes?: string
+  /** G16: beklenen iade tarihi (hatırlatma işi buna göre çalışır). */
+  expectedReturnOn?: string
 }
 
 export interface ReturnAssetInput {

@@ -288,6 +288,29 @@ sunucunun kendisinden erişilebilir.
   kıdeme ve yaşa göre yasal yıllık izin hakkı (İş Kanunu m.53) ön izleme ve bakiyelere yazma,
   kullanılmayan iznin sonraki yıla devri (isteğe bağlı üst sınır; tekrar çalıştırılabilir).
 
+### İK süreçleri (duyuru, doküman, etik, İSG, disiplin, işe alım, eğitim, operasyon)
+
+- **Duyurular** (`/panel/duyurular`) ve **doküman kütüphanesi** (`/panel/belgeler-kutuphanesi`): hedef kitleye göre
+  yayın, "Okudum" ve politika kabulü (açık rızadan ayrı kayıt; yeni sürüm yeniden kabul ister), sürümlü
+  belgeler ve yetki süzgeçli tam metin arama.
+- **Etik hattı**: `/etik/<şirket>` oturumsuz ve anonimdir (IP, kullanıcı, tarayıcı bilgisi tutulmaz; gateway bu yolu
+  kaydetmez), takip kodu yalnızca özet olarak saklanır; bildirimleri yalnızca şirketin atadığı etik kurulu görür.
+- **İSG** (`/panel/isg`): iş kazası/ramak kala (SGK'ya 3 iş günü bildirim süresi), periyodik muayene (sağlık notları
+  şifreli, yalnızca işyeri hekimi rolü — Ayarlar › Roller'den `osh:physician` ek izni), İSG eğitimleri.
+- **Disiplin** (`/panel/disiplin`): savunma istemi (en az 2 iş günü), tutanak, karar; çalışan kendi savunmasını
+  uygulamadan verir; adli sicil bilgisi tutulmaz (uyarı), kapanıştan 24 ay sonra imha.
+- **İşe alım**: herkese açık kariyer sayfası `/kariyer/<şirket>` (aydınlatma bilgi olarak, CV havuzu için ayrı açık
+  rıza, adayın kendi kaydını görüp silebildiği tek kullanımlık bağlantı, süre dolunca anonimleştirme), mükerrer aday
+  tespiti, sürükle-bırak aday hattı, mülakat değerlendirme kartı (özel nitelikli veri uyarısı) ve randevu çakışma
+  denetimi, teklif mektubu + onay akışı (maaş bildirimlerde yer almaz).
+- **Eğitim ve gelişim**: yetkinlik matrisi ve açık analizi (yalnızca öneri), video/metin/sınav/SCORM 1.2 içerik,
+  sertifika ve doğrulama kodu, sertifika süresi hatırlatmaları; performansta 9-kutu (tartışma aracı; potansiyel
+  puanı varsayılan olarak çalışana gizli, kalibrasyon gerekçeli ve kayıtlı) ve dönem şablonları.
+- **Operasyon**: rol bazlı onboarding şablonları, buddy ve ilk gün karşılama mesajı; işten ayrılışta Keycloak hesabının
+  kapatılması, zimmet iade kontrolü ve planlı anonimleştirme tarihi; zimmet QR etiketi, iade hatırlatma, bakım
+  kaydı; anketlerde en az 5 yanıt eşiği, eNPS eğilimi ve yerel (sunucu dışına çıkmayan) duygu analizi; vardiya
+  tercihleri ve takas (11 saat dinlenme, haftalık 45 saat); giriş-çıkıştan geç kalma/fazla mesai raporu (bilgi amaçlı).
+
 ### Mobil uygulama (PWA)
 
 Uygulama telefona kurulur (Hesap menüsü › Uygulama olarak yükle). **Profilim › Güvenlik ›

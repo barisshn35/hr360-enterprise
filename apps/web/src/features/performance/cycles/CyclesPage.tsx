@@ -34,6 +34,7 @@ import { Segmented, errorText } from '../components/controls'
 import { PerfPageHeader, SetupTrail } from '../components/PerfPageHeader'
 import { CloseCycleDialog } from './CloseCycleDialog'
 import { CreateCycleDialog } from './CreateCycleDialog'
+import { SaveAsTemplateButton } from './SaveAsTemplate'
 import { CycleTimeline } from './CycleTimeline'
 import { timeProgress } from './cycleDefaults'
 import { cycleStatusGroup } from '@/api/performance/labels'
@@ -471,6 +472,12 @@ function CycleCard({
             <Link to={`/panel/performans/analiz?sekme=donem&donem=${cycle.id}`}>{tx('Sonuçlar')}</Link>
           </Button>
         )}
+        {cycle.status !== 'Planned' && (
+          <Button asChild size="sm" variant="ghost">
+            <Link to="/panel/performans/dokuz-kutu">{tx('9-kutu')}</Link>
+          </Button>
+        )}
+        {canAdmin && <SaveAsTemplateButton cycleId={cycle.id} cycleName={cycle.name} />}
       </div>
     </motion.article>
   )

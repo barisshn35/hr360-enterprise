@@ -106,11 +106,11 @@ public sealed class ChatService
     public static string TypeLabel(string? type, bool en = false) => en ? type switch
     {
         "LeaveRequest" => "leave", "ExpenseClaim" => "expense", "PositionChange" => "position change",
-        "AssetRequest" => "asset", "Overtime" => "overtime", "DocumentRequest" => "document", "Travel" => "travel", _ => "approval",
+        "AssetRequest" => "asset", "Overtime" => "overtime", "DocumentRequest" => "document", "Travel" => "travel", "OfferApproval" => "offer", _ => "approval",
     } : type switch
     {
         "LeaveRequest" => "izin", "ExpenseClaim" => "masraf", "PositionChange" => "pozisyon değişikliği",
-        "AssetRequest" => "zimmet", "Overtime" => "fazla mesai", "DocumentRequest" => "belge", "Travel" => "seyahat", _ => "onay",
+        "AssetRequest" => "zimmet", "Overtime" => "fazla mesai", "DocumentRequest" => "belge", "Travel" => "seyahat", "OfferApproval" => "teklif", _ => "onay",
     };
 
     public static string LeaveTypeLabel(string t, bool en) => HrAssistant.LeaveLabel(t, en);

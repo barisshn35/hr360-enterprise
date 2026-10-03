@@ -123,6 +123,10 @@ builder.Services.AddSwaggerGen();
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddHttpClient<OnboardingService.Services.EmployeeDirectoryClient>();
+// Dalga 5c: capraz modul okumalari, bildirim/denetim satirlari ve arka plan isleri (G14/G16).
+builder.Services.AddSingleton(new Npgsql.NpgsqlDataSourceBuilder(connectionString).Build());
+builder.Services.AddSingleton<OnboardingService.Services.Sql>();
+builder.Services.AddHostedService<OnboardingService.Services.OnboardingJobsWorker>();
 
 var app = builder.Build();
 

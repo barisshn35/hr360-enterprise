@@ -21,10 +21,60 @@ namespace TenantService.Controllers;
 public class InternalController : ControllerBase
 {
     private readonly TenantDbContext _db;
+    private readonly TenantService.Services.KeycloakAdminClient _keycloak;
+    private readonly ILogger<InternalController> _log;
 
-    public InternalController(TenantDbContext db)
+    public InternalController(TenantDbContext db, TenantService.Services.KeycloakAdminClient keycloak, ILogger<InternalController> log)
     {
         _db = db;
+        _keycloak = keycloak;
+        _log = log;
+    }
+
+    /// <summary>X-Internal-Token (INTERNAL_SERVICE_TOKEN) sabit zamanli karsilastirma; tanimsizsa uc kapali.</summary>
+    private bool InternalTokenValid()
+    {
+        var expected = Environment.GetEnvironmentVariable("INTERNAL_SERVICE_TOKEN");
+        var given = Request.Headers["X-Internal-Token"].FirstOrDefault() ?? "";
+        return !string.IsNullOrEmpty(expected)
+            && System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+                System.Text.Encoding.UTF8.GetBytes(expected), System.Text.Encoding.UTF8.GetBytes(given));
+    }
+
+    public record DisableUserRequest(string TenantSlug, string KeycloakUserId, string? Reason);
+
+    /// <summary>
+    /// Dalga 5c (G15): isten ayrilan calisanin hesabini kapatir ve TUM oturumlarini sonlandirir
+    /// (engagement-service offboarding tamamlanirken cagirir). Hedef, cagiran kiracinin Keycloak
+    /// organizasyonunun uyesi olmali; degilse 404 (baska kiracinin hesabi kapatilamaz). Sirket
+    /// yoneticisi (kiracinin kurucu yonetici hesabi) ve platform yoneticileri bu yolla kapatilamaz.
+    ///
+    /// NOT: Kapatma, kullanicinin TAM temsiliyle yapilir (SuspendUserForTenantAsync) - yalnizca
+    /// {enabled:false} gondermek (SetUserEnabledAsync) Keycloak 25'te e-posta/ad niteliklerini siliyor.
+    /// </summary>
+    [HttpPost("users/disable")]
+    public async Task<IActionResult> DisableUser([FromBody] DisableUserRequest request, CancellationToken ct)
+    {
+        if (!InternalTokenValid()) return NotFound();
+        if (string.IsNullOrWhiteSpace(request.TenantSlug) || string.IsNullOrWhiteSpace(request.KeycloakUserId))
+            return BadRequest(new { message = "Kiracı ve kullanıcı kimliği zorunlu" });
+        if (!Guid.TryParse(request.KeycloakUserId, out _))
+            return BadRequest(new { message = "Geçersiz kullanıcı kimliği" });
+
+        var tenant = await _db.Tenants.FirstOrDefaultAsync(t => t.Slug == request.TenantSlug.ToLowerInvariant(), ct);
+        if (tenant?.KeycloakOrgId is null) return NotFound(new { message = "Şirket bulunamadı" });
+        if (!await _keycloak.IsOrganizationMemberAsync(tenant.KeycloakOrgId, request.KeycloakUserId, ct))
+            return NotFound(new { message = "Kullanıcı bu şirkette bulunamadı" });
+        if (string.Equals(tenant.AdminUserId, request.KeycloakUserId, StringComparison.OrdinalIgnoreCase))
+            return Conflict(new { message = "Şirketin kurucu yönetici hesabı bu yolla kapatılamaz" });
+        var roles = await _keycloak.GetUserRealmRolesAsync(request.KeycloakUserId, ct);
+        if (roles.Contains("platform-admin"))
+            return Conflict(new { message = "Platform yöneticisi hesabı bu yolla kapatılamaz" });
+
+        var disabledNow = await _keycloak.SuspendUserForTenantAsync(request.KeycloakUserId, ct);
+        _log.LogInformation("Ayrilan calisan hesabi kapatildi: kiraci {Tenant}, kullanici {User}, yeni kapatildi={Now}",
+            tenant.Slug, request.KeycloakUserId, disabledNow);
+        return Ok(new { disabled = true, alreadyDisabled = !disabledNow, sessionsEnded = true });
     }
 
     /// <summary>

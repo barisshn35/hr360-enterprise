@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using OnboardingService.Data;
 using OnboardingService.Models;
+using OnboardingService.Services;
 
 namespace OnboardingService.Controllers;
 
@@ -12,7 +13,19 @@ namespace OnboardingService.Controllers;
 public class AssetsController : ControllerBase
 {
     private readonly OnboardingDbContext _db;
-    public AssetsController(OnboardingDbContext db) => _db = db;
+    private readonly Sql _sql;
+    private readonly EmployeeDirectoryClient _employees;
+    private readonly OnboardingService.Tenancy.ITenantContext _tenant;
+    public AssetsController(OnboardingDbContext db, Sql sql, EmployeeDirectoryClient employees, OnboardingService.Tenancy.ITenantContext tenant)
+    {
+        _db = db; _sql = sql; _employees = employees; _tenant = tenant;
+    }
+
+    private string Tenant => _tenant.TenantSlug ?? "";
+
+    /// <summary>"RequireAssetManage" ile ayni rol kumesi (IK / BT zimmet sorumlusu).</summary>
+    private bool CanManage => User.IsInRole("hr-admin") || User.IsInRole("tenant-admin")
+        || User.IsInRole("platform-admin") || User.IsInRole("ext-asset-manage");
 
     /// <summary>
     /// NOT: Onceki halinde bu uc ham Asset entity'sini donuyordu -
@@ -41,9 +54,10 @@ public class AssetsController : ControllerBase
             openAssignments.TryGetValue(a.Id, out var open);
             return new
             {
-                a.Id, a.AssetTag, a.Type, a.Model, a.SerialNumber, a.Status, a.CreatedAt,
+                a.Id, a.AssetTag, a.Type, a.Model, a.SerialNumber, a.Status, a.CreatedAt, a.QrCode,
                 AssignedEmployeeId = open?.EmployeeId,
                 AssignedOn = open?.AssignedOn,
+                ExpectedReturnOn = open?.ExpectedReturnOn,
             };
         }));
     }
@@ -59,9 +73,10 @@ public class AssetsController : ControllerBase
         var open = a.Assignments.FirstOrDefault(s => s.ReturnedOn == null);
         return Ok(new
         {
-            a.Id, a.AssetTag, a.Type, a.Model, a.SerialNumber, a.Status, a.CreatedAt,
+            a.Id, a.AssetTag, a.Type, a.Model, a.SerialNumber, a.Status, a.CreatedAt, a.QrCode,
             AssignedEmployeeId = open?.EmployeeId,
             AssignedOn = open?.AssignedOn,
+            ExpectedReturnOn = open?.ExpectedReturnOn,
             Assignments = a.Assignments,
         });
     }
@@ -78,7 +93,8 @@ public class AssetsController : ControllerBase
             AssetTag = request.AssetTag,
             Type = request.Type,
             Model = request.Model,
-            SerialNumber = request.SerialNumber
+            SerialNumber = request.SerialNumber,
+            QrCode = AssetCodes.New(),
         };
         _db.Assets.Add(asset);
         await _db.SaveChangesAsync();
@@ -99,8 +115,11 @@ public class AssetsController : ControllerBase
             AssetId = id,
             EmployeeId = request.EmployeeId,
             AssignedOn = request.AssignedOn,
-            Notes = request.Notes
+            Notes = request.Notes,
+            ExpectedReturnOn = request.ExpectedReturnOn,
         };
+        if (request.ExpectedReturnOn is { } exp && exp < request.AssignedOn)
+            return BadRequest("Beklenen iade tarihi, zimmet tarihinden önce olamaz");
         asset.Status = AssetStatus.Assigned;
 
         _db.AssetAssignments.Add(assignment);
@@ -154,5 +173,5 @@ public class AssetsController : ControllerBase
 }
 
 public record CreateAssetRequest(string AssetTag, AssetType Type, string? Model, string? SerialNumber);
-public record AssignAssetRequest(Guid EmployeeId, DateOnly AssignedOn, string? Notes);
+public record AssignAssetRequest(Guid EmployeeId, DateOnly AssignedOn, string? Notes, DateOnly? ExpectedReturnOn = null);
 public record ReturnAssetRequest(DateOnly ReturnedOn, string? Condition, bool MarkAsRetired = false);

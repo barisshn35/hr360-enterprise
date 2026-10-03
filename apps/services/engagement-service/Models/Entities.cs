@@ -294,6 +294,30 @@ public class OffboardingCase : ITenantOwned
     public bool? RehireEligible { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? CompletedAt { get; set; }
+    /// <summary>G15: zimmet iade kontrol listesi (onboarding tablolarından canlı yenilenir).</summary>
+    public List<AssetCheck> AssetChecks { get; set; } = new();
+    /// <summary>Disabled | NoAccount | Failed | Skipped (hesap kapatma adımı).</summary>
+    public string? AccountStatus { get; set; }
+    public DateTime? AccountDisabledAt { get; set; }
+    public string? AccountNote { get; set; }
+    /// <summary>"TerminatedEmployees" saklama süresi (ay) ve buna göre planlanan anonimleştirme tarihi.</summary>
+    public int? RetentionMonths { get; set; }
+    public DateOnly? PlannedAnonymizationOn { get; set; }
+}
+
+/// <summary>Ayrılan çalışanın bir zimmeti: iade edildi mi ya da İK istisnasıyla kayıp/kayıttan düşüldü mü.</summary>
+public class AssetCheck
+{
+    public Guid AssignmentId { get; set; }
+    public Guid AssetId { get; set; }
+    public string AssetTag { get; set; } = "";
+    public string Label { get; set; } = "";
+    /// <summary>Open | Returned | Lost | WrittenOff</summary>
+    public string Resolution { get; set; } = "Open";
+    public DateOnly? ReturnedOn { get; set; }
+    public string? Note { get; set; }
+    public string? ResolvedBy { get; set; }
+    public DateTime? ResolvedAt { get; set; }
 }
 
 /* ======================================================= Org senaryo planı */

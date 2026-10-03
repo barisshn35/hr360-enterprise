@@ -20,6 +20,7 @@ import { formatDate, formatNumber } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { tx, appLocale } from '@/lib/i18n'
 import { OvertimePanel } from './OvertimePanel'
+import { AttendanceReportPanel } from './AttendanceReport'
 
 /** Dakikayı "7s 30dk" biçimine çevirir. */
 function hm(minutes: number): string {
@@ -331,6 +332,8 @@ export function TimesheetPage() {
       )}
 
       {can('timeshift:clock') && <OvertimePanel />}
+
+      <AttendanceReportPanel />
     </div>
   )
 }

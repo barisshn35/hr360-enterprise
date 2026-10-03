@@ -16,6 +16,8 @@ public class Course : ITenantOwned
     /// <summary>Zorunlu egitimler uyum (compliance) raporlarinda takip edilir.</summary>
     public bool IsMandatory { get; set; }
     public bool IsActive { get; set; } = true;
+    /// <summary>Tamamlanınca verilen sertifikanın geçerlilik süresi (ay). Boşsa süresiz.</summary>
+    public int? CertificateValidityMonths { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public List<Enrollment> Enrollments { get; set; } = new();
 }

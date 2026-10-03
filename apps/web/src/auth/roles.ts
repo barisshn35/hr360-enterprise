@@ -47,6 +47,8 @@ export type Permission =
   | 'case:view' | 'case:create' | 'case:manage'
   // Bildirim
   | 'notification:view' | 'notification:manage'
+  // İş sağlığı ve güvenliği
+  | 'osh:physician' | 'osh:specialist'
   // Platform (çok kiracılılık)
   | 'platform:manage'
   | 'tenant:manage';
