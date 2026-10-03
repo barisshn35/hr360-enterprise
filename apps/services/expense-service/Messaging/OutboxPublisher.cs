@@ -99,6 +99,9 @@ public class OutboxPublisher : BackgroundService
                     }
                 };
 
+                // G25: W3C traceparent basligi (izleme aciksa); tuketici span'i buna baglanir.
+                using var activity = ExpenseService.Observability.Telemetry.StartProducer(message.Topic, message.EventType,
+                    (k, v) => kafkaMessage.Headers.Add(k, System.Text.Encoding.UTF8.GetBytes(v)));
                 await producer.ProduceAsync(message.Topic, kafkaMessage, ct);
 
                 message.PublishedAt = DateTimeOffset.UtcNow;

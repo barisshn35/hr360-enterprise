@@ -27,6 +27,12 @@ services:
       SIEM_INTERVAL_SECONDS: "2"
       # Zamanlanmis rapor teslimi 3 sn'de bir (uretimde 5 dk).
       SAVED_REPORTS_INTERVAL_SECONDS: "3"
+      # Dalga 5e sohbet botu: zamanlanmis bot isleri dakikada bir (uretimde 5 dk; test ayrica
+      # POST /api/governance/chat-admin/jobs/run ile tetikler); kullanici basina 40 komut/dk
+      # (uretimde 20); fis okuma icin ml-inference hizmet hesabi (client_credentials).
+      CHAT_JOBS_SECONDS: "60"
+      CHAT_RATE_USER: "40"
+      OCR_CLIENT_SECRET: "${ML_KEYCLOAK_CLIENT_SECRET:-}"
   notification-service:
     environment:
       # Sahte Web Push servisine (chatmock) gonderime izin; anlik bildirim turu 2 sn.
@@ -42,11 +48,25 @@ services:
     environment:
       # Vekalet ve sure asimi isleri 5 sn'de bir (uretimde 5 dk).
       WORKFLOW_JOBS_SECONDS: "5"
+      # G25: dagitik izleme testi (tests/integration/test_telemetry.py) - izler
+      # monitoring profilindeki otel-collector'a gider (collector yoksa sessizce duser).
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
+  leave-service:
+    environment:
+      # G25: dagitik izleme testi (bkz. workflow-service).
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
   expense-service:
     environment:
       # Sahte TCMB kur dosyalari; pasaport temizligi dakikada bir.
       TCMB_RATES_URL: "http://chatmock:8000/tcmb"
       TRAVEL_PURGE_MINUTES: "1"
+      # G25: messaging_outbox dort servisin (employee, leave, expense, workflow) ortak tablosu;
+      # herhangi biri yayinlayabildigi icin Kafka iz testi dordunde de izleme ister.
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
+  employee-service:
+    environment:
+      # G25: bkz. expense-service (ortak outbox yayincisi).
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
   compensation-service:
     environment:
       EXPORT_PURGE_MINUTES: "1"

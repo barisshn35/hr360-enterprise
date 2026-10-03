@@ -11,6 +11,8 @@ using WorkflowService.Messaging;
 using WorkflowService.Services;
 
 var builder = WebApplication.CreateBuilder(args);
+// G25: OpenTelemetry izleme (yalnizca OTEL_EXPORTER_OTLP_ENDPOINT tanimliysa) + KVKK maskeleme.
+WorkflowService.Observability.Telemetry.AddHrTelemetry(builder.Services, "workflow-service");
 
 var connectionString = Environment.GetEnvironmentVariable("WORKFLOW_DB_CONNECTION")
     ?? throw new InvalidOperationException("DB connection string not configured");
@@ -22,7 +24,8 @@ builder.Services.AddHttpClient<EmployeeDirectoryClient>();
 
 builder.Services.AddDbContext<WorkflowDbContext>(options =>
     options.UseNpgsql(connectionString)
-        .AddInterceptors(new WorkflowService.Auditing.AuditInterceptor("workflow-service")));
+        .AddInterceptors(new WorkflowService.Auditing.AuditInterceptor("workflow-service"),
+            new WorkflowService.Observability.BusinessMetricsInterceptor()));
 
 var keycloakAuthority = Environment.GetEnvironmentVariable("KEYCLOAK_AUTHORITY")
     ?? "http://keycloak:8080/auth/realms/hr360";

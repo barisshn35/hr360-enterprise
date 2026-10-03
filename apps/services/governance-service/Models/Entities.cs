@@ -373,6 +373,22 @@ public class ChatApp : ITenantOwned
     public string MessageDetail { get; set; } = "Minimal";
     /// <summary>Hafta içi sabah özeti (kararı bekleyen talepler, ekipten izinde olanlar).</summary>
     public bool DailyDigest { get; set; } = true;
+    // Dalga 5e: Mattermost / Rocket.Chat (kendi sunucunuzda) — sunucu adresi, bot jetonu, gelen istek jetonu.
+    public string? ServerUrl { get; set; }
+    public string? BotTokenEnc { get; set; }
+    /// <summary>Mattermost: botun kullanıcı kimliği. Rocket.Chat: X-User-Id.</summary>
+    public string? BotUserId { get; set; }
+    /// <summary>Mattermost slash komutu / giden webhook jetonu ya da Rocket.Chat giden entegrasyon jetonu.</summary>
+    public string? IncomingTokenEnc { get; set; }
+    /// <summary>BG20: bu uygulamada kapatılan komut/özellik anahtarları.</summary>
+    public List<string> DisabledFeatures { get; set; } = new();
+    /// <summary>Duyuru ve kutlama kanalı (Slack kanal kimliği, Teams konuşma kimliği, Mattermost kanal kimliği, Rocket.Chat oda kimliği).</summary>
+    public string? ChannelId { get; set; }
+    public bool CelebrationsEnabled { get; set; }
+    /// <summary>BG6: kişinin sessiz saatlerinde kritik olmayan bot mesajları ertelenir.</summary>
+    public bool RespectQuietHours { get; set; } = true;
+    /// <summary>BG10: düğmeler bu kadar gün sonra geçersizdir.</summary>
+    public int ButtonTtlDays { get; set; } = 7;
 }
 
 /// <summary>Gönderilemeyen sohbet mesajı; arka planda artan aralıklarla yeniden denenir.</summary>

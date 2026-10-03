@@ -9,6 +9,8 @@ using TenantService.Data;
 using TenantService.Services;
 
 var builder = WebApplication.CreateBuilder(args);
+// G25: OpenTelemetry izleme (yalnizca OTEL_EXPORTER_OTLP_ENDPOINT tanimliysa) + KVKK maskeleme.
+TenantService.Observability.Telemetry.AddHrTelemetry(builder.Services, "tenant-service");
 
 var connectionString = Environment.GetEnvironmentVariable("TENANT_DB_CONNECTION")
     ?? throw new InvalidOperationException("DB connection string not configured");

@@ -11,6 +11,8 @@ using EmployeeService.Messaging;
 using EmployeeService.Services;
 
 var builder = WebApplication.CreateBuilder(args);
+// G25: OpenTelemetry izleme (yalnizca OTEL_EXPORTER_OTLP_ENDPOINT tanimliysa) + KVKK maskeleme.
+EmployeeService.Observability.Telemetry.AddHrTelemetry(builder.Services, "employee-service");
 
 var connectionString = Environment.GetEnvironmentVariable("EMPLOYEE_DB_CONNECTION")
     ?? throw new InvalidOperationException("DB connection string not configured");

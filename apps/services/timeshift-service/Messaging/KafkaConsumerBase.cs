@@ -76,6 +76,9 @@ public abstract class KafkaConsumerBase : BackgroundService
 
                 var eventType = GetHeader(result.Message.Headers, "event-type");
                 var eventIdRaw = GetHeader(result.Message.Headers, "event-id");
+                // G25: yayincinin traceparent'i ile tuketim span'i (izleme kapaliyken null).
+                using var activity = TimeShiftService.Observability.Telemetry.StartConsumer(
+                    result.Topic, eventType, k => GetHeader(result.Message.Headers, k));
 
                 if (!Guid.TryParse(eventIdRaw, out var eventId))
                 {

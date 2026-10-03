@@ -102,10 +102,13 @@ public class DocumentRequestsController : AppController
         return Ok(Dto(r));
     }
 
-    private async Task IssueAsync(DocumentRequest r, DocTemplate t, string by, CancellationToken ct)
+    private Task IssueAsync(DocumentRequest r, DocTemplate t, string by, CancellationToken ct) => IssueCoreAsync(Db, People, Tenant, r, t, by, ct);
+
+    /// <summary>Belgeyi üretir (web ve sohbet botu aynı kuralı kullanır; bot belge içeriğini asla mesaja yazmaz).</summary>
+    public static async Task IssueCoreAsync(Sql sql, PeopleDirectory people, string tenant, DocumentRequest r, DocTemplate t, string by, CancellationToken ct)
     {
         // Kişinin kendi belgesi: ücret yer tutucusu yalnızca kendi ücretini gösterir.
-        var docs = await DocRenderer.RenderAsync(Db, People, Tenant, t.Body, new[] { r.EmployeeId }, canSeePay: true, ct);
+        var docs = await DocRenderer.RenderAsync(sql, people, tenant, t.Body, new[] { r.EmployeeId }, canSeePay: true, ct);
         if (docs.Count == 0) throw new InvalidOperationException("Çalışan bulunamadı");
         r.VerificationCode = NewCode();
         var issued = DateTime.UtcNow;

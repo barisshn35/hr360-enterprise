@@ -128,6 +128,7 @@ kayıt ekranından açılır. Demo şirketini `platform.admin` hesabıyla askıy
 | Yeni sürüme güncelleme (tek komut, otomatik geri dönüş) | `scripts/update.sh` (önce yedek, sonra sürüm, göçler, imajlar ve tüm servislerin sağlık denetimi; denetim geçmezse önceki sürüme döner). `scripts/update.sh --ref v2.1`, `scripts/update.sh rollback`, `scripts/update.sh status` |
 | İzleme (Prometheus + Grafana + Loki + Alertmanager) | `scripts/monitoring.sh enable / status / password / disable / purge` |
 | Alarm kanalları (e-posta, Slack, Teams) | `scripts/monitoring.sh alerts status / email … / slack … / teams … / test` |
+| Dağıtık izleme (OpenTelemetry → Tempo, KVKK maskeli) | `scripts/monitoring.sh tracing on [oran] / off / status` |
 | Testler | `scripts/test.sh unit / integration / e2e / all` (ayrıntı: [tests/README.md](tests/README.md)) |
 | Yük testi | `scripts/loadtest.sh smoke / load / stress` |
 | Güvenlik taraması | `scripts/security-scan.sh repo / deps / images` (Trivy, npm audit, NuGet) |
@@ -199,9 +200,69 @@ scripts/monitoring.sh alerts test     # tüm kanallara deneme alarmı
 Teams adresi kanalda **Workflows › "Post to a channel when a webhook request is
 received"** şablonuyla alınır (eski "Incoming Webhook" bağlayıcıları Microsoft
 tarafından kapatıldı). Alarmlar Grafana'da da (Alerting, "Alertmanager" veri
-kaynağı) görülür ve susturulabilir. Yığın yaklaşık 1,5 GB bellek sınırı ekler.
+kaynağı) görülür ve susturulabilir. Yığın yaklaşık 2,3 GB bellek sınırı ekler (Tempo ve collector dahil).
 Prometheus (`127.0.0.1:9090`) ve Alertmanager (`127.0.0.1:9093`) yalnızca
 sunucunun kendisinden erişilebilir.
+
+#### Dağıtık izleme (OpenTelemetry) ve iş metrikleri
+
+Tüm .NET servisleri OpenTelemetry ile iz üretebilir: gelen HTTP istekleri, servisler
+arası HttpClient çağrıları, PostgreSQL sorguları (Npgsql) ve Kafka yayın/tüketim
+adımları (outbox yayıncısı W3C `traceparent` başlığını mesaja yazar, tüketici izi
+sürdürür). **Varsayılan kapalıdır**: servis yalnızca `OTEL_EXPORTER_OTLP_ENDPOINT`
+tanımlıysa izleme kurar; tanımsızken ek yük yoktur.
+
+```bash
+scripts/monitoring.sh enable          # izleme yığını (tempo + otel-collector dahil)
+scripts/monitoring.sh tracing on      # tüm istekler; örnekleme için: tracing on 0.2
+scripts/monitoring.sh tracing status
+scripts/monitoring.sh tracing off
+```
+
+`tracing on`, `deploy/monitoring/tracing.env` dosyasına
+`OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317` ve
+`OTEL_TRACES_SAMPLER_ARG` yazar (tüm .NET servisleri bu dosyayı `env_file` olarak
+okur) ve servisleri yeniden başlatır. Akış: servis → `otel-collector` → `tempo`;
+ikisi de yalnızca iç ağdadır. İzler Grafana › Explore › **Tempo** veri kaynağından
+(TraceQL, ör. `{ resource.service.name = "leave-service" }`) sorgulanır.
+
+**KVKK — maskelenenler.** Kişisel veri iki katmanda temizlenir: servis içinde
+(`apps/services/*/Observability/Telemetry.cs`, `PiiMaskingProcessor`, birim testleri
+`tests/dotnet/Leave.Tests/TelemetryMaskingTests.cs`) ve collector'da
+(`deploy/monitoring/otel-collector.yml`, ikinci savunma hattı):
+
+- Span adı ve `http.route` rota şablonudur (`GET api/leave-requests/{id}`); ham yol
+  (`url.path`) içindeki GUID'ler `{guid}` olur.
+- Silinenler: sorgu dizesi (`url.query`), tüm istek/yanıt başlıkları (Authorization,
+  Cookie, X-Device-Key, X-Follow-Up-Code, X-Internal-Token dahil hiçbiri kaydedilmez),
+  istek/yanıt gövdeleri, `enduser.*` (kullanıcı kimliği hiç yazılmaz), istemci IP'si,
+  user-agent, SQL parametre değerleri, veritabanı bağlantı dizesi, istisna yığın izleri.
+- SQL metni yalnızca yer tutucularla (`@p0`, `$1`) tutulur; metin literalleri `'?'` olur.
+- Kalan tüm değerlerde GUID, e-posta, TCKN benzeri 11 haneli sayı, IBAN, uzun sayı
+  dizileri ve JWT/Bearer jetonları yer tutucuyla (`{email}`, `{tckn}`, …) değiştirilir.
+- Arka plan döngülerinin (outbox taraması vb.) bağlamsız veritabanı sorguları aktarılmaz.
+
+**Saklama.** Tempo izleri yerel `tempo-data` biriminde tutar ve `TEMPO_RETENTION`
+(varsayılan `72h`) sonunda kalıcı olarak siler (KVKK: amaçla sınırlı, gerektiği kadar
+saklama). Hemen silmek için `scripts/monitoring.sh purge`.
+
+**İş metrikleri.** Servisler Prometheus'a düşük kardinaliteli iş sayaçları yayınlar
+(kişi düzeyinde etiket yoktur) ve "HR360 iş metrikleri" panosu hazır gelir:
+
+| Metrik | Etiketler |
+|---|---|
+| `hr360_leave_requests_total` | `action` (created/approved/rejected/cancelled), `type` |
+| `hr360_expense_claims_total` | `action` (submitted/approved/rejected/paid), `category` |
+| `hr360_payroll_periods_total` | `action` (calculated/closed/reopened) |
+| `hr360_workflow_requests_total`, `hr360_workflow_step_decisions_total` | `action`/`decision`, `type` |
+| `hr360_workflow_approval_duration_seconds` (histogram) | `outcome`, `type` |
+| `hr360_overtime_requests_total`, `hr360_overtime_hours_approved_total` | `action` |
+| `hr360_recruitment_stage_transitions_total` | `from`, `to` |
+| `hr360_onboarding_plans_total` | `action` (created/completed/cancelled) |
+
+Kiracı etiketi varsayılan olarak **yoktur** (paylaşılan Grafana'da şirket bazlı
+bilgi sızmasın); tek kiracılı kurulumda servis ortamına `METRICS_TENANT_LABEL=true`
+eklenerek `tenant` etiketi açılabilir.
 
 ## Modüller
 
@@ -360,6 +421,24 @@ tercihine göre seçilir; İngilizce komutlar da çalışır (`approvals`, `bala
   şifreli tutulur.
 - Gerçek Slack/Teams hesabı olmadan uçtan uca test: `tests/integration/chatmock.py`
   ve `tests/integration/test_chat.py`.
+
+**Dalga 5e — bot özellikleri.** Mattermost ve Rocket.Chat (kendi sunucunuzda; bulut adresinde
+KVKK aktarım kaydı gerekir), fiş fotoğrafından taslak masraf (yerel OCR, görüntü saklanmaz),
+`izin iptal`, `teşekkür @kişi mesaj`, `masa [tarih]`, `vardiyam` / `takas`, `geldim` / `çıktım`,
+`duyurular` ("Okudum" düğmesi), `belge` (yalnızca bağlantı), `bordrom` ve toplu/ücretle ilgili
+onaylar için HR360'ta ek doğrulama (`/panel/sohbet-onay`, ya da panelde gösterilen kod: `kod 123456`),
+`onaylarım` › "Tümünü onayla", işe başlama mesajları (0/1/3/7. gün, onboarding arkadaşı),
+izin verenlerin doğum günü / iş yıldönümü (yaş yazılmaz), anonim nabız anketi (≥ 5 yanıtla sonuç),
+birebir hatırlatmaları (gündem içeriği değil sayısı), ayrılanlara çıkış anketi (yalnızca İK),
+yöneticinin ekip düzeyi rapor soruları, yazım hatasına dayanıklı komutlar, düğmeli yardım,
+30 günlük şifreli konuşma bağlamı (`geçmişimi sil`), iki kez anlaşılamayınca İK vakası önerisi.
+Sessiz saatlere uyulur (kritik olmayan mesaj ertelenir), kişi/kiracı başına hız sınırı
+(`CHAT_RATE_USER`, `CHAT_RATE_TENANT`, `CHAT_RATE_WINDOW_SECONDS`), eski düğmeler süresi dolunca
+nazik mesaj verir. Entegrasyonlar › Sohbet uygulamaları › **Bot yönetimi**: komut aç/kapat,
+kullanım sayıları, son hatalar, nabız planı. Zamanlanmış işler `CHAT_JOBS_SECONDS` (varsayılan
+300); fiş okuma `OCR_CLIENT_SECRET` (ml-inference hizmet hesabı) ister. Prometheus ölçümleri
+`hr360_chat_*`, Grafana panosu `deploy/monitoring/grafana/dashboards/hr360-chatbot.json`.
+Test: `tests/integration/test_chat_plus.py` (test_chat.py ile aynı anda çalıştırmayın).
 
 ### Zapier ve n8n (REST hook)
 

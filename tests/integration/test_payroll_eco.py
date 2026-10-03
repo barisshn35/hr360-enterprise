@@ -144,7 +144,7 @@ check("Dönem yeniden açılınca taksit geri alınır", a1["repaidAmount"] == 0
 
 # ====================================================================== Y13 yan haklar
 today = dt.date.today()
-code, _ = api("admin", "PUT", f"{C}/benefits/plan", {"year": YEAR, "budgetPerEmployee": 15000, "windowStart": today.isoformat(), "windowEnd": (today + dt.timedelta(days=30)).isoformat()})
+code, _ = api("admin", "PUT", f"{C}/benefits/plan", {"year": YEAR, "budgetPerEmployee": 15000, "windowStart": (today - dt.timedelta(days=1)).isoformat(), "windowEnd": (today + dt.timedelta(days=30)).isoformat()})
 check("Yan hak planı", code == 200, code)
 ids = {}
 for name, cat, cost in (("TEST Yemek kartı", "Meal", 6000), ("TEST Özel sağlık A", "Health", 10000), ("TEST Özel sağlık B", "Health", 8000)):

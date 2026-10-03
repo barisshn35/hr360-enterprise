@@ -13,6 +13,8 @@ using NotificationService.Services;
 using NotificationService.Tenancy;
 
 var builder = WebApplication.CreateBuilder(args);
+// G25: OpenTelemetry izleme (yalnizca OTEL_EXPORTER_OTLP_ENDPOINT tanimliysa) + KVKK maskeleme.
+NotificationService.Observability.Telemetry.AddHrTelemetry(builder.Services, "notification-service");
 
 var connectionString = Environment.GetEnvironmentVariable("NOTIFICATION_DB_CONNECTION")
     ?? throw new InvalidOperationException("DB connection string not configured");

@@ -11,6 +11,8 @@ using TimeShiftService.Services;
 using TimeShiftService.Tenancy;
 
 var builder = WebApplication.CreateBuilder(args);
+// G25: OpenTelemetry izleme (yalnizca OTEL_EXPORTER_OTLP_ENDPOINT tanimliysa) + KVKK maskeleme.
+TimeShiftService.Observability.Telemetry.AddHrTelemetry(builder.Services, "timeshift-service");
 
 var connectionString = Environment.GetEnvironmentVariable("TIMESHIFT_DB_CONNECTION")
     ?? throw new InvalidOperationException("DB connection string not configured");
@@ -26,7 +28,8 @@ builder.Services.AddHttpClient<DepartmentDirectoryClient>();
 
 builder.Services.AddDbContext<TimeShiftDbContext>(options =>
     options.UseNpgsql(connectionString)
-        .AddInterceptors(new TimeShiftService.Auditing.AuditInterceptor("timeshift-service")));
+        .AddInterceptors(new TimeShiftService.Auditing.AuditInterceptor("timeshift-service"),
+            new TimeShiftService.Observability.BusinessMetricsInterceptor()));
 
 var keycloakAuthority = Environment.GetEnvironmentVariable("KEYCLOAK_AUTHORITY")
     ?? "http://keycloak:8080/auth/realms/hr360";

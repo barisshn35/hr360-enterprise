@@ -13,7 +13,10 @@ namespace GovernanceService.Infrastructure.Chat;
 /// <summary>Bekleyen bir onay adımı (mesaj içeriği için).</summary>
 public sealed record PendingApproval(Guid WorkflowId, Guid StepId, string Type, string? Subject, string? Requester, DateTime? SlaDueAt, string? Details, string? Payload = null);
 
-public enum ChatForm { None, Leave }
+public enum ChatForm { None, Leave, Expense }
+
+/// <summary>B6: fişten okunan masraf önerisi (kullanıcı onaylayınca taslak beyan olur).</summary>
+public sealed record ExpenseDraft(Guid PendingId, decimal? Amount, DateOnly? Date, string Category);
 
 /// <summary>Komut yanıtı: metin, (varsa) düğmeli onay listesi, bağlantı ya da form.</summary>
 public sealed record ChatReply(string Text, IReadOnlyList<PendingApproval> Approvals)
@@ -22,6 +25,14 @@ public sealed record ChatReply(string Text, IReadOnlyList<PendingApproval> Appro
     public string? Link { get; init; }
     public ChatForm Form { get; init; }
     public IReadOnlyList<string>? FormLines { get; init; }
+    /// <summary>Dalga 5e: eylem / hızlı yanıt / "Panelde aç" düğmeleri.</summary>
+    public IReadOnlyList<ChatButton>? Buttons { get; init; }
+    public ExpenseDraft? Expense { get; init; }
+    /// <summary>Düğmeye basılınca eski kartın yerine bu yanıt konur (BG10: eski düğmeler kalkar).</summary>
+    public bool Replace { get; init; }
+
+    public static ChatReply Of(string text, bool en, params ChatButton[] buttons) =>
+        new(text, Array.Empty<PendingApproval>()) { En = en, Buttons = buttons.Length == 0 ? null : buttons };
 }
 
 /// <summary>
@@ -43,7 +54,13 @@ public sealed class ChatService
     private readonly PeopleDirectory _people;
 
     public ChatService(Sql sql, SlackApi slack, TeamsApi teams, IHttpClientFactory http, ILogger<ChatService> log, PeopleDirectory people)
-    { _sql = sql; _slack = slack; _teams = teams; _http = http; _log = log; _people = people; }
+    {
+        _sql = sql; _slack = slack; _teams = teams; _http = http; _log = log; _people = people;
+        Features = new ChatFeatures(this, sql, slack, teams, http, people, log);
+    }
+
+    /// <summary>Dalga 5e özellikleri (Mattermost/Rocket.Chat, düğme eylemleri, zamanlanmış işler...).</summary>
+    public ChatFeatures Features { get; }
 
     // ------------------------------------------------------------------ güvenlik ve veri en aza indirme
 
@@ -78,7 +95,7 @@ public sealed class ChatService
             "SELECT \"Language\" FROM notification_preferences WHERE \"TenantSlug\" = $1 AND \"EmployeeId\" = $2", ct, tenant, employeeId.Value) as string == "en";
 
     /// <summary>Ayrılan ya da silinen çalışanın sohbet eşleşmesi kaldırılır (her istekte denetlenir).</summary>
-    private async Task<bool> EnsureActiveAsync(GovernanceDbContext db, ChatIdentity who, CancellationToken ct)
+    public async Task<bool> EnsureActiveAsync(GovernanceDbContext db, ChatIdentity who, CancellationToken ct)
     {
         if (who.EmployeeId is null) return false;
         var status = await _sql.ScalarAsync("SELECT \"Status\" FROM employee_employees WHERE \"TenantSlug\" = $1 AND \"Id\" = $2", ct, who.TenantSlug, who.EmployeeId.Value) as string;
@@ -131,7 +148,7 @@ public sealed class ChatService
         var apps = await db.ChatApps.Where(a => a.TenantSlug == tenant && a.IsEnabled).ToListAsync(ct);
         // KVKK m.9: dayanak kaydı olmayan yurt dışı hizmete veri gönderilmez.
         var allowed = await TransferGuard.AllowedAsync(db, tenant, ct);
-        apps = apps.Where(a => allowed.Contains(TransferGuard.KeyOf(a.Platform))).ToList();
+        apps = apps.Where(a => ChatHosts.Allowed(a, allowed)).ToList();
         if (apps.Count == 0) return;
         if (!Guid.TryParse(EventHub.Field(payload, "WorkflowRequestId"), out var wfId)) return;
 
@@ -174,7 +191,8 @@ public sealed class ChatService
                   + (who is null ? "" : $"\nKarar: {who}") + (hasNote ? "\nKarar notu var; HR360'ta açarak görebilirsiniz." : "");
             foreach (var app in apps.Where(a => a.NotifyRequesters))
             {
-                try { await SendTextToEmployeeAsync(db, app, requesterId, text, WorkflowUrl(wfId), ct); }
+                // BG6: sonuç bildirimi kritik değildir; kişinin sessiz saatinde ertelenir.
+                try { await Features.SendAsync(db, app, requesterId, ChatReply.Of(text, rEn) with { Link = WorkflowUrl(wfId) }, "workflow.result", false, ct); }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     await FailAsync(db, app, ex, ct);
@@ -204,12 +222,13 @@ public sealed class ChatService
     public async Task<int> ProcessOutboxAsync(GovernanceDbContext db, CancellationToken ct)
     {
         var now = DateTime.UtcNow;
+        ChatMetrics.QueueDepth.Set(await db.ChatOutbox.IgnoreQueryFilters().CountAsync(ct));
         var due = await db.ChatOutbox.IgnoreQueryFilters().Where(o => o.NextAttemptAt <= now).OrderBy(o => o.NextAttemptAt).Take(50).ToListAsync(ct);
         var sent = 0;
         foreach (var o in due)
         {
             var app = await db.ChatApps.IgnoreQueryFilters().FirstOrDefaultAsync(a => a.Id == o.AppId && a.IsEnabled, ct);
-            if (app is null || !(await TransferGuard.AllowedAsync(db, o.TenantSlug, ct)).Contains(TransferGuard.KeyOf(app.Platform)))
+            if (app is null || !ChatHosts.Allowed(app, await TransferGuard.AllowedAsync(db, o.TenantSlug, ct)))
             {
                 db.ChatOutbox.Remove(o);
                 continue;
@@ -224,6 +243,14 @@ public sealed class ChatService
                     // Talep bu arada karara bağlandıysa gönderilecek bir şey kalmadı.
                     if (pending is not null)
                         await SendApprovalAsync(db, app, approverId, p.TryGetProperty("approverEmail", out var e) && e.ValueKind == JsonValueKind.String ? e.GetString() : null, pending, ct);
+                }
+                else if (o.Kind == "card")
+                {
+                    // BG6: sessiz saatte ertelenen mesaj (vakti gelince tercih yeniden denetlenir).
+                    var card = JsonSerializer.Deserialize<ChatFeatures.OutboxCard>(o.Payload)!;
+                    var outcome = await Features.SendAsync(db, app, card.EmployeeId, ChatFeatures.Deserialize(JsonDocument.Parse(card.Reply.ToJsonString()).RootElement),
+                        card.TemplateCode, o.Attempts > 0, ct);
+                    _ = outcome;
                 }
                 else if (o.Kind == "text")
                 {
@@ -327,6 +354,8 @@ public sealed class ChatService
     private async Task<string?> NameOfAsync(string tenant, Guid employeeId, CancellationToken ct) =>
         await _sql.ScalarAsync("SELECT \"FirstName\" || ' ' || \"LastName\" FROM employee_employees WHERE \"TenantSlug\" = $1 AND \"Id\" = $2", ct, tenant, employeeId) as string;
 
+    public async Task<Guid?> EmployeeIdByEmailAsync(string tenant, string email, CancellationToken ct) => (await EmployeeByEmailAsync(tenant, email, ct))?.Id;
+
     private async Task<(Guid Id, string Name)?> EmployeeByEmailAsync(string tenant, string email, CancellationToken ct)
     {
         var r = (await _sql.QueryAsync("""
@@ -357,7 +386,7 @@ public sealed class ChatService
     }
 
     /// <summary>Çalışanın Slack hesabını e-postayla bulur (gerekirse) ve DM kanalını döndürür.</summary>
-    private async Task<ChatIdentity?> SlackIdentityForEmployeeAsync(GovernanceDbContext db, ChatApp app, Guid employeeId, string? email, CancellationToken ct)
+    public async Task<ChatIdentity?> SlackIdentityForEmployeeAsync(GovernanceDbContext db, ChatApp app, Guid employeeId, string? email, CancellationToken ct)
     {
         var token = SecretBox.Unprotect(app.SlackBotTokenEnc)!;
         var id = await db.ChatIdentities.FirstOrDefaultAsync(i => i.AppId == app.Id && i.EmployeeId == employeeId, ct);
@@ -419,7 +448,12 @@ public sealed class ChatService
     {
         if (await db.ChatMessages.AnyAsync(m => m.AppId == app.Id && m.StepId == p.StepId && m.RecipientEmployeeId == approverId, ct)) return;
         var en = await EnAsync(app.TenantSlug, approverId, ct);
-        p = Shape(app, p, en);
+        p = await Features.EnrichAsync(app.TenantSlug, Shape(app, p, en), en, ct);
+        if (app.Platform is "Mattermost" or "RocketChat")
+        {
+            await Features.SendApprovalGenericAsync(db, app, approverId, p, en, ct);
+            return;
+        }
         if (app.Platform == "Slack")
         {
             var id = await SlackIdentityForEmployeeAsync(db, app, approverId, approverEmail, ct);
@@ -458,6 +492,8 @@ public sealed class ChatService
     /// <summary>Çalışana düz metin mesajı (sonuç bildirimi, deneme mesajı). Eşleşme yoksa false.</summary>
     public async Task<bool> SendTextToEmployeeAsync(GovernanceDbContext db, ChatApp app, Guid employeeId, string text, string? link, CancellationToken ct)
     {
+        if (app.Platform is "Mattermost" or "RocketChat")
+            return await Features.DeliverAsync(db, app, employeeId, ChatReply.Of(text, await EnAsync(app.TenantSlug, employeeId, ct)) with { Link = link }, ct);
         if (app.Platform == "Slack")
         {
             var id = await SlackIdentityForEmployeeAsync(db, app, employeeId, null, ct);
@@ -501,8 +537,10 @@ public sealed class ChatService
             FROM workflow_requests w LEFT JOIN employee_employees e ON e."Id" = w."RequesterEmployeeId"
             WHERE w."TenantSlug" = $1 AND w."Id" = $2
             """, MapPending, ct, app.TenantSlug, m.WorkflowRequestId, m.StepId)).FirstOrDefault() ?? p;
-        full = Shape(app, full, en);
-        if (m.Platform == "Slack")
+        full = await Features.EnrichAsync(app.TenantSlug, Shape(app, full, en), en, ct);
+        if (m.Platform is "Mattermost" or "RocketChat")
+            await Features.UpdateGenericAsync(app, m, ChatFormat.StatusFallback(status, full), ct);
+        else if (m.Platform == "Slack")
             await _slack.UpdateAsync(SecretBox.Unprotect(app.SlackBotTokenEnc)!, m.ConversationId, m.MessageId, ChatFormat.StatusFallback(status, full), ChatFormat.SlackApproval(full, status, en), ct);
         else if (!string.IsNullOrEmpty(m.MessageId) && m.ServiceUrl is not null)
         {
@@ -515,10 +553,15 @@ public sealed class ChatService
 
     // ------------------------------------------------------------------ karar
 
-    public sealed record DecisionResult(bool Ok, string Message, string? Status);
+    public sealed record DecisionResult(bool Ok, string Message, string? Status)
+    {
+        /// <summary>BG13: karar ek doğrulama bekliyor (yanıt olarak gösterilecek bağlantı kartı).</summary>
+        public ChatReply? StepUp { get; init; }
+    }
 
     /// <summary>Sohbetten gelen "Onayla/Reddet". Yetki kontrolü workflow-service'tedir.</summary>
-    public async Task<DecisionResult> DecideAsync(GovernanceDbContext db, ChatApp app, ChatIdentity who, Guid wfId, Guid stepId, bool approve, CancellationToken ct, string? comment = null)
+    public async Task<DecisionResult> DecideAsync(GovernanceDbContext db, ChatApp app, ChatIdentity who, Guid wfId, Guid stepId, bool approve, CancellationToken ct, string? comment = null,
+        bool stepUpDone = false)
     {
         if (!await EnsureActiveAsync(db, who, ct))
             return new(false, $"Sohbet hesabınız ({who.Email ?? "e-posta yok"}) HR360'taki etkin bir çalışan kaydıyla eşleşmedi. İK'dan e-posta adresinizi kontrol etmesini isteyin.", null);
@@ -527,6 +570,13 @@ public sealed class ChatService
             return new(false, LinkPrompt(await LinkUrlAsync(db, who, TimeSpan.FromHours(24), ct), en: en), null);
         var token = Environment.GetEnvironmentVariable("INTERNAL_SERVICE_TOKEN");
         if (string.IsNullOrEmpty(token)) return new(false, "Sunucuda INTERNAL_SERVICE_TOKEN tanımlı değil; sohbetten onay kapalı.", null);
+        // BG13: ücretle ilgili onaylar sohbetten ancak HR360'ta ek doğrulamayla verilir.
+        if (!stepUpDone && approve && await Features.SensitiveWorkflowAsync(app.TenantSlug, wfId, ct))
+        {
+            var card = await Features.StepUpAsync(app, who.EmployeeId!.Value, "decide", new { wf = wfId, step = stepId, approve },
+                en ? "Approve a pay-related request" : "Ücretle ilgili bir talebi onaylama", en, ct);
+            return new(false, card.Text, null) { StepUp = card };
+        }
 
         var client = _http.CreateClient();
         client.Timeout = TimeSpan.FromSeconds(10);
@@ -566,41 +616,26 @@ public sealed class ChatService
 
     // ------------------------------------------------------------------ komutlar
 
-    public const string Help = "Komutlar: *onaylarım* (bekleyen onaylarınız) · *bakiye* (izin bakiyeniz) · *izin al* (izin talebi) · *özet* · *izindekiler* · *kimnerede* · *bekleyen* · *ben*. Ayrıca soru da sorabilirsiniz: \"sonraki resmî tatil ne zaman?\"";
-    public const string HelpEn = "Commands: *approvals* (awaiting your decision) · *balance* (your leave balance) · *request leave* · *summary* · *on leave* · *whereabouts* · *pending* · *me*. You can also ask a question: \"when is the next public holiday?\"";
+    public const string Help = "Komutlar: *onaylarım* (bekleyen onaylarınız) · *bakiye* (izin bakiyeniz) · *izin al* (izin talebi) · *izin iptal* · *özet* · *izindekiler* · *kimnerede* · *bekleyen* · *ben*"
+        + " · *masraf* (fiş fotoğrafı gönderin) · *teşekkür @kişi mesaj* · *masa* · *vardiyam* · *takas* · *geldim* / *çıktım* · *duyurular* · *belge* · *bordrom* · *ik vakası* · *geçmişimi sil*."
+        + " Ayrıca soru da sorabilirsiniz: \"sonraki resmî tatil ne zaman?\"";
+    public const string HelpEn = "Commands: *approvals* (awaiting your decision) · *balance* (your leave balance) · *request leave* · *cancel leave* · *summary* · *on leave* · *whereabouts* · *pending* · *me*"
+        + " · *expense* (send a receipt photo) · *thanks @person message* · *desk* · *my shifts* · *swaps* · *clock in* / *clock out* · *announcements* · *documents* · *payslip* · *hr case* · *forget me*."
+        + " You can also ask a question: \"when is the next public holiday?\"";
     public static string HelpOf(bool en) => en ? HelpEn : Help;
-
-    /// <summary>Komut anahtarı: Türkçe ve İngilizce eş anlamlılar aynı komuta çıkar. Sonuç (komut, İngilizce mi).</summary>
-    private static (string Cmd, bool English) Resolve(string n) => n switch
-    {
-        "" => ("", false),
-        "yardim" or "komutlar" => ("help", false),
-        "help" or "commands" => ("help", true),
-        "onaylarim" or "onay" or "onaylar" => ("approvals", false),
-        "approvals" or "myapprovals" or "approve" => ("approvals", true),
-        "bakiye" or "izinbakiyem" or "izin" or "bakiyem" => ("balance", false),
-        "balance" or "leavebalance" or "mybalance" => ("balance", true),
-        "izinal" or "izintalebi" or "yeniizin" or "izinistiyorum" => ("leave", false),
-        "requestleave" or "leaverequest" or "newleave" or "timeoff" => ("leave", true),
-        "ozet" or "anasayfa" or "durum" => ("home", false),
-        "summary" or "home" or "status" => ("home", true),
-        "izindekiler" or "izinde" or "kimizinde" => ("onleave", false),
-        "onleave" or "whoisoff" or "whosoff" or "whoisonleave" => ("onleave", true),
-        "kimnerede" => ("whereabouts", false),
-        "whereabouts" or "whoiswhere" or "whoswhere" => ("whereabouts", true),
-        "bekleyen" => ("pending", false),
-        "pending" => ("pending", true),
-        "ben" or "kimim" or "bagla" => ("me", false),
-        "me" or "whoami" or "link" => ("me", true),
-        _ => (n, false),
-    };
 
     public async Task<ChatReply> CommandAsync(GovernanceDbContext db, ChatApp app, ChatIdentity who, string? input, CancellationToken ct,
         HrAssistant? assistant = null)
     {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var provider = ChatMetrics.Provider(app.Platform);
         var tenant = who.TenantSlug;
-        var (cmd, englishCommand) = Resolve(Normalize(input));
         var today = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(3));
+
+        // BG7: yazım hatasına dayanıklı çözümleme (Türkçe karakter katlama + Levenshtein).
+        var resolved = ChatCommands.Resolve(input);
+        var cmd = resolved?.Cmd ?? "assistant";
+        var englishCommand = resolved?.English ?? false;
 
         // Her istekte: çalışan hâlâ etkin mi (ayrılanın erişimi anında kapanır), hesap doğrulandı mı.
         var active = await EnsureActiveAsync(db, who, ct);
@@ -610,113 +645,214 @@ public sealed class ChatService
             : englishCommand || LooksEnglish(input);
         string L(string trText, string enText) => en ? enText : trText;
         ChatReply T(string t) => new(t, Array.Empty<PendingApproval>()) { En = en };
+        ChatReply Done(ChatReply r, string outcome)
+        {
+            ChatMetrics.Commands.WithLabels(provider, ChatMetrics.Intent(cmd), outcome).Inc();
+            ChatMetrics.Latency.WithLabels(provider).Observe(sw.Elapsed.TotalSeconds);
+            return r;
+        }
+
+        // BG14: kullanıcı ve kiracı başına hız sınırı (bellek içi kayan pencere).
+        var now = DateTime.UtcNow;
+        var (userOk, retry) = ChatFeatures.Limiter.Hit($"u:{app.Id}:{who.ExternalUserId}", ChatFeatures.UserLimit, ChatFeatures.RateWindow, now);
+        var tenantOk = userOk && ChatFeatures.Limiter.Hit($"t:{tenant}", ChatFeatures.TenantLimit, ChatFeatures.RateWindow, now).Allowed;
+        if (!userOk || !tenantOk)
+        {
+            ChatMetrics.RateLimited.WithLabels(provider, userOk ? "tenant" : "user").Inc();
+            await Features.CountAsync(app, "ratelimit", userOk ? "tenant" : "user", ct);
+            var secs = Math.Max(1, (int)Math.Ceiling(retry.TotalSeconds));
+            return Done(T(userOk
+                ? L("⏳ Şu an çok yoğunuz; birkaç saniye sonra yeniden deneyin.", "⏳ We are very busy right now; please try again in a few seconds.")
+                : L($"⏳ Biraz yavaşlayalım: çok sık komut gönderdiniz. {secs} sn sonra yeniden deneyin.", $"⏳ Let's slow down a little: too many commands. Try again in {secs} s.")), "rate_limited");
+        }
+
         var notLinked = L("Hesabınız bir çalışan kaydıyla eşleşmedi; bu komut için eşleşme gerekir. *ben* yazarak durumu görebilirsiniz.",
                           "Your account is not matched to an employee record; this command needs a match. Type *me* to see the status.");
 
         var known = cmd is "" or "help" or "me";
         if (!known && active && !Trusted(app, who))
-            return T(LinkPrompt(await LinkUrlAsync(db, who, TimeSpan.FromHours(24), ct), en: en));
+            return Done(T(LinkPrompt(await LinkUrlAsync(db, who, TimeSpan.FromHours(24), ct), en: en)), "unverified");
 
-        switch (cmd)
+        // BG20: kiracının bu uygulamada kapattığı komut.
+        if (ChatFeatureCatalog.FeatureOf(cmd) is { } feature && app.DisabledFeatures.Contains(feature))
         {
-            case "" or "help":
-                return T(HelpOf(en));
+            await Features.CountAsync(app, feature, "disabled", ct);
+            return Done(T(L("Bu komut şirketinizde kapalı.", "This command is turned off in your company.")), "disabled");
+        }
 
-            case "approvals":
+        ChatReply reply;
+        try
+        {
+            reply = await RunCommandAsync();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException and not ChatApiException)
+        {
+            _log.LogWarning(ex, "Sohbet komutu işlenemedi ({Cmd})", cmd);
+            await Features.ErrorAsync(app, cmd, ex.GetType().Name + ": " + ex.Message);
+            return Done(T(L("⚠️ Bir hata oluştu; HR360 üzerinden deneyin.", "⚠️ Something went wrong; please try in HR360.")), "error");
+        }
+        await Features.CountAsync(app, ChatFeatureCatalog.FeatureOf(cmd) ?? (cmd.Length == 0 ? "help" : cmd), "ok", ct);
+        if (resolved is { Fuzzy: true })
+            reply = reply with { Text = L($"_(“{ChatFeatures.DisplayName(cmd, false)}” olarak anladım)_\n", $"_(understood as “{ChatFeatures.DisplayName(cmd, true)}”)_\n") + reply.Text };
+        return Done(reply, "ok");
+
+        async Task<ChatReply> RunCommandAsync()
+        {
+            if (ChatFeatures.OwnCommands.Contains(cmd))
             {
                 if (who.EmployeeId is null) return T(notLinked);
-                var items = (await MyPendingAsync(tenant, who.EmployeeId.Value, 5, ct)).Select(p => Shape(app, p, en)).ToList();
-                var total = items.Count < 5 ? items.Count : await MyPendingCountAsync(tenant, who.EmployeeId.Value, ct);
-                if (items.Count == 0) return T(L("Karar bekleyen talebiniz yok. 🎉", "Nothing is awaiting your decision. 🎉"));
-                return new(total > items.Count
-                    ? L($"Karar bekleyen *{total}* talebiniz var; en yeni {items.Count} tanesi aşağıda. Tümü: {PublicOrigin}/panel/onaylar",
-                        $"*{total}* requests are awaiting your decision; the newest {items.Count} are below. All: {PublicOrigin}/panel/onaylar")
-                    : L($"Karar bekleyen *{items.Count}* talebiniz var:", $"*{items.Count}* request(s) awaiting your decision:"), items) { En = en };
+                return await Features.CommandAsync(db, app, who, resolved!, en, ct);
             }
-
-            case "balance":
+            switch (cmd)
             {
-                if (who.EmployeeId is null) return T(notLinked);
-                var lines = await BalanceLinesAsync(tenant, who.EmployeeId.Value, today.Year, en, ct);
-                if (lines.Count == 0) return T(L($"{today.Year} için tanımlı izin bakiyeniz yok.", $"You have no leave balance defined for {today.Year}."));
-                return T(L($"*{today.Year} izin bakiyeniz*\n", $"*Your {today.Year} leave balance*\n") + string.Join("\n", lines));
-            }
+                case "" or "help":
+                    return ChatFeatures.HelpReply(en);
 
-            case "leave":
-            {
-                if (who.EmployeeId is null) return T(notLinked);
-                var lines = await BalanceLinesAsync(tenant, who.EmployeeId.Value, today.Year, en, ct);
-                return new(L("İzin talebi oluşturmak için formu açın.", "Open the form to request leave."), Array.Empty<PendingApproval>())
-                    { En = en, Form = ChatForm.Leave, FormLines = lines };
-            }
-
-            case "home":
-                if (who.EmployeeId is null) return T(notLinked);
-                return T(await HomeTextAsync(tenant, who.EmployeeId.Value, en, ct));
-
-            case "onleave":
-            {
-                if (who.EmployeeId is null) return T(notLinked);
-                // KVKK veri en aza indirme: adlar yalnızca yöneticiye ve yalnızca kendi ekibi için;
-                // diğer çalışanlara toplam sayı. İzin türü hiçbir zaman yazılmaz.
-                var onLeave = await _sql.QueryAsync("""
-                    SELECT l."EmployeeId", e."FirstName" || ' ' || e."LastName", l."EndDate" FROM leave_requests l JOIN employee_employees e ON e."Id" = l."EmployeeId"
-                    WHERE l."TenantSlug" = $1 AND l."Status" = 'Approved' AND l."StartDate" <= $2 AND l."EndDate" >= $2 ORDER BY 2
-                    """, r => (Id: r.GetGuid(0), Name: r.GetString(1), End: r.GetFieldValue<DateOnly>(2)), ct, tenant, today);
-                var team = (await _people.TeamOfAsync(tenant, who.EmployeeId.Value, ct)).Select(p => p.Id).ToHashSet();
-                if (team.Count == 0)
-                    return T(onLeave.Count == 0 ? L("Bugün izinde olan kimse yok.", "Nobody is on leave today.")
-                        : L($"Bugün şirkette *{onLeave.Count}* kişi izinde.", $"*{onLeave.Count}* people are on leave today."));
-                var mine = onLeave.Where(x => team.Contains(x.Id)).Select(x => en ? $"• {x.Name} (until {x.End:dd.MM})" : $"• {x.Name} ({x.End:dd.MM}'e kadar)").ToList();
-                return T((mine.Count == 0 ? L("Bugün ekibinizden izinde olan yok.", "Nobody from your team is on leave today.")
-                        : L($"*Ekibinizden bugün izinde ({mine.Count}):*\n", $"*On leave today from your team ({mine.Count}):*\n") + string.Join("\n", mine))
-                    + (onLeave.Count > mine.Count ? L($"\nŞirket genelinde toplam {onLeave.Count} kişi izinde.", $"\n{onLeave.Count} people are on leave company-wide.") : ""));
-            }
-
-            case "whereabouts":
-            {
-                var modes = await _sql.QueryAsync("SELECT \"Mode\", count(*) FROM engagement_presence WHERE \"TenantSlug\" = $1 AND \"Date\" = $2 GROUP BY 1",
-                    r => (Mode: r.GetString(0), N: r.GetInt64(1)), ct, tenant, today);
-                string M(string m) => m switch
+                case "approvals":
                 {
-                    "Office" => L("Ofiste", "In the office"), "Remote" => L("Uzaktan", "Remote"), "Travel" => L("Seyahatte", "Travelling"),
-                    "Off" => L("Çalışmıyor", "Off"), _ => m,
-                };
-                return T(modes.Count == 0 ? L("Bugün için çalışma yeri bildiren olmadı.", "Nobody has shared where they work today.")
-                    : L("*Bugün:* ", "*Today:* ") + string.Join(" · ", modes.Select(m => $"{M(m.Mode)} {m.N}")));
-            }
-
-            case "pending":
-            {
-                var pending = Convert.ToInt64(await _sql.ScalarAsync("SELECT count(*) FROM workflow_requests WHERE \"TenantSlug\" = $1 AND \"Status\" = 'Pending'", ct, tenant));
-                return T(L($"Şirkette onay bekleyen *{pending}* talep var.", $"*{pending}* requests are awaiting approval company-wide."));
-            }
-
-            case "me":
-                if (who.EmployeeId is null)
-                    return T(L($"Hesabınız ({who.Email ?? "e-posta görünmüyor"}) henüz bir çalışan kaydıyla eşleşmedi. Eşleşme e-posta adresiyle yapılır; HR360'taki e-postanız sohbet hesabınızla aynı olmalı.",
-                               $"Your account ({who.Email ?? "no email visible"}) is not matched to an employee record yet. Matching uses the email address; your HR360 email must be the same as your chat account's."));
-                if (!Trusted(app, who))
-                    return T(LinkPrompt(await LinkUrlAsync(db, who, TimeSpan.FromHours(24), ct), en: en));
-                return T(L($"Hesabınız *{await NameOfAsync(tenant, who.EmployeeId.Value, ct)}* ({who.Email}) ile bağlı. Onay talepleri size buradan gelecek.",
-                           $"Your account is linked to *{await NameOfAsync(tenant, who.EmployeeId.Value, ct)}* ({who.Email}). Approval requests will come here."));
-
-            default:
-            {
-                // Doğal dil: komut değilse İK asistanına sorulur (uygulama içi asistanla aynı mantık).
-                if (assistant is not null && who.EmployeeId is not null && Trusted(app, who) && (input ?? "").Trim().Length is > 1 and <= 500)
-                {
-                    var me = await _people.FindAsync(tenant, who.EmployeeId.Value, ct);
-                    var isManager = (await _people.TeamOfAsync(tenant, who.EmployeeId.Value, ct)).Count > 0;
-                    var answer = await assistant.AskAsync(new AssistantAsker(tenant, me, null, isManager, false, en), input!.Trim(), ct);
-                    var text = SlackMd(answer.Reply);
-                    if (answer.Report is { Understood: true } rep) text += "\n" + ReportText(rep);
-                    if (answer.Source == "fallback") text += "\n\n" + HelpOf(en);
-                    var link = answer.Links.FirstOrDefault() is { } l ? PublicOrigin + l.Path : null;
-                    return new(text, Array.Empty<PendingApproval>()) { En = en, Link = link };
+                    if (who.EmployeeId is null) return T(notLinked);
+                    var items = new List<PendingApproval>();
+                    foreach (var p in await MyPendingAsync(tenant, who.EmployeeId.Value, 5, ct)) items.Add(await Features.EnrichAsync(tenant, Shape(app, p, en), en, ct));
+                    var total = items.Count < 5 ? items.Count : await MyPendingCountAsync(tenant, who.EmployeeId.Value, ct);
+                    if (items.Count == 0) return T(L("Karar bekleyen talebiniz yok. 🎉", "Nothing is awaiting your decision. 🎉"));
+                    // BG5: özet + "Tümünü onayla (n)" (onay adımı ve ek doğrulamayla).
+                    var groups = (await MyPendingAsync(tenant, who.EmployeeId.Value, 50, ct)).GroupBy(i => i.Type).ToList();
+                    var summary = string.Join(", ", groups.Select(g => $"{g.Count()} {TypeLabel(g.Key, en)}"));
+                    List<ChatButton>? buttons = null;
+                    if (total >= 2)
+                    {
+                        buttons = new() { new ChatButton(L($"✅ Tümünü onayla ({Math.Min(total, 50)})", $"✅ Approve all ({Math.Min(total, 50)})"), "approveall", "", "primary") };
+                        // Birden çok tür varsa türe göre toplu onay da sunulur ("tüm izinleri onayla").
+                        if (groups.Count > 1)
+                            buttons.AddRange(groups.Where(g => g.Count() >= 2).Select(g => new ChatButton(
+                                L($"Tüm {TypeLabel(g.Key, false)} taleplerini onayla ({g.Count()})", $"Approve all {TypeLabel(g.Key, true)} ({g.Count()})"), "approveall", g.Key)));
+                    }
+                    return new(total > items.Count
+                        ? L($"Karar bekleyen *{total}* talebiniz var ({summary}); en yeni {items.Count} tanesi aşağıda. Tümü: {PublicOrigin}/panel/onaylar",
+                            $"*{total}* requests are awaiting your decision ({summary}); the newest {items.Count} are below. All: {PublicOrigin}/panel/onaylar")
+                        : L($"Karar bekleyen *{items.Count}* talebiniz var ({summary}):", $"*{items.Count}* request(s) awaiting your decision ({summary}):"), items) { En = en, Buttons = buttons };
                 }
-                return T(L("Bu komutu tanımadım. ", "I didn't recognise that command. ") + HelpOf(en));
+
+                case "balance":
+                {
+                    if (who.EmployeeId is null) return T(notLinked);
+                    var lines = await BalanceLinesAsync(tenant, who.EmployeeId.Value, today.Year, en, ct);
+                    if (lines.Count == 0) return T(L($"{today.Year} için tanımlı izin bakiyeniz yok.", $"You have no leave balance defined for {today.Year}."));
+                    return ChatReply.Of(L($"*{today.Year} izin bakiyeniz*\n", $"*Your {today.Year} leave balance*\n") + string.Join("\n", lines), en,
+                        ChatButton.Say(L("İzin al", "Request leave"), L("izin al", "request leave")), ChatButton.Link(L("Panelde aç", "Open in HR360"), $"{PublicOrigin}/panel/izin"));
+                }
+
+                case "leave":
+                {
+                    if (who.EmployeeId is null) return T(notLinked);
+                    var lines = await BalanceLinesAsync(tenant, who.EmployeeId.Value, today.Year, en, ct);
+                    return new(L("İzin talebi oluşturmak için formu açın.", "Open the form to request leave."), Array.Empty<PendingApproval>())
+                        { En = en, Form = ChatForm.Leave, FormLines = lines };
+                }
+
+                case "home":
+                    if (who.EmployeeId is null) return T(notLinked);
+                    return T(await HomeTextAsync(tenant, who.EmployeeId.Value, en, ct));
+
+                case "onleave":
+                {
+                    if (who.EmployeeId is null) return T(notLinked);
+                    // KVKK veri en aza indirme: adlar yalnızca yöneticiye ve yalnızca kendi ekibi için;
+                    // diğer çalışanlara toplam sayı. İzin türü hiçbir zaman yazılmaz.
+                    var onLeave = await _sql.QueryAsync("""
+                        SELECT l."EmployeeId", e."FirstName" || ' ' || e."LastName", l."EndDate" FROM leave_requests l JOIN employee_employees e ON e."Id" = l."EmployeeId"
+                        WHERE l."TenantSlug" = $1 AND l."Status" = 'Approved' AND l."StartDate" <= $2 AND l."EndDate" >= $2 ORDER BY 2
+                        """, r => (Id: r.GetGuid(0), Name: r.GetString(1), End: r.GetFieldValue<DateOnly>(2)), ct, tenant, today);
+                    var team = (await _people.TeamOfAsync(tenant, who.EmployeeId.Value, ct)).Select(p => p.Id).ToHashSet();
+                    if (team.Count == 0)
+                        return T(onLeave.Count == 0 ? L("Bugün izinde olan kimse yok.", "Nobody is on leave today.")
+                            : L($"Bugün şirkette *{onLeave.Count}* kişi izinde.", $"*{onLeave.Count}* people are on leave today."));
+                    var mine = onLeave.Where(x => team.Contains(x.Id)).Select(x => en ? $"• {x.Name} (until {x.End:dd.MM})" : $"• {x.Name} ({x.End:dd.MM}'e kadar)").ToList();
+                    return T((mine.Count == 0 ? L("Bugün ekibinizden izinde olan yok.", "Nobody from your team is on leave today.")
+                            : L($"*Ekibinizden bugün izinde ({mine.Count}):*\n", $"*On leave today from your team ({mine.Count}):*\n") + string.Join("\n", mine))
+                        + (onLeave.Count > mine.Count ? L($"\nŞirket genelinde toplam {onLeave.Count} kişi izinde.", $"\n{onLeave.Count} people are on leave company-wide.") : ""));
+                }
+
+                case "whereabouts":
+                {
+                    var modes = await _sql.QueryAsync("SELECT \"Mode\", count(*) FROM engagement_presence WHERE \"TenantSlug\" = $1 AND \"Date\" = $2 GROUP BY 1",
+                        r => (Mode: r.GetString(0), N: r.GetInt64(1)), ct, tenant, today);
+                    string M(string m) => m switch
+                    {
+                        "Office" => L("Ofiste", "In the office"), "Remote" => L("Uzaktan", "Remote"), "Travel" => L("Seyahatte", "Travelling"),
+                        "Off" => L("Çalışmıyor", "Off"), _ => m,
+                    };
+                    return T(modes.Count == 0 ? L("Bugün için çalışma yeri bildiren olmadı.", "Nobody has shared where they work today.")
+                        : L("*Bugün:* ", "*Today:* ") + string.Join(" · ", modes.Select(m => $"{M(m.Mode)} {m.N}")));
+                }
+
+                case "pending":
+                {
+                    var pending = Convert.ToInt64(await _sql.ScalarAsync("SELECT count(*) FROM workflow_requests WHERE \"TenantSlug\" = $1 AND \"Status\" = 'Pending'", ct, tenant));
+                    return T(L($"Şirkette onay bekleyen *{pending}* talep var.", $"*{pending}* requests are awaiting approval company-wide."));
+                }
+
+                case "me":
+                    if (who.EmployeeId is null)
+                        return T(L($"Hesabınız ({who.Email ?? "e-posta görünmüyor"}) henüz bir çalışan kaydıyla eşleşmedi. Eşleşme e-posta adresiyle yapılır; HR360'taki e-postanız sohbet hesabınızla aynı olmalı.",
+                                   $"Your account ({who.Email ?? "no email visible"}) is not matched to an employee record yet. Matching uses the email address; your HR360 email must be the same as your chat account's."));
+                    if (!Trusted(app, who))
+                        return T(LinkPrompt(await LinkUrlAsync(db, who, TimeSpan.FromHours(24), ct), en: en));
+                    return T(L($"Hesabınız *{await NameOfAsync(tenant, who.EmployeeId.Value, ct)}* ({who.Email}) ile bağlı. Onay talepleri size buradan gelecek.",
+                               $"Your account is linked to *{await NameOfAsync(tenant, who.EmployeeId.Value, ct)}* ({who.Email}). Approval requests will come here."));
+
+                default:
+                    return await AssistantAsync();
             }
+        }
+
+        async Task<ChatReply> AssistantAsync()
+        {
+            // Doğal dil: komut değilse İK asistanına sorulur (uygulama içi asistanla aynı mantık).
+            var raw = (input ?? "").Trim();
+            if (assistant is null || who.EmployeeId is null || !Trusted(app, who) || raw.Length is <= 1 or > 500)
+                return ChatReply.Of(L("Bu komutu tanımadım. ", "I didn't recognise that command. ") + HelpOf(en), en);
+            var emp = who.EmployeeId.Value;
+            var me = await _people.FindAsync(tenant, emp, ct);
+            var isManager = (await _people.TeamOfAsync(tenant, emp, ct)).Count > 0;
+            // BG16: "peki geçen ay?" gibi devam soruları önceki soruyla birleştirilir (bağlam 30 gün, şifreli).
+            var history = await Features.ContextAsync(tenant, emp, ct);
+            var lastQuestion = history.LastOrDefault(h => h.Role == "user").Text;
+            var question = FollowUp.Merge(lastQuestion, raw) ?? raw;
+            // B19: yönetici rapor soruları yalnızca kendi departmanı için; kişi düzeyi yok (yalnızca İK, sohbette hiç);
+            // 5'ten küçük gruplar gizlenir (NlReport varsayılanı).
+            var dept = isManager && me?.DepartmentId is { } d ? d : (Guid?)null;
+            var answer = await assistant.AskAsync(new AssistantAsker(tenant, me, me?.UserId, isManager, false, en, dept), question, ct);
+            var text = SlackMd(answer.Reply);
+            if (answer.Report is { Understood: true } rep) text += "\n" + ReportText(rep);
+            var notUnderstood = answer.Source == "fallback" || answer.Report is { Understood: false };
+            var misses = ChatFeatures.Miss(app.Id, who.ExternalUserId, notUnderstood);
+            await Features.RememberAsync(tenant, emp, question, text, ct);
+            // BG17: "Panelde aç" bağlantıları + hızlı yanıt önerileri.
+            var buttons = new List<ChatButton>();
+            buttons.AddRange(answer.Links.Take(3).Select(l => ChatButton.Link(L("Panelde aç: ", "Open: ") + l.Label, PublicOrigin + l.Path)));
+            var suggestions = (answer.Report?.Suggestions ?? Array.Empty<string>()).Concat(answer.Related ?? Array.Empty<string>()).Take(3).ToList();
+            buttons.AddRange(suggestions.Select(x => ChatButton.Say(x.Length > 40 ? x[..40] + "…" : x, x)));
+            if (answer.Report is { Understood: true })
+                buttons.Add(ChatButton.Say(L("Peki geçen ay?", "And last month?"), L("peki geçen ay", "and last month")));
+            if (notUnderstood)
+            {
+                text += "\n\n" + HelpOf(en);
+                // BG18: iki kez anlaşılamazsa İK vakası önerilir (kişi onaylamadan açılmaz).
+                if (misses >= 2)
+                {
+                    var offer = await Features.HrCaseConfirmCardAsync(app, emp, raw, en, ct);
+                    text += "\n\n" + offer.Text;
+                    buttons.AddRange(offer.Buttons ?? Array.Empty<ChatButton>());
+                    ChatFeatures.Miss(app.Id, who.ExternalUserId, false);
+                }
+                else if (buttons.Count == 0)
+                {
+                    buttons.Add(ChatButton.Say(L("Bakiye", "Balance"), L("bakiye", "balance")));
+                    buttons.Add(ChatButton.Say(L("Sonraki tatil", "Next holiday"), L("sonraki resmi tatil ne zaman", "when is the next public holiday")));
+                }
+            }
+            return new(text, Array.Empty<PendingApproval>()) { En = en, Buttons = buttons.Count == 0 ? null : buttons };
         }
     }
 
@@ -907,15 +1043,6 @@ public sealed class ChatService
         return sent;
     }
 
-    private static string Normalize(string? s)
-    {
-        s = (s ?? "").Trim().ToLower(Tr);
-        // Teams'te bot adıyla başlayan mesajlar (@HR360 bakiye) ve Türkçe karakterler.
-        s = System.Text.RegularExpressions.Regex.Replace(s, "<at>.*?</at>", "").Trim();
-        s = s.Replace('ı', 'i').Replace('ğ', 'g').Replace('ü', 'u').Replace('ş', 's').Replace('ö', 'o').Replace('ç', 'c');
-        s = new string(s.Where(c => char.IsLetterOrDigit(c) || c == ' ').ToArray()).Trim();
-        return s.Replace(" ", "");
-    }
 }
 
 /// <summary>
@@ -942,7 +1069,7 @@ public sealed class ChatDigestWorker(IServiceProvider sp, ILogger<ChatDigestWork
                     var apps = await db.ChatApps.IgnoreQueryFilters().Where(a => a.IsEnabled && a.DailyDigest).ToListAsync(ct);
                     foreach (var app in apps)
                     {
-                        if (!(await TransferGuard.AllowedAsync(db, app.TenantSlug, ct)).Contains(TransferGuard.KeyOf(app.Platform))) continue;
+                        if (!ChatHosts.Allowed(app, await TransferGuard.AllowedAsync(db, app.TenantSlug, ct))) continue;
                         await chat.SendDigestsAsync(db, app, false, ct);
                     }
                 }
@@ -959,6 +1086,8 @@ public sealed class ChatOutboxWorker(IServiceProvider sp, ILogger<ChatOutboxWork
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
         var period = TimeSpan.FromSeconds(Math.Clamp(ChatService.RetryBaseSeconds / 2, 1, 30));
+        // Dalga 5e: zamanlanmış bot işleri de bu döngüden (CHAT_JOBS_SECONDS, varsayılan 5 dk) çalışır.
+        var lastJobs = DateTime.UtcNow;
         while (!ct.IsCancellationRequested)
         {
             try
@@ -966,7 +1095,13 @@ public sealed class ChatOutboxWorker(IServiceProvider sp, ILogger<ChatOutboxWork
                 using var scope = sp.CreateScope();
                 scope.ServiceProvider.GetRequiredService<TenantContext>().IsPlatformAdmin = true;
                 var db = scope.ServiceProvider.GetRequiredService<GovernanceDbContext>();
-                await scope.ServiceProvider.GetRequiredService<ChatService>().ProcessOutboxAsync(db, ct);
+                var chat = scope.ServiceProvider.GetRequiredService<ChatService>();
+                await chat.ProcessOutboxAsync(db, ct);
+                if (DateTime.UtcNow - lastJobs >= TimeSpan.FromSeconds(ChatFeatures.JobsSeconds))
+                {
+                    lastJobs = DateTime.UtcNow;
+                    await chat.Features.RunAllJobsAsync(db, null, false, ct);
+                }
             }
             catch (Exception ex) when (ex is not OperationCanceledException) { log.LogWarning(ex, "Sohbet kuyruğu işlenemedi"); }
             await Task.Delay(period, ct);

@@ -42,6 +42,9 @@ public sealed class Sql
     private readonly NpgsqlDataSource _ds;
     public Sql(NpgsqlDataSource ds) => _ds = ds;
 
+    /// <summary>İşlem (transaction) gereken çok adımlı yazmalar için (ör. sohbetten vardiya takası onayı).</summary>
+    public NpgsqlDataSource DataSource => _ds;
+
     public async Task<List<T>> QueryAsync<T>(string sql, Func<NpgsqlDataReader, T> map, CancellationToken ct, params object?[] args)
     {
         await using var cmd = _ds.CreateCommand(sql);

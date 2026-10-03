@@ -176,7 +176,7 @@ public class PayrollEcosystemController : ControllerBase
 
     private async Task<decimal?> CurrentSalaryAsync(Guid employeeId, CancellationToken ct)
     {
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(3)); // Türkiye saati (UTC+3)
         return await _db.Records.AsNoTracking().Where(r => r.EmployeeId == employeeId && r.EffectiveFrom <= today && (r.EffectiveTo == null || r.EffectiveTo >= today))
             .OrderByDescending(r => r.EffectiveFrom).Select(r => (decimal?)r.BaseSalary).FirstOrDefaultAsync(ct);
     }
@@ -282,7 +282,7 @@ public class PayrollEcosystemController : ControllerBase
         var options = await _db.BenefitOptions.AsNoTracking().Where(o => o.PlanId == plan.Id && (o.IsActive || IsPayrollAdmin)).OrderBy(o => o.Category).ThenBy(o => o.Name).ToListAsync(ct);
         var me = await MyEmployeeIdAsync(ct);
         var el = me is null ? null : await _db.BenefitElections.AsNoTracking().FirstOrDefaultAsync(e => e.PlanId == plan.Id && e.EmployeeId == me, ct);
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(3)); // Türkiye saati (UTC+3)
         object? summary = null;
         if (IsPayrollAdmin)
         {
@@ -351,7 +351,7 @@ public class PayrollEcosystemController : ControllerBase
         if (me is null) return Forbid();
         var plan = await _db.BenefitPlans.AsNoTracking().FirstOrDefaultAsync(p => p.Year == year, ct);
         if (plan is null) return NotFound();
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(3)); // Türkiye saati (UTC+3)
         if (today < plan.WindowStart || today > plan.WindowEnd) return BadRequest(new { message = "Seçim penceresi kapalı", code = "window_closed" });
         var ids = (body.OptionIds ?? new()).Distinct().ToList();
         var options = await _db.BenefitOptions.AsNoTracking().Where(o => o.PlanId == plan.Id && o.IsActive && ids.Contains(o.Id)).ToListAsync(ct);
@@ -418,7 +418,7 @@ public class PayrollEcosystemController : ControllerBase
         var people = (await PeopleRowsAsync(ct)).Where(p => p.Status != "Terminated").ToList();
         var scope = IsPayrollAdmin ? people : people.Where(p => p.HeadId == me && p.Id != me).ToList();
         var ids = scope.Select(p => p.Id).ToList();
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(3)); // Türkiye saati (UTC+3)
         var records = await _db.Records.AsNoTracking().Where(r => ids.Contains(r.EmployeeId) && r.EffectiveFrom <= today && (r.EffectiveTo == null || r.EffectiveTo >= today)).ToListAsync(ct);
         var current = records.GroupBy(r => r.EmployeeId).ToDictionary(g => g.Key, g => g.OrderByDescending(r => r.EffectiveFrom).First());
         var bands = await _db.SalaryBands.AsNoTracking().Where(b => b.Year == c.Year || b.Year == c.Year - 1).ToListAsync(ct);

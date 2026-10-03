@@ -45,7 +45,9 @@ public class WorkflowEventConsumer : KafkaConsumerBase
             return;
 
         var claim = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions
-            .FirstOrDefaultAsync(db.Claims
+            .FirstOrDefaultAsync(Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions
+                // G25: kalem kategorileri is metrigi etiketi icin (hr360_expense_claims_total).
+                .Include(db.Claims, c => c.Items)
                 .Where(c => c.WorkflowRequestId == evt.WorkflowRequestId), ct);
 
         if (claim is null)

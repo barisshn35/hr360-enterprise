@@ -9,6 +9,8 @@ using LearningService.Data;
 using LearningService.Tenancy;
 
 var builder = WebApplication.CreateBuilder(args);
+// G25: OpenTelemetry izleme (yalnizca OTEL_EXPORTER_OTLP_ENDPOINT tanimliysa) + KVKK maskeleme.
+LearningService.Observability.Telemetry.AddHrTelemetry(builder.Services, "learning-service");
 
 var connectionString = Environment.GetEnvironmentVariable("LEARNING_DB_CONNECTION")
     ?? throw new InvalidOperationException("DB connection string not configured");

@@ -11,6 +11,8 @@ using LeaveService.Tenancy;
 using LeaveService.Services;
 
 var builder = WebApplication.CreateBuilder(args);
+// G25: OpenTelemetry izleme (yalnizca OTEL_EXPORTER_OTLP_ENDPOINT tanimliysa) + KVKK maskeleme.
+LeaveService.Observability.Telemetry.AddHrTelemetry(builder.Services, "leave-service");
 
 var connectionString = Environment.GetEnvironmentVariable("LEAVE_DB_CONNECTION")
     ?? throw new InvalidOperationException("DB connection string not configured");
@@ -24,7 +26,8 @@ builder.Services.AddHostedService<OutboxPublisher>();
 
 builder.Services.AddDbContext<LeaveDbContext>(options =>
     options.UseNpgsql(connectionString)
-        .AddInterceptors(new LeaveService.Auditing.AuditInterceptor("leave-service")));
+        .AddInterceptors(new LeaveService.Auditing.AuditInterceptor("leave-service"),
+            new LeaveService.Observability.BusinessMetricsInterceptor()));
 
 var keycloakAuthority = Environment.GetEnvironmentVariable("KEYCLOAK_AUTHORITY")
     ?? "http://keycloak:8080/auth/realms/hr360";

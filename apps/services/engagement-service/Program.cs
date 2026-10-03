@@ -9,6 +9,8 @@ using EngagementService.Data;
 using EngagementService.Tenancy;
 
 var builder = WebApplication.CreateBuilder(args);
+// G25: OpenTelemetry izleme (yalnizca OTEL_EXPORTER_OTLP_ENDPOINT tanimliysa) + KVKK maskeleme.
+EngagementService.Observability.Telemetry.AddHrTelemetry(builder.Services, "engagement-service");
 
 var connectionString = Environment.GetEnvironmentVariable("ENGAGEMENT_DB_CONNECTION")
     ?? throw new InvalidOperationException("DB connection string not configured");

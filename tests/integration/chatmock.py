@@ -12,6 +12,12 @@ Test yardımcı uçları:
     POST /_fail?path=..&count=N   yolu bu metni içeren sonraki N isteğe 500 döner (yeniden deneme testi)
     GET  /_jwt?aud=..&serviceurl=..&expired=0&wrongkey=0   Bot Framework jetonu üretir
 Slack kullanıcıları e-postaya göre: ad.soyad@... -> U_AD (büyük harf).
+
+Dalga 5e:
+    GET  /slackfiles/<ad>   Slack url_private_download (bot jetonu ister) -> fixtures/receipt.png
+    GET  /teamsfiles/<ad>   Teams satır içi görüntü (bot jetonu ister) -> fixtures/receipt.png
+    /mm/api/v4/...          Mattermost REST API v4 (bot jetonu "mm-bot-token"); kullanıcı kimliği "mm_<e-posta yerel kısmı>"
+    /rc/api/v1/...          Rocket.Chat REST API (X-Auth-Token "rc-token", X-User-Id "rcbot"); kullanıcı kimliği "rc_<yerel kısım>"
 """
 
 import base64
@@ -58,6 +64,20 @@ def jwks():
     pub = KEY.public_key().public_numbers()
     return {"keys": [{"kty": "RSA", "use": "sig", "kid": KID, "alg": "RS256", "n": b64u(pub.n), "e": b64u(pub.e),
                       "endorsements": ["msteams"]}]}
+
+
+FIXTURE = __import__("os").path.join(__import__("os").path.dirname(__file__), "fixtures", "receipt.png")
+
+
+def mm_user(uid):
+    local = uid[3:] if uid.startswith("mm_") else uid
+    first, _, last = local.partition(".")
+    return {"id": uid, "username": local, "email": f"{local}@demo.hr360", "first_name": first.capitalize(), "last_name": last.capitalize()}
+
+
+def rc_user(uid):
+    local = uid[3:] if uid.startswith("rc_") else uid
+    return {"_id": uid, "username": local, "name": local, "emails": [{"address": f"{local}@demo.hr360", "verified": True}]}
 
 
 def slack_user_for(email: str) -> str:
@@ -133,6 +153,54 @@ class H(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(data)
             return
+        if u.path.startswith("/slackfiles/") or u.path.startswith("/teamsfiles/"):
+            self._record("")
+            want = "Bearer xoxb-test-token" if u.path.startswith("/slackfiles/") else "Bearer teams-bot-token"
+            if u.path.endswith("/presigned.png"):
+                want = None  # Teams dosya eki: ön imzalı adres, jeton gerekmez
+            if want and self.headers.get("Authorization") != want:
+                return self._send(401, {"error": "unauthorized"})
+            if u.path.endswith(".txt"):
+                data, ctype = b"not an image", "text/plain"
+            else:
+                with open(FIXTURE, "rb") as fh:
+                    data, ctype = fh.read(), "image/png"
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
+        if u.path.startswith("/mm/api/v4/"):
+            self._record("")
+            if self.headers.get("Authorization") != "Bearer mm-bot-token":
+                return self._send(401, {"id": "api.context.session_expired.app_error", "message": "Invalid or expired session"})
+            rest = u.path[len("/mm/api/v4/"):]
+            if rest == "users/me":
+                return self._send(200, {"id": "mmbot", "username": "hr360"})
+            if rest.startswith("users/email/"):
+                email = unquote(rest.split("/", 2)[2])
+                if email.endswith("@demo.hr360"):
+                    return self._send(200, mm_user("mm_" + email.split("@")[0]))
+                return self._send(404, {"message": "Unable to find the user."})
+            if rest.startswith("users/"):
+                return self._send(200, mm_user(unquote(rest.split("/", 1)[1])))
+            return self._send(404, {"message": "not found"})
+        if u.path.startswith("/rc/api/v1/"):
+            self._record("")
+            if self.headers.get("X-Auth-Token") != "rc-token" or self.headers.get("X-User-Id") != "rcbot":
+                return self._send(401, {"success": False, "error": "You must be logged in to do this."})
+            rest = u.path[len("/rc/api/v1/"):]
+            if rest == "me":
+                return self._send(200, {"_id": "rcbot", "username": "hr360bot", "success": True})
+            if rest == "users.info":
+                return self._send(200, {"user": rc_user(q.get("userId", "")), "success": True})
+            if rest == "users.list":
+                query = json.loads(q.get("query", "{}"))
+                email = query.get("emails.address", "")
+                users = [rc_user("rc_" + email.split("@")[0])] if email.endswith("@demo.hr360") else []
+                return self._send(200, {"users": users, "count": len(users), "success": True})
+            return self._send(404, {"success": False, "error": "not found"})
         if u.path == "/_syslog":
             with LOCK:
                 return self._send(200, SYSLOG[-int(q.get("n", "500")):])
@@ -267,6 +335,31 @@ class H(BaseHTTPRequestHandler):
             day = q["startTime"]["dateTime"][:10]
             return self._send(200, {"value": [{"scheduleItems": [{"status": "busy", "start": {"dateTime": f"{day}T08:00:00.0000000"}, "end": {"dateTime": f"{day}T09:00:00.0000000"}},
                                                                  {"status": "free", "start": {"dateTime": f"{day}T12:00:00"}, "end": {"dateTime": f"{day}T13:00:00"}}]}]})
+        if u.path.startswith("/mm/api/v4/"):
+            if self.headers.get("Authorization") != "Bearer mm-bot-token":
+                return self._send(401, {"message": "Invalid or expired session"})
+            rest = u.path[len("/mm/api/v4/"):]
+            if rest == "channels/direct":
+                ids = json.loads(body or "[]")
+                user = next((i for i in ids if i != "mmbot"), "x")
+                return self._send(201, {"id": "mmdm_" + user, "type": "D"})
+            if rest == "posts":
+                SEQ[0] += 1
+                return self._send(201, {"id": f"mmpost-{SEQ[0]}"})
+            return self._send(404, {"message": "not found"})
+        if u.path.startswith("/rc/api/v1/"):
+            if self.headers.get("X-Auth-Token") != "rc-token" or self.headers.get("X-User-Id") != "rcbot":
+                return self._send(401, {"success": False, "error": "You must be logged in to do this."})
+            rest = u.path[len("/rc/api/v1/"):]
+            if rest == "im.create":
+                username = json.loads(body or "{}").get("username", "x")
+                return self._send(200, {"room": {"_id": "rcbot" + "rc_" + username, "t": "d"}, "success": True})
+            if rest == "chat.postMessage":
+                SEQ[0] += 1
+                return self._send(200, {"message": {"_id": f"rcmsg-{SEQ[0]}"}, "success": True})
+            if rest == "chat.update":
+                return self._send(200, {"success": True})
+            return self._send(404, {"success": False, "error": "not found"})
         if u.path.startswith("/api/"):
             return self._slack(u.path[5:], {k: v[0] for k, v in parse_qs(body).items()})
         if u.path.startswith("/slack-response/"):
@@ -296,6 +389,8 @@ class H(BaseHTTPRequestHandler):
         self._record(body)
         if "/v3/conversations/" in self.path:
             return self._send(200, {"id": self.path.rsplit("/", 1)[1]})
+        if self.path.startswith("/mm/api/v4/posts/") and self.path.endswith("/patch"):
+            return self._send(200, {"id": self.path.split("/")[5]})
         self._send(404, {})
 
     def _slack(self, method, f):

@@ -107,6 +107,11 @@ edilmiş kayıtlar yeniden silinir (bkz. README › Yedekleme). Tutanaklar silin
 | SCIM/LDAP | Yalnızca kullanıcı adı, ad, soyad, e-posta, etkinlik, unvan, bölüm alınır; diğer öznitelikler saklanmaz. |
 | Basit e-imza | OTP özeti saklanır; delil kaydı (belge özeti, IP son okteti maskeli) değiştirilemez, belgeyle birlikte silinir; nitelikli e-imza değildir. |
 | Ayrılma modeli | Cinsiyet, yaş, medeni hal, sağlık ve vekil öznitelikler yasak (eğitim/tahmin reddedilir); kayma ölçümü yalnızca toplu histogramla; yeniden eğitim denetim kaydında. |
+| Sohbet botu (Dalga 5e) | Kişisel yanıt yalnızca kişiye özel DM'de; kanala yalnızca "herkes" duyurusu ve izin verenlerin kutlaması (yaş/doğum yılı yok); onay kartında başka çalışanların adı değil izinli SAYISI; belge içeriği değil bağlantısı; bordro özeti ve toplu/ücretle ilgili onay HR360'ta ek doğrulama ister; sessiz saate uyulur; ölçüm etiketlerinde kişi/metin yok. |
+| Sohbet: Mattermost / Rocket.Chat | Kendi sunucunuzda yurt dışı aktarım yok; bulut (*.cloud.mattermost.com, *.rocket.chat) adresinde aktarım dayanağı olmadan açılamaz. Jetonlar şifreli. |
+| Sohbet: fiş | Görüntü sağlayıcıdan bot jetonuyla indirilir, yalnızca bellekte yerel OCR'dan geçer, saklanmaz; öneriyi kişi onaylamadan taslak oluşmaz. |
+| Sohbet: konuşma bağlamı | Son 6 soru şifreli, 30 gün (saklama kategorisi ChatContext); `geçmişimi sil` ile anında silinir. |
+| Sohbet: nabız / çıkış anketi | Nabız yanıtı kimliksiz (rastgele anahtar, departman ve saat yok), "yanıtladı" ayrı tabloda; sonuç ≥ 5 yanıtla. Çıkış anketi ara yanıtları şifreli, bitince silinir; yalnızca İK görür. |
 
 ## Aydınlatma ve açık rıza metinleri
 

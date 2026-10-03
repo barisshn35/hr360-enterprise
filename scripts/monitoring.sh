@@ -6,7 +6,14 @@
 #   scripts/monitoring.sh disable    Konteynerleri durdurur (veriler volume'larda kalir).
 #   scripts/monitoring.sh status     Hedeflerin ve alarmlarin ozetini gosterir.
 #   scripts/monitoring.sh password   Grafana yonetici sifresini gosterir.
-#   scripts/monitoring.sh purge      Durdurur ve metrik/log verilerini siler.
+#   scripts/monitoring.sh purge      Durdurur ve metrik/log/iz verilerini siler.
+#
+# Dagitik izleme (G25, OpenTelemetry -> otel-collector -> Tempo; varsayilan KAPALI):
+#   scripts/monitoring.sh tracing on [oran]   .NET servislerini collector'a baglar (oran 0..1, varsayilan 1)
+#   scripts/monitoring.sh tracing off         Izlemeyi kapatir (servisler yeniden baslar)
+#   scripts/monitoring.sh tracing status
+# Izler kisisel veriden arindirilir (servis ici + collector) ve TEMPO_RETENTION
+# (varsayilan 72h) sonunda silinir. Grafana > Explore > Tempo.
 #
 # Alarm kanallari (Alertmanager):
 #   scripts/monitoring.sh alerts status
@@ -32,7 +39,11 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 unset COMPOSE_PROFILES GRAFANA_ADMIN_PASSWORD ALERT_EMAIL_TO ALERT_SLACK_WEBHOOK_URL ALERT_TEAMS_WEBHOOK_URL
 ENV_FILE=.env
-SERVICES=(prometheus alertmanager postgres-exporter node-exporter loki promtail grafana)
+SERVICES=(prometheus alertmanager postgres-exporter node-exporter loki promtail tempo otel-collector grafana)
+DOTNET_SERVICES=(organization-service employee-service workflow-service leave-service recruitment-service onboarding-service
+  timeshift-service performance-service learning-service engagement-service governance-service compensation-service
+  expense-service notification-service tenant-service)
+TRACING_ENV=deploy/monitoring/tracing.env
 
 sed_i() { if sed --version >/dev/null 2>&1; then sed -i "$@"; else sed -i '' "$@"; fi; }
 die() { echo "HATA: $*" >&2; exit 1; }
@@ -88,6 +99,35 @@ case "$cmd" in
     echo "Prometheus: http://127.0.0.1:9090 (yalnizca sunucudan)"
     echo "Pano:       HR360 > HR360 — Servis sagligi"
     echo "Alarmlar:   scripts/monitoring.sh alerts status"
+    echo "Izleme:     scripts/monitoring.sh tracing on   (dagitik izler, varsayilan kapali)"
+    ;;
+  tracing)
+    sub="${2:-status}"
+    case "$sub" in
+      on)
+        ratio="${3:-1}"
+        [[ "$ratio" =~ ^(0(\.[0-9]+)?|1(\.0+)?)$ ]] || die "oran 0 ile 1 arasinda olmali (orn. 0.2)"
+        case ",$(get_env COMPOSE_PROFILES)," in
+          *,monitoring,*) ;;
+          *) die "once izleme yiginini acin: scripts/monitoring.sh enable" ;;
+        esac
+        docker compose --profile monitoring up -d tempo otel-collector
+        printf '# scripts/monitoring.sh tracing ile uretildi (G25).\nOTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317\nOTEL_TRACES_SAMPLER_ARG=%s\n' "$ratio" > "$TRACING_ENV"
+        docker compose up -d "${DOTNET_SERVICES[@]}"
+        echo "Dagitik izleme acik (ornekleme orani: $ratio). Grafana > Explore > Tempo."
+        ;;
+      off)
+        rm -f "$TRACING_ENV"
+        docker compose up -d "${DOTNET_SERVICES[@]}"
+        echo "Dagitik izleme kapatildi (mevcut izler TEMPO_RETENTION sonunda silinir; hemen silmek icin: purge)."
+        ;;
+      status)
+        if [ -f "$TRACING_ENV" ]; then echo "Izleme: acik ($(grep '^OTEL_TRACES_SAMPLER_ARG=' "$TRACING_ENV" | cut -d= -f2) oraninda)"
+        else echo "Izleme: kapali (scripts/monitoring.sh tracing on)"; fi
+        echo "Saklama: $(get_env TEMPO_RETENTION | sed 's/^$/72h (varsayilan)/')"
+        ;;
+      *) die "bilinmeyen: tracing $sub (on [oran] | off | status)" ;;
+    esac
     ;;
   alerts)
     sub="${2:-status}"
@@ -135,13 +175,15 @@ case "$cmd" in
     ;;
   disable)
     profile_set monitoring off
+    # Collector durunca servislerin iz gondermesi anlamsiz: izlemeyi de kapat.
+    if [ -f "$TRACING_ENV" ]; then rm -f "$TRACING_ENV"; docker compose up -d "${DOTNET_SERVICES[@]}" >/dev/null; fi
     docker compose --profile monitoring stop "${SERVICES[@]}" >/dev/null
     docker compose --profile monitoring rm -f "${SERVICES[@]}" >/dev/null
     echo "Izleme durduruldu. Veriler korunuyor (silmek icin: scripts/monitoring.sh purge)."
     ;;
   purge)
     "$0" disable
-    for v in prometheus-data grafana-data loki-data alertmanager-data; do
+    for v in prometheus-data grafana-data loki-data alertmanager-data tempo-data; do
       docker volume rm "hr360_$v" >/dev/null 2>&1 && echo "silindi: hr360_$v" || true
     done
     ;;
@@ -175,6 +217,6 @@ for x in a: print("  -", x["labels"]["alertname"], x["labels"].get("service","")
     fi
     ;;
   *)
-    die "bilinmeyen komut: $cmd (enable | disable | status | password | purge | alerts)"
+    die "bilinmeyen komut: $cmd (enable | disable | status | password | purge | alerts | tracing)"
     ;;
 esac

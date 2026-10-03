@@ -9,6 +9,8 @@ using GovernanceService.Data;
 using GovernanceService.Tenancy;
 
 var builder = WebApplication.CreateBuilder(args);
+// G25: OpenTelemetry izleme (yalnizca OTEL_EXPORTER_OTLP_ENDPOINT tanimliysa) + KVKK maskeleme.
+GovernanceService.Observability.Telemetry.AddHrTelemetry(builder.Services, "governance-service");
 
 var connectionString = Environment.GetEnvironmentVariable("GOVERNANCE_DB_CONNECTION")
     ?? throw new InvalidOperationException("DB connection string not configured");

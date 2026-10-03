@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'motion/react'
-import { AlertTriangle, Bot, Copy, Download, Pencil, Plus, Send, Trash2, Users } from 'lucide-react'
+import { AlertTriangle, Bot, Copy, Download, Pencil, Plus, Send, Settings2, Trash2, Users } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Modal } from '@/components/ui/Modal'
@@ -13,6 +13,10 @@ import { governanceApi, type ChatApp, type ChatAppInput, type ChatPlatform } fro
 import { formatRelativeToNow } from '@/lib/format'
 import { useAction } from '@/features/shared/kit'
 import { tx } from '@/lib/i18n'
+import { ChatBotAdminModal, ChatPulsePanel } from './ChatBotAdmin'
+
+const PLATFORM_LABEL: Record<ChatPlatform, string> = { Slack: 'Slack', Teams: 'Microsoft Teams', Mattermost: 'Mattermost', RocketChat: 'Rocket.Chat' }
+const selfHosted = (p: ChatPlatform) => p === 'Mattermost' || p === 'RocketChat'
 
 function CopyLine({ label, value }: { label: string; value: string }) {
   const toast = useToast()
@@ -36,7 +40,7 @@ function saveJson(obj: unknown, name: string) {
 
 const empty = (platform: ChatPlatform): ChatAppInput => ({
   platform,
-  name: platform === 'Slack' ? 'HR360 Slack' : 'HR360 Teams',
+  name: `HR360 ${PLATFORM_LABEL[platform]}`,
   isEnabled: true,
   notifyApprovals: true,
   notifyRequesters: true,
@@ -48,30 +52,59 @@ const empty = (platform: ChatPlatform): ChatAppInput => ({
   requireVerifiedIdentity: true,
   messageDetail: 'Minimal',
   dailyDigest: true,
+  serverUrl: '',
+  botToken: '',
+  botUserId: '',
+  incomingToken: '',
+  channelId: '',
+  celebrationsEnabled: false,
+  respectQuietHours: true,
+  buttonTtlDays: 7,
 })
 
 function SetupModal({ initial, editing, onClose }: { initial: ChatAppInput; editing?: ChatApp; onClose: () => void }) {
   const [f, setF] = useState(initial)
   const toast = useToast()
   const save = useAction(() => (editing ? governanceApi.updateChatApp(editing.id, f) : governanceApi.createChatApp(f)), {
-    success: editing ? tx('Kaydedildi') : f.platform === 'Slack' ? tx('Slack uygulaması bağlandı') : tx('Teams botu bağlandı'),
+    success: editing ? tx('Kaydedildi') : tx('{0} botu bağlandı', [PLATFORM_LABEL[f.platform]]),
     invalidate: [['chat-apps']],
     onDone: onClose,
   })
   const slack = f.platform === 'Slack'
-  const ready = slack
-    ? editing || ((f.slackBotToken ?? '').startsWith('xoxb-') && !!f.slackSigningSecret)
-    : !!f.teamsAppId && !!f.teamsAzureTenantId && (editing || !!f.teamsAppPassword)
+  const own = selfHosted(f.platform)
+  const ready = own
+    ? !!f.serverUrl && (editing || (!!f.botToken && !!f.incomingToken && (f.platform === 'Mattermost' || !!f.botUserId)))
+    : slack
+      ? editing || ((f.slackBotToken ?? '').startsWith('xoxb-') && !!f.slackSigningSecret)
+      : !!f.teamsAppId && !!f.teamsAzureTenantId && (editing || !!f.teamsAppPassword)
   return (
     <Modal
       open
       onClose={onClose}
       size="lg"
-      title={editing ? tx('{0} — düzenle', [editing.name]) : slack ? tx('Slack uygulaması bağla') : tx('Microsoft Teams botu bağla')}
+      title={editing ? tx('{0} — düzenle', [editing.name]) : tx('{0} botu bağla', [PLATFORM_LABEL[f.platform]])}
       footer={<><Button variant="outline" onClick={onClose}>{tx('Vazgeç')}</Button><Button disabled={!ready || save.isPending} onClick={() => save.mutate(undefined)}>{save.isPending ? tx('Doğrulanıyor…') : tx('Kaydet')}</Button></>}
     >
       <div className="space-y-5">
-        {!editing && (
+        {!editing && own && (
+          <ol className="space-y-2 rounded-xl border border-border bg-muted/30 p-4 text-[12.5px] leading-relaxed">
+            {f.platform === 'Mattermost' ? (
+              <>
+                <li><b>1.</b>{' '}{tx('System Console › Integrations › Bot Accounts\'ta bir bot oluşturup erişim jetonunu alın.')}</li>
+                <li><b>2.</b>{' '}{tx('Integrations › Slash Commands\'ta /hr360 komutu (POST) ve isterseniz bir Outgoing Webhook ekleyin; ikisinin jetonunu aynı tutun ve aşağıya girin.')}</li>
+                <li><b>3.</b>{' '}{tx('Kaydettikten sonra karttaki adresleri komut / webhook ayarlarına yazın. Düğmeler "interactivity" adresine döner.')}</li>
+              </>
+            ) : (
+              <>
+                <li><b>1.</b>{' '}{tx('Bot kullanıcısıyla Profil › Personal Access Tokens\'tan jeton oluşturun; jetonu ve kullanıcı kimliğini (X-User-Id) girin.')}</li>
+                <li><b>2.</b>{' '}{tx('Administration › Integrations › Outgoing WebHook ekleyin (kanal: all_direct_messages, tetik kelimesi isteğe bağlı) ve jetonunu girin.')}</li>
+                <li><b>3.</b>{' '}{tx('Kaydettikten sonra karttaki webhook adresini entegrasyonun URL alanına yazın.')}</li>
+              </>
+            )}
+            <li className="text-muted-foreground">{tx('Kendi sunucunuzdaki kurulum yurt dışı aktarım sayılmaz. Bulut (*.cloud.mattermost.com, *.rocket.chat) adresinde KVKK › Yurt dışı aktarım kaydı gerekir.')}</li>
+          </ol>
+        )}
+        {!editing && !own && (
           <ol className="space-y-2 rounded-xl border border-border bg-muted/30 p-4 text-[12.5px] leading-relaxed">
             {slack ? (
               <>
@@ -91,7 +124,14 @@ function SetupModal({ initial, editing, onClose }: { initial: ChatAppInput; edit
           </ol>
         )}
         <TextField label={tx('Ad')} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
-        {slack ? (
+        {own ? (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <TextField label={tx('Sunucu adresi')} value={f.serverUrl} onChange={(e) => setF({ ...f, serverUrl: e.target.value })} placeholder="https://chat.sirketiniz.com" />
+            <TextField label={f.platform === 'Mattermost' ? tx('Bot erişim jetonu') : tx('Kişisel erişim jetonu')} type="password" autoComplete="off" placeholder={editing ? tx('•••• (değiştirmek için girin)') : ''} value={f.botToken} onChange={(e) => setF({ ...f, botToken: e.target.value })} />
+            {f.platform === 'RocketChat' && <TextField label={tx('Bot kullanıcı kimliği (X-User-Id)')} value={f.botUserId} onChange={(e) => setF({ ...f, botUserId: e.target.value })} />}
+            <TextField label={f.platform === 'Mattermost' ? tx('Slash komutu / webhook jetonu') : tx('Giden entegrasyon jetonu')} type="password" autoComplete="off" placeholder={editing ? tx('•••• (değiştirmek için girin)') : ''} value={f.incomingToken} onChange={(e) => setF({ ...f, incomingToken: e.target.value })} />
+          </div>
+        ) : slack ? (
           <div className="grid gap-3 sm:grid-cols-2">
             <TextField label={tx('Bot User OAuth Token')} type="password" autoComplete="off" placeholder={editing ? tx('•••• (değiştirmek için girin)') : 'xoxb-…'} value={f.slackBotToken} onChange={(e) => setF({ ...f, slackBotToken: e.target.value })} />
             <TextField label={tx('Signing Secret')} type="password" autoComplete="off" placeholder={editing ? tx('•••• (değiştirmek için girin)') : ''} value={f.slackSigningSecret} onChange={(e) => setF({ ...f, slackSigningSecret: e.target.value })} />
@@ -112,10 +152,19 @@ function SetupModal({ initial, editing, onClose }: { initial: ChatAppInput; edit
           <label className="flex items-start gap-2"><Checkbox checked={f.requireVerifiedIdentity ?? true} onCheckedChange={(v) => setF({ ...f, requireVerifiedIdentity: v === true })} />{' '}
             <span>{tx('Hesap doğrulaması zorunlu (önerilen)')}<span className="block text-[11.5px] text-muted-foreground">{tx('Kişi HR360\'a bir kez giriş yapıp sohbet hesabını bağlayana kadar bot ona talep içeriği göndermez; yalnızca e-posta eşleşmesine güvenilmez.')}</span></span></label>
         </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <TextField label={tx('Duyuru ve kutlama kanalı (kimlik)')} value={f.channelId ?? ''} onChange={(e) => setF({ ...f, channelId: e.target.value })}
+            hint={tx('Yalnızca "herkes" kitleli duyurular ve açık izin verenlerin doğum günü / yıldönümü yazılır; yaş asla yazılmaz.')} />
+          <TextField label={tx('Düğme geçerlilik süresi (gün)')} type="number" min={1} max={90} value={String(f.buttonTtlDays ?? 7)} onChange={(e) => setF({ ...f, buttonTtlDays: Number(e.target.value) || 7 })} />
+        </div>
+        <div className="space-y-2 text-[13px]">
+          <label className="flex items-center gap-2"><Checkbox checked={f.celebrationsEnabled ?? false} onCheckedChange={(v) => setF({ ...f, celebrationsEnabled: v === true })} />{' '}{tx('Kanalda doğum günü / iş yıldönümü kutla (yalnızca izin verenler)')}</label>
+          <label className="flex items-center gap-2"><Checkbox checked={f.respectQuietHours ?? true} onCheckedChange={(v) => setF({ ...f, respectQuietHours: v === true })} />{' '}{tx('Kişinin sessiz saatlerinde kritik olmayan mesajları ertele')}</label>
+        </div>
         <SelectField label={tx('Mesajlardaki ayrıntı')} value={f.messageDetail ?? 'Minimal'} onChange={(v) => setF({ ...f, messageDetail: v as 'Minimal' | 'Standard' })}
           hint={tx('KVKK: sohbet hizmetleri yurt dışındadır. "Az" seçeneğinde talep edenin soyadı kısaltılır, talep konusu yazılmaz; ayrıntı HR360\'ta görülür.')}
           options={[{ value: 'Minimal', label: tx('Az (önerilen): ad ve soyadın baş harfi, tür, gün/tutar') }, { value: 'Standard', label: tx('Standart: ad soyad ve talep konusu') }]} />
-        <p className="text-[12px] text-muted-foreground">{tx('Kaydederken bilgiler {0} ile doğrulanır. Jeton ve gizli anahtarlar şifreli saklanır, bir daha gösterilmez.', [slack ? tx('Slack') : tx('Microsoft')])}</p>
+        <p className="text-[12px] text-muted-foreground">{tx('Kaydederken bilgiler {0} ile doğrulanır. Jeton ve gizli anahtarlar şifreli saklanır, bir daha gösterilmez.', [own ? PLATFORM_LABEL[f.platform] : slack ? tx('Slack') : tx('Microsoft')])}</p>
       </div>
     </Modal>
   )
@@ -153,6 +202,7 @@ export function ChatAppsPanel() {
   const list = useQuery({ queryKey: ['chat-apps'], queryFn: ({ signal }) => governanceApi.chatApps(signal) })
   const [setup, setSetup] = useState<{ input: ChatAppInput; editing?: ChatApp } | null>(null)
   const [people, setPeople] = useState<ChatApp | null>(null)
+  const [admin, setAdmin] = useState<ChatApp | null>(null)
   const test = useAction((id: string) => governanceApi.testChatApp(id), { success: tx('Deneme mesajı size gönderildi'), invalidate: [['chat-apps']] })
   const digest = useAction((id: string) => governanceApi.sendChatDigest(id), { success: (r) => tx('{0} kişiye sabah özeti gönderildi', [r.sent]) })
   const del = useAction((id: string) => governanceApi.deleteChatApp(id), { success: tx('Kaldırıldı'), invalidate: [['chat-apps']] })
@@ -171,6 +221,8 @@ export function ChatAppsPanel() {
       <div className="flex flex-wrap gap-2">
         <Button onClick={() => setSetup({ input: empty('Slack') })}><Plus className="size-4" />{' '}{tx('Slack uygulaması')}</Button>
         <Button variant="outline" onClick={() => setSetup({ input: empty('Teams') })}><Plus className="size-4" />{' '}{tx('Microsoft Teams botu')}</Button>
+        <Button variant="outline" onClick={() => setSetup({ input: empty('Mattermost') })}><Plus className="size-4" />{' '}{tx('Mattermost')}</Button>
+        <Button variant="outline" onClick={() => setSetup({ input: empty('RocketChat') })}><Plus className="size-4" />{' '}{tx('Rocket.Chat')}</Button>
       </div>
       {list.isPending ? <RowsSkeleton /> : (list.data ?? []).length === 0 ? (
         <EmptyState icon={Bot} title={tx('Bağlı sohbet uygulaması yok')} detail={tx('Bir Slack uygulaması ya da Teams botu bağlayın; onay talepleri kişilere düğmeli mesaj olarak gitsin.')} />
@@ -180,10 +232,14 @@ export function ChatAppsPanel() {
             <motion.div key={a.id} layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="surface space-y-3 rounded-2xl border border-border p-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-[14px] font-semibold">{a.platform === 'Slack' ? tx('Slack') : tx('Microsoft Teams')} · {a.name}</p>
+                  <p className="text-[14px] font-semibold">{PLATFORM_LABEL[a.platform]} · {a.name}</p>
                   <p className="text-[12px] text-muted-foreground">
-                    {tx('{0} · {1} eşleşmiş kullanıcı{2}', [a.platform === 'Slack' ? tx('Çalışma alanı: {0}', [a.slackTeamName ?? '—']) : tx('App ID: {0}', [a.teamsAppId]), a.linkedUsers, a.lastActivityAt ? tx(' · son etkinlik {0}', [formatRelativeToNow(a.lastActivityAt)]) : ''])}
+                    {tx('{0} · {1} eşleşmiş kullanıcı{2}', [selfHosted(a.platform) ? tx('Sunucu: {0}', [a.serverUrl ?? '—']) : a.platform === 'Slack' ? tx('Çalışma alanı: {0}', [a.slackTeamName ?? '—']) : tx('App ID: {0}', [a.teamsAppId]), a.linkedUsers, a.lastActivityAt ? tx(' · son etkinlik {0}', [formatRelativeToNow(a.lastActivityAt)]) : ''])}
                   </p>
+                  {selfHosted(a.platform) && (
+                    <p className="text-[11.5px] text-muted-foreground">{a.selfHosted ? tx('Kendi sunucunuz: yurt dışı aktarım yok') : tx('Bulut sürümü: KVKK yurt dışı aktarım kaydı gerekli')}</p>
+                  )}
+                  {(a.disabledFeatures?.length ?? 0) > 0 && <p className="text-[11.5px] text-muted-foreground">{tx('{0} komut kapalı', [a.disabledFeatures!.length])}</p>}
                 </div>
                 <StatusBadge tone={!a.isEnabled ? 'neutral' : a.lastError ? 'danger' : 'success'}>{!a.isEnabled ? tx('Kapalı') : a.lastError ? tx('Hata') : tx('Etkin')}</StatusBadge>
               </div>
@@ -193,15 +249,16 @@ export function ChatAppsPanel() {
                 {a.endpoints.interactivity && <CopyLine label={tx('Interactivity')} value={a.endpoints.interactivity} />}
                 {a.endpoints.events && <CopyLine label={tx('Event Subscriptions')} value={a.endpoints.events} />}
                 {a.endpoints.messaging && <CopyLine label={tx('Messaging endpoint')} value={a.endpoints.messaging} />}
+                {a.endpoints.webhook && <CopyLine label={tx('Webhook')} value={a.endpoints.webhook} />}
               </div>
               <div className="flex flex-wrap gap-1.5">
                 <Button size="sm" variant="outline" onClick={() => test.mutate(a.id)}><Send className="size-4" />{' '}{tx('Bana deneme mesajı')}</Button>
                 {a.dailyDigest && a.isEnabled && <Button size="sm" variant="outline" onClick={() => digest.mutate(a.id)}>{tx('Sabah özetini şimdi gönder')}</Button>}
                 <Button size="sm" variant="outline" onClick={() => setPeople(a)}><Users className="size-4" />{' '}{tx('Kullanıcılar')}</Button>
-                {a.platform === 'Slack'
-                  ? <Button size="sm" variant="outline" onClick={async () => saveJson(await governanceApi.slackManifest(a.id), 'hr360-slack-manifest.json')}><Download className="size-4" />{' '}{tx('Manifest')}</Button>
-                  : <Button size="sm" variant="outline" onClick={() => governanceApi.teamsPackage(a.id)}><Download className="size-4" />{' '}{tx('Teams paketi')}</Button>}
-                <Button size="sm" variant="ghost" aria-label={tx('Düzenle')} onClick={() => setSetup({ editing: a, input: { ...empty(a.platform), name: a.name, isEnabled: a.isEnabled, notifyApprovals: a.notifyApprovals, notifyRequesters: a.notifyRequesters, teamsAppId: a.teamsAppId ?? '', teamsAzureTenantId: a.teamsAzureTenantId ?? '', requireVerifiedIdentity: a.requireVerifiedIdentity, messageDetail: a.messageDetail, dailyDigest: a.dailyDigest } })}><Pencil className="size-4" /></Button>
+                <Button size="sm" variant="outline" onClick={() => setAdmin(a)}><Settings2 className="size-4" />{' '}{tx('Bot yönetimi')}</Button>
+                {a.platform === 'Slack' && <Button size="sm" variant="outline" onClick={async () => saveJson(await governanceApi.slackManifest(a.id), 'hr360-slack-manifest.json')}><Download className="size-4" />{' '}{tx('Manifest')}</Button>}
+                {a.platform === 'Teams' && <Button size="sm" variant="outline" onClick={() => governanceApi.teamsPackage(a.id)}><Download className="size-4" />{' '}{tx('Teams paketi')}</Button>}
+                <Button size="sm" variant="ghost" aria-label={tx('Düzenle')} onClick={() => setSetup({ editing: a, input: { ...empty(a.platform), name: a.name, isEnabled: a.isEnabled, notifyApprovals: a.notifyApprovals, notifyRequesters: a.notifyRequesters, teamsAppId: a.teamsAppId ?? '', teamsAzureTenantId: a.teamsAzureTenantId ?? '', requireVerifiedIdentity: a.requireVerifiedIdentity, messageDetail: a.messageDetail, dailyDigest: a.dailyDigest, serverUrl: a.serverUrl ?? '', botUserId: a.botUserId ?? '', channelId: a.channelId ?? '', celebrationsEnabled: a.celebrationsEnabled ?? false, respectQuietHours: a.respectQuietHours ?? true, buttonTtlDays: a.buttonTtlDays ?? 7 } })}><Pencil className="size-4" /></Button>
                 <Button size="sm" variant="ghost" aria-label={tx('Sil')} onClick={() => del.mutate(a.id)}><Trash2 className="size-4" /></Button>
               </div>
             </motion.div>
@@ -210,6 +267,8 @@ export function ChatAppsPanel() {
       )}
       {setup && <SetupModal initial={setup.input} editing={setup.editing} onClose={() => setSetup(null)} />}
       {people && <IdentitiesModal app={people} onClose={() => setPeople(null)} />}
+      {admin && <ChatBotAdminModal app={admin} onClose={() => setAdmin(null)} />}
+      {(list.data?.length ?? 0) > 0 && <ChatPulsePanel />}
     </div>
   )
 }

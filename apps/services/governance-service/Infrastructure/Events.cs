@@ -446,6 +446,8 @@ public static class Retention
         ["Notifications"] = ("Bildirim geçmişi", new[] { "Delete" }, 6),
         ["AiUsage"] = ("Yapay zekâ kullanım kayıtları", new[] { "Delete" }, 12),
         ["ChatMessages"] = ("Sohbet botu mesaj kayıtları", new[] { "Delete" }, 6),
+        // Dalga 5e: asistan konuşma bağlamı — en çok 30 gün (bot ayrıca 30 günü geçeni her turda siler).
+        ["ChatContext"] = ("Sohbet asistanı konuşma bağlamı (en çok 30 gün)", new[] { "Delete" }, 1),
         ["WebhookDeliveries"] = ("Webhook gönderim kayıtları", new[] { "Delete" }, 3),
         // SGK ve vergi mevzuatı: ücret bordroları 10 yıl saklanır (5510 s. K. m.86, VUK m.253).
         ["Payslips"] = ("Bordro pusulaları (kapanmış dönemler)", new[] { "Delete" }, 120),
@@ -502,6 +504,8 @@ public static class Retention
                 return await sql.ExecuteAsync("DELETE FROM notification_messages WHERE \"TenantSlug\" = $1 AND \"CreatedAt\" < now() - make_interval(months => $2)", ct, t, months);
             case "AiUsage":
                 return await sql.ExecuteAsync("DELETE FROM governance_ai_usage WHERE \"TenantSlug\" = $1 AND \"At\" < now() - make_interval(months => $2)", ct, t, months);
+            case "ChatContext":
+                return await sql.ExecuteAsync("DELETE FROM governance_chat_context WHERE \"TenantSlug\" = $1 AND \"CreatedAt\" < now() - least(make_interval(months => $2), interval '30 days')", ct, t, months);
             case "ChatMessages":
                 return await sql.ExecuteAsync("DELETE FROM governance_chat_messages WHERE \"TenantSlug\" = $1 AND \"State\" <> 'Open' AND \"CreatedAt\" < now() - make_interval(months => $2)", ct, t, months);
             case "Payslips":

@@ -31,6 +31,9 @@ public static class PrivacyCatalog
         new("zapier", "Zapier", "ABD", "Abone olunan olayların yükü (ör. çalışan kimliği, ad, e-posta, izin tarihleri, belge imza kaydı)", "REST hook / webhook otomasyonları"),
         // n8n'in bulut sürümü (*.n8n.cloud) yurt dışıdır; kendi sunucunuzda çalışan n8n aktarım sayılmaz.
         new("n8n", "n8n Cloud (n8n GmbH)", "Almanya (AB)", "Abone olunan olayların yükü (Zapier ile aynı)", "REST hook / webhook otomasyonları (yalnızca bulut sürümü)"),
+        // Dalga 5e: kendi sunucunuzdaki Mattermost / Rocket.Chat aktarım sayılmaz; yalnızca bulut sürümleri.
+        new("mattermost", "Mattermost Cloud (*.cloud.mattermost.com)", "ABD", "Ad, e-posta, onay talebi özeti, komut yanıtları", "Sohbet botu (yalnızca bulut sürümü)"),
+        new("rocketchat", "Rocket.Chat Cloud (*.rocket.chat)", "ABD / AB (bölgeye göre)", "Ad, e-posta, onay talebi özeti, komut yanıtları", "Sohbet botu (yalnızca bulut sürümü)"),
     };
 
     public static readonly Dictionary<string, string> Mechanisms = new()
@@ -164,11 +167,22 @@ public static class PrivacyCatalog
             "m.5/2-f meşru menfaat; bağlantıyı çalışan kendisi kurar", false,
             "Bağlantı kaldırılınca", null, Array.Empty<string>(), new[] { "google", "microsoft", "zoom" },
             "OAuth jetonları şifreli; yalnızca bağlantıyı kuran kişinin takvimi okunur"),
-        new("chat", "Sohbet botu", "Slack ve Microsoft Teams üzerinden onay ve sorgular", new[] { "Çalışanlar" },
-            new[] { "Ad, e-posta", "Onay talebi özeti", "İzin bakiyesi (yalnızca kişiye özel)" },
-            "Onay süreçlerinin hızlandırılması", "m.5/2-f meşru menfaat", false,
-            "Saklama politikasındaki süre", "ChatMessages", Array.Empty<string>(), new[] { "slack", "microsoft" },
-            "Hassas veri bota yazılmaz; yanıtlar yalnızca soran kişiye görünür"),
+        new("chat", "Sohbet botu", "Slack, Microsoft Teams, Mattermost ve Rocket.Chat üzerinden onay, sorgu ve self-servis işlemler", new[] { "Çalışanlar" },
+            new[] { "Ad, e-posta", "Onay talebi özeti (kalan bakiye ve ekipten izinli SAYISI; başkalarının adı yok)", "İzin bakiyesi, vardiya, masa, bordro özeti (yalnızca kişiye özel DM; bordro ek doğrulamayla)",
+                    "Fiş görüntüsü (yalnızca bellekte okunur, saklanmaz)", "Kullanım sayaçları (kişisiz)" },
+            "Onay süreçlerinin hızlandırılması ve çalışan self-servis işlemleri", "m.5/2-f meşru menfaat; m.5/2-c sözleşmenin ifası (izin, masraf, puantaj)", false,
+            "Saklama politikasındaki süre", "ChatMessages", Array.Empty<string>(), new[] { "slack", "microsoft", "mattermost", "rocketchat" },
+            "Hassas veri bota yazılmaz; yanıtlar yalnızca soran kişiye görünür; kişisel yanıt kanala yazılmaz; belge içeriği değil bağlantısı gönderilir; sessiz saate uyulur; kişi ve kiracı başına hız sınırı; ücretle ilgili onaylar ve toplu onay HR360'ta ek doğrulama ister; kendi sunucunuzdaki Mattermost/Rocket.Chat yurt dışı aktarım sayılmaz"),
+        new("chat-context", "Sohbet botu", "İK asistanı konuşma bağlamı (devam soruları için son sorular)", new[] { "Çalışanlar" },
+            new[] { "Asistana sorulan son sorular ve kısa yanıtlar" },
+            "\"peki geçen ay?\" gibi devam sorularının anlaşılması", "m.5/2-f meşru menfaat", false,
+            "30 gün (kişi \"geçmişimi sil\" ile istediği an siler)", "ChatContext", Array.Empty<string>(), Array.Empty<string>(),
+            "AES-256-GCM şifreli; kişi başına son 6 soru; 30 günde otomatik silinir; yalnızca soran kişinin yanıtlarında kullanılır"),
+        new("chat-surveys", "Sohbet botu", "Nabız anketi ve çıkış anketi (sohbetten)", new[] { "Çalışanlar", "Ayrılan çalışanlar" },
+            new[] { "Nabız yanıtı (anonim: kimlik, departman ve saat tutulmaz)", "Yanıtladı bilgisi (ayrı tabloda, tekrarı önlemek için)", "Çıkış anketi yanıtları (yalnızca İK)" },
+            "Çalışan bağlılığının ölçülmesi ve ayrılış nedenlerinin anlaşılması", "m.5/2-f meşru menfaat; katılım isteğe bağlıdır", false,
+            "Nabız: anket saklama süresi; çıkış anketi: ayrılış kaydıyla birlikte", null, Array.Empty<string>(), Array.Empty<string>(),
+            "Sonuçlar en az 5 yanıtla gösterilir; çıkış anketi ara yanıtları şifreli ve tamamlanınca silinir; yöneticiyle paylaşılmaz"),
         new("ai", "Yapay zekâ araçları", "İlan taslağı, özet, İK asistanı", new[] { "Çalışanlar", "Adaylar" },
             new[] { "Gönderilen metin", "Kişi adları (takma adla)" },
             "Metin üretimi ve özetleme", "m.5/2-f meşru menfaat; kişisel veri gönderimi için ayrıca kiracı izni", false,
@@ -320,9 +334,12 @@ public static class TransferGuard
         var ai = await db.AiSettings.AsNoTracking().AnyAsync(s => s.Enabled, ct);
         var llmKey = LlmProviderKey(llm);
         var hookUrls = await db.Webhooks.AsNoTracking().Where(w => w.IsEnabled).Select(w => w.Url).ToListAsync(ct);
+        var chatHosts = await db.ChatApps.AsNoTracking().Where(a => a.IsEnabled && (a.Platform == "Mattermost" || a.Platform == "RocketChat"))
+            .Select(a => new { a.Platform, a.ServerUrl }).ToListAsync(ct);
         return PrivacyCatalog.Providers.ToDictionary(p => p.Key, p => p.Key switch
         {
             "zapier" or "n8n" => hookUrls.Any(u => HookProvider(u) == p.Key),
+            "mattermost" or "rocketchat" => chatHosts.Any(h => Chat.ChatHosts.SaasKey(h.Platform, h.ServerUrl) == p.Key),
             "slack" => apps.Contains("Slack"),
             "microsoft" => apps.Contains("Teams") || providers.Contains("Microsoft"),
             "google" => providers.Contains("Google"),

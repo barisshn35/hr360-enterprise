@@ -45,3 +45,6 @@ tests/credentials.json
 .pytest_cache/
 tests/load/results/
 .update-state
+
+# Dagitik izleme acik/kapali (scripts/monitoring.sh tracing)
+deploy/monitoring/tracing.env

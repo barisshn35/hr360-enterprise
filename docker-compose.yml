@@ -12,6 +12,11 @@ name: hr360
 
 x-dotnet-service: &dotnet-service
   restart: unless-stopped
+  # G25: dagitik izleme ayarlari (OTEL_EXPORTER_OTLP_ENDPOINT, OTEL_TRACES_SAMPLER_ARG).
+  # Dosya yoksa izleme kapali; scripts/monitoring.sh tracing on|off yazar/siler.
+  env_file:
+    - path: ./deploy/monitoring/tracing.env
+      required: false
   depends_on:
     postgres:
       condition: service_healthy
@@ -30,6 +35,7 @@ volumes:
   grafana-data:
   loki-data:
   alertmanager-data:
+  tempo-data:
 
 services:
   # --------------------------------------------------------------------- #
@@ -387,6 +393,8 @@ services:
     <<: *dotnet-service
     build: ./apps/services/governance-service
     environment:
+      # Sohbet botunda fis okuma: ml-inference OCR icin istemci kimligi (yerel, veri disari cikmaz).
+      OCR_CLIENT_SECRET: "${ML_KEYCLOAK_CLIENT_SECRET:-}"
       INTERNAL_SERVICE_TOKEN: "${INTERNAL_SERVICE_TOKEN:-}"
       GOVERNANCE_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=12"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
@@ -715,6 +723,33 @@ services:
       - prometheus
       - loki
     mem_limit: "256m"
+
+  # G25: dagitik izleme. Servisler izleri (OTEL_EXPORTER_OTLP_ENDPOINT tanimliysa)
+  # collector'a gonderir; collector KVKK maskelemesini ikinci kez uygulayip Tempo'ya
+  # yazar. Ikisi de disariya acilmaz; izler Grafana > Explore > Tempo'dan sorgulanir.
+  # Saklama: TEMPO_RETENTION (varsayilan 72h). Ac/kapat: scripts/monitoring.sh tracing on|off
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.115.1
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    command: ["--config=/etc/otelcol/config.yml"]
+    volumes:
+      - ./deploy/monitoring/otel-collector.yml:/etc/otelcol/config.yml:ro
+    depends_on:
+      - tempo
+    mem_limit: "256m"
+
+  tempo:
+    image: grafana/tempo:2.6.1
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    command: ["-config.file=/etc/tempo/tempo.yml", "-config.expand-env=true"]
+    environment:
+      TEMPO_RETENTION: ${TEMPO_RETENTION:-72h}
+    volumes:
+      - ./deploy/monitoring/tempo.yml:/etc/tempo/tempo.yml:ro
+      - tempo-data:/var/tempo
+    mem_limit: "512m"
 
   # Yalnizca "letsencrypt" profili acikken calisir: scripts/tls.sh enable --letsencrypt
   # .env'e COMPOSE_PROFILES=letsencrypt yazar.

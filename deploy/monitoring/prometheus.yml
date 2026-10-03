@@ -65,6 +65,17 @@ scrape_configs:
       - targets: [alertmanager:9093]
         labels: { service: alertmanager }
 
+  # G25: dagitik izleme bilesenleri (yalnizca "monitoring" profilinde).
+  - job_name: otel-collector
+    static_configs:
+      - targets: [otel-collector:8888]
+        labels: { service: otel-collector }
+
+  - job_name: tempo
+    static_configs:
+      - targets: [tempo:3200]
+        labels: { service: tempo }
+
   - job_name: prometheus
     static_configs:
       - targets: [localhost:9090]

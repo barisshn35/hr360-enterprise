@@ -9,6 +9,8 @@ using RecruitmentService.Data;
 using RecruitmentService.Tenancy;
 
 var builder = WebApplication.CreateBuilder(args);
+// G25: OpenTelemetry izleme (yalnizca OTEL_EXPORTER_OTLP_ENDPOINT tanimliysa) + KVKK maskeleme.
+RecruitmentService.Observability.Telemetry.AddHrTelemetry(builder.Services, "recruitment-service");
 
 var connectionString = Environment.GetEnvironmentVariable("RECRUITMENT_DB_CONNECTION")
     ?? throw new InvalidOperationException("DB connection string not configured");
@@ -18,7 +20,8 @@ builder.Services.AddScoped<ITenantContext>(sp => sp.GetRequiredService<TenantCon
 
 builder.Services.AddDbContext<RecruitmentDbContext>(options =>
     options.UseNpgsql(connectionString)
-        .AddInterceptors(new RecruitmentService.Auditing.AuditInterceptor("recruitment-service")));
+        .AddInterceptors(new RecruitmentService.Auditing.AuditInterceptor("recruitment-service"),
+            new RecruitmentService.Observability.BusinessMetricsInterceptor()));
 
 // Dalga 5c: teklif onay akışı (workflow-service, kullanıcının jetonuyla), Kafka karar olayları,
 // kariyer sayfası istek sınırı (bellekte) ve aday verisi imha işçisi.

@@ -9,6 +9,8 @@ using OnboardingService.Data;
 using OnboardingService.Tenancy;
 
 var builder = WebApplication.CreateBuilder(args);
+// G25: OpenTelemetry izleme (yalnizca OTEL_EXPORTER_OTLP_ENDPOINT tanimliysa) + KVKK maskeleme.
+OnboardingService.Observability.Telemetry.AddHrTelemetry(builder.Services, "onboarding-service");
 
 var connectionString = Environment.GetEnvironmentVariable("ONBOARDING_DB_CONNECTION")
     ?? throw new InvalidOperationException("DB connection string not configured");
@@ -18,7 +20,8 @@ builder.Services.AddScoped<ITenantContext>(sp => sp.GetRequiredService<TenantCon
 
 builder.Services.AddDbContext<OnboardingDbContext>(options =>
     options.UseNpgsql(connectionString)
-        .AddInterceptors(new OnboardingService.Auditing.AuditInterceptor("onboarding-service")));
+        .AddInterceptors(new OnboardingService.Auditing.AuditInterceptor("onboarding-service"),
+            new OnboardingService.Observability.BusinessMetricsInterceptor()));
 
 var keycloakAuthority = Environment.GetEnvironmentVariable("KEYCLOAK_AUTHORITY")
     ?? "http://keycloak:8080/auth/realms/hr360";

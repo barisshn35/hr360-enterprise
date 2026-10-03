@@ -11,6 +11,8 @@ using ExpenseService.Messaging;
 using ExpenseService.Services;
 
 var builder = WebApplication.CreateBuilder(args);
+// G25: OpenTelemetry izleme (yalnizca OTEL_EXPORTER_OTLP_ENDPOINT tanimliysa) + KVKK maskeleme.
+ExpenseService.Observability.Telemetry.AddHrTelemetry(builder.Services, "expense-service");
 
 var connectionString = Environment.GetEnvironmentVariable("EXPENSE_DB_CONNECTION")
     ?? throw new InvalidOperationException("DB connection string not configured");
@@ -27,7 +29,8 @@ builder.Services.AddHostedService<ExpenseService.Controllers.TravelPurgeWorker>(
 
 builder.Services.AddDbContext<ExpenseDbContext>(options =>
     options.UseNpgsql(connectionString)
-        .AddInterceptors(new ExpenseService.Auditing.AuditInterceptor("expense-service")));
+        .AddInterceptors(new ExpenseService.Auditing.AuditInterceptor("expense-service"),
+            new ExpenseService.Observability.BusinessMetricsInterceptor()));
 
 var keycloakAuthority = Environment.GetEnvironmentVariable("KEYCLOAK_AUTHORITY")
     ?? "http://keycloak:8080/auth/realms/hr360";

@@ -9,6 +9,8 @@ using OrganizationService.Data;
 using OrganizationService.Tenancy;
 
 var builder = WebApplication.CreateBuilder(args);
+// G25: OpenTelemetry izleme (yalnizca OTEL_EXPORTER_OTLP_ENDPOINT tanimliysa) + KVKK maskeleme.
+OrganizationService.Observability.Telemetry.AddHrTelemetry(builder.Services, "organization-service");
 
 var connectionString = builder.Configuration["ConnectionStrings__OrganizationDb"]
     ?? Environment.GetEnvironmentVariable("ORG_DB_CONNECTION")

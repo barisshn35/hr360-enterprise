@@ -6,7 +6,8 @@ using GovernanceService.Infrastructure.Ai;
 namespace GovernanceService.Infrastructure;
 
 /// <summary>Soran kişi: web'de jetondan, sohbet botunda doğrulanmış sohbet hesabından gelir.</summary>
-public sealed record AssistantAsker(string Tenant, Person? Me, string? UserId, bool IsManager, bool IsHr, bool En);
+/// <param name="ReportDepartmentId">Sohbet botu (B19): yönetici rapor soruları bu departmanla sınırlanır (İK değilse).</param>
+public sealed record AssistantAsker(string Tenant, Person? Me, string? UserId, bool IsManager, bool IsHr, bool En, Guid? ReportDepartmentId = null);
 
 public sealed record AssistantLink(string Label, string Path);
 
@@ -121,7 +122,7 @@ public sealed class HrAssistant(Sql db, PeopleDirectory people, GovernanceDbCont
         if (a.IsManager && Has(q, "kac", "sayisi", "toplam", "ortalama", "dagilim", "gore", "aylik", "en cok", "trend",
                 "how many", "number of", "total", "average", " by ", "monthly", " most ", "count", "headcount"))
         {
-            var report = await NlReport.RunAsync(db, a.Tenant, raw, a.IsHr, ct, a.En ? "en" : "tr", new NlReport.Options(AllowSalary: a.IsHr));
+            var report = await NlReport.RunAsync(db, a.Tenant, raw, a.IsHr, ct, a.En ? "en" : "tr", new NlReport.Options(DepartmentId: a.IsHr ? null : a.ReportDepartmentId, AllowSalary: a.IsHr));
             if (report.Understood)
                 return new(report.Interpretation + ":", "report", new[] { new AssistantLink(L("Doğal dilde rapor", "Report assistant"), "/panel/rapor-asistani") }, report);
         }

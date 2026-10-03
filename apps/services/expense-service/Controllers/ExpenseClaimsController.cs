@@ -211,7 +211,7 @@ public class ExpenseClaimsController : ControllerBase
     [Authorize(Policy = "RequireExpenseManage")]
     public async Task<IActionResult> Resolve(Guid id, [FromBody] ResolveClaimRequest request, CancellationToken ct)
     {
-        var claim = await _db.Claims.FirstOrDefaultAsync(c => c.Id == id);
+        var claim = await _db.Claims.Include(c => c.Items).FirstOrDefaultAsync(c => c.Id == id);
         if (claim is null) return NotFound();
         if (claim.Status != ClaimStatus.Submitted)
             return BadRequest("Yalnızca onay bekleyen beyan sonuçlandırılabilir");
@@ -242,7 +242,7 @@ public class ExpenseClaimsController : ControllerBase
     [Authorize(Policy = "RequireExpenseMarkPaid")]
     public async Task<IActionResult> MarkPaid(Guid id, CancellationToken ct)
     {
-        var claim = await _db.Claims.FirstOrDefaultAsync(c => c.Id == id, ct);
+        var claim = await _db.Claims.Include(c => c.Items).FirstOrDefaultAsync(c => c.Id == id, ct);
         if (claim is null) return NotFound();
         if (claim.Status != ClaimStatus.Approved)
             return BadRequest("Yalnızca onaylanmış beyan ödenmiş işaretlenebilir");

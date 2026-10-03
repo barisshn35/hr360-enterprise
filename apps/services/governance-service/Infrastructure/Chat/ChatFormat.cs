@@ -79,6 +79,14 @@ public static class ChatFormat
         var blocks = SlackText(reply.Text, reply.Link, reply.En);
         if (reply.Form == ChatForm.Leave)
             blocks.Add(new JsonObject { ["type"] = "actions", ["elements"] = new JsonArray { new JsonObject { ["type"] = "button", ["action_id"] = LeaveFormAction, ["style"] = "primary", ["value"] = "leave", ["text"] = PlainText(T(reply.En, "İzin talebi oluştur", "Request leave")) } } });
+        var all = new List<ChatButton>();
+        if (reply.Form == ChatForm.Expense && reply.Expense is { } d)
+        {
+            all.Add(new ChatButton(T(reply.En, "Taslak oluştur", "Create draft"), "exp_confirm", d.PendingId.ToString(), "primary"));
+            all.Add(new ChatButton(T(reply.En, "Vazgeç", "Cancel"), "exp_cancel", d.PendingId.ToString()));
+        }
+        if (reply.Buttons is { Count: > 0 } buttons) all.AddRange(buttons);
+        if (all.Count > 0) blocks.Add(ChatCards.SlackButtons(all, DateTimeOffset.UtcNow));
         foreach (var p in reply.Approvals)
         {
             blocks.Add(new JsonObject { ["type"] = "divider" });
@@ -208,9 +216,60 @@ public static class ChatFormat
         return Card(body, actions);
     }
 
+    /// <summary>B6: fiş önerisi kartı (tutar, tarih, kategori düzenlenebilir; görüntü saklanmaz).</summary>
+    public static JsonObject TeamsExpenseCard(ExpenseDraft d, string text, bool en)
+    {
+        var body = new JsonArray(Md(text).Split('\n').Select(l => (JsonNode)Text(l)).ToArray());
+        body.Add(new JsonObject { ["type"] = "Input.Text", ["id"] = "amount", ["label"] = T(en, "Tutar (TL)", "Amount (TRY)"), ["value"] = d.Amount?.ToString("0.00", CultureInfo.InvariantCulture) ?? "" });
+        body.Add(new JsonObject { ["type"] = "Input.Date", ["id"] = "date", ["label"] = T(en, "Harcama tarihi", "Expense date"), ["value"] = (d.Date ?? DateOnly.FromDateTime(DateTime.UtcNow.AddHours(3))).ToString("yyyy-MM-dd") });
+        body.Add(new JsonObject { ["type"] = "Input.ChoiceSet", ["id"] = "category", ["label"] = T(en, "Kategori", "Category"), ["value"] = d.Category,
+            ["choices"] = new JsonArray(ReceiptParser.Categories.Select(c => (JsonNode)new JsonObject { ["title"] = ReceiptParser.CategoryLabel(c, en), ["value"] = c }).ToArray()) });
+        var actions = new JsonArray
+        {
+            new JsonObject { ["type"] = "Action.Submit", ["title"] = T(en, "Taslak oluştur", "Create draft"), ["style"] = "positive",
+                ["data"] = new JsonObject { ["hr360"] = "expense", ["id"] = d.PendingId.ToString() } },
+            new JsonObject { ["type"] = "Action.Submit", ["title"] = T(en, "Vazgeç", "Cancel"),
+                ["data"] = new JsonObject { ["hr360"] = "x", ["a"] = "exp_cancel", ["v"] = ButtonStamp.Encode(d.PendingId.ToString(), DateTimeOffset.UtcNow) } },
+        };
+        return Card(body, actions);
+    }
+
+    /// <summary>B6: Slack'te "Düzelt" penceresi (fiş önerisi).</summary>
+    public static JsonObject SlackExpenseModal(ExpenseDraft d, bool en)
+    {
+        JsonObject Opt(string c) => new() { ["text"] = PlainText(ReceiptParser.CategoryLabel(c, en)), ["value"] = c };
+        return new JsonObject
+        {
+            ["type"] = "modal", ["callback_id"] = "hr360_expense", ["private_metadata"] = d.PendingId.ToString(),
+            ["title"] = PlainText(T(en, "Masraf taslağı", "Expense draft")), ["submit"] = PlainText(T(en, "Oluştur", "Create")), ["close"] = PlainText(T(en, "Vazgeç", "Cancel")),
+            ["blocks"] = new JsonArray
+            {
+                new JsonObject { ["type"] = "input", ["block_id"] = "amount", ["label"] = PlainText(T(en, "Tutar (TL)", "Amount (TRY)")),
+                    ["element"] = new JsonObject { ["type"] = "plain_text_input", ["action_id"] = "v", ["initial_value"] = d.Amount?.ToString("0.00", CultureInfo.InvariantCulture) ?? "" } },
+                new JsonObject { ["type"] = "input", ["block_id"] = "date", ["label"] = PlainText(T(en, "Harcama tarihi", "Expense date")),
+                    ["element"] = new JsonObject { ["type"] = "datepicker", ["action_id"] = "v", ["initial_date"] = (d.Date ?? DateOnly.FromDateTime(DateTime.UtcNow.AddHours(3))).ToString("yyyy-MM-dd") } },
+                new JsonObject { ["type"] = "input", ["block_id"] = "category", ["label"] = PlainText(T(en, "Kategori", "Category")),
+                    ["element"] = new JsonObject { ["type"] = "static_select", ["action_id"] = "v", ["initial_option"] = Opt(d.Category),
+                        ["options"] = new JsonArray(ReceiptParser.Categories.Select(c => (JsonNode)Opt(c)).ToArray()) } },
+            },
+        };
+    }
+
     public static IEnumerable<JsonObject> TeamsReply(ChatReply reply)
     {
-        yield return TeamsActivity(TeamsTextCard(reply.Text, reply.Link, reply.En), reply.Text);
+        if (reply.Form == ChatForm.Expense && reply.Expense is { } draft)
+        {
+            yield return TeamsActivity(TeamsExpenseCard(draft, reply.Text, reply.En), reply.Text);
+            yield break;
+        }
+        var main = TeamsTextCard(reply.Text, reply.Link, reply.En);
+        if (reply.Buttons is { Count: > 0 } buttons)
+        {
+            var acts = main["actions"] as JsonArray ?? new JsonArray();
+            foreach (var a in ChatCards.TeamsActions(buttons, DateTimeOffset.UtcNow)) acts.Add(a!.DeepClone());
+            main["actions"] = acts;
+        }
+        yield return TeamsActivity(main, reply.Text);
         if (reply.Form == ChatForm.Leave)
             yield return TeamsActivity(TeamsLeaveCard(reply.FormLines ?? Array.Empty<string>(), reply.En), reply.Text);
         foreach (var p in reply.Approvals)

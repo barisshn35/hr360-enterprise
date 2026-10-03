@@ -305,7 +305,7 @@ export async function streamEvents(onEvent: (e: RadarEvent) => void, signal: Abo
 }
 
 /* ------------------------------------------------- sohbet uygulamaları (Slack / Teams botu) */
-export type ChatPlatform = 'Slack' | 'Teams'
+export type ChatPlatform = 'Slack' | 'Teams' | 'Mattermost' | 'RocketChat'
 export interface ChatApp {
   id: string
   platform: ChatPlatform
@@ -328,8 +328,20 @@ export interface ChatApp {
   requireVerifiedIdentity: boolean
   messageDetail: 'Minimal' | 'Standard'
   dailyDigest: boolean
-  endpoints: { commands?: string; interactivity?: string; events?: string; messaging?: string }
+  endpoints: { commands?: string; interactivity?: string; events?: string; messaging?: string; webhook?: string }
   publicOriginIsHttps: boolean
+  /* Dalga 5e: Mattermost / Rocket.Chat ve bot ayarları */
+  serverUrl?: string | null
+  botUserId?: string | null
+  hasBotToken?: boolean
+  hasIncomingToken?: boolean
+  disabledFeatures?: string[]
+  channelId?: string | null
+  celebrationsEnabled?: boolean
+  respectQuietHours?: boolean
+  buttonTtlDays?: number
+  transferKey?: string | null
+  selfHosted?: boolean
 }
 export interface ChatAppInput {
   platform: ChatPlatform
@@ -345,6 +357,14 @@ export interface ChatAppInput {
   requireVerifiedIdentity?: boolean
   messageDetail?: 'Minimal' | 'Standard'
   dailyDigest?: boolean
+  serverUrl?: string
+  botToken?: string
+  botUserId?: string
+  incomingToken?: string
+  channelId?: string
+  celebrationsEnabled?: boolean
+  respectQuietHours?: boolean
+  buttonTtlDays?: number
 }
 export interface MyChatIdentity {
   id: string

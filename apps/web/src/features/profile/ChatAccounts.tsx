@@ -36,6 +36,9 @@ export function MyChatAccounts() {
             ))}
           </ul>
         )}
+        <p className="border-t border-border px-5 py-3 text-[12px] text-muted-foreground">
+          <Link className="text-primary underline" to="/panel/sohbet-onay">{tx('Sohbet doğrulama kodları ve kutlama tercihleri')}</Link>
+        </p>
       </PanelBody>
     </Panel>
   )

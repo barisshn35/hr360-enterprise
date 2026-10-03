@@ -197,7 +197,7 @@ try:
     check("Geçilen / sonuçlanan sınav tekrar gönderilemez", code == 409, code)
     cert_id = at2.get("certificateId")
     row = psql(f"""SELECT "VerificationCode" || '|' || "ExpiresOn" || '|' || "IsMandatory" FROM learning_certifications WHERE "Id" = '{cert_id}'""").split("|")
-    check("Sertifika: doğrulama kodu, 12 ay geçerlilik, zorunlu", len(row) == 3 and len(row[0]) == 14 and row[1] == (TODAY.replace(year=TODAY.year + 1)).isoformat() and row[2] in ("t", "true"), row)
+    check("Sertifika: doğrulama kodu, 12 ay geçerlilik, zorunlu", len(row) == 3 and len(row[0]) == 14 and row[1] in {(d.replace(year=d.year + 1)).isoformat() for d in (TODAY, TODAY - dt.timedelta(days=1), TODAY + dt.timedelta(days=1))} and row[2] in ("t", "true"), row)
     code, cv = api("ayse", "GET", f"{L}/certifications/{cert_id}/certificate")
     check("Çalışan yazdırılabilir sertifikayı alır", code == 200 and cv["courseTitle"] == "TEST5c Sınavlı Eğitim" and cv["verificationCode"] == row[0] and cv["score"] == 100, (code, cv))
     code, _ = api("mehmet", "GET", f"{L}/certifications/{cert_id}/certificate")

@@ -9,6 +9,8 @@ using CompensationService.Data;
 using CompensationService.Tenancy;
 
 var builder = WebApplication.CreateBuilder(args);
+// G25: OpenTelemetry izleme (yalnizca OTEL_EXPORTER_OTLP_ENDPOINT tanimliysa) + KVKK maskeleme.
+CompensationService.Observability.Telemetry.AddHrTelemetry(builder.Services, "compensation-service");
 
 var connectionString = Environment.GetEnvironmentVariable("COMPENSATION_DB_CONNECTION")
     ?? throw new InvalidOperationException("DB connection string not configured");
@@ -19,7 +21,8 @@ builder.Services.AddScoped<ITenantContext>(sp => sp.GetRequiredService<TenantCon
 builder.Services.AddHostedService<CompensationService.Controllers.ExportPurgeWorker>();
 builder.Services.AddDbContext<CompensationDbContext>(options =>
     options.UseNpgsql(connectionString)
-        .AddInterceptors(new CompensationService.Auditing.AuditInterceptor("compensation-service")));
+        .AddInterceptors(new CompensationService.Auditing.AuditInterceptor("compensation-service"),
+            new CompensationService.Observability.BusinessMetricsInterceptor()));
 
 var keycloakAuthority = Environment.GetEnvironmentVariable("KEYCLOAK_AUTHORITY")
     ?? "http://keycloak:8080/auth/realms/hr360";
