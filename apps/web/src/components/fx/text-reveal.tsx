@@ -29,7 +29,9 @@ export function TextReveal({
     return <Static className={className}>{text}</Static>
   }
   return (
-    <Tag className={className} aria-label={text}>
+    <Tag className={className}>
+      {/* Ekran okuyucu tek parça metni okur; kelime kelime animasyon gizlidir. */}
+      <span className="sr-only">{text}</span>
       {words.map((w, i) => (
         <motion.span
           key={`${w}-${i}`}

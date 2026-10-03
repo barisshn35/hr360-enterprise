@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using OrganizationService.Data;
+using OrganizationService.Infrastructure;
 using OrganizationService.Models;
 
 namespace OrganizationService.Controllers;
@@ -21,24 +22,52 @@ public class TeamsController : ControllerBase
     private readonly OrganizationDbContext _db;
     public TeamsController(OrganizationDbContext db) => _db = db;
 
+    /// <remarks>
+    /// Sayfalama (G24): <c>page</c> verilmezse eski biçim (düz dizi; sayı <c>X-Total-Count</c>
+    /// başlığında). <c>page</c>/<c>pageSize</c> (en fazla 200) ile <c>{ items, total, page, pageSize }</c>.
+    /// <c>q</c>: ekip adı. Üye listesi çalışan kimliği içerdiği için ekipler önbelleğe ALINMAZ.
+    /// </remarks>
     [HttpGet]
     public async Task<IActionResult> GetAll(
         [FromQuery] Guid? departmentId,
         [FromQuery] Guid? leadEmployeeId,
         [FromQuery] bool includeInactive = false,
-        [FromQuery] bool includeMembers = false)
+        [FromQuery] bool includeMembers = false,
+        [FromQuery] int? page = null,
+        [FromQuery] int? pageSize = null,
+        [FromQuery] string? q = null,
+        [FromQuery] string? dir = null)
     {
-        var q = _db.Teams.Include(t => t.Members).AsQueryable();
-        if (!includeInactive) q = q.Where(t => t.IsActive);
-        if (departmentId.HasValue) q = q.Where(t => t.DepartmentId == departmentId.Value);
-        if (leadEmployeeId.HasValue) q = q.Where(t => t.LeadEmployeeId == leadEmployeeId.Value);
+        var query = _db.Teams.Include(t => t.Members).AsQueryable();
+        if (!includeInactive) query = query.Where(t => t.IsActive);
+        if (departmentId.HasValue) query = query.Where(t => t.DepartmentId == departmentId.Value);
+        if (leadEmployeeId.HasValue) query = query.Where(t => t.LeadEmployeeId == leadEmployeeId.Value);
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var like = Paging.FoldLike(q);
+            query = query.Where(t => EF.Functions.Like(OrganizationDbContext.Fold(t.Name), like, "\\"));
+        }
 
-        var teams = await q.OrderBy(t => t.Name).ToListAsync();
+        var ordered = (Paging.Desc(dir) ? query.OrderByDescending(t => t.Name) : query.OrderBy(t => t.Name)).ThenBy(t => t.Id);
+        int total;
+        List<Team> teams;
+        var (p, size) = Paging.Normalize(page ?? 1, pageSize);
+        if (page is null)
+        {
+            teams = await ordered.ToListAsync();
+            total = teams.Count;
+        }
+        else
+        {
+            total = await ordered.CountAsync();
+            teams = total == 0 ? new List<Team>() : await ordered.Skip((p - 1) * size).Take(size).ToListAsync();
+        }
+        Paging.SetTotal(this, total);
 
         // includeMembers: organizasyon semasi cizen ekranlar her ekibin
         // ayrintisini ayri ayri cekmek zorunda kalmasin. 5 ekipte fark
         // etmez, 100 ekipte 100 istek eder.
-        return Ok(teams.Select(t => new
+        var shaped = teams.Select(t => new
         {
             t.Id, t.Name, t.Description, t.DepartmentId, t.LeadEmployeeId,
             t.IsActive, t.CreatedAt,
@@ -52,7 +81,8 @@ public class TeamsController : ControllerBase
                         isLead = t.LeadEmployeeId == m.EmployeeId,
                     })
                 : null,
-        }));
+        }).ToList();
+        return page is null ? Ok(shaped) : Ok(new { items = shaped, total, page = p, pageSize = size });
     }
 
     [HttpGet("{id}")]

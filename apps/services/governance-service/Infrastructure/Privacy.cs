@@ -28,6 +28,9 @@ public static class PrivacyCatalog
         new("zoom", "Zoom", "ABD", "Toplantı başlığı, saat, katılımcı e-postaları", "Toplantı"),
         new("anthropic", "Anthropic (yapay zekâ)", "ABD", "Gönderilen metin; kişi adları takma adla değiştirilir", "Yapay zekâ araçları"),
         new("openai", "OpenAI uyumlu yapay zekâ sağlayıcısı", "ABD (sağlayıcıya göre)", "Gönderilen metin; kişi adları takma adla değiştirilir", "Yapay zekâ araçları"),
+        new("zapier", "Zapier", "ABD", "Abone olunan olayların yükü (ör. çalışan kimliği, ad, e-posta, izin tarihleri, belge imza kaydı)", "REST hook / webhook otomasyonları"),
+        // n8n'in bulut sürümü (*.n8n.cloud) yurt dışıdır; kendi sunucunuzda çalışan n8n aktarım sayılmaz.
+        new("n8n", "n8n Cloud (n8n GmbH)", "Almanya (AB)", "Abone olunan olayların yükü (Zapier ile aynı)", "REST hook / webhook otomasyonları (yalnızca bulut sürümü)"),
     };
 
     public static readonly Dictionary<string, string> Mechanisms = new()
@@ -171,6 +174,11 @@ public static class PrivacyCatalog
             "Metin üretimi ve özetleme", "m.5/2-f meşru menfaat; kişisel veri gönderimi için ayrıca kiracı izni", false,
             "Kullanım kayıtları saklama politikasındaki süre", "AiUsage", Array.Empty<string>(), new[] { "anthropic", "openai" },
             "Yerel model (Ollama) önerilir; yurt dışı sağlayıcı dayanak kaydı olmadan çalışmaz"),
+        new("webhooks", "Otomasyon", "Webhook ve REST hook (Zapier, n8n) ile olay aktarımı", new[] { "Çalışanlar" },
+            new[] { "Abone olunan olayın yükü (kimlik, iletişim, izin/onay/belge olayları)" },
+            "İK süreçlerinin şirketin diğer sistemleriyle otomasyonu", "m.5/2-f meşru menfaat; m.5/2-c sözleşmenin ifası", false,
+            "Gönderim kayıtları saklama politikasındaki süre", "WebhookDeliveries", new[] { "Kiracının tanımladığı alıcı sistemler" }, new[] { "zapier", "n8n" },
+            "HMAC-SHA256 imzalı teslimat; API anahtarı yetkisiyle abonelik; Zapier ve n8n Cloud gibi yurt dışı hedefler aktarım dayanağı kaydı olmadan açılamaz ve teslim edilmez; kendi sunucunuzdaki (iç ağ) n8n serbesttir"),
         new("automated-analysis", "Otomatik analiz", "İşten ayrılma riski tahmini", new[] { "Çalışanlar" },
             new[] { "Kıdem ve iş verilerinden türetilen özellikler", "Risk skoru" },
             "İK'nın elde tutma çalışmalarına destek", "m.5/2-f meşru menfaat", false,
@@ -244,6 +252,9 @@ public static class TransferGuard
     public static string ProviderName(string key) =>
         PrivacyCatalog.Providers.FirstOrDefault(p => p.Key == key)?.Name ?? key;
 
+    public static string MessageEn(string provider) =>
+        $"KVKK art. 9: {ProviderName(provider)} transfers personal data abroad. First record the legal basis (e.g. standard contract) under KVKK › Cross-border transfers.";
+
     public static string Message(string provider) =>
         $"KVKK m.9: {ProviderName(provider)} kişisel veriyi yurt dışına aktarır. Önce KVKK › Yurt dışı aktarım ekranında hukuki dayanağı (ör. standart sözleşme) kaydedin.";
 
@@ -255,6 +266,41 @@ public static class TransferGuard
     /// <summary>Kayıt varsa null, yoksa kullanıcıya gösterilecek hata.</summary>
     public static async Task<string?> MissingAsync(GovernanceDbContext db, string tenant, string provider, CancellationToken ct) =>
         (await AllowedAsync(db, tenant, ct)).Contains(provider) ? null : Message(provider);
+
+    /// <summary>
+    /// Webhook/REST hook hedef adresinin yurt dışı aktarım anahtarı: zapier.com ve alt alan
+    /// adları "zapier", n8n bulut (n8n.cloud) "n8n"; diğer adresler (ör. kendi sunucunuzdaki
+    /// n8n, iç ağ) null — kiracının kendi altyapısı aktarım sayılmaz.
+    /// </summary>
+    public static string? HookProvider(string? url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var u)) return null;
+        var host = u.Host.TrimEnd('.').ToLowerInvariant();
+        if (host == "zapier.com" || host.EndsWith(".zapier.com")) return "zapier";
+        if (host == "n8n.cloud" || host.EndsWith(".n8n.cloud")) return "n8n";
+        return null;
+    }
+
+    /// <summary>
+    /// Hedef iç ağda mı (kendi sunucunuzdaki n8n gibi): localhost, tek etiketli (docker/servis
+    /// adı) ya da .local/.internal/.lan adları ve RFC 1918 / loopback / link-local / ULA adresleri.
+    /// Yalnızca bilgilendirme amaçlıdır; DNS çözülmez.
+    /// </summary>
+    public static bool IsInternalHost(string? url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var u)) return false;
+        var host = u.Host.TrimEnd('.').ToLowerInvariant();
+        if (System.Net.IPAddress.TryParse(host.Trim('[', ']'), out var ip))
+        {
+            if (System.Net.IPAddress.IsLoopback(ip)) return true;
+            if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
+                return ip.IsIPv6LinkLocal || ip.IsIPv6SiteLocal || (ip.GetAddressBytes()[0] & 0xFE) == 0xFC;
+            var b = ip.GetAddressBytes();
+            return b[0] == 10 || (b[0] == 172 && b[1] is >= 16 and <= 31) || (b[0] == 192 && b[1] == 168) || (b[0] == 169 && b[1] == 254);
+        }
+        return host == "localhost" || !host.Contains('.') || host.EndsWith(".local") || host.EndsWith(".internal") || host.EndsWith(".lan")
+            || host.EndsWith(".localhost") || host.EndsWith(".home.arpa");
+    }
 
     /// <summary>Sohbet platformu / takvim sağlayıcısı adından aktarım anahtarı.</summary>
     public static string KeyOf(string platformOrProvider) => platformOrProvider.ToLowerInvariant() switch
@@ -273,8 +319,10 @@ public static class TransferGuard
         var providers = await db.ProviderConfigs.AsNoTracking().Where(c => c.IsEnabled).Select(c => c.Provider).ToListAsync(ct);
         var ai = await db.AiSettings.AsNoTracking().AnyAsync(s => s.Enabled, ct);
         var llmKey = LlmProviderKey(llm);
+        var hookUrls = await db.Webhooks.AsNoTracking().Where(w => w.IsEnabled).Select(w => w.Url).ToListAsync(ct);
         return PrivacyCatalog.Providers.ToDictionary(p => p.Key, p => p.Key switch
         {
+            "zapier" or "n8n" => hookUrls.Any(u => HookProvider(u) == p.Key),
             "slack" => apps.Contains("Slack"),
             "microsoft" => apps.Contains("Teams") || providers.Contains("Microsoft"),
             "google" => providers.Contains("Google"),

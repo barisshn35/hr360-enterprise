@@ -158,6 +158,14 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
   return (text ? translateServerData(JSON.parse(text)) : undefined) as T
 }
 
+/** Sunucu tarafı sayfalı liste yanıtı (G24): `?page=` verilen liste uçları döner. */
+export interface Paged<T> {
+  items: T[]
+  total: number
+  page: number
+  pageSize: number
+}
+
 /**
  * Sorgu dizesi kurar; tanımsız ve boş değerleri atar.
  * Modül servisleri bunu paylaşır, her dosyada tekrarlanmaz.

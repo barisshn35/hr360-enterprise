@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PerformanceService.Data;
+using PerformanceService.Infrastructure;
 using PerformanceService.Models;
 using PerformanceService.Security;
 using PerformanceService.Services;
@@ -35,21 +36,46 @@ public class ReviewsController : ControllerBase
     ///     olanlari gorur (baskasinin taslagi gorunmez).
     /// Onceden her calisan sirketteki tum degerlendirmeleri puanlariyla okuyabiliyordu.
     /// </summary>
+    /// <remarks>
+    /// Sayfalama (G24): <c>page</c> verilmezse eski biçim (düz dizi, en yeni önce; sayı
+    /// <c>X-Total-Count</c> başlığında). <c>page</c>/<c>pageSize</c> (en fazla 200) ile
+    /// <c>{ items, total, page, pageSize }</c>. Ek filtreler: <c>type</c>, <c>submitted</c> (true/false).
+    /// Sıralama: <c>sort</c>=createdAt|submittedAt|type, <c>dir</c>=asc|desc (varsayılan createdAt desc).
+    /// Yorum metinlerinde arama BİLEREK yok (serbest metin kişisel değerlendirme içerir).
+    /// Yetki kuralı sayfalamadan önce uygulanır.
+    /// </remarks>
     [HttpGet]
     public async Task<IActionResult> GetAll(
-        [FromQuery] Guid? employeeId, [FromQuery] Guid? cycleId, CancellationToken ct)
+        [FromQuery] Guid? employeeId, [FromQuery] Guid? cycleId, CancellationToken ct,
+        [FromQuery] int? page = null, [FromQuery] int? pageSize = null, [FromQuery] ReviewType? type = null,
+        [FromQuery] bool? submitted = null, [FromQuery] string? sort = null, [FromQuery] string? dir = null)
     {
-        var q = _db.Reviews.Include(r => r.Scores).AsQueryable();
+        var q = _db.Reviews.AsNoTracking().Include(r => r.Scores).AsQueryable();
         if (!User.IsManagerOrAbove())
         {
             var me = await _directory.FindMeAsync(ct);
-            if (me is null) return Ok(Array.Empty<Review>());
+            if (me is null)
+            {
+                Paging.SetTotal(this, 0);
+                var (p0, s0) = Paging.Normalize(page ?? 1, pageSize);
+                return page is null ? Ok(Array.Empty<Review>()) : Ok(new PagedResult<Review>(Array.Empty<Review>(), 0, p0, s0));
+            }
             q = q.Where(r => r.ReviewerEmployeeId == me.Id
                           || (r.EmployeeId == me.Id && r.SubmittedAt != null));
         }
         if (employeeId.HasValue) q = q.Where(r => r.EmployeeId == employeeId.Value);
         if (cycleId.HasValue) q = q.Where(r => r.CycleId == cycleId.Value);
-        return Ok(await q.OrderByDescending(r => r.CreatedAt).ToListAsync(ct));
+        if (type.HasValue) q = q.Where(r => r.Type == type.Value);
+        if (submitted.HasValue) q = submitted.Value ? q.Where(r => r.SubmittedAt != null) : q.Where(r => r.SubmittedAt == null);
+
+        var desc = sort is null || Paging.Desc(dir);
+        IOrderedQueryable<Review> ordered = (sort ?? "createdAt").ToLowerInvariant() switch
+        {
+            "submittedat" => desc ? q.OrderByDescending(r => r.SubmittedAt) : q.OrderBy(r => r.SubmittedAt),
+            "type" => desc ? q.OrderByDescending(r => r.Type) : q.OrderBy(r => r.Type),
+            _ => desc ? q.OrderByDescending(r => r.CreatedAt) : q.OrderBy(r => r.CreatedAt),
+        };
+        return await Paging.ListAsync(this, ordered.ThenBy(r => r.Id), page, pageSize, ct);
     }
 
     [HttpGet("{id}")]

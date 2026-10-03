@@ -25,8 +25,16 @@ public class OrganizationDbContext : DbContext, ITenantAwareContext
     public DbSet<Team> Teams => Set<Team>();
     public DbSet<TeamMember> TeamMembers => Set<TeamMember>();
 
+    /// <summary>
+    /// Türkçe harf katlamalı küçük harf (SQL: public.hr360_fold, scripts/sql/2026-10-09_paging_indexes.sql).
+    /// Sunucu tarafı aramanın "ayse" ile "Ayşe"yi eşleştirmesi için; yalnızca LINQ sorgularında çevrilir.
+    /// </summary>
+    public static string Fold(string value) => throw new NotSupportedException("Yalnızca LINQ sorgusunda kullanılır.");
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.HasDbFunction(typeof(OrganizationDbContext).GetMethod(nameof(Fold), new[] { typeof(string) })!)
+            .HasName("hr360_fold").HasSchema("public");
         modelBuilder.Entity<Company>().ConfigureTenantColumn();
         modelBuilder.Entity<Department>().ConfigureTenantColumn();
 

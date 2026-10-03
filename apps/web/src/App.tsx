@@ -92,6 +92,7 @@ const VerifyDocumentPage = page(() => import('@/features/documents/DocumentReque
 const EmailDecisionPage = page(() => import('@/features/documents/DocumentRequestPages'), 'EmailDecisionPage')
 const WorkflowDesignerPage = page(() => import('@/features/workflows/WorkflowDesignerPage'), 'WorkflowDesignerPage')
 const DocumentsPage = page(() => import('@/features/documents/DocumentsPage'), 'DocumentsPage')
+const MySignaturesPage = page(() => import('@/features/documents/DocumentSignature'), 'MySignaturesPage')
 const NotificationsPage = page(() => import('@/features/notification/NotificationsPage'), 'NotificationsPage')
 const SettingsPage = page(() => import('@/features/settings/SettingsPage'), 'SettingsPage')
 const RolesPage = page(() => import('@/features/settings/RolesPage'), 'RolesPage')
@@ -114,7 +115,9 @@ const SuccessionPage = page(() => import('@/features/people/SuccessionPage'), 'S
 const OrgScenariosPage = page(() => import('@/features/people/OrgScenariosPage'), 'OrgScenariosPage')
 const HireSagaPage = page(() => import('@/features/people/HireSagaPage'), 'HireSagaPage')
 const InsightsAnalyticsPage = page(() => import('@/features/insights/AnalyticsPage'), 'AnalyticsPage')
+const ModelCardPage = page(() => import('@/features/insights/ModelCardPage'), 'ModelCardPage')
 const NlReportPage = page(() => import('@/features/insights/NlReportPage'), 'NlReportPage')
+const CustomFieldsPage = page(() => import('@/features/governance/CustomFields'), 'CustomFieldsPage')
 const TimeMachinePage = page(() => import('@/features/insights/TimeMachinePage'), 'TimeMachinePage')
 const EventRadarPage = page(() => import('@/features/insights/EventRadarPage'), 'EventRadarPage')
 const AiToolsPage = page(() => import('@/features/insights/AiToolsPage'), 'AiToolsPage')
@@ -341,6 +344,7 @@ export function App() {
                       element={guarded('notification:view', <NotificationsPage />)}
                     />
                     <Route path="ayarlar" element={<SettingsPage />} />
+                    <Route path="ayarlar/ozel-alanlar" element={guarded('employee:manage', <TenantOnly><CustomFieldsPage /></TenantOnly>)} />
                     {/* Rol atama backend'de RequireHrAdmin gerektirir (bkz.
                         TeamMembersController.AssignRole) - aynı izinle koru.
                         requireRoles: bu sayfanın veri uçları (GetAll members
@@ -375,6 +379,7 @@ export function App() {
                     <Route path="zam-donemi" element={<RaiseCyclesPage />} />
                     <Route path="seyahat" element={guarded('expense:view', <TravelPage />)} />
                     <Route path="belge-talebi" element={<MyDocumentsPage />} />
+                    <Route path="imzalarim" element={<MySignaturesPage />} />
 
                     {/* ---------------- Topluluk ---------------- */}
                     <Route path="takdir" element={<PlanGate feature="kudos"><KudosPage /></PlanGate>} />
@@ -399,6 +404,7 @@ export function App() {
 
                     {/* ---------------- İçgörü ---------------- */}
                     <Route path="analitik" element={guarded('performance:manage', <PlanGate feature="analytics"><InsightsAnalyticsPage /></PlanGate>)} />
+                    <Route path="model-karti" element={guarded('performance:manage', <PlanGate feature="analytics"><ModelCardPage /></PlanGate>, ['hr-admin', 'tenant-admin', 'platform-admin'])} />
                     <Route path="rapor-asistani" element={guarded('performance:manage', <PlanGate feature="nl-report"><NlReportPage /></PlanGate>)} />
                     <Route path="zaman-makinesi" element={guarded('performance:manage', <PlanGate feature="time-machine"><TimeMachinePage /></PlanGate>)} />
                     <Route path="olay-radari" element={guarded('performance:manage', <PlanGate feature="events"><EventRadarPage /></PlanGate>)} />

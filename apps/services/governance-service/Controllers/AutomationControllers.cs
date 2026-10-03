@@ -23,6 +23,7 @@ public static class EventCatalog
         ("workflow.approved", "Talep onaylandı", new[] { "WorkflowRequestId", "WorkflowType", "RequesterEmployeeId", "Subject" }),
         ("workflow.rejected", "Talep reddedildi", new[] { "WorkflowRequestId", "WorkflowType", "RequesterEmployeeId", "Subject" }),
         ("leave.approved", "İzin onaylandı", new[] { "LeaveRequestId", "EmployeeId", "Type", "StartDate", "EndDate", "Days" }),
+        ("document.signed", "Belge imzalandı (basit e-imza)", new[] { "DocumentId", "DocumentType", "TemplateName", "EmployeeId", "SignedAt", "Method", "DocumentSha256" }),
         ("*", "Tüm olaylar", Array.Empty<string>()),
     };
 }
@@ -158,7 +159,13 @@ public class WebhooksController : AppController
     private readonly Dispatcher _dispatcher;
     public WebhooksController(GovernanceDbContext db, Dispatcher dispatcher) { _db = db; _dispatcher = dispatcher; }
 
-    private static string NewSecret() => "whsec_" + Convert.ToHexString(RandomNumberGenerator.GetBytes(24)).ToLowerInvariant();
+    public static string NewSecret() => "whsec_" + Convert.ToHexString(RandomNumberGenerator.GetBytes(24)).ToLowerInvariant();
+
+    /// <summary>K4/G29: Zapier gibi yurt dışı hedefe aktarım dayanağı olmadan webhook açılamaz.</summary>
+    private async Task<IActionResult?> TransferLockAsync(string url, CancellationToken ct) =>
+        TransferGuard.HookProvider(url) is { } p && await TransferGuard.MissingAsync(_db, Tenant, p, ct) is { } msg
+            ? Conflict(new { message = En ? TransferGuard.MessageEn(p) : msg, code = "transfer_basis_required", provider = p })
+            : null;
 
     [HttpGet]
     public async Task<IActionResult> List(CancellationToken ct) => Ok(await _db.Webhooks.AsNoTracking().OrderBy(w => w.Name).ToListAsync(ct));
@@ -171,6 +178,7 @@ public class WebhooksController : AppController
         if (!Uri.TryCreate(body.Url, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https"))
             return BadRequest(new { message = "Geçerli bir http(s) adresi girin." });
         if (body.Events.Count == 0) return BadRequest(new { message = "En az bir olay seçin." });
+        if (await TransferLockAsync(body.Url, ct) is { } locked) return locked;
         var w = new Webhook { Name = body.Name.Trim(), Url = body.Url, Events = body.Events, IsEnabled = body.IsEnabled, Secret = NewSecret() };
         _db.Webhooks.Add(w);
         await _db.SaveChangesAsync(ct);
@@ -197,6 +205,7 @@ public class WebhooksController : AppController
         var w = await _db.Webhooks.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (w is null) return NotFound();
         if (!Uri.TryCreate(body.Url, UriKind.Absolute, out _)) return BadRequest(new { message = "Adres geçersiz." });
+        if (await TransferLockAsync(body.Url, ct) is { } locked) return locked;
         w.Name = body.Name.Trim(); w.Url = body.Url; w.Events = body.Events; w.IsEnabled = body.IsEnabled;
         if (body.IsEnabled) w.FailureCount = 0;
         await _db.SaveChangesAsync(ct);
@@ -271,7 +280,8 @@ public class WebhooksController : AppController
 [RequiresPlan("Enterprise")]
 public class ApiKeysController : AppController
 {
-    public static readonly string[] AllScopes = { "employees:read", "departments:read", "leaves:read", "events:read" };
+    /// <summary>hooks:write — Zapier/n8n REST hook aboneliği (POST/DELETE /hooks).</summary>
+    public static readonly string[] AllScopes = { "employees:read", "departments:read", "leaves:read", "events:read", "hooks:write" };
     private readonly GovernanceDbContext _db;
     public ApiKeysController(GovernanceDbContext db) => _db = db;
 
@@ -326,7 +336,9 @@ public class PublicApiController : ControllerBase
     private readonly Sql _sql;
     private readonly AppCache _cache;
     private readonly PeopleDirectory _people;
-    public PublicApiController(Sql sql, AppCache cache, PeopleDirectory people) { _sql = sql; _cache = cache; _people = people; }
+    private readonly GovernanceDbContext _db;
+    private Guid _keyId;
+    public PublicApiController(Sql sql, AppCache cache, PeopleDirectory people, GovernanceDbContext db) { _sql = sql; _cache = cache; _people = people; _db = db; }
 
     private async Task<(string? Tenant, IActionResult? Error)> AuthorizeAsync(string scope, CancellationToken ct)
     {
@@ -351,7 +363,121 @@ public class PublicApiController : ControllerBase
         Response.Headers["X-RateLimit-Remaining"] = Math.Max(0, 120 - count).ToString();
         if (count > 120) return (null, StatusCode(429, new { message = "Dakikalık istek sınırı aşıldı." }));
         await _sql.ExecuteAsync("UPDATE governance_api_keys SET \"LastUsedAt\" = now() WHERE \"Id\" = $1", ct, row.Id);
+        _keyId = row.Id;
         return (row.Tenant, null);
+    }
+
+    /* ------------------------------------------------------------------ G29 REST hook (Zapier / n8n) */
+
+    /// <summary>Zapier "hookUrl", n8n/diğerleri "target_url" / "url" gönderir; hepsi kabul edilir.</summary>
+    public sealed class HookInput
+    {
+        [System.Text.Json.Serialization.JsonPropertyName("target_url")] public string? TargetUrlSnake { get; set; }
+        public string? TargetUrl { get; set; }
+        public string? HookUrl { get; set; }
+        public string? Url { get; set; }
+        public string? Event { get; set; }
+        public List<string>? Events { get; set; }
+        public string? Name { get; set; }
+        /// <summary>n8n: kiracı hedefin kendi sunucusu olduğunu beyan eder (bilgi amaçlı; bilinen yurt dışı bulut adreslerini serbest bırakmaz).</summary>
+        [System.Text.Json.Serialization.JsonPropertyName("self_hosted")] public bool? SelfHosted { get; set; }
+        public string? Target => TargetUrlSnake ?? TargetUrl ?? HookUrl ?? Url;
+    }
+
+    /// <summary>Hedef sınıfı: zapier | n8n-cloud | internal (iç ağ) | self-hosted (kiracının kendi sunucusu).</summary>
+    public static string Deployment(string url) => TransferGuard.HookProvider(url) switch
+    {
+        "zapier" => "zapier",
+        "n8n" => "n8n-cloud",
+        _ => TransferGuard.IsInternalHost(url) ? "internal" : "self-hosted",
+    };
+
+    private static object HookView(Webhook w) => new
+    {
+        id = w.Id, target_url = w.Url, @event = w.Events.FirstOrDefault(), events = w.Events, name = w.Name, enabled = w.IsEnabled,
+        createdAt = w.CreatedAt, signingSecret = (string?)null, deployment = Deployment(w.Url),
+    };
+
+    /// <summary>Abone ol: POST /hooks {target_url|hookUrl, event}. Yanıttaki id ile DELETE /hooks/{id}.</summary>
+    [HttpPost("hooks")]
+    public async Task<IActionResult> Subscribe([FromBody] HookInput body, CancellationToken ct)
+    {
+        var (tenant, err) = await AuthorizeAsync("hooks:write", ct);
+        if (err is not null) return err;
+        var url = body.Target?.Trim();
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https"))
+            return BadRequest(new { message = "target_url geçerli bir http(s) adresi olmalı.", code = "invalid_target" });
+        var events = (body.Events ?? new()).Concat(body.Event is null ? Array.Empty<string>() : new[] { body.Event }).Select(e => e.Trim()).Where(e => e.Length > 0).Distinct().ToList();
+        if (events.Count == 0 || events.Any(e => EventCatalog.Types.All(t => t.Type != e)))
+            return BadRequest(new { message = "Geçerli bir olay (event) gerekli.", code = "invalid_event", events = EventCatalog.Types.Select(t => t.Type) });
+        // KVKK m.9 (K4 kilidi): Zapier (ABD) ve n8n Cloud (AB) yurt dışıdır; aktarım dayanağı kaydı yoksa abonelik açılmaz.
+        // Kendi sunucunuzdaki n8n (iç ağ ya da kendi alan adınız) kiracının altyapısıdır, aktarım sayılmaz.
+        if (TransferGuard.HookProvider(url) is { } provider && await TransferGuard.MissingAsync(_db, tenant!, provider, ct) is { } msg)
+            return Conflict(new
+            {
+                message = msg, code = "transfer_basis_required", provider,
+                hint = body.SelfHosted == true ? "self_hosted yalnızca kendi sunucunuzdaki adresler içindir; n8n.cloud / zapier.com yurt dışı hizmettir." : null,
+            });
+        var count = Convert.ToInt32(await _sql.ScalarAsync("SELECT count(*)::int FROM governance_webhooks WHERE \"TenantSlug\" = $1 AND \"Source\" = 'rest-hook'", ct, tenant));
+        if (count >= 100) return StatusCode(429, new { message = "En fazla 100 REST hook aboneliği açılabilir.", code = "too_many_hooks" });
+        var w = new Webhook
+        {
+            TenantSlug = tenant!, Name = string.IsNullOrWhiteSpace(body.Name) ? $"REST hook: {string.Join(", ", events)} ({uri.Host})" : body.Name.Trim()[..Math.Min(body.Name.Trim().Length, 120)],
+            Url = url!, Events = events, IsEnabled = true, Secret = WebhooksController.NewSecret(), Source = "rest-hook", ApiKeyId = _keyId,
+        };
+        _db.Webhooks.Add(w);
+        await _db.SaveChangesAsync(ct);
+        Response.Headers["Location"] = $"/api/governance/public/v1/hooks/{w.Id}";
+        // İmza anahtarı (X-HR360-Signature doğrulaması için) yalnızca bu yanıtta bir kez döner.
+        return StatusCode(201, new
+        {
+            id = w.Id, target_url = w.Url, @event = events[0], events, name = w.Name, enabled = true, createdAt = w.CreatedAt, signingSecret = w.Secret,
+            deployment = Deployment(w.Url),
+        });
+    }
+
+    [HttpGet("hooks")]
+    public async Task<IActionResult> Hooks(CancellationToken ct)
+    {
+        var (tenant, err) = await AuthorizeAsync("hooks:write", ct);
+        if (err is not null) return err;
+        var list = await _db.Webhooks.IgnoreQueryFilters().AsNoTracking().Where(w => w.TenantSlug == tenant && w.Source == "rest-hook").OrderBy(w => w.CreatedAt).ToListAsync(ct);
+        return Ok(new { data = list.Select(HookView) });
+    }
+
+    /// <summary>Aboneliği kaldır (Zapier "unsubscribe"). Yalnızca REST hook kayıtları silinebilir.</summary>
+    [HttpDelete("hooks/{id:guid}")]
+    public async Task<IActionResult> Unsubscribe(Guid id, CancellationToken ct)
+    {
+        var (tenant, err) = await AuthorizeAsync("hooks:write", ct);
+        if (err is not null) return err;
+        var w = await _db.Webhooks.IgnoreQueryFilters().FirstOrDefaultAsync(x => x.Id == id && x.TenantSlug == tenant && x.Source == "rest-hook", ct);
+        if (w is null) return NotFound(new { message = "Abonelik bulunamadı." });
+        _db.Webhooks.Remove(w);
+        await _db.SaveChangesAsync(ct);
+        return Ok(new { id, deleted = true });
+    }
+
+    /// <summary>
+    /// Olay başına örnek veri (Zapier "perform list" / n8n alan eşleme). Gerçek kişisel veri
+    /// DÖNMEZ: teslimat zarfıyla aynı biçimde, uydurma değerlerle sentetik örnek.
+    /// </summary>
+    [HttpGet("hooks/samples/{eventType}")]
+    public async Task<IActionResult> Sample(string eventType, CancellationToken ct)
+    {
+        var (tenant, err) = await AuthorizeAsync("hooks:write", ct);
+        if (err is not null) return err;
+        var t = EventCatalog.Types.FirstOrDefault(x => x.Type == eventType);
+        if (t.Type is null || t.Type == "*") return NotFound(new { message = "Bilinmeyen olay.", events = EventCatalog.Types.Where(x => x.Type != "*").Select(x => x.Type) });
+        return Ok(new[] { HookSamples.Envelope(tenant!, t.Type, t.Fields) });
+    }
+
+    [HttpGet("hooks/events")]
+    public async Task<IActionResult> HookEvents(CancellationToken ct)
+    {
+        var (_, err) = await AuthorizeAsync("hooks:write", ct);
+        if (err is not null) return err;
+        return Ok(new { data = EventCatalog.Types.Select(t => new { key = t.Type, label = t.Label, fields = t.Fields }) });
     }
 
     [HttpGet("employees")]
@@ -416,8 +542,38 @@ public class PublicApiController : ControllerBase
             ["/departments"] = new { get = new { summary = "Departmanlar (scope: departments:read)" } },
             ["/leaves"] = new { get = new { summary = "İzinler (scope: leaves:read)", parameters = new[] { new { name = "from", @in = "query", schema = new { type = "string", format = "date" } }, new { name = "to", @in = "query", schema = new { type = "string", format = "date" } } } } },
             ["/events"] = new { get = new { summary = "Olay akışı (scope: events:read)", parameters = new[] { new { name = "since", @in = "query", schema = new { type = "string", format = "date-time" } } } } },
+            ["/hooks"] = new
+            {
+                get = new { summary = "REST hook abonelikleri (scope: hooks:write)" },
+                post = new { summary = "REST hook aboneliği — Zapier/n8n (scope: hooks:write). Gövde: {\"target_url\": \"https://...\", \"event\": \"leave.approved\"}. zapier.com hedefleri KVKK aktarım dayanağı ister (409 transfer_basis_required)." },
+            },
+            ["/hooks/{id}"] = new { delete = new { summary = "Aboneliği kaldır (scope: hooks:write)" } },
+            ["/hooks/samples/{event}"] = new { get = new { summary = "Olayın sentetik örnek yükü (scope: hooks:write)" } },
+            ["/hooks/events"] = new { get = new { summary = "Abone olunabilen olaylar (scope: hooks:write)" } },
         },
     });
+}
+
+/// <summary>REST hook örnek verisi: teslimat zarfıyla aynı biçim, sentetik değerler (kişisel veri yok).</summary>
+public static class HookSamples
+{
+    public static object Envelope(string tenant, string type, string[] fields)
+    {
+        var data = new Dictionary<string, object?> { ["TenantSlug"] = tenant };
+        foreach (var f in fields)
+            data[f] = f switch
+            {
+                _ when f.EndsWith("Id") => "00000000-0000-4000-8000-000000000001",
+                "FirstName" => "Örnek", "LastName" => "Çalışan", "RequesterName" => "Örnek Çalışan", "Email" => "ornek.calisan@example.com",
+                "HireDate" or "StartDate" or "EffectiveFrom" or "EffectiveDate" => "2026-01-05", "EndDate" => "2026-01-09",
+                "SignedAt" => "2026-01-05T09:30:00.000Z", "Days" => 5, "Type" => "Annual", "Method" => "OTP-InApp",
+                "DocumentType" => "DocumentRequest", "TemplateName" => "Çalışma belgesi", "DocumentSha256" => new string('0', 64),
+                "OldStatus" => "Active", "NewStatus" => "OnLeave", "PositionTitle" => "Örnek pozisyon", "WorkflowType" => "Leave",
+                "Subject" => "Örnek talep",
+                _ => "örnek",
+            };
+        return new { id = "00000000-0000-4000-8000-0000000000aa", type, tenant, occurredAt = "2026-01-05T09:30:00Z", data, sample = true };
+    }
 }
 
 /* ======================================================================

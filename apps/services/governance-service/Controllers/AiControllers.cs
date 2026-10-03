@@ -61,7 +61,7 @@ public class AiController : AppController
     public async Task<IActionResult> PutSettings(SettingsInput body, CancellationToken ct)
     {
         if (body.Enabled && TransferGuard.LlmProviderKey(_llm) is { } key && await TransferGuard.MissingAsync(_db, Tenant, key, ct) is { } transferError)
-            return BadRequest(new { message = transferError, code = "kvkk_transfer" });
+            return BadRequest(new { message = En ? TransferGuard.MessageEn(key) : transferError, code = "kvkk_transfer" });
         var s = await SettingsAsync(ct);
         if (s is null) { s = new AiSettings(); _db.AiSettings.Add(s); }
         s.Enabled = body.Enabled;
@@ -74,11 +74,12 @@ public class AiController : AppController
 
     private async Task<(LlmResult? Result, IActionResult? Error)> RunAsync(string task, bool personal, string system, string user, int maxTokens, CancellationToken ct)
     {
-        var (r, f) = await _ai.RunAsync(Me.UserId, task, personal, system, user, maxTokens, ct);
+        var (r, f) = await _ai.RunAsync(Me.UserId, task, personal, system, user, maxTokens, ct, En);
         return (r, f is null ? null : StatusCode(f.Status, new { message = f.Message, code = f.Code }));
     }
 
-    private const string Tone = AiGateway.Tone;
+    /// <summary>G2: çıktı dili isteyenin arayüz diline (X-HR360-Lang) uyar.</summary>
+    private string Tone => AiGateway.ToneFor(En);
 
     /// <summary>ml-inference'taki kural tabanlı ayrımcı ifade denetimi (kullanıcının jetonuyla).</summary>
     private async Task<JsonElement?> BiasCheckAsync(string text, CancellationToken ct)
@@ -103,7 +104,7 @@ public class AiController : AppController
     [Authorize(Policy = "RequireManagerOrAbove")]
     public async Task<IActionResult> JobDraft(JobDraftInput b, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(b.Title) || b.Title.Length > 120) return BadRequest(new { message = "Pozisyon adı 1–120 karakter olmalı." });
+        if (string.IsNullOrWhiteSpace(b.Title) || b.Title.Length > 120) return BadRequest(new { message = L("Pozisyon adı 1–120 karakter olmalı.", "The position title must be 1–120 characters.") });
         var facts = new StringBuilder($"Pozisyon: {b.Title}\n");
         void Add(string label, string? v) { if (!string.IsNullOrWhiteSpace(v)) facts.Append($"{label}: {v}\n"); }
         Add("Şirket", b.Company); Add("Departman", b.Department); Add("Seviye", b.Level); Add("Konum", b.Location);
@@ -111,10 +112,13 @@ public class AiController : AppController
         Add("Beceriler", b.Skills is { Count: > 0 } ? string.Join(", ", b.Skills) : null);
         Add("Sorumluluklar", b.Responsibilities is { Count: > 0 } ? string.Join("; ", b.Responsibilities) : null);
         Add("Yan haklar", b.Benefits is { Count: > 0 } ? string.Join(", ", b.Benefits) : null);
-        var (r, err) = await RunAsync("job-draft", false,
-            $"Bir İK uzmanı olarak iş ilanı yazıyorsun. {Tone} Başlıklar: Hakkımızda, Pozisyon, Sorumluluklar, Aradığımız nitelikler, Sunduklarımız. " +
-            "Yaş, cinsiyet, medeni durum, askerlik, din, etnik köken, engellilik, görünüş gibi ayrımcı ölçütler ve 'genç dinamik' gibi ifadeler KULLANMA. " +
-            "Verilmeyen maaş, şirket adı veya rakam uydurma. Düz metin, madde işareti olarak '• ' kullan.",
+        var (r, err) = await RunAsync("job-draft", false, En
+            ? $"You are an HR specialist writing a job posting. {Tone} Headings: About us, The role, Responsibilities, What we look for, What we offer. " +
+              "Do NOT use discriminatory criteria such as age, gender, marital status, military service, religion, ethnicity, disability or appearance, or phrases like 'young and dynamic'. " +
+              "Do not invent salary, company name or figures that were not given. Plain text; use '• ' as the bullet. The facts below may be in Turkish."
+            : $"Bir İK uzmanı olarak iş ilanı yazıyorsun. {Tone} Başlıklar: Hakkımızda, Pozisyon, Sorumluluklar, Aradığımız nitelikler, Sunduklarımız. " +
+              "Yaş, cinsiyet, medeni durum, askerlik, din, etnik köken, engellilik, görünüş gibi ayrımcı ölçütler ve 'genç dinamik' gibi ifadeler KULLANMA. " +
+              "Verilmeyen maaş, şirket adı veya rakam uydurma. Düz metin, madde işareti olarak '• ' kullan.",
             facts.ToString(), 900, ct);
         if (err is not null) return err;
         return Ok(new { title = b.Title, text = r!.Text, bias = await BiasCheckAsync(r.Text, ct), source = "llm", model = _llm.Model });
@@ -127,10 +131,12 @@ public class AiController : AppController
     [Authorize(Policy = "RequireManagerOrAbove")]
     public async Task<IActionResult> Rewrite(RewriteInput b, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(b.Text) || b.Text.Length > 8000) return BadRequest(new { message = "Metin 1–8000 karakter olmalı." });
-        var (r, err) = await RunAsync("inclusive-rewrite", false,
-            $"İş ilanı metnini kapsayıcı ve ayrımcılık içermeyen bir dille yeniden yaz. {Tone} Anlamı ve yapıyı koru; yalnızca sorunlu ifadeleri değiştir. Sadece yeni metni döndür.",
-            (b.Phrases is { Count: > 0 } ? $"Sorunlu ifadeler: {string.Join(" | ", b.Phrases)}\n\n" : "") + b.Text, 1200, ct);
+        if (string.IsNullOrWhiteSpace(b.Text) || b.Text.Length > 8000) return BadRequest(new { message = L("Metin 1–8000 karakter olmalı.", "The text must be 1–8000 characters.") });
+        // Yeniden yazımda metnin kendi dili korunur (Türkçe ilan Türkçe kalır); yalnızca yönergeler arayüz dilindedir.
+        var (r, err) = await RunAsync("inclusive-rewrite", false, En
+            ? "Rewrite the job posting text in inclusive, non-discriminatory language. Keep the language of the original text. Be brief, clear and professional; do not invent information. Keep the meaning and structure; change only the problematic phrases. Return only the new text."
+            : "İş ilanı metnini kapsayıcı ve ayrımcılık içermeyen bir dille yeniden yaz. Metnin kendi dilini koru. Kısa, açık ve profesyonel ol; uydurma bilgi ekleme. Anlamı ve yapıyı koru; yalnızca sorunlu ifadeleri değiştir. Sadece yeni metni döndür.",
+            (b.Phrases is { Count: > 0 } ? (En ? "Problematic phrases: " : "Sorunlu ifadeler: ") + string.Join(" | ", b.Phrases) + "\n\n" : "") + b.Text, 1200, ct);
         if (err is not null) return err;
         return Ok(new { text = r!.Text, bias = await BiasCheckAsync(r.Text, ct), source = "llm" });
     }
@@ -147,7 +153,7 @@ public class AiController : AppController
     [Authorize(Policy = "RequireManagerOrAbove")]
     public async Task<IActionResult> PerfSummary(PerfInput b, CancellationToken ct)
     {
-        const string alias = "Çalışan";
+        var alias = En ? "Employee" : "Çalışan";
         var parts = (b.Name ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries).Where(p => p.Length > 1).ToList();
         string Mask(string? s)
         {
@@ -157,19 +163,24 @@ public class AiController : AppController
             return s;
         }
         var input = new StringBuilder();
-        if (b.Score is { } sc) input.Append($"Dönem puanı: {sc:0.0}/5{(b.PreviousScore is { } ps ? $" (önceki {ps:0.0})" : "")}\n");
-        foreach (var g in b.Goals ?? new()) input.Append($"Hedef: {Mask(g.Title)} — ilerleme %{g.Progress ?? 0:0}\n");
+        if (b.Score is { } sc) input.Append(En ? $"Period score: {sc:0.0}/5{(b.PreviousScore is { } ps ? $" (previous {ps:0.0})" : "")}\n" : $"Dönem puanı: {sc:0.0}/5{(b.PreviousScore is { } ps2 ? $" (önceki {ps2:0.0})" : "")}\n");
+        foreach (var g in b.Goals ?? new()) input.Append(En ? $"Goal: {Mask(g.Title)} — progress {g.Progress ?? 0:0}%\n" : $"Hedef: {Mask(g.Title)} — ilerleme %{g.Progress ?? 0:0}\n");
         foreach (var r0 in b.Reviews ?? new())
-            input.Append($"Değerlendirme ({r0.Type ?? "genel"}): Güçlü yönler: {Mask(r0.Strengths)} | Gelişim: {Mask(r0.Improvements)} | Not: {Mask(r0.Comments)}\n");
-        foreach (var f in (b.Feedback ?? new()).Take(20)) input.Append($"Geri bildirim: {Mask(f)}\n");
-        if (input.Length == 0) return BadRequest(new { message = "Özetlenecek veri yok." });
-        var (r, err) = await RunAsync("perf-summary", true,
-            $"Bir yöneticiye yardımcı olarak, '{alias}' diye anılan kişinin dönem performansını özetle. {Tone} " +
-            "Biçim: tek cümlelik başlık, ardından 3–5 cümlelik paragraf, sonra 'Güçlü yönler:' ve 'Gelişim alanları:' başlıkları altında en fazla 3'er madde ('• '). " +
-            "Kişilik, sağlık, özel hayat veya korunan özellikler hakkında yorum yapma; yalnızca verilen iş verisine dayan.",
+            input.Append(En
+                ? $"Review ({r0.Type ?? "general"}): Strengths: {Mask(r0.Strengths)} | Development: {Mask(r0.Improvements)} | Note: {Mask(r0.Comments)}\n"
+                : $"Değerlendirme ({r0.Type ?? "genel"}): Güçlü yönler: {Mask(r0.Strengths)} | Gelişim: {Mask(r0.Improvements)} | Not: {Mask(r0.Comments)}\n");
+        foreach (var f in (b.Feedback ?? new()).Take(20)) input.Append(En ? $"Feedback: {Mask(f)}\n" : $"Geri bildirim: {Mask(f)}\n");
+        if (input.Length == 0) return BadRequest(new { message = L("Özetlenecek veri yok.", "There is no data to summarise.") });
+        var (r, err) = await RunAsync("perf-summary", true, En
+            ? $"As an assistant to a manager, summarise the period performance of the person referred to as '{alias}'. {Tone} " +
+              "Format: a one-sentence headline, then a 3–5 sentence paragraph, then at most 3 bullets ('• ') each under 'Strengths:' and 'Development areas:'. " +
+              "Do not comment on personality, health, private life or protected characteristics; rely only on the work data given (it may be in Turkish)."
+            : $"Bir yöneticiye yardımcı olarak, '{alias}' diye anılan kişinin dönem performansını özetle. {Tone} " +
+              "Biçim: tek cümlelik başlık, ardından 3–5 cümlelik paragraf, sonra 'Güçlü yönler:' ve 'Gelişim alanları:' başlıkları altında en fazla 3'er madde ('• '). " +
+              "Kişilik, sağlık, özel hayat veya korunan özellikler hakkında yorum yapma; yalnızca verilen iş verisine dayan.",
             input.ToString(), 700, ct);
         if (err is not null) return err;
-        var first = parts.FirstOrDefault() ?? "Çalışan";
+        var first = parts.FirstOrDefault() ?? alias;
         return Ok(new { text = r!.Text.Replace(alias, first), source = "llm", model = _llm.Model, pseudonymized = true });
     }
 
@@ -183,8 +194,8 @@ public class AiController : AppController
     public async Task<IActionResult> Assistant(AskInput b, CancellationToken ct)
     {
         var q = (b.Question ?? "").Trim();
-        if (q.Length is 0 or > 500) return BadRequest(new { message = "Mesaj 1–500 karakter olmalı." });
-        var (reply, related, f) = await _ai.AssistantAsync(Me.UserId, q, ct);
+        if (q.Length is 0 or > 500) return BadRequest(new { message = L("Mesaj 1–500 karakter olmalı.", "The message must be 1–500 characters.") });
+        var (reply, related, f) = await _ai.AssistantAsync(Me.UserId, q, ct, En);
         if (f is not null) return StatusCode(f.Status, new { message = f.Message, code = f.Code });
         return Ok(new { reply, source = "llm", related, links = Array.Empty<object>() });
     }

@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { motion, useReducedMotion } from 'motion/react'
 import { LoaderCircle, ShieldAlert } from 'lucide-react'
 import { governanceApi } from '@/api/governance'
+import { mlModelApi } from '@/api/mlModel'
 import type { Employee, ExplainResponse, PredictResponse } from '@/api/types'
 import { Panel, PanelBody, PanelHead } from '@/components/ui/Panel'
 import { Button } from '@/components/ui/button'
@@ -15,29 +17,33 @@ import { cn } from '@/lib/utils'
 import { tx } from '@/lib/i18n'
 
 const FEATURE_COUNT = 6
+/** Model girişi (sıra model kartındaki gibi): kıdem, ücret/bant ortası, son puan,
+ * son terfiden bu yana (ay), aylık fazla mesai (saat), yıllık eğitim (saat). */
+const TYPICAL = [0, 1, 3, 12, 8, 20]
 
-/**
- * Modelin (hr360-attrition-risk) özellik şeması backend'de belgelenmediği
- * için değerler açıkça elle girilir. İlk alan kayıttan hesaplanan kıdemdir.
- */
+/** Kıdem kayıttan hesaplanır; diğer alanlar tipik değerle başlar ve elle düzeltilir. */
 function defaultFeatures(employee: Employee): number[] {
   const tenureYears = Math.max(
     0,
     (Date.now() - new Date(employee.hireDate).getTime()) / (365.25 * 24 * 3600 * 1000),
   )
-  const values = new Array<number>(FEATURE_COUNT).fill(0)
+  const values = [...TYPICAL].slice(0, FEATURE_COUNT)
   values[0] = Number(tenureYears.toFixed(1))
   return values
 }
 
-function toContributions(explain: ExplainResponse) {
+function toContributions(explain: ExplainResponse, labels: Record<string, string>) {
   const raw = explain.feature_contributions
+  const nameAt = (i: number) => {
+    const n = explain.feature_names?.[i]
+    return n ? labels[n] ?? n : tx('Özellik {0}', [i + 1])
+  }
   // ml-inference /explain katkıları giriş sırasına göre düz sayı dizisi olarak döner;
   // ad, giriş alanıyla aynı ("Özellik N") verilir. Nesne biçimi de desteklenir.
   const list = Array.isArray(raw)
     ? raw.map((c, i) =>
         typeof c === 'number'
-          ? { feature: tx('Özellik {0}', [i + 1]), contribution: c }
+          ? { feature: nameAt(i), contribution: c }
           : { feature: c.feature, contribution: c.contribution },
       )
     : Object.entries(raw ?? {}).map(([feature, contribution]) => ({ feature, contribution }))
@@ -62,6 +68,13 @@ export function AttritionRiskPanel({ employee }: { employee: Employee }) {
     onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Risk analizi yapılamadı.')),
   })
 
+  // Alan adları ve sürüm model kartından (İK rolleri; bu panel de yalnızca İK'ya açık).
+  const card = useQuery({ queryKey: ['ml-model', 'card'], queryFn: ({ signal }) => mlModelApi.card(signal), retry: false })
+  const labels = useMemo(
+    () => Object.fromEntries((card.data?.features ?? []).map((f) => [f.name, tx(f.label)])),
+    [card.data],
+  )
+
   const objection = useQuery({
     queryKey: ['privacy', 'objection-status', employee.id, 'AttritionRisk'],
     queryFn: ({ signal }) => governanceApi.objectionStatus(employee.id, 'AttritionRisk', signal),
@@ -74,7 +87,7 @@ export function AttritionRiskPanel({ employee }: { employee: Employee }) {
     return result.probability[result.probability.length - 1]
   }, [result])
 
-  const contributions = useMemo(() => (explain ? toContributions(explain) : []), [explain])
+  const contributions = useMemo(() => (explain ? toContributions(explain, labels) : []), [explain, labels])
   const maxAbs = contributions[0] ? Math.abs(contributions[0].contribution) : 1
 
   const tone: StatusTone =
@@ -92,12 +105,15 @@ export function AttritionRiskPanel({ employee }: { employee: Employee }) {
     <Panel>
       <PanelHead
         title={tx('Devir riski')}
-        note={tx('hr360-attrition-risk, MLflow sürüm 1')}
+        note={card.data?.version ? tx('hr360-attrition-risk, MLflow sürüm {0}', [card.data.version]) : 'hr360-attrition-risk'}
         action={<StatusBadge tone="neutral">{tx('Model')}</StatusBadge>}
       />
       <PanelBody className="space-y-4">
         <p className="border-l-2 border-border pl-3 text-[12px] leading-relaxed text-muted-foreground">
-          {tx('Modelin özellik şeması belgelenmediği için değerleri elle girin. İlk alan kıdem (yıl) olarak kayıttan dolduruldu.')}
+          {tx('Kıdem kayıttan dolduruldu; diğer alanlar tipik değerle başlar, çalışanın bilgileriyle düzeltin.')}{' '}
+          <Link to="/panel/model-karti" className="underline underline-offset-2 hover:text-foreground">
+            {tx('Model kartı')}
+          </Link>
         </p>
         <p className="rounded-xl bg-muted/50 p-3 text-[12px] leading-relaxed text-muted-foreground">
           {tx('KVKK m.11: Bu skor otomatik bir analizdir; tek başına karar için kullanılamaz. Çalışan itiraz edebilir ve her hesaplama çalışanın erişim kaydında görünür.')}
@@ -115,7 +131,9 @@ export function AttritionRiskPanel({ employee }: { employee: Employee }) {
           <legend className="sr-only">{tx('Model giriş özellikleri')}</legend>
           {features.map((value, i) => (
             <label key={i} className="flex flex-col gap-1">
-              <span className="text-[11px] text-muted-foreground">{tx('Özellik {0}', [i + 1])}</span>
+              <span className="truncate text-[11px] text-muted-foreground" title={card.data?.features[i]?.description}>
+                {card.data?.features[i] ? `${tx(card.data.features[i].label)} (${tx(card.data.features[i].unit)})` : tx('Özellik {0}', [i + 1])}
+              </span>
               <Input
                 type="number"
                 step="any"
@@ -177,7 +195,7 @@ export function AttritionRiskPanel({ employee }: { employee: Employee }) {
                     const raises = c.contribution >= 0
                     return (
                       <li key={c.feature} className="flex items-center gap-2.5 text-[12px]">
-                        <span className="w-16 shrink-0 truncate text-muted-foreground">
+                        <span className="w-28 shrink-0 truncate text-muted-foreground" title={c.feature}>
                           {c.feature}
                         </span>
                         <span className="h-1 flex-1 overflow-hidden rounded-full bg-muted">

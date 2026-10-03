@@ -146,8 +146,13 @@ export type DocRequestStatus = 'Pending' | 'Issued' | 'Rejected'
 export interface DocRequest {
   id: string; employeeId: string; templateId: string; templateName: string; purpose: string | null; status: DocRequestStatus
   decisionNote: string | null; createdAt: string; issuedAt: string | null; verificationCode: string | null
+  /** Y28: OTP ile basit e-imza atıldı mı (yalnızca "taleplerim"). */
+  signed?: boolean
 }
-export interface DocVerification { valid: boolean; document?: string; issuedAt?: string; holder?: string; company?: string | null; hash?: string }
+export interface DocVerification {
+  valid: boolean; document?: string; issuedAt?: string; holder?: string; company?: string | null; hash?: string
+  signature?: { signed: boolean; signedAt: string; method: string; documentSha256: string; evidenceSha256: string; matchesDocument: boolean; disclaimer: string } | null
+}
 export interface RenderedDoc { employeeId: string; name: string; html: string }
 
 /* ---------------------------------------------------------- kural motoru */
@@ -242,7 +247,7 @@ export interface NlReport {
   to: string
   columns: string[]
   rows: Array<Array<string | number | null>>
-  chart: 'bar' | 'line' | 'number' | 'none'
+  chart: 'bar' | 'line' | 'number' | 'none' | 'funnel'
   sql: string
   suggestions: string[]
 }

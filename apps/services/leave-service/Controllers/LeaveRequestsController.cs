@@ -5,6 +5,7 @@ using LeaveService.Data;
 using LeaveService.Models;
 using LeaveService.Services;
 using LeaveService.Messaging;
+using LeaveService.Infrastructure;
 using System.Text.Json;
 
 namespace LeaveService.Controllers;
@@ -52,9 +53,21 @@ public class LeaveRequestsController : ControllerBase
     ///   - Calisan: yalnizca kendi taleplerini gorur; employeeId vermezse kendisine
     ///     sabitlenir, baska birininkini verirse 403 doner.
     /// </summary>
+    /// <remarks>
+    /// Sayfalama (G24): <c>page</c> verilmezse eski biçim (düz dizi, en yeni önce, en fazla 2000;
+    /// toplam <c>X-Total-Count</c> başlığında). <c>page</c>/<c>pageSize</c> ile
+    /// <c>{ items, total, page, pageSize }</c>. Ek filtreler: <c>type</c>, <c>from</c>/<c>to</c>
+    /// (tarih aralığıyla çakışan), <c>q</c> (gerekçe metni; <c>qTypes</c> verilirse bu türlerdeki
+    /// talepler de eşleşir - tür adları istemcide çevrildiği için istemci eşleyip gönderir).
+    /// Sıralama: <c>sort</c>=createdAt|startDate|days|status|type, <c>dir</c>=asc|desc (varsayılan createdAt desc).
+    /// Yetki kuralı sayfalamadan önce uygulanır: çalışan yalnızca kendi taleplerini görür.
+    /// </remarks>
     [HttpGet]
     public async Task<IActionResult> GetAll(
-        [FromQuery] Guid? employeeId, [FromQuery] LeaveRequestStatus? status, CancellationToken ct)
+        [FromQuery] Guid? employeeId, [FromQuery] LeaveRequestStatus? status, CancellationToken ct,
+        [FromQuery] int? page = null, [FromQuery] int? pageSize = null, [FromQuery] LeaveType? type = null,
+        [FromQuery] DateOnly? from = null, [FromQuery] DateOnly? to = null, [FromQuery] string? q = null,
+        [FromQuery] string? qTypes = null, [FromQuery] string? sort = null, [FromQuery] string? dir = null)
     {
         var isManager = User.IsInRole("manager") || User.IsInRole("hr-admin")
             || User.IsInRole("tenant-admin") || User.IsInRole("platform-admin");
@@ -67,10 +80,31 @@ public class LeaveRequestsController : ControllerBase
             employeeId = myEmployeeId;
         }
 
-        var q = _db.LeaveRequests.AsQueryable();
-        if (employeeId.HasValue) q = q.Where(r => r.EmployeeId == employeeId.Value);
-        if (status.HasValue) q = q.Where(r => r.Status == status.Value);
-        return Ok(await q.OrderByDescending(r => r.CreatedAt).ToListAsync());
+        var query = _db.LeaveRequests.AsNoTracking().AsQueryable();
+        if (employeeId.HasValue) query = query.Where(r => r.EmployeeId == employeeId.Value);
+        if (status.HasValue) query = query.Where(r => r.Status == status.Value);
+        if (type.HasValue) query = query.Where(r => r.Type == type.Value);
+        if (from.HasValue) query = query.Where(r => r.EndDate >= from.Value);
+        if (to.HasValue) query = query.Where(r => r.StartDate <= to.Value);
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var like = Paging.FoldLike(q);
+            var types = (qTypes ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(t => Enum.TryParse<LeaveType>(t, true, out var lt) ? (LeaveType?)lt : null)
+                .Where(t => t.HasValue).Select(t => t!.Value).Distinct().ToList();
+            query = query.Where(r => EF.Functions.Like(LeaveDbContext.Fold(r.Reason ?? ""), like, "\\") || types.Contains(r.Type));
+        }
+
+        var desc = sort is null || Paging.Desc(dir);
+        IOrderedQueryable<LeaveRequest> ordered = (sort ?? "createdAt").ToLowerInvariant() switch
+        {
+            "startdate" => desc ? query.OrderByDescending(r => r.StartDate) : query.OrderBy(r => r.StartDate),
+            "days" => desc ? query.OrderByDescending(r => r.Days) : query.OrderBy(r => r.Days),
+            "status" => desc ? query.OrderByDescending(r => r.Status) : query.OrderBy(r => r.Status),
+            "type" => desc ? query.OrderByDescending(r => r.Type) : query.OrderBy(r => r.Type),
+            _ => desc ? query.OrderByDescending(r => r.CreatedAt) : query.OrderBy(r => r.CreatedAt),
+        };
+        return await Paging.ListAsync(this, ordered.ThenBy(r => r.Id), page, pageSize, ct);
     }
 
     [HttpGet("{id}")]

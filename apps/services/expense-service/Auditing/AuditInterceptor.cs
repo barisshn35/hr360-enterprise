@@ -35,7 +35,7 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
     private static readonly string[] SensitiveFragments =
     {
         "salary", "iban", "nationalid", "tckn", "identitynumber", "password", "secret",
-        "keyhash", "token", "bankaccount", "privatenotes",
+        "keyhash", "token", "bankaccount", "privatenotes", "otphash",
     };
 
     /// <summary>Teknik/altyapı tabloları denetlenmez (gürültü olur).</summary>

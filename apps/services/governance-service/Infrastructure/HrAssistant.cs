@@ -110,7 +110,9 @@ public sealed class HrAssistant(Sql db, PeopleDirectory people, GovernanceDbCont
                     L("Son masraflarınız:\n", "Your recent expenses:\n") + string.Join("\n", rows.Select(r => $"• {r.T}: {r.A.ToString("N2", tr)} {r.C} — {ExpenseLabel(r.S, a.En)}")), "data", (L("Masraf ekranı", "Expenses"), "/panel/masraf"));
         }
 
-        if (Has(q, "maas", "bordro", "net ucret", "brut", "salary", "payroll", "gross", "net pay"))
+        // İK'nın "maaş dağılımı" sorusu rapor motoruna gider (G3); diğerleri bordro simülasyonuna.
+        var salaryReport = a.IsHr && Has(q, "dagilim", "distribution", "bant", "band", "medyan", "median", "ceyrek", "quartile");
+        if (!salaryReport && Has(q, "maas", "bordro", "net ucret", "brut", "salary", "payroll", "gross", "net pay"))
             return Reply(L("Brütten nete hesap için **Bordro simülasyonu** ekranını kullanabilirsiniz (2026 SGK, gelir vergisi dilimleri ve asgari ücret istisnası dahil).",
                     "Use the **Payroll simulation** screen for gross-to-net calculations (2026 SGK, income tax brackets and minimum wage exemption included)."),
                 "help", (L("Bordro simülasyonu", "Payroll simulation"), "/panel/bordro-simulasyonu"));
@@ -119,7 +121,7 @@ public sealed class HrAssistant(Sql db, PeopleDirectory people, GovernanceDbCont
         if (a.IsManager && Has(q, "kac", "sayisi", "toplam", "ortalama", "dagilim", "gore", "aylik", "en cok", "trend",
                 "how many", "number of", "total", "average", " by ", "monthly", " most ", "count", "headcount"))
         {
-            var report = await NlReport.RunAsync(db, a.Tenant, raw, a.IsHr, ct, a.En ? "en" : "tr");
+            var report = await NlReport.RunAsync(db, a.Tenant, raw, a.IsHr, ct, a.En ? "en" : "tr", new NlReport.Options(AllowSalary: a.IsHr));
             if (report.Understood)
                 return new(report.Interpretation + ":", "report", new[] { new AssistantLink(L("Doğal dilde rapor", "Report assistant"), "/panel/rapor-asistani") }, report);
         }
@@ -127,7 +129,7 @@ public sealed class HrAssistant(Sql db, PeopleDirectory people, GovernanceDbCont
         // Yapay zekâ açıksa: bilgi bankası bağlamıyla model yanıtı (kişisel veri gönderilmez).
         if (await ai.EnabledAsync(ct))
         {
-            var (reply, related, failure) = await ai.AssistantAsync(a.UserId, raw, ct);
+            var (reply, related, failure) = await ai.AssistantAsync(a.UserId, raw, ct, a.En);
             if (failure is null && !string.IsNullOrWhiteSpace(reply))
                 return new(reply, "llm", Array.Empty<AssistantLink>(), Related: related);
         }

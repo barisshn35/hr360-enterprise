@@ -1,13 +1,28 @@
-import { apiFetch, qs, requireLinked } from './client'
+import { apiFetch, qs, requireLinked, type Paged } from './client'
 import type { Assignment, CreateAssignmentInput, CreateEmployeeInput, Employee } from './types'
 
 const BASE = '/api/employee'
+
+export interface EmployeePageParams {
+  page: number
+  pageSize: number
+  q?: string
+  qDepartmentIds?: string
+  status?: number
+  sort?: 'name' | 'email' | 'hireDate' | 'status' | 'createdAt'
+  dir?: 'asc' | 'desc'
+}
 
 export const employeeApi = {
   /** email verilirse tek kaydı döner - "employee" rolü SADECE bu şekilde
    * (kendi e-postasıyla) sorgulayabilir; manager+ email'siz tüm listeyi çeker. */
   list: (signal?: AbortSignal, email?: string) =>
     apiFetch<Employee[]>(`${BASE}/employees${qs({ email })}`, { signal }),
+
+  /** Sunucu tarafı sayfalı liste (yönetici+). `qDepartmentIds`: aramayla adı eşleşen
+   * departmanlar (adlar organization-service'te olduğundan istemci çözer). */
+  page: (params: EmployeePageParams, signal?: AbortSignal) =>
+    apiFetch<Paged<Employee>>(`${BASE}/employees${qs(params)}`, { signal }),
 
   get: (id: string, signal?: AbortSignal) =>
     apiFetch<Employee>(`${BASE}/employees/${id}`, { signal }),

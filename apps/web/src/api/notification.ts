@@ -6,7 +6,7 @@ const BASE = '/api/notification'
 /* ------------------------------------------------------------------ tipler */
 
 export type NotificationChannel = 'InApp' | 'Email' | 'Push' | 'Sms'
-export type NotificationStatus = 'Pending' | 'Sent' | 'Failed' | 'Read'
+export type NotificationStatus = 'Pending' | 'Sent' | 'Failed' | 'Read' | 'Suppressed' | 'DigestQueued' | 'Digested'
 
 export const notificationChannelLabels: Record<NotificationChannel, string> = {
   InApp: tx('Uygulama içi'),
@@ -20,6 +20,9 @@ export const notificationStatusLabels: Record<NotificationStatus, string> = {
   Sent: tx('Gönderildi'),
   Failed: tx('Başarısız'),
   Read: tx('Okundu'),
+  Suppressed: tx('Tercihle kapatıldı'),
+  DigestQueued: tx('Günlük özette bekliyor'),
+  Digested: tx('Günlük özetle gönderildi'),
 }
 
 export interface AppNotification {
@@ -111,4 +114,40 @@ export const notificationApi = {
 
   deleteTemplate: (id: string) =>
     apiFetch<void>(`${BASE}/notification-templates/${id}`, { method: 'DELETE' }),
+}
+
+/* ---------------------------------------------------------- G11: tercihler */
+
+export interface NotificationCategoryPref {
+  key: string
+  label: string
+  /** Yasal/zorunlu kategori: uygulama içi kanal kapatılamaz. */
+  mandatory: boolean
+  /** Güvenlik açısından kritik: hiçbir kanal kapatılamaz, sessiz saat uygulanmaz. */
+  critical: boolean
+  /** Günlük özete girebilir (acil olmayan). */
+  digestible: boolean
+  inApp: boolean
+  email: boolean
+  push: boolean
+  chat: boolean
+}
+
+export interface NotificationChannelPrefs {
+  linked: boolean
+  /** Kayıtlı bildirim dili (yoksa null). */
+  language: string | null
+  timeZone: string
+  categories: NotificationCategoryPref[]
+  /** days: 0 = Pazar … 6 = Cumartesi (pencerenin başladığı gün). */
+  quietHours: { enabled: boolean; start: string; end: string; days: number[] }
+  digest: { enabled: boolean; hour: number }
+}
+
+export const notificationPrefsApi = {
+  get: (signal?: AbortSignal) =>
+    apiFetch<NotificationChannelPrefs>(`${BASE}/notifications/preferences/me`, { signal }),
+  save: (input: Pick<NotificationChannelPrefs, 'quietHours' | 'digest'> & {
+    categories: Array<Pick<NotificationCategoryPref, 'key' | 'inApp' | 'email' | 'push' | 'chat'>>
+  }) => apiFetch<NotificationChannelPrefs>(`${BASE}/notifications/preferences/me`, { method: 'PUT', body: input }),
 }

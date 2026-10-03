@@ -1,33 +1,44 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Plus, FileSpreadsheet } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
-import { DataTable, type Column, type TableFilter } from '@/components/ui/DataTable'
+import { DataTable, type Column, type SortState, type TableFilter } from '@/components/ui/DataTable'
 import { EmployeeStatusBadge } from '@/components/ui/ModuleBadges'
 import { useAuth } from '@/auth/useAuth'
-import { useCompanies, useEmployees } from '@/api/queries'
+import { qk, useCompanies } from '@/api/queries'
+import { employeeApi, type EmployeePageParams } from '@/api/employees'
 import {
   EmployeeStatus,
   employeeStatusLabels,
   type Employee,
   type EmployeeStatusValue,
 } from '@/api/types'
-import { formatDate, fullName, initialsOf } from '@/lib/format'
+import { formatDate, fullName, initialsOf, normalizeSearch } from '@/lib/format'
+import { useDebouncedValue } from '@/lib/useDebouncedValue'
 import { NewEmployeeModal } from './NewEmployeeModal'
 import { ImportEmployeesModal } from './ImportEmployeesModal'
 import { tx } from '@/lib/i18n'
 
 type StatusFilter = 'all' | `${EmployeeStatusValue}`
 
+const PAGE_SIZE = 12
+/** Sunucunun sıralayabildiği sütunlar (departman adları organization-service'te). */
+const SERVER_SORT: Record<string, EmployeePageParams['sort']> = { name: 'name', hireDate: 'hireDate', status: 'status' }
+
 export function EmployeeListPage() {
   const { can } = useAuth()
   const navigate = useNavigate()
-  const employees = useEmployees()
   const companies = useCompanies({ enabled: can('organization:view') })
 
   const [status, setStatus] = useState<StatusFilter>('all')
+  // Sunucu tarafı sayfalama (G24): binlerce çalışanlı kiracıda tüm liste indirilmez.
+  const [page, setPage] = useState(1)
+  const [search, setSearch] = useState('')
+  const [sort, setSort] = useState<SortState>({ columnId: 'name', dir: 'asc' })
+  const query = useDebouncedValue(search.trim(), 300)
   const [modalOpen, setModalOpen] = useState(false)
   const [importModalOpen, setImportModalOpen] = useState(false)
 
@@ -52,11 +63,39 @@ export function EmployeeListPage() {
     [companies.data],
   )
 
-  const rows = useMemo(
-    () =>
-      (employees.data ?? []).filter((e) => status === 'all' || String(e.status) === status),
-    [employees.data, status],
-  )
+  // Departman adına göre arama: adlar organization-service'te, eşleşen kimlikler sunucuya gönderilir.
+  const qDepartmentIds = useMemo(() => {
+    if (!query) return undefined
+    const needle = normalizeSearch(query)
+    const ids = [...departmentNames].filter(([, name]) => normalizeSearch(name).includes(needle)).map(([id]) => id)
+    return ids.length ? ids.slice(0, 200).join(',') : undefined
+  }, [query, departmentNames])
+
+  const params: Omit<EmployeePageParams, 'page' | 'pageSize'> = {
+    q: query || undefined,
+    qDepartmentIds,
+    status: status === 'all' ? undefined : Number(status),
+    sort: SERVER_SORT[sort.columnId] ?? 'name',
+    dir: sort.dir,
+  }
+  const employees = useQuery({
+    queryKey: [...qk.employees, 'page', page, params],
+    queryFn: ({ signal }) => employeeApi.page({ ...params, page, pageSize: PAGE_SIZE }, signal),
+    placeholderData: keepPreviousData,
+  })
+  const rows = employees.data?.items
+  const noEmployeesAtAll = employees.data?.total === 0 && !query && status === 'all'
+
+  /** CSV: filtreye uyan tüm kayıtlar, 200'lük sayfalarla. */
+  const fetchAll = async () => {
+    const all: Employee[] = []
+    for (let p = 1; p <= 100; p++) {
+      const res = await employeeApi.page({ ...params, page: p, pageSize: 200 })
+      all.push(...res.items)
+      if (all.length >= res.total || res.items.length === 0) break
+    }
+    return all
+  }
 
   const currentAssignment = (e: Employee) =>
     e.assignments?.find((a) => !a.effectiveTo) ?? e.assignments?.[0]
@@ -72,7 +111,10 @@ export function EmployeeListPage() {
       id: 'status',
       label: tx('Durum'),
       value: status,
-      onChange: (v) => setStatus(v as StatusFilter),
+      onChange: (v) => {
+        setStatus(v as StatusFilter)
+        setPage(1)
+      },
       options: [
         { value: 'all', label: tx('Tüm durumlar') },
         { value: String(EmployeeStatus.Active), label: employeeStatusLabels[0] },
@@ -190,16 +232,32 @@ export function EmployeeListPage() {
         onRowClick={(e) => navigate(`/panel/calisanlar/${e.id}`)}
         searchPlaceholder={tx('Ad, soyad, e-posta veya departman')}
         exportFileName="calisanlar"
-        pageSize={12}
-        initialSort={{ columnId: 'name', dir: 'asc' }}
-        emptyTitle={employees.data?.length === 0 ? tx('Çalışan kaydı yok') : tx('Filtreye uyan kayıt yok')}
+        pageSize={PAGE_SIZE}
+        server={{
+          total: employees.data?.total ?? 0,
+          page,
+          onPageChange: setPage,
+          onQueryChange: (v) => {
+            setSearch(v)
+            setPage(1)
+          },
+          sort,
+          onSortChange: (next) => {
+            setSort(next)
+            setPage(1)
+          },
+          sortable: Object.keys(SERVER_SORT),
+          fetchAll,
+          fetching: employees.isPlaceholderData,
+        }}
+        emptyTitle={noEmployeesAtAll ? tx('Çalışan kaydı yok') : tx('Filtreye uyan kayıt yok')}
         emptyDetail={
-          employees.data?.length === 0
+          noEmployeesAtAll
             ? tx('İlk çalışanı ekleyin; atamasını kayıttan sonra yapabilirsiniz.')
             : tx('Durum filtresini değiştirin ya da aramayı temizleyin.')
         }
         emptyAction={
-          canCreate && employees.data?.length === 0 ? (
+          canCreate && noEmployeesAtAll ? (
             <Button size="sm" className="cursor-pointer" onClick={() => setModalOpen(true)}>
               {tx('Yeni çalışan')}
             </Button>

@@ -73,6 +73,7 @@ export const navGroups: NavGroupData[] = [
       { id: 'benefits', title: tx('Yan haklar'), description: tx('Esnek yan hak seçimi'), icon: Gift, path: '/panel/yan-haklar' },
       { id: 'my-interviews', title: tx('Mülakatlarım'), description: tx('Görüşmeci olduğunuz mülakatlar'), icon: ClipboardCheck, path: '/panel/mulakatlarim' },
       { id: 'doc-request', title: tx('Belge talebi'), description: tx('Çalışma belgesi, maaş yazısı'), icon: FileCheck2, path: '/panel/belge-talebi' },
+      { id: 'my-signatures', title: tx('İmzalarım'), description: tx('İmzanızı bekleyen belgeler'), icon: FileCheck2, path: '/panel/imzalarim' },
       { id: 'announcements', title: tx('Duyurular'), description: tx('Şirket duyuruları, okundu onayı'), icon: Megaphone, path: '/panel/duyurular' },
       { id: 'policy-library', title: tx('Doküman kütüphanesi'), description: tx('Politikalar, el kitapları, arama'), icon: Library, path: '/panel/belgeler-kutuphanesi' },
       { id: 'osh', title: tx('İş sağlığı ve güvenliği'), description: tx('Kaza kaydı, muayene, İSG eğitimi'), icon: HardHat, path: '/panel/isg' },
@@ -167,6 +168,7 @@ export const navGroups: NavGroupData[] = [
     icon: Telescope,
     items: [
       { id: 'analytics', title: tx('Analitik'), description: tx('Kadro, devir, izin, mesai eğilimi'), icon: BarChart3, path: '/panel/analitik', permission: 'performance:manage', feature: 'analytics' },
+      { id: 'model-card', title: tx('Model kartı'), description: tx('Devir riski modeli: önem, kayma, adalet'), icon: BarChart3, path: '/panel/model-karti', permission: 'performance:manage', feature: 'analytics', requireRoles: ['hr-admin', 'tenant-admin', 'platform-admin'] },
       { id: 'nl-report', title: tx('Rapor asistanı'), description: tx('Türkçe sorun, tablo ve grafik gelsin'), icon: Sparkles, path: '/panel/rapor-asistani', permission: 'performance:manage', feature: 'nl-report' },
       { id: 'time-machine', title: tx('Zaman makinesi'), description: tx('Organizasyon geçmişte nasıldı?'), icon: History, path: '/panel/zaman-makinesi', permission: 'performance:manage', feature: 'time-machine' },
       { id: 'event-radar', title: tx('Canlı olay radarı'), description: tx('Kafka olayları gerçek zamanlı'), icon: Radar, path: '/panel/olay-radari', permission: 'performance:manage', feature: 'events' },
@@ -199,6 +201,7 @@ export const navGroups: NavGroupData[] = [
       { id: 'notifications', title: tx('Bildirimler'), description: tx('Gelen kutusu ve şablonlar'), icon: Bell, path: '/panel/bildirimler', permission: 'notification:view' },
       { id: 'doc-templates', title: tx('Belge şablonları'), description: tx('Toplu belge ve PDF üretimi'), icon: FileStack, path: '/panel/belge-sablonlari', permission: 'document:manage', feature: 'documents' },
       { id: 'privacy', title: tx('KVKK'), description: tx('Rıza, başvuru, saklama süresi'), icon: ShieldCheck, path: '/panel/kvkk', permission: 'employee:manage', feature: 'privacy' },
+      { id: 'custom-fields', title: tx('Özel alanlar'), description: tx('Profil ek bilgi alanları (KVKK üst verisiyle)'), icon: SlidersHorizontal, path: '/panel/ayarlar/ozel-alanlar', permission: 'employee:manage' },
       { id: 'disciplinary', title: tx('Disiplin'), description: tx('Savunma istemi, tutanak, karar'), icon: Gavel, path: '/panel/disiplin', requireRoles: ['manager', 'hr-admin', 'tenant-admin', 'platform-admin'] },
       { id: 'audit', title: tx('Denetim kaydı'), description: tx('Kim neyi ne zaman değiştirdi'), icon: ScrollText, path: '/panel/denetim', permission: 'employee:manage', feature: 'audit' },
       { id: 'rules', title: tx('Kural motoru'), description: tx('"Olursa → yap" otomasyonları'), icon: Workflow, path: '/panel/kural-motoru', permission: 'employee:manage', feature: 'rules' },

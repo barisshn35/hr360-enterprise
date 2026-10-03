@@ -224,9 +224,13 @@ public class KvkkOpsController : AppController
         var msg = string.IsNullOrWhiteSpace(body.Message)
             ? $"Kişisel verilerinizi etkileyebilecek bir güvenlik olayı tespit edildi.\n\nNe oldu: {b.Title}\nEtkilenen veri türleri: {b.DataCategories ?? "inceleniyor"}\nAlınan önlemler: {b.Measures ?? "inceleniyor"}\n\nSorularınız için İK ile iletişime geçebilir ya da KVKK başvurusu yapabilirsiniz."
             : body.Message.Trim();
+        // G2: hazır metin alıcının diline göre; İK'nın yazdığı özel metin olduğu gibi gider.
+        var msgEn = string.IsNullOrWhiteSpace(body.Message)
+            ? $"A security incident that may affect your personal data has been detected.\n\nWhat happened: {b.Title}\nData categories affected: {b.DataCategories ?? "under investigation"}\nMeasures taken: {b.Measures ?? "under investigation"}\n\nFor questions, contact HR or submit a KVKK request."
+            : msg;
         if (msg.Length > 4000) return BadRequest(new { message = L("Mesaj en fazla 4000 karakter.", "Message must be at most 4000 characters.") });
         foreach (var e in ids)
-            await _notifier.InAppAsync(Tenant, e, "Kişisel veri güvenliği bilgilendirmesi", msg, "privacy.breach", ct);
+            await _notifier.LocalizedAsync(Tenant, e, "Kişisel veri güvenliği bilgilendirmesi", "Personal data security notice", msg, msgEn, "privacy.breach", ct);
         b.SubjectsNotifiedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
         await AuditAsync("DataBreach", b.Id.ToString(), "SubjectsNotified", new { count = ids.Count }, ct);

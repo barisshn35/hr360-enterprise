@@ -678,4 +678,95 @@ public class KeycloakAdminClient
         await SendAsync(HttpMethod.Put, "", new { browserFlow = PasskeyFlowAlias }, ct);
         return true;
     }
+
+    // ------------------------------------------------- Dalga 5d: dizin sağlama + özel alan adı
+
+    /// <summary>
+    /// Dizin (SCIM/LDAP) kaynakli ad/e-posta guncellemesi. Keycloak 25'te e-posta/ad kullanici
+    /// profili nitelikleri oldugu icin TAM temsil okunup yalnizca bu alanlar degistirilir
+    /// (kismi PUT diger nitelikleri siliyordu - bkz. SuspendUserForTenantAsync).
+    /// Kullanici adi (giris adi) degistirilmez. Donus: kullanici bulundu mu.
+    /// </summary>
+    public async Task<bool> UpdateUserProfileAsync(string userId, string email, string? firstName, string? lastName, CancellationToken ct)
+    {
+        var user = await GetUserRepresentationAsync(userId, ct);
+        if (user is null) return false;
+        var changed = false;
+        void Set(string key, string? value)
+        {
+            if (value is null) return;
+            if (user[key]?.GetValue<string>() == value) return;
+            user[key] = value;
+            changed = true;
+        }
+        if (!string.Equals(user["email"]?.GetValue<string>(), email, StringComparison.OrdinalIgnoreCase))
+        {
+            Set("email", email);
+            user["emailVerified"] = false;
+        }
+        Set("firstName", firstName);
+        Set("lastName", lastName);
+        if (changed) await PutUserAsync(userId, user, ct);
+        return true;
+    }
+
+    /// <summary>Hesap su an acik mi (null: kullanici yok).</summary>
+    public async Task<bool?> IsUserEnabledAsync(string userId, CancellationToken ct)
+    {
+        var user = await GetUserRepresentationAsync(userId, ct);
+        return user is null ? null : user["enabled"]?.GetValue<bool>() == true;
+    }
+
+    /// <summary>
+    /// G28: dogrulanan ozel alan adini uygulama istemcisinin (hr360-web) yonlendirme
+    /// adreslerine / web kokenlerine ekler ya da cikarir; boylece kiraci kendi alan adindan
+    /// giris yapip geri donebilir. Idempotent. Platform adresine (PUBLIC_ORIGIN) dokunmaz.
+    /// </summary>
+    public async Task<bool> SetWebClientOriginAsync(string origin, bool present, CancellationToken ct)
+    {
+        var clientId = Environment.GetEnvironmentVariable("KEYCLOAK_WEB_CLIENT_ID") ?? "hr360-web";
+        var list = await GetJsonAsync($"/clients?clientId={Uri.EscapeDataString(clientId)}", ct);
+        var first = list.EnumerateArray().FirstOrDefault();
+        if (first.ValueKind == JsonValueKind.Undefined) return false;
+        var node = System.Text.Json.Nodes.JsonNode.Parse(first.GetRawText())!.AsObject();
+        var id = node["id"]!.GetValue<string>();
+        var redirect = origin + "/*";
+        var changed = false;
+
+        bool Edit(string key, string value)
+        {
+            var arr = node[key] as System.Text.Json.Nodes.JsonArray ?? new System.Text.Json.Nodes.JsonArray();
+            var existing = arr.Select(x => x?.GetValue<string>()).ToList();
+            var has = existing.Contains(value);
+            if (present == has) return false;
+            var updated = new System.Text.Json.Nodes.JsonArray();
+            foreach (var v in existing.Where(v => v is not null && v != value)) updated.Add(v);
+            if (present) updated.Add(value);
+            node[key] = updated;
+            return true;
+        }
+        changed |= Edit("redirectUris", redirect);
+        changed |= Edit("webOrigins", origin);
+
+        var attrs = node["attributes"] as System.Text.Json.Nodes.JsonObject;
+        if (attrs is not null)
+        {
+            var post = (attrs["post.logout.redirect.uris"]?.GetValue<string>() ?? "")
+                .Split("##", StringSplitOptions.RemoveEmptyEntries).ToList();
+            var has = post.Contains(redirect);
+            if (present != has)
+            {
+                if (present) post.Add(redirect); else post.Remove(redirect);
+                attrs["post.logout.redirect.uris"] = string.Join("##", post);
+                changed = true;
+            }
+        }
+        if (!changed) return true;
+        var req = await BuildAsync(HttpMethod.Put, $"/clients/{Uri.EscapeDataString(id)}", null, ct);
+        req.Content = new StringContent(node.ToJsonString(), Encoding.UTF8, "application/json");
+        using var resp = await _http.SendAsync(req, ct);
+        if (!resp.IsSuccessStatusCode)
+            throw new InvalidOperationException($"Uygulama istemcisi güncellenemedi ({(int)resp.StatusCode})");
+        return true;
+    }
 }

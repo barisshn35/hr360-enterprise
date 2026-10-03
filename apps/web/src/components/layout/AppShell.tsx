@@ -1,4 +1,4 @@
-import { Suspense, lazy, useState } from 'react'
+import { Suspense, lazy, useCallback, useLayoutEffect, useState } from 'react'
 import { useLocation, useOutlet } from 'react-router-dom'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { TriangleAlert } from 'lucide-react'
@@ -10,6 +10,9 @@ import { AmbientBackground } from '@/components/fx/ambient-background'
 import { TopNav } from './TopNav'
 import { AppDock } from './AppDock'
 import { CommandPalette } from './CommandPalette'
+import { KeyboardShortcuts } from './KeyboardShortcuts'
+import { RouteAnnouncer } from './RouteAnnouncer'
+import { locate } from './nav-config'
 import { tx } from '@/lib/i18n'
 import { useServerLanguage } from '@/lib/languageSync'
 
@@ -50,6 +53,14 @@ export function AppShell() {
   // Bu tarayıcıda dil seçilmediyse kullanıcının sunucudaki dil tercihini uygula.
   useServerLanguage(status === 'authenticated')
 
+  // Sayfa başlığı (WCAG 2.4.2): menüdeki konumdan. Yerleşim efekti olduğu için PageHeader'ın
+  // (sonra çalışan) efekti daha özgül başlığı üzerine yazar.
+  useLayoutEffect(() => {
+    const here = locate(location.pathname)
+    document.title = here.item ? `${here.item.title} · HR360` : 'HR360 Enterprise'
+  }, [location.pathname])
+  const openPalette = useCallback(() => setPaletteOpen(true), [])
+
   /**
    * `organization` claim'i gelmediyse backend hiçbir kaydı döndürmez ama HATA
    * DA VERMEZ; kullanıcı her ekranı boş görür. Sessiz kalmak yerine söylüyoruz.
@@ -60,10 +71,21 @@ export function AppShell() {
 
   return (
     <div className="relative min-h-dvh bg-background">
+      {/* WCAG 2.4.1: klavyeyle ilk sekmede görünen "içeriğe atla" bağlantısı. */}
+      <a
+        href="#main-content"
+        onClick={(e) => {
+          e.preventDefault()
+          document.getElementById('main-content')?.focus()
+        }}
+        className="sr-only z-[300] rounded-xl bg-primary px-4 py-2 text-[13px] font-semibold text-primary-foreground shadow-lg focus:not-sr-only focus:fixed focus:top-3 focus:left-3"
+      >
+        {tx('İçeriğe atla')}
+      </a>
       <AmbientBackground />
 
       <div className="relative z-10 flex min-h-dvh flex-col">
-        <TopNav onOpenCommandPalette={() => setPaletteOpen(true)} />
+        <TopNav onOpenCommandPalette={openPalette} />
 
         {tenantClaimMissing && (
           <div className="mx-auto mt-3 w-full max-w-[1480px] px-3 sm:px-5">
@@ -80,7 +102,7 @@ export function AppShell() {
           </div>
         )}
 
-        <main className="mx-auto w-full max-w-[1480px] min-w-0 flex-1 px-4 pt-7 pb-32 sm:px-6 lg:px-8 lg:pt-9">
+        <main id="main-content" tabIndex={-1} className="mx-auto w-full outline-none max-w-[1480px] min-w-0 flex-1 px-4 pt-7 pb-32 sm:px-6 lg:px-8 lg:pt-9">
           <AnimatePresence mode="wait" initial={false}>
             <motion.div
               key={location.pathname}
@@ -99,6 +121,8 @@ export function AppShell() {
       <Suspense fallback={null}><AssistantWidget /></Suspense>
       <OfflineQueueWatcher />
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
+      <KeyboardShortcuts onOpenPalette={openPalette} />
+      <RouteAnnouncer />
     </div>
   )
 }

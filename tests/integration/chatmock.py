@@ -276,6 +276,9 @@ class H(BaseHTTPRequestHandler):
             return self._send(201, {"id": f"act-{SEQ[0]}"})
         if "/v3/conversations/" in u.path and "/activities/" in u.path:
             return self._send(200, {"id": u.path.rsplit("/", 1)[1]})
+        if u.path.startswith("/hooks/"):
+            # n8n / Zapier "Catch Hook" benzeri alıcı (REST hook teslimatı).
+            return self._send(200, {"received": True})
         self._send(404, {"error": "not_found"})
 
     def do_DELETE(self):

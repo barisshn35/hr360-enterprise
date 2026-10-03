@@ -60,7 +60,13 @@ public class DocumentRequestsController : AppController
         var me = await MyPersonAsync(ct);
         if (me is null) return Ok(Array.Empty<object>());
         var rows = await _db.DocumentRequests.AsNoTracking().Where(r => r.EmployeeId == me.Id).OrderByDescending(r => r.CreatedAt).Take(100).ToListAsync(ct);
-        return Ok(rows.Select(Dto));
+        var signed = (await Db.QueryAsync("SELECT \"DocumentId\" FROM governance_signatures WHERE \"TenantSlug\" = $1 AND \"SignerEmployeeId\" = $2",
+            x => x.GetGuid(0), ct, Tenant, me.Id)).ToHashSet();
+        return Ok(rows.Select(r => new
+        {
+            r.Id, r.EmployeeId, r.TemplateId, r.TemplateName, r.Purpose, r.Status, r.DecisionNote, r.CreatedAt, r.IssuedAt,
+            verificationCode = r.Status == "Issued" ? r.VerificationCode : null, signed = signed.Contains(r.Id),
+        }));
     }
 
     [HttpGet]
@@ -79,12 +85,12 @@ public class DocumentRequestsController : AppController
     public async Task<IActionResult> Create([FromBody] CreateInput body, CancellationToken ct)
     {
         var me = await MyPersonAsync(ct);
-        if (me is null) return StatusCode(403, new { message = "Hesabınıza bağlı çalışan kaydı yok" });
+        if (me is null) return StatusCode(403, new { message = L("Hesabınıza bağlı çalışan kaydı yok", "Your account is not linked to an employee record") });
         var t = await _db.DocTemplates.AsNoTracking().FirstOrDefaultAsync(x => x.Id == body.TemplateId && x.SelfService, ct);
-        if (t is null) return NotFound(new { message = "Bu belge talep edilemiyor" });
-        if (body.Purpose is { Length: > 200 }) return BadRequest(new { message = "Kullanım amacı en fazla 200 karakter olabilir" });
+        if (t is null) return NotFound(new { message = L("Bu belge talep edilemiyor", "This document cannot be requested") });
+        if (body.Purpose is { Length: > 200 }) return BadRequest(new { message = L("Kullanım amacı en fazla 200 karakter olabilir", "The purpose can be at most 200 characters") });
         if (await _db.DocumentRequests.CountAsync(r => r.EmployeeId == me.Id && r.CreatedAt > DateTime.UtcNow.AddDays(-1), ct) >= 10)
-            return StatusCode(429, new { message = "Günde en fazla 10 belge talep edilebilir" });
+            return StatusCode(429, new { message = L("Günde en fazla 10 belge talep edilebilir", "At most 10 documents can be requested per day") });
         var r = new DocumentRequest
         {
             EmployeeId = me.Id, TemplateId = t.Id, TemplateName = t.Name,
@@ -120,13 +126,13 @@ public class DocumentRequestsController : AppController
     {
         var r = await _db.DocumentRequests.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (r is null) return NotFound();
-        if (r.Status != "Pending") return Conflict(new { message = "Talep zaten karara bağlanmış" });
+        if (r.Status != "Pending") return Conflict(new { message = L("Talep zaten karara bağlanmış", "The request has already been decided") });
         var me = await MyPersonAsync(ct);
-        if (me?.Id == r.EmployeeId) return StatusCode(403, new { message = "Kendi belge talebinize karar veremezsiniz" });
+        if (me?.Id == r.EmployeeId) return StatusCode(403, new { message = L("Kendi belge talebinize karar veremezsiniz", "You cannot decide on your own document request") });
         if (body.Approve)
         {
             var t = await _db.DocTemplates.AsNoTracking().FirstOrDefaultAsync(x => x.Id == r.TemplateId, ct);
-            if (t is null) return Conflict(new { message = "Şablon silinmiş; talep düzenlenemez" });
+            if (t is null) return Conflict(new { message = L("Şablon silinmiş; talep düzenlenemez", "The template was deleted; the document cannot be issued") });
             await IssueAsync(r, t, Me.Name, ct);
         }
         else
@@ -136,9 +142,11 @@ public class DocumentRequestsController : AppController
             r.DecidedBy = Me.Name;
         }
         await _db.SaveChangesAsync(ct);
-        await _notifier.InAppAsync(Tenant, r.EmployeeId,
+        await _notifier.LocalizedAsync(Tenant, r.EmployeeId,
             body.Approve ? $"Belgeniz hazır: {r.TemplateName}" : $"Belge talebiniz reddedildi: {r.TemplateName}",
-            body.Approve ? "Profilim › Belge talepleri'nden indirebilirsiniz." : (r.DecisionNote ?? "Ayrıntı için İK ile görüşün."),
+            body.Approve ? $"Your document is ready: {r.TemplateName}" : $"Your document request was rejected: {r.TemplateName}",
+            body.Approve ? "Profilim › Belge talepleri'nden indirebilir, OTP ile imzalayabilirsiniz." : (r.DecisionNote ?? "Ayrıntı için İK ile görüşün."),
+            body.Approve ? "You can download it, and sign it with a one-time code, under My profile › Document requests." : (r.DecisionNote ?? "Please contact HR for details."),
             "document.request", ct);
         return Ok(Dto(r));
     }
@@ -158,7 +166,9 @@ public class DocumentRequestsController : AppController
                 VALUES ($1,'governance-service','DocumentRequest',$2,'SensitiveViewed',$3::jsonb,$4,$5,now())
                 """, ct, Tenant, r.EmployeeId.ToString(), $"{{\"field\":\"document\",\"template\":{System.Text.Json.JsonSerializer.Serialize(r.TemplateName)}}}", Me.UserId, Me.Name);
         }
-        return Ok(new { r.TemplateName, html = SecretBox.Unprotect(r.DocumentEnc), r.VerificationCode, r.IssuedAt });
+        var sig = await DocumentSignatureController.EvidenceAsync(Db, Tenant, r.Id, ct);
+        return Ok(new { r.TemplateName, html = SecretBox.Unprotect(r.DocumentEnc), r.VerificationCode, r.IssuedAt,
+            signature = sig is null ? null : DocumentSignatureController.View(sig, En) });
     }
 }
 
@@ -193,10 +203,18 @@ public class DocumentVerifyController : ControllerBase
             x => (F: x.Str(0) ?? "", L: x.Str(1) ?? ""), ct, r.TenantSlug, r.EmployeeId)).FirstOrDefault();
         var company = (await _sql.QueryAsync("SELECT \"Name\" FROM platform_tenants WHERE \"Slug\" = $1", x => x.Str(0), ct, r.TenantSlug)).FirstOrDefault();
         static string Initial(string s) => s.Length > 0 ? char.ToUpper(s[0], new System.Globalization.CultureInfo("tr-TR")) + "." : "";
+        // Y28: imza kanıtı (kişisel veri yok: tarih, yöntem, belge özeti, kanıt özeti ve yasal uyarı).
+        var sig = await DocumentSignatureController.EvidenceAsync(_sql, r.TenantSlug, r.Id, ct);
+        var en = Request.Headers["X-HR360-Lang"].ToString().StartsWith("en", StringComparison.OrdinalIgnoreCase);
         return Ok(new
         {
             valid = true, document = r.TemplateName, issuedAt = r.IssuedAt, holder = $"{Initial(name.F)} {Initial(name.L)}".Trim(),
             company, hash = r.DocumentHash?[..16],
+            signature = sig is null ? null : new
+            {
+                signed = true, signedAt = sig.SignedAt, method = sig.Method, documentSha256 = sig.DocumentSha256, evidenceSha256 = sig.EvidenceSha256,
+                matchesDocument = sig.DocumentSha256 == r.DocumentHash, disclaimer = en ? Signatures.DisclaimerEn : Signatures.DisclaimerTr,
+            },
         });
     }
 }

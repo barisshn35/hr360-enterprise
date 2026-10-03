@@ -64,6 +64,7 @@ public sealed class EventHub
             "leave.approved" => $"İzin onaylandı ({F("Days")} gün, {F("StartDate")})",
             "leave.cancelled" => "İzin iptal edildi",
             "leave.rejected" => "İzin reddedildi",
+            "document.signed" => $"Belge imzalandı (basit e-imza): {F("TemplateName")}".TrimEnd(':', ' '),
             _ => type,
         };
     }
@@ -314,6 +315,17 @@ public sealed class Dispatcher
     public async Task DeliverWebhookAsync(GovernanceDbContext db, Webhook hook, Guid eventId, string type, JsonElement? payload, CancellationToken ct)
     {
         var started = DateTime.UtcNow;
+        // KVKK m.9: Zapier gibi yurt dışı hedefe dayanak kaydı (sonradan silinmiş olabilir) yoksa veri gönderilmez.
+        if (TransferGuard.HookProvider(hook.Url) is { } provider && !(await TransferGuard.AllowedAsync(db, hook.TenantSlug, ct)).Contains(provider))
+        {
+            hook.LastStatus = null;
+            hook.LastDeliveredAt = DateTime.UtcNow;
+            db.WebhookDeliveries.Add(new WebhookDelivery
+            {
+                TenantSlug = hook.TenantSlug, WebhookId = hook.Id, EventType = type, StatusCode = null, Error = "transfer_basis_required", DurationMs = 0,
+            });
+            return;
+        }
         var body = JsonSerializer.Serialize(new { id = eventId, type, tenant = hook.TenantSlug, occurredAt = started, data = payload }, Json);
         var signature = "sha256=" + Convert.ToHexString(HMACSHA256.HashData(Encoding.UTF8.GetBytes(hook.Secret), Encoding.UTF8.GetBytes(body))).ToLowerInvariant();
         int? status = null;
@@ -406,6 +418,9 @@ public sealed class Housekeeping : BackgroundService
                     p.LastRunAt = DateTime.UtcNow;
                     Retention.Log(db, p.TenantSlug, p.Category, p.Action, p.LastAffected, p.RetentionMonths, "Periodic", "Sistem (periyodik imha)");
                 }
+                // Özel alan değerleri: alan tanımındaki saklama süresi her turda uygulanır (politikadan bağımsız).
+                foreach (var (tenant, n) in await CustomFields.PurgeAsync(sql, null, ct))
+                    Retention.Log(db, tenant, "CustomFieldValues", "Delete", n, 0, "Periodic", "Sistem (özel alan saklama süresi)");
                 await db.SaveChangesAsync(ct);
                 // İleri tarihli duyuruların yayım bildirimi (liste açılışında da tetiklenir).
                 await Controllers.AnnouncementsController.PublishDueAsync(sql, scope.ServiceProvider.GetRequiredService<PeopleDirectory>(), null, ct);
@@ -439,6 +454,9 @@ public static class Retention
         ["DisciplinaryCases"] = ("Kapatılmış disiplin vakaları (savunma, tutanak, karar)", new[] { "Delete" }, 24),
         ["EthicsReports"] = ("Kapatılmış etik/ihbar bildirimleri ve yazışmaları", new[] { "Delete" }, 24),
         ["Announcements"] = ("Süresi dolmuş duyurular ve okuma kayıtları", new[] { "Delete" }, 12),
+        // Dalga 5d: özel alan değerleri. Süre ALAN BAZINDADIR (alan tanımındaki saklama süresi);
+        // bakım turu politika kapalı olsa da çalıştırır (süre alan oluşturulurken zorunlu tutulur).
+        ["CustomFieldValues"] = ("Ayrılmış çalışanların özel alan değerleri (süre alan bazında)", new[] { "Delete" }, 1),
     };
 
     public static string MethodOf(string action) => action == "Anonymize"
@@ -506,6 +524,8 @@ public static class Retention
                       AND a."ExpireAt" IS NOT NULL AND a."ExpireAt" < now() - make_interval(months => $2)
                     """, ct, t, months);
                 return await sql.ExecuteAsync("DELETE FROM governance_announcements WHERE \"TenantSlug\" = $1 AND \"ExpireAt\" IS NOT NULL AND \"ExpireAt\" < now() - make_interval(months => $2)", ct, t, months);
+            case "CustomFieldValues":
+                return (await CustomFields.PurgeAsync(sql, t, ct)).Sum(x => x.Count);
             case "WebhookDeliveries":
                 return await sql.ExecuteAsync("DELETE FROM governance_webhook_deliveries WHERE \"TenantSlug\" = $1 AND \"OccurredAt\" < now() - make_interval(months => $2)", ct, t, months);
             default:

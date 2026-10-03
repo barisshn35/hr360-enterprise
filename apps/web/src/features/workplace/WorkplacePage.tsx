@@ -64,9 +64,9 @@ function PresenceBoard() {
                       {(['Office', 'Remote', 'Travel', 'Off'] as PresenceMode[]).map((m) => {
                         const I = MODE_STYLE[m].icon
                         return (
-                          <button key={m} type="button" title={presenceLabels[m]} onClick={() => set.mutate({ date: d, mode: m })}
+                          <button key={m} type="button" title={presenceLabels[m]} aria-label={presenceLabels[m]} aria-pressed={cur === m} onClick={() => set.mutate({ date: d, mode: m })}
                             className={cn('flex cursor-pointer items-center justify-center gap-1 rounded-lg border px-1.5 py-1.5 text-[11px] transition', cur === m ? MODE_STYLE[m].cls : 'border-transparent text-muted-foreground hover:bg-accent')}>
-                            <I className="size-3.5" />
+                            <I aria-hidden="true" className="size-3.5" />
                           </button>
                         )
                       })}

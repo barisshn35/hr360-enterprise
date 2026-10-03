@@ -52,7 +52,7 @@ export function CompositionDonut({ draft }: { draft: ScoringConfigInput }) {
               isAnimationActive
             >
               {inner.map((d) => (
-                <Cell key={d.name} fill={d.color} fillOpacity={d.name === 'Metrikler' ? 0.35 : 0.9} />
+                <Cell key={d.name} fill={d.color} fillOpacity={d.name === 'Metrikler' ? 0.35 : 0.9} aria-label={`${d.name}: ${Math.round(d.value)}`} />
               ))}
             </Pie>
             <Pie
@@ -70,7 +70,7 @@ export function CompositionDonut({ draft }: { draft: ScoringConfigInput }) {
               isAnimationActive
             >
               {outer.map((d) => (
-                <Cell key={d.name} fill={d.color} />
+                <Cell key={d.name} fill={d.color} aria-label={`${d.name}: ${Math.round(d.value)}`} />
               ))}
             </Pie>
           </PieChart>

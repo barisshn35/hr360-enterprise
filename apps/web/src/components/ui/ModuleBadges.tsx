@@ -215,6 +215,9 @@ const notificationTone: Record<NotificationStatus, StatusTone> = {
   Sent: 'neutral',
   Failed: 'danger',
   Read: 'success',
+  Suppressed: 'neutral',
+  DigestQueued: 'warning',
+  Digested: 'neutral',
 }
 export const NotificationStatusBadge = ({ status }: { status: NotificationStatus }) => (
   <StatusBadge tone={notificationTone[status] ?? 'neutral'}>

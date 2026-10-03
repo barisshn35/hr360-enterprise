@@ -27,6 +27,13 @@ builder.Services.AddSingleton<TenantService.Services.LogoStorageService>();
 // calisir bir demo tenant'i olmasini saglar - bkz. dosyanin basindaki aciklama.
 builder.Services.AddHostedService<DemoTenantSeederHostedService>();
 builder.Services.AddHostedService<KeycloakHardeningHostedService>();
+// Dalga 5d (Y26/G28): SCIM 2.0 + LDAP/AD dizin saglama, ozel alan adi dogrulama.
+builder.Services.AddScoped<TenantService.Directory.ScimTokenService>();
+builder.Services.AddScoped<TenantService.Directory.DirectoryProvisioningService>();
+builder.Services.AddScoped<TenantService.Directory.DirectorySyncService>();
+builder.Services.AddSingleton<TenantService.Directory.LdapDirectoryReader>();
+builder.Services.AddSingleton<TenantService.Domains.ITxtResolver, TenantService.Domains.OverridableTxtResolver>();
+builder.Services.AddHostedService<TenantService.Directory.DirectorySyncHostedService>();
 
 var keycloakAuthority = Environment.GetEnvironmentVariable("KEYCLOAK_AUTHORITY")
     ?? "http://keycloak:8080/auth/realms/hr360";
@@ -143,11 +150,30 @@ builder.Services.AddRateLimiter(options =>
                 Window = TimeSpan.FromMinutes(15),
                 QueueLimit = 0,
             }));
+    // Dalga 5d: SCIM istemcileri (IdP) icin IP basina dakikada 600 istek; anonim marka
+    // cozumleme (giris ekrani, kurumsal NAT arkasi) dakikada 300, TXT dogrulama dakikada 20.
+    static System.Threading.RateLimiting.RateLimitPartition<string> PerIp(HttpContext httpContext, int limit, TimeSpan window) =>
+        System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+            httpContext.Request.Headers["X-Real-IP"].FirstOrDefault()
+                ?? httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions { PermitLimit = limit, Window = window, QueueLimit = 0 });
+    options.AddPolicy("scim", ctx => PerIp(ctx, 600, TimeSpan.FromMinutes(1)));
+    options.AddPolicy("public-resolve", ctx => PerIp(ctx, 300, TimeSpan.FromMinutes(1)));
+    options.AddPolicy("domain-verify", ctx => PerIp(ctx, 20, TimeSpan.FromMinutes(1)));
     options.OnRejected = async (ctx, ct) =>
     {
+        var path = ctx.HttpContext.Request.Path.Value ?? "";
+        if (path.Contains("/scim/", StringComparison.OrdinalIgnoreCase))
+        {
+            ctx.HttpContext.Response.ContentType = "application/scim+json";
+            await ctx.HttpContext.Response.WriteAsync(
+                "{\"schemas\":[\"urn:ietf:params:scim:api:messages:2.0:Error\"],\"status\":\"429\",\"detail\":\"Çok fazla istek\"}", ct);
+            return;
+        }
         ctx.HttpContext.Response.ContentType = "application/json";
-        await ctx.HttpContext.Response.WriteAsync(
-            "{\"message\":\"Çok fazla kayıt denemesi. Lütfen biraz sonra tekrar deneyin.\"}", ct);
+        await ctx.HttpContext.Response.WriteAsync(path.Contains("/registration", StringComparison.OrdinalIgnoreCase)
+            ? "{\"message\":\"Çok fazla kayıt denemesi. Lütfen biraz sonra tekrar deneyin.\"}"
+            : "{\"message\":\"Çok fazla istek. Lütfen biraz sonra tekrar deneyin.\"}", ct);
     };
 });
 

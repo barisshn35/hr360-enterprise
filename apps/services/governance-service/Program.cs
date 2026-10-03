@@ -48,6 +48,7 @@ builder.Services.AddHostedService<GovernanceService.Infrastructure.Housekeeping>
 builder.Services.AddHostedService<GovernanceService.Infrastructure.SiemExporter>();
 builder.Services.AddHostedService<GovernanceService.Infrastructure.Chat.ChatOutboxWorker>();
 builder.Services.AddHostedService<GovernanceService.Infrastructure.Chat.ChatDigestWorker>();
+builder.Services.AddHostedService<GovernanceService.Controllers.SavedReportWorker>();
 
 
 

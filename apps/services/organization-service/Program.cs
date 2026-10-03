@@ -112,6 +112,10 @@ builder.Services.AddAuthorization(options =>
             ctx.User.IsInRole("ext-team-manage")));
 });
 
+// G24: departman listesi için kısa ömürlü süreç içi önbellek (yalnızca kişisel olmayan referans verisi).
+builder.Services.AddMemoryCache(o => o.SizeLimit = 5000);
+builder.Services.AddSingleton<OrganizationService.Infrastructure.RefCache>();
+
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {

@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Panel, PanelBody, PanelHead } from '@/components/ui/Panel'
 import { Button } from '@/components/ui/button'
-import { DataTable, type Column } from '@/components/ui/DataTable'
+import { DataTable, type Column, type SortState } from '@/components/ui/DataTable'
 import { LeaveStatusBadge } from '@/components/ui/ModuleBadges'
 import { ProgressRing } from '@/components/ui/Progress'
 import { Tabs, useTabParam, type TabDef } from '@/components/ui/Tabs'
@@ -14,8 +14,8 @@ import type { StatusTone } from '@/components/ui/StatusBadge'
 import { useToast } from '@/components/ui/Toast'
 import { useAuth } from '@/auth/useAuth'
 import { isHr } from '@/auth/roles'
-import { leaveApi } from '@/api/leave'
-import { useLeaveBalances, useLeaveRequests, useMyEmployeeId } from '@/api/queries'
+import { leaveApi, type LeaveRequestPageParams } from '@/api/leave'
+import { useLeaveBalances, useMyEmployeeId } from '@/api/queries'
 import {
   leaveStatusLabels,
   leaveTypeLabels,
@@ -23,7 +23,8 @@ import {
   type LeaveRequest,
   type LeaveStatus,
 } from '@/api/types'
-import { formatDate, formatNumber } from '@/lib/format'
+import { formatDate, formatNumber, normalizeSearch } from '@/lib/format'
+import { useDebouncedValue } from '@/lib/useDebouncedValue'
 import { NewBalanceModal } from './NewBalanceModal'
 import { HolidaysModal } from './HolidaysModal'
 import { StatutoryModal } from './StatutoryModal'
@@ -31,6 +32,15 @@ import { NewLeaveRequestModal } from './NewLeaveRequestModal'
 import { tx } from '@/lib/i18n'
 
 type TabKey = LeaveStatus | 'all'
+
+const PAGE_SIZE = 10
+/** Tablo sütunu → sunucu sıralama alanı (G24). */
+const SERVER_SORT: Record<string, LeaveRequestPageParams['sort']> = {
+  type: 'type',
+  range: 'startDate',
+  days: 'days',
+  status: 'status',
+}
 
 const TABS: Array<TabDef<TabKey>> = [
   { key: 'Submitted', label: leaveStatusLabels.Submitted },
@@ -104,10 +114,47 @@ export function LeavePage() {
 
   const year = new Date().getFullYear()
   const balances = useLeaveBalances(employeeId || undefined, year, Boolean(employeeId))
-  const requests = useLeaveRequests({
+  // Sunucu tarafı sayfalama (G24): talepler sayfa sayfa gelir; arama ve sıralama sunucuda.
+  const [page, setPage] = useState(1)
+  const [search, setSearch] = useState('')
+  const [sort, setSort] = useState<SortState | null>(null)
+  const query = useDebouncedValue(search.trim(), 300)
+  const [prevFilter, setPrevFilter] = useState(`${tab}|${employeeId}`)
+  if (prevFilter !== `${tab}|${employeeId}`) {
+    setPrevFilter(`${tab}|${employeeId}`)
+    setPage(1)
+  }
+  // İzin türü adları arayüzde çevrildiğinden, aramayla eşleşen türler sunucuya ayrıca gönderilir.
+  const qTypes = useMemo(() => {
+    if (!query) return undefined
+    const needle = normalizeSearch(query)
+    const types = Object.entries(leaveTypeLabels)
+      .filter(([, label]) => normalizeSearch(label).includes(needle))
+      .map(([key]) => key)
+    return types.length ? types.join(',') : undefined
+  }, [query])
+  const params: Omit<LeaveRequestPageParams, 'page' | 'pageSize'> = {
     employeeId: employeeId || undefined,
     status: tab === 'all' ? undefined : tab,
+    q: query || undefined,
+    qTypes,
+    sort: sort ? SERVER_SORT[sort.columnId] : undefined,
+    dir: sort?.dir,
+  }
+  const requests = useQuery({
+    queryKey: ['leave', 'requests', 'page', page, params],
+    queryFn: ({ signal }) => leaveApi.pageRequests({ ...params, page, pageSize: PAGE_SIZE }, signal),
+    placeholderData: keepPreviousData,
   })
+  const fetchAll = async () => {
+    const all: LeaveRequest[] = []
+    for (let p = 1; p <= 100; p++) {
+      const res = await leaveApi.pageRequests({ ...params, page: p, pageSize: 200 })
+      all.push(...res.items)
+      if (all.length >= res.total || res.items.length === 0) break
+    }
+    return all
+  }
 
   const cancel = useMutation({
     mutationFn: (id: string) => leaveApi.cancelRequest(id),
@@ -118,13 +165,7 @@ export function LeavePage() {
     onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Talep iptal edilemedi.')),
   })
 
-  const rows = useMemo(
-    () =>
-      [...(requests.data ?? [])].sort(
-        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-      ),
-    [requests.data],
-  )
+  const rows = requests.data?.items
 
   const columns: Array<Column<LeaveRequest>> = [
     {
@@ -259,6 +300,24 @@ export function LeavePage() {
         onRetry={() => void requests.refetch()}
         searchPlaceholder={tx('İzin türü veya gerekçe ara')}
         exportFileName="izin-talepleri"
+        pageSize={PAGE_SIZE}
+        server={{
+          total: requests.data?.total ?? 0,
+          page,
+          onPageChange: setPage,
+          onQueryChange: (v) => {
+            setSearch(v)
+            setPage(1)
+          },
+          sort,
+          onSortChange: (next) => {
+            setSort(next)
+            setPage(1)
+          },
+          sortable: Object.keys(SERVER_SORT),
+          fetchAll,
+          fetching: requests.isPlaceholderData,
+        }}
         emptyTitle={tx('Bu durumda izin talebi yok')}
         emptyDetail={
           employeeId

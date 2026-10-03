@@ -251,6 +251,8 @@ services:
       TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=3"
       KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
       ORGANIZATION_SERVICE_URL: "http://organization-service:8080"
+      # Dizin sağlama (SCIM/LDAP) iç ucu: /api/internal/employees/directory-upsert.
+      INTERNAL_SERVICE_TOKEN: "${INTERNAL_SERVICE_TOKEN:-}"
       ASPNETCORE_ENVIRONMENT: "Production"
     mem_limit: "512m"
 
@@ -462,6 +464,7 @@ services:
     <<: *dotnet-service
     build: ./apps/services/notification-service
     environment:
+      INTERNAL_SERVICE_TOKEN: "${INTERNAL_SERVICE_TOKEN:-}"
       NOTIFICATION_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=12"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
       KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
@@ -562,6 +565,7 @@ services:
     build: ./apps/ml-inference
     restart: unless-stopped
     environment:
+      INTERNAL_SERVICE_TOKEN: "${INTERNAL_SERVICE_TOKEN:-}"
       KEYCLOAK_URL: "http://keycloak:8080/auth"
       KEYCLOAK_REALM: "hr360"
       KEYCLOAK_CLIENT_ID: "hr360-ml-inference"

@@ -37,7 +37,10 @@ public class EmployeeDirectoryClient
         var req = new HttpRequestMessage(method, $"{_baseUrl}{path}");
 
         var incomingAuth = _httpContextAccessor.HttpContext?.Request.Headers.Authorization.ToString();
-        if (!string.IsNullOrEmpty(incomingAuth))
+        // GUVENLIK (Dalga 5d): SCIM istegindeki kiraci SCIM jetonu baska servislere ASLA
+        // iletilmez - yalnizca kullanicinin Keycloak JWT'si aktarilir.
+        if (!string.IsNullOrEmpty(incomingAuth)
+            && !incomingAuth.StartsWith("Bearer " + TenantService.Directory.ScimTokenService.Prefix, StringComparison.Ordinal))
             req.Headers.TryAddWithoutValidation("Authorization", incomingAuth);
 
         if (body is not null)
@@ -64,6 +67,48 @@ public class EmployeeDirectoryClient
 
         var json = await resp.Content.ReadAsStringAsync(ct);
         return JsonSerializer.Deserialize<EmployeeSummary>(json, JsonOpts);
+    }
+
+    public sealed record DirectoryUpsertResult(Guid? EmployeeId, bool Created, string? Error);
+
+    /// <summary>
+    /// Dalga 5d (Y26): dizin (SCIM/LDAP) saglamasinda calisan kaydini olusturur/gunceller.
+    /// Kullanici jetonu OLMADIGI icin (SCIM istemcisi, arka plan esitlemesi) employee-service'in
+    /// servisler arasi ucuna X-Internal-Token (INTERNAL_SERVICE_TOKEN) ile gider; Authorization
+    /// basligi (SCIM jetonu dahil) ASLA iletilmez. KVKK: yalnizca ad, soyad, e-posta, unvan,
+    /// departman kimligi gonderilir.
+    /// </summary>
+    public async Task<DirectoryUpsertResult> UpsertDirectoryEmployeeAsync(
+        string tenantSlug, string keycloakUserId, string email, string firstName, string lastName,
+        string? positionTitle, Guid? departmentId, CancellationToken ct)
+    {
+        var token = Environment.GetEnvironmentVariable("INTERNAL_SERVICE_TOKEN");
+        if (string.IsNullOrEmpty(token))
+            return new(null, false, "Sunucuda INTERNAL_SERVICE_TOKEN tanımlı değil; çalışan kaydı oluşturulamadı");
+        var req = new HttpRequestMessage(HttpMethod.Post, $"{_baseUrl}/api/internal/employees/directory-upsert")
+        {
+            Content = new StringContent(JsonSerializer.Serialize(new
+            {
+                tenantSlug, keycloakUserId, email, firstName, lastName, positionTitle, departmentId,
+            }, JsonOpts), Encoding.UTF8, "application/json"),
+        };
+        req.Headers.Add("X-Internal-Token", token);
+        try
+        {
+            using var resp = await _http.SendAsync(req, ct);
+            var text = await resp.Content.ReadAsStringAsync(ct);
+            if (!resp.IsSuccessStatusCode)
+            {
+                string? msg = null;
+                try { msg = JsonDocument.Parse(text).RootElement.GetProperty("message").GetString(); } catch { }
+                return new(null, false, msg ?? $"Çalışan kaydı oluşturulamadı ({(int)resp.StatusCode})");
+            }
+            using var doc = JsonDocument.Parse(text);
+            return new(doc.RootElement.GetProperty("employeeId").GetGuid(),
+                doc.RootElement.TryGetProperty("created", out var c) && c.GetBoolean(), null);
+        }
+        catch (HttpRequestException) { return new(null, false, "Çalışan servisine ulaşılamadı"); }
+        catch (TaskCanceledException) when (!ct.IsCancellationRequested) { return new(null, false, "Çalışan servisi zaman aşımı"); }
     }
 
     public async Task LinkKeycloakUserAsync(Guid employeeId, string keycloakUserId, CancellationToken ct)

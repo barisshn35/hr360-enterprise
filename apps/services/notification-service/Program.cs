@@ -32,6 +32,8 @@ builder.Services.AddHostedService<EmailSenderWorker>();
 builder.Services.AddSingleton<NotificationService.Push.VapidKeys>();
 builder.Services.AddHttpClient("webpush", c => c.Timeout = TimeSpan.FromSeconds(10));
 builder.Services.AddHostedService<NotificationService.Push.PushSenderWorker>();
+// G11: günlük bildirim özeti (DIGEST_POLL_SECONDS).
+builder.Services.AddHostedService<NotificationService.Preferences.DigestWorker>();
 
 builder.Services.AddDbContext<NotificationDbContext>(options =>
     options.UseNpgsql(connectionString)

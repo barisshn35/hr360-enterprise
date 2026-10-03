@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PerformanceService.Data;
+using PerformanceService.Infrastructure;
 using PerformanceService.Models;
 using PerformanceService.Security;
 using PerformanceService.Services;
@@ -34,9 +35,17 @@ public class GoalsController : ControllerBase
     ///   - Calisan: yalnizca KENDI employeeId'sini sorgulayabilir; farkli
     ///     bir ID verirse ya da hic vermezse 403 doner.
     /// </summary>
+    /// <remarks>
+    /// Sayfalama (G24): <c>page</c> verilmezse eski biçim (düz dizi, en yeni önce; sayı
+    /// <c>X-Total-Count</c> başlığında). <c>page</c>/<c>pageSize</c> (en fazla 200) ile
+    /// <c>{ items, total, page, pageSize }</c>. Ek filtreler: <c>status</c>, <c>q</c> (hedef başlığı).
+    /// Sıralama: <c>sort</c>=createdAt|title|weight|status, <c>dir</c>=asc|desc (varsayılan createdAt desc).
+    /// </remarks>
     [HttpGet]
     public async Task<IActionResult> GetAll(
-        [FromQuery] Guid? employeeId, [FromQuery] Guid? cycleId, CancellationToken ct)
+        [FromQuery] Guid? employeeId, [FromQuery] Guid? cycleId, CancellationToken ct,
+        [FromQuery] int? page = null, [FromQuery] int? pageSize = null, [FromQuery] GoalStatus? status = null,
+        [FromQuery] string? q = null, [FromQuery] string? sort = null, [FromQuery] string? dir = null)
     {
         var isManager = User.IsManagerOrAbove();
 
@@ -53,10 +62,25 @@ public class GoalsController : ControllerBase
             employeeId = me.Id;   // employeeId verilmemisse de kendine sabitlenir
         }
 
-        var q = _db.Goals.AsQueryable();
-        if (employeeId.HasValue) q = q.Where(g => g.EmployeeId == employeeId.Value);
-        if (cycleId.HasValue) q = q.Where(g => g.CycleId == cycleId.Value);
-        return Ok(await q.OrderByDescending(g => g.CreatedAt).ToListAsync());
+        var query = _db.Goals.AsNoTracking().AsQueryable();
+        if (employeeId.HasValue) query = query.Where(g => g.EmployeeId == employeeId.Value);
+        if (cycleId.HasValue) query = query.Where(g => g.CycleId == cycleId.Value);
+        if (status.HasValue) query = query.Where(g => g.Status == status.Value);
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var like = Paging.FoldLike(q);
+            query = query.Where(g => EF.Functions.Like(PerformanceDbContext.Fold(g.Title), like, "\\"));
+        }
+
+        var desc = sort is null || Paging.Desc(dir);
+        IOrderedQueryable<Goal> ordered = (sort ?? "createdAt").ToLowerInvariant() switch
+        {
+            "title" => desc ? query.OrderByDescending(g => g.Title) : query.OrderBy(g => g.Title),
+            "weight" => desc ? query.OrderByDescending(g => g.Weight) : query.OrderBy(g => g.Weight),
+            "status" => desc ? query.OrderByDescending(g => g.Status) : query.OrderBy(g => g.Status),
+            _ => desc ? query.OrderByDescending(g => g.CreatedAt) : query.OrderBy(g => g.CreatedAt),
+        };
+        return await Paging.ListAsync(this, ordered.ThenBy(g => g.Id), page, pageSize, ct);
     }
 
     /// <summary>

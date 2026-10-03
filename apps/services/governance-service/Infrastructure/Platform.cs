@@ -164,6 +164,56 @@ public sealed class Notifier
             _log.LogWarning(ex, "Uygulama içi bildirim yazılamadı ({Code})", code);
         }
     }
+
+    /// <summary>
+    /// G2: alıcının kayıtlı diline göre (tr/en) bildirim. "Email" kanalında alıcının e-postası
+    /// çalışan kaydından alınır ve notification-service gönderir. Bağlantı (actionUrl) mutlak olmalı.
+    /// </summary>
+    public async Task<bool> LocalizedAsync(string tenant, Guid recipientEmployeeId, string subjectTr, string subjectEn, string bodyTr, string bodyEn,
+        string code, CancellationToken ct, string channel = "InApp", string? actionUrl = null, string? actionLabelTr = null, string? actionLabelEn = null)
+    {
+        try
+        {
+            var en = await RecipientLanguage.EnAsync(_sql, tenant, recipientEmployeeId, ct);
+            string? email = null;
+            if (channel == "Email")
+            {
+                email = await _sql.ScalarAsync("SELECT \"Email\" FROM employee_employees WHERE \"TenantSlug\" = $1 AND \"Id\" = $2", ct, tenant, recipientEmployeeId) as string;
+                if (string.IsNullOrWhiteSpace(email)) return false;
+            }
+            await _sql.ExecuteAsync(
+                """
+                INSERT INTO notification_messages ("Id","TenantSlug","RecipientEmployeeId","RecipientEmail","Channel","TemplateCode","Subject","Body","Status","AttemptCount","CreatedAt","Language","ActionUrl","ActionLabel")
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'Pending',0,now(),$9,$10,$11)
+                """, ct, Guid.NewGuid(), tenant, recipientEmployeeId, email, channel, code, en ? subjectEn : subjectTr, en ? bodyEn : bodyTr,
+                en ? "en" : "tr", actionUrl, actionUrl is null ? null : en ? actionLabelEn : actionLabelTr);
+            return true;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _log.LogWarning(ex, "Bildirim yazılamadı ({Code})", code);
+            return false;
+        }
+    }
+}
+
+/// <summary>
+/// G2: arka plan işleri ve bildirimler için alıcının dili. İstek bağlamı yoksa (işçiler, olaylar)
+/// kişinin kayıtlı tercihi (Profil › EN/TR; notification_preferences — ChatService ve
+/// notification-service ile aynı kaynak) kullanılır; kayıt yoksa Türkçe.
+/// </summary>
+public static class RecipientLanguage
+{
+    public static async Task<bool> EnAsync(Sql sql, string tenant, Guid? employeeId, CancellationToken ct)
+    {
+        if (employeeId is null) return false;
+        try
+        {
+            return await sql.ScalarAsync("SELECT \"Language\" FROM notification_preferences WHERE \"TenantSlug\" = $1 AND \"EmployeeId\" = $2",
+                ct, tenant, employeeId.Value) as string == "en";
+        }
+        catch (Npgsql.PostgresException) { return false; }
+    }
 }
 
 /// <summary>

@@ -39,6 +39,7 @@ import { Spotlight } from '@/components/fx/spotlight'
 import { flattenItems } from '@/components/layout/nav-config'
 import { useNavGroups } from '@/components/layout/use-nav'
 import { useAuth } from '@/auth/useAuth'
+import { PinnedReportsWidget } from '@/features/insights/SavedReports'
 import {
   useCompanies,
   useEmployees,
@@ -560,6 +561,9 @@ export function DashboardPage() {
           </ul>
         </Card>
       </Tile>
+
+      {/* ------------------- Sabitlenmiş raporlar (G4; boşsa görünmez) ------------------- */}
+      {can('performance:manage') && <PinnedReportsWidget className="md:col-span-6 xl:col-span-12" />}
     </div>
   )
 }

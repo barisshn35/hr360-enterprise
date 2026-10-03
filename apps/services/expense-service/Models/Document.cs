@@ -17,4 +17,9 @@ public class Document : ITenantOwned
     public string? ContentType { get; set; }
     public DateTimeOffset UploadedAt { get; set; } = DateTimeOffset.UtcNow;
     public Guid? UploadedByEmployeeId { get; set; }
+    /// <summary>
+    /// Y28: ilk basit e-imza zamani. Doluysa dokuman satiri DEGISTIRILEMEZ (veritabani
+    /// tetikleyicisi, scripts/sql/2026-10-09_identity_sign.sql); yeniden imza yeni talep ister.
+    /// </summary>
+    public DateTimeOffset? SignedAt { get; set; }
 }

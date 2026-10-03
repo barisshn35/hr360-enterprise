@@ -63,12 +63,26 @@ public class DocumentsController : ControllerBase
         return Created($"/api/documents/{doc.Id}", doc);
     }
 
+    /// <summary>
+    /// Kaydi siler. Y28: imzali dokumanlar degistirilemez; silme yalnizca saklama suresi dolan
+    /// dokumanin imhasi icin ve <c>confirmSigned=true</c> ile yapilir - imza talepleri ve kanit
+    /// kayitlari dokumanla birlikte imha edilir (kanit dokuman saklandigi surece tutulur).
+    /// </summary>
     [HttpDelete("{id}")]
     [Authorize(Policy = "RequireDocumentManage")]
-    public async Task<IActionResult> Delete(Guid id)
+    public async Task<IActionResult> Delete(Guid id, [FromQuery] bool confirmSigned = false)
     {
         var doc = await _db.Documents.FirstOrDefaultAsync(d => d.Id == id);
         if (doc is null) return NotFound();
+        var evidence = await _db.SignatureEvidence.Where(e => e.DocumentId == id).ToListAsync();
+        if ((doc.SignedAt is not null || evidence.Count > 0) && !confirmSigned)
+            return Conflict(new
+            {
+                message = "Bu doküman basit elektronik imzayla imzalanmış. Silme, imza kanıtlarını da imha eder; yalnızca saklama süresi dolduysa onaylayarak silin.",
+                code = "signed_document",
+            });
+        _db.SignatureEvidence.RemoveRange(evidence);
+        _db.DocumentSignatures.RemoveRange(await _db.DocumentSignatures.Where(s => s.DocumentId == id).ToListAsync());
         _db.Documents.Remove(doc);
         await _db.SaveChangesAsync();
         // Not: MinIO'daki dosyanin silinmesi ayri bir temizlik isi olarak yapilmali.

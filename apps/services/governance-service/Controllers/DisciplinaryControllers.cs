@@ -166,8 +166,9 @@ public class DisciplinaryController : AppController
                 "DefenceRequestedAt" = now(), "UpdatedAt" = now() WHERE "TenantSlug" = $1 AND "Id" = $2
             """, ct, Tenant, id, notice, deadline);
         await ComplianceAudit.WriteAsync(Db, Tenant, "DisciplinaryCase", c.EmployeeId.ToString(), "DefenceRequested", new { caseId = id, deadline }, Me.UserId, Me.Name, ct);
-        await _notifier.InAppAsync(Tenant, c.EmployeeId, "Yazılı savunmanız isteniyor",
-            $"Son gün: {deadline:dd.MM.yyyy}. Ayrıntılar Günlük iş › Savunmalarım sayfasında.", "disciplinary.defence", ct);
+        await _notifier.LocalizedAsync(Tenant, c.EmployeeId, "Yazılı savunmanız isteniyor", "Your written statement of defence is requested",
+            $"Son gün: {deadline:dd.MM.yyyy}. Ayrıntılar Günlük iş › Savunmalarım sayfasında.",
+            $"Deadline: {deadline:dd.MM.yyyy}. Details are on Daily work › My statements.", "disciplinary.defence", ct);
         return Ok(new { id, deadline, notice, warnings = Disciplinary.CriminalRecordWarnings(notice) });
     }
 
@@ -216,7 +217,8 @@ public class DisciplinaryController : AppController
             """, ct, Tenant, id, b.Decision, note, Me.Name);
         await ComplianceAudit.WriteAsync(Db, Tenant, "DisciplinaryCase", c.EmployeeId.ToString(), "Decided", new { caseId = id, decision = b.Decision }, Me.UserId, Me.Name, ct);
         if (c.DefenceRequestedAt is not null)
-            await _notifier.InAppAsync(Tenant, c.EmployeeId, "Disiplin süreciyle ilgili karar verildi", "Ayrıntılar Günlük iş › Savunmalarım sayfasında.", "disciplinary.decision", ct);
+            await _notifier.LocalizedAsync(Tenant, c.EmployeeId, "Disiplin süreciyle ilgili karar verildi", "A decision has been made in the disciplinary process",
+                "Ayrıntılar Günlük iş › Savunmalarım sayfasında.", "Details are on Daily work › My statements.", "disciplinary.decision", ct);
         return Ok(new { id, status = "Decided", warnings = Disciplinary.CriminalRecordWarnings(note) });
     }
 

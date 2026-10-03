@@ -25,8 +25,16 @@ public class EmployeeDbContext : DbContext, ITenantAwareContext
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
     public DbSet<Assignment> Assignments => Set<Assignment>();
 
+    /// <summary>
+    /// Türkçe harf katlamalı küçük harf (SQL: public.hr360_fold, scripts/sql/2026-10-09_paging_indexes.sql).
+    /// Sunucu tarafı aramanın arayüzdeki gibi "ayse" ile "Ayşe"yi eşleştirmesi için; yalnızca sorgularda çevrilir.
+    /// </summary>
+    public static string Fold(string value) => throw new NotSupportedException("Yalnızca LINQ sorgusunda kullanılır.");
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.HasDbFunction(typeof(EmployeeDbContext).GetMethod(nameof(Fold), new[] { typeof(string) })!)
+            .HasName("hr360_fold").HasSchema("public");
         modelBuilder.Entity<OutboxMessage>().ToTable("messaging_outbox");
         modelBuilder.Entity<OutboxMessage>().HasIndex(m => new { m.PublishedAt, m.CreatedAt });
 

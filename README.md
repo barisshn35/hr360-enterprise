@@ -361,6 +361,34 @@ tercihine göre seçilir; İngilizce komutlar da çalışır (`approvals`, `bala
 - Gerçek Slack/Teams hesabı olmadan uçtan uca test: `tests/integration/chatmock.py`
   ve `tests/integration/test_chat.py`.
 
+### Zapier ve n8n (REST hook)
+
+Webhook'lar ve açık API (`/api/governance/public/v1`, OpenAPI: `.../openapi.json`)
+Zapier ve n8n ile kullanılabilir. **Entegrasyonlar › API anahtarları**'ndan
+`hooks:write` (ve okuma için `employees:read` vb.) yetkili bir anahtar açın; istekler
+`X-Api-Key` başlığıyla gönderilir.
+
+| Uç | Ne yapar |
+|---|---|
+| `POST /hooks` `{"target_url": "...", "event": "leave.approved"}` | Abone olur (Zapier `hookUrl`, `url` de kabul edilir). Yanıtta `id` ve imza anahtarı (`signingSecret`, yalnızca bir kez) döner. |
+| `DELETE /hooks/{id}` | Aboneliği kaldırır (Zapier "unsubscribe"). |
+| `GET /hooks/samples/{event}` | Olayın **sentetik** örnek yükü (Zapier "perform list", n8n alan eşleme); gerçek kişi verisi dönmez. |
+| `GET /hooks/events`, `GET /hooks` | Abone olunabilen olaylar ve mevcut abonelikler. |
+
+Teslimat mevcut webhook altyapısıyla yapılır (HMAC-SHA256 imzası `X-HR360-Signature`,
+teslim geçmişi, 20 ardışık hatada uç kapanır); yük, İK webhook'larıyla aynı olay zarfıdır, ek kişisel
+veri eklenmez.
+
+- **Zapier** (ABD) ve **n8n Cloud** (`*.n8n.cloud`, AB) yurt dışı aktarımdır: KVKK ›
+  Yurt dışı aktarım ekranında dayanak kaydı yoksa abonelik `409 transfer_basis_required`
+  ile reddedilir; kayıt sonradan silinirse teslimat da durur.
+- **Kendi sunucunuzdaki n8n** (iç ağ adresi ya da kendi alan adınız) aktarım sayılmaz,
+  ek kayıt gerekmez. n8n'de *Webhook* düğümünün üretim adresini `target_url` olarak
+  verin (ör. `http://n8n:5678/webhook/izin-onay`; HR360 ile aynı Docker ağında servis
+  adıyla) ya da abone olmadan İK › Webhook'lar ekranından aynı adresi ekleyin. Veri
+  çekmek için n8n *HTTP Request* düğümüyle `GET /employees`, `/leaves`, `/events`
+  uçlarını `X-Api-Key` başlığıyla çağırın.
+
 Ana İK süreçleri (çalışan, organizasyon, izin, onay akışı, vardiya/puantaj,
 performans, eğitim, ücret, masraf, işe alım, işe giriş, bildirimler) dışında:
 
@@ -627,11 +655,82 @@ ve 5 dakika önbellekte tutar. Değişiklikler e-postalara en geç 5 dakikada ya
 
 - **Giriş ekranı** (`/giris` ve Keycloak giriş sayfası): Kullanıcı henüz giriş
   yapmadığı için hangi şirkete ait olduğu bilinmez; bu ekranlar platform markasıyla
-  (HR360) kalır.
+  (HR360) kalır. İstisna: şirket kendi doğrulanmış alan adını kullanıyorsa (aşağıda
+  "Özel alan adı") `/giris` ekranı o şirketin adını, logosunu ve rengini gösterir.
 - **Platformun kendi markası** (HR360 adı, varsayılan logo ve renk) ayarlardan
   değiştirilemez; bunun için kod değişikliği gerekir: panel renkleri
   `apps/web/src/styles/index.css`, Keycloak giriş sayfası
   `deploy/keycloak/themes/hr360` klasöründedir.
+
+### Özel alan adı (ör. `ik.sirket.com.tr`)
+
+Enterprise plandaki şirket yöneticisi **Güvenlik → Özel alan adı** panelinden kendi alan
+adını ekler. Sahiplik DNS TXT kaydıyla kanıtlanır:
+
+```
+_hr360-verify.ik.sirket.com.tr.  TXT  "hr360-verify=<paneldeki değer>"
+```
+
+**Doğrula** düğmesi kaydı sorgular (DnsClient); eşleşirse durum `Pending` → `Verified` olur.
+Bir alan adı aynı anda yalnızca tek şirkette doğrulanmış olabilir; platformun kendi adresi
+(`PUBLIC_ORIGIN`, `PLATFORM_HOSTS`) ve alt alanları kullanılamaz. Doğrulanan alan adı
+Keycloak'taki `hr360-web` istemcisinin yönlendirme adreslerine eklenir
+(`CUSTOM_DOMAIN_KEYCLOAK_SYNC=false` ile kapatılabilir).
+
+Giriş ekranı `GET /api/tenant/public/branding?host=<tarayıcının adresi>` ile şirketi tanır
+(yalnızca doğrulanmış alan adı + etkin şirket; aksi halde 404) ve şirket adını, logosunu,
+rengini gösterip girişte o şirketi ön seçer.
+
+İşletme adımları (uygulama bunları **yapmaz**):
+
+1. **DNS:** `ik.sirket.com.tr` için platform sunucusunun genel IP'sine `A`/`CNAME` kaydı.
+2. **TLS sertifikası:** mevcut ACME betiğiyle alan adını sertifikaya ekleyin, örneğin
+   `CERTBOT_EXTRA_ARGS="-d ik.sirket.com.tr --expand" ./scripts/tls.sh enable --letsencrypt --host hr.sirket.com`
+   (ya da şirketin verdiği sertifikayı `--cert/--key` ile). Sertifika olmadan tarayıcı
+   uyarı verir.
+3. **Gateway:** nginx `server_name` yönergesi alan adını kabul etmelidir. Varsayılan
+   yapılandırma (`server_name _;`) tüm adları kabul eder; kısıtlı bir yapılandırma
+   kullanıyorsanız alan adını ekleyin.
+
+### Dizin sağlama: SCIM 2.0 ve LDAP / Active Directory
+
+Şirket yöneticisi **Güvenlik** sayfasındaki iki panelle çalışan hesaplarını kurumsal
+dizinden yönetebilir:
+
+- **SCIM 2.0** (Entra ID, Okta, OneLogin, JumpCloud...): taban adres
+  `https://<platform>/api/tenant/scim/v2`, kimlik doğrulama panelde üretilen jeton
+  (`Bearer hr360scim_...`; yalnızca bir kez gösterilir, veritabanında SHA-256 özeti tutulur,
+  iptal edilebilir). Desteklenen: `ServiceProviderConfig`, `ResourceTypes`, `Schemas`,
+  `Users` (liste, `filter=userName eq "..."`, `startIndex`/`count`, GET, POST, PUT, PATCH,
+  DELETE). DELETE ve `active=false` hesabı kapatır ve tüm oturumları sonlandırır; çalışan
+  kaydı silinmez (işten çıkış ve saklama süresi İK/KVKK süreciyle yürür).
+- **LDAP / AD**: `ldaps://` önerilir (`ldap://` kaydedilir ama uyarı verilir); bağlama
+  parolası AES-256-GCM ile şifrelenir. "Bağlantıyı test et", "Önizleme (dry-run)" ve
+  "Şimdi eşitle"; isteğe bağlı otomatik eşitleme `DIRECTORY_SYNC_MINUTES` (varsayılan 60)
+  dakikada bir. Dizinde olup HR360'ta olmayan kullanıcılar oluşturulur, dizinden silinen ya
+  da pasifleştirilenler kapatılır (arama boş dönerse ya da aktiflerin yarısından fazlası
+  kaybolursa onay olmadan toplu kapatma yapılmaz).
+
+Her iki yolda da hesap Keycloak'ta şirket organizasyonuna `employee` rolüyle açılır ve
+çalışan kaydı employee-service'in iç ucuyla (`INTERNAL_SERVICE_TOKEN`) oluşturulur. Roller
+dizinden atanmaz. **KVKK veri minimizasyonu:** yalnızca kullanıcı adı, ad, soyad, birincil
+e-posta, etkinlik durumu, unvan ve departman saklanır; telefon, adres, fotoğraf, yönetici
+gibi diğer nitelikler kabul edilir ama yok sayılır (SCIM `ServiceProviderConfig` bunu ilan
+eder; LDAP'tan bu nitelikler hiç istenmez).
+
+### Basit elektronik imza (doküman imzalatma)
+
+İK, **Dokümanlar** sayfasında bir özlük dokümanını çalışana **İmzaya gönder**ir. Çalışan
+**İmzalarım** sayfasında belgeyi görür, 6 haneli tek kullanımlık kod ister (uygulama içi
+bildirim ve e-posta) ve kodla onaylar. Kod yalnızca özetiyle saklanır, 10 dakika
+geçerlidir, en fazla 5 deneme hakkı vardır. Kanıt kaydı: doküman özeti (SHA-256), imzalayan
+çalışan, zaman, son okteti maskelenmiş IP, tarayıcı bilgisinin özeti ve kod kanalı;
+doküman saklandığı sürece saklanır ve değiştirilemez. İmzalanan doküman değiştirilemez;
+yeniden imza için yeni talep gerekir.
+
+> **Basit elektronik imza — 5070 sayılı Kanun kapsamında nitelikli (güvenli) elektronik
+> imza değildir.** Kanunen ıslak imza ya da güvenli e-imza gerektiren belgeler (ör. bazı iş
+> sözleşmesi değişiklikleri, ibraname) için kullanılmamalıdır.
 
 ## Güvenlik notu
 

@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using NotificationService.Data;
 using NotificationService.Messaging;
 using NotificationService.Models;
+using NotificationService.Preferences;
 using NotificationService.Services;
 
 namespace NotificationService.Controllers;
@@ -59,6 +60,14 @@ public partial class NotificationsController : ControllerBase
         return (true, me.Value);
     }
 
+    /// <summary>G11: kişinin uygulama içinde kapattığı (zorunlu olmayan) kategoriler listede ve sayaçta görünmez.</summary>
+    private async Task<IQueryable<Notification>> HideMutedAsync(IQueryable<Notification> q, Guid recipient)
+    {
+        var muted = await _db.CategoryPreferences.AsNoTracking()
+            .Where(c => c.EmployeeId == recipient && !c.InApp).Select(c => c.Category).ToListAsync(HttpContext.RequestAborted);
+        return muted.Count == 0 ? q : q.Where(NotificationCategories.VisibleInApp(muted));
+    }
+
     [HttpGet]
     public async Task<IActionResult> GetAll(
         [FromQuery] Guid? recipientId, [FromQuery] NotificationStatus? status, [FromQuery] int limit = 50)
@@ -68,7 +77,7 @@ public partial class NotificationsController : ControllerBase
         recipientId = effective;
 
         var q = _db.Notifications.AsQueryable();
-        if (recipientId.HasValue) q = q.Where(n => n.RecipientEmployeeId == recipientId.Value);
+        if (recipientId.HasValue) q = await HideMutedAsync(q.Where(n => n.RecipientEmployeeId == recipientId.Value), recipientId.Value);
         if (status.HasValue) q = q.Where(n => n.Status == status.Value);
         return Ok(await q.OrderByDescending(n => n.CreatedAt).Take(Math.Clamp(limit, 1, 200)).ToListAsync());
     }
@@ -180,8 +189,8 @@ public partial class NotificationsController : ControllerBase
         var (allowed, _) = await ResolveRecipientScopeAsync(recipientId);
         if (!allowed) return Forbid();
 
-        var count = await _db.Notifications.CountAsync(n =>
-            n.RecipientEmployeeId == recipientId && n.Status != NotificationStatus.Read);
+        var q = await HideMutedAsync(_db.Notifications.Where(n => n.RecipientEmployeeId == recipientId), recipientId);
+        var count = await q.CountAsync(n => n.Status != NotificationStatus.Read);
         return Ok(new { recipientId, unreadCount = count });
     }
 }

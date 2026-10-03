@@ -215,7 +215,7 @@ function SectionTabs() {
   ]
 
   return (
-    <div className="relative hidden lg:block" onMouseLeave={leave}>
+    <nav aria-label={tx('Ana menü')} className="relative hidden lg:block" onMouseLeave={leave}>
       <ul className="flex items-center gap-0.5">
         {tabs.map((tab) => {
           const isActive = activeId === tab.id
@@ -288,7 +288,7 @@ function SectionTabs() {
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
+    </nav>
   )
 }
 

@@ -240,6 +240,10 @@ public class Webhook : ITenantOwned
     public DateTime? LastDeliveredAt { get; set; }
     public int FailureCount { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    /// <summary>null/manual: İK ekranından; "rest-hook": Zapier/n8n aboneliği (açık API).</summary>
+    public string? Source { get; set; }
+    /// <summary>REST hook aboneliğini açan API anahtarı.</summary>
+    public Guid? ApiKeyId { get; set; }
 }
 
 public class WebhookDelivery : ITenantOwned

@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using LeaveService.Data;
 using LeaveService.Models;
 using LeaveService.Services;
+using LeaveService.Infrastructure;
 
 namespace LeaveService.Controllers;
 
@@ -20,8 +21,12 @@ public class LeaveBalancesController : ControllerBase
         _approvals = approvals;
     }
 
+    /// <remarks>Sayfalama (G24): <c>page</c> verilmezse eski biçim (düz dizi, en fazla 2000; toplam
+    /// <c>X-Total-Count</c> başlığında); <c>page</c>/<c>pageSize</c> ile <c>{ items, total, page, pageSize }</c>.
+    /// Ek filtre: <c>type</c>.</remarks>
     [HttpGet]
-    public async Task<IActionResult> GetAll([FromQuery] Guid? employeeId, [FromQuery] int? year, CancellationToken ct)
+    public async Task<IActionResult> GetAll([FromQuery] Guid? employeeId, [FromQuery] int? year, CancellationToken ct,
+        [FromQuery] int? page = null, [FromQuery] int? pageSize = null, [FromQuery] LeaveType? type = null)
     {
         // GUVENLIK: Onceden her calisan tum kiracinin izin bakiyelerini (kimin ne
         // kadar hastalik/ucretsiz izin kullandigi dahil) listeleyebiliyordu. Yonetici
@@ -36,10 +41,12 @@ public class LeaveBalancesController : ControllerBase
             employeeId = me;
         }
 
-        var q = _db.LeaveBalances.AsQueryable();
+        var q = _db.LeaveBalances.AsNoTracking().AsQueryable();
         if (employeeId.HasValue) q = q.Where(b => b.EmployeeId == employeeId.Value);
         if (year.HasValue) q = q.Where(b => b.Year == year.Value);
-        return Ok(await q.OrderBy(b => b.Type).ToListAsync());
+        if (type.HasValue) q = q.Where(b => b.Type == type.Value);
+        return await Paging.ListAsync(this, q.OrderBy(b => b.Type).ThenBy(b => b.EmployeeId).ThenBy(b => b.Year).ThenBy(b => b.Id),
+            page, pageSize, ct);
     }
 
     /// <summary>Yeni yil bakiyesi tanimlar veya mevcut hak edisi gunceller.</summary>

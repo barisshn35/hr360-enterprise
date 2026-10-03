@@ -302,6 +302,8 @@ public class InsightsController : AppController
     public InsightsController(GovernanceDbContext db) => _db = db;
 
     public record AskInput(string Question);
+    /// <summary>G3: isteğe bağlı süzgeçler (departman, tarih aralığı, geçen yılla karşılaştırma).</summary>
+    public record ReportInput(string Question, Guid? DepartmentId, DateOnly? From, DateOnly? To, bool? Compare);
 
     [HttpGet("examples")]
     public IActionResult ExampleQuestions() => Ok(NlReport.ExamplesFor(Lang));
@@ -309,11 +311,22 @@ public class InsightsController : AppController
     [HttpPost("report")]
     [Authorize(Policy = "RequireManagerOrAbove")]
     [RequiresPlan("Enterprise")]
-    public async Task<IActionResult> Report(AskInput body, CancellationToken ct)
+    public async Task<IActionResult> Report(ReportInput body, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(body.Question) || body.Question.Length > 300) return BadRequest(new { message = L("Soru 1–300 karakter olmalı.", "The question must be 1–300 characters.") });
-        return Ok(await NlReport.RunAsync(Db, Tenant, body.Question, Me.IsHr, ct, Lang));
+        var result = await NlReport.RunAsync(Db, Tenant, body.Question, Me.IsHr, ct, Lang,
+            new NlReport.Options(body.DepartmentId, body.From, body.To, body.Compare, AllowSalary: Me.IsHr));
+        // Ücret dağılımı toplu da olsa hassas: görüntüleme erişim kaydına yazılır.
+        if (result.Metric == "salary" && result.Understood)
+            await ComplianceAudit.WriteAsync(Db, Tenant, "Report", "salary-distribution", "SensitiveViewed", new { field = "salaryDistribution", groupBy = result.GroupBy }, Me.UserId, Me.Name, ct);
+        return Ok(result);
     }
+
+    /// <summary>Rapor süzgeci için departman listesi (yalnızca ad).</summary>
+    [HttpGet("departments")]
+    [Authorize(Policy = "RequireManagerOrAbove")]
+    public async Task<IActionResult> Departments(CancellationToken ct) =>
+        Ok(await Db.QueryAsync("SELECT \"Id\", \"Name\" FROM organization_departments WHERE \"TenantSlug\" = $1 ORDER BY 2", r => new { id = r.GetGuid(0), name = r.GetString(1) }, ct, Tenant));
 
     [HttpPost("assistant")]
     public async Task<IActionResult> Assistant(AskInput body, CancellationToken ct)
@@ -342,7 +355,7 @@ public class InsightsController : AppController
     [Authorize(Policy = "RequireHrAdmin")]
     public async Task<IActionResult> CreateKb(KbInput body, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(body.Title) || string.IsNullOrWhiteSpace(body.Body)) return BadRequest(new { message = "Başlık ve içerik zorunlu." });
+        if (string.IsNullOrWhiteSpace(body.Title) || string.IsNullOrWhiteSpace(body.Body)) return BadRequest(new { message = L("Başlık ve içerik zorunlu.", "Title and content are required.") });
         var a = new KbArticle { Title = body.Title.Trim(), Body = body.Body.Trim(), Tags = body.Tags ?? new() };
         _db.KbArticles.Add(a);
         await _db.SaveChangesAsync(ct);

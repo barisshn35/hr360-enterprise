@@ -2,7 +2,11 @@ using NotificationService.Tenancy;
 
 namespace NotificationService.Models;
 
-public enum NotificationStatus { Pending, Sent, Failed, Read }
+/// <summary>
+/// Suppressed: kişi bu kategori için e-postayı kapatmış (gönderilmedi, kayıt kalır).
+/// DigestQueued: günlük özete alınmayı bekliyor; Digested: özet e-postasıyla iletildi.
+/// </summary>
+public enum NotificationStatus { Pending, Sent, Failed, Read, Suppressed, DigestQueued, Digested }
 
 public class Notification : ITenantOwned
 {
@@ -32,6 +36,8 @@ public class Notification : ITenantOwned
     public string? ActionLabel { get; set; }
     /// <summary>Uygulama içi bildirimin anlık bildirim (Web Push) olarak iletildiği an.</summary>
     public DateTimeOffset? PushedAt { get; set; }
+    /// <summary>Sessiz saatler: e-posta / anlık bildirim bu andan önce iletilmez (ertelenir, düşürülmez).</summary>
+    public DateTimeOffset? DeferredUntil { get; set; }
 }
 
 /// <summary>

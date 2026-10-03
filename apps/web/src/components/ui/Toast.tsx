@@ -60,7 +60,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {children}
       {createPortal(
         <div
+          role="status"
           aria-live="polite"
+          aria-relevant="additions"
           className="pointer-events-none fixed inset-x-3 bottom-3 z-[200] flex flex-col items-center gap-2 sm:inset-x-auto sm:right-4 sm:bottom-4 sm:items-end"
         >
           <AnimatePresence initial={false}>
@@ -70,6 +72,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               return (
                 <motion.div
                   key={t.id}
+                  // Hata mesajı ekran okuyucuda hemen (assertive) duyurulur.
+                  role={t.tone === 'stop' ? 'alert' : undefined}
                   layout
                   initial={{ opacity: 0, y: 8, scale: 0.98 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}

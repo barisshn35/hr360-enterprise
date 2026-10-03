@@ -12,6 +12,7 @@ import { formatDate, formatNumber, fullName } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { NewAssignmentModal } from './NewAssignmentModal'
 import { AttritionRiskPanel } from './AttritionRiskCard'
+import { ExtraInfoPanel } from '@/features/governance/CustomFields'
 import { tx } from '@/lib/i18n'
 
 export function EmployeeDetailPage() {
@@ -184,6 +185,7 @@ export function EmployeeDetailPage() {
 
         <div className="space-y-4">
           {canManage && <AttritionRiskPanel employee={data} />}
+          <ExtraInfoPanel employeeId={data.id} />
 
           <Panel>
             <PanelBody>

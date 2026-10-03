@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useParams, useSearchParams } from 'react-router-dom'
-import { BadgeCheck, CheckCircle2, FileCheck2, FileText, Printer, ShieldAlert, XCircle } from 'lucide-react'
+import { BadgeCheck, CheckCircle2, FileCheck2, FileSignature, FileText, Printer, ShieldAlert, XCircle } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Panel, PanelBody, PanelHead } from '@/components/ui/Panel'
 import { Button } from '@/components/ui/button'
@@ -9,6 +9,7 @@ import { SelectField, TextField } from '@/components/ui/Field'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { EmptyState, InfoNote, RowsSkeleton } from '@/components/ui/States'
 import { governanceApi, type DocRequestStatus } from '@/api/governance'
+import { SignDocumentModal } from '@/features/documents/SignDocument'
 import { workflowApi } from '@/api/workflows'
 import { workflowTypeLabels } from '@/api/types'
 import { formatDate, formatDateTime } from '@/lib/format'
@@ -34,6 +35,7 @@ export function MyDocumentsPage() {
     invalidate: [['doc-requests']], onDone: () => setPurpose(''),
   })
   const open = useAction((id: string) => governanceApi.docRequestDocument(id), { onDone: (d) => printDocuments(d.templateName, [{ employeeId: '', name: '', html: d.html }]) })
+  const [signing, setSigning] = useState<{ id: string; name: string } | null>(null)
   return (
     <>
       <PageHeader title={tx('Belge talebi')} description={tx('Çalışma belgesi, maaş yazısı gibi belgeleri isteyin; hazır olunca yazdırın ya da PDF olarak kaydedin.')} />
@@ -66,6 +68,8 @@ export function MyDocumentsPage() {
                       <p className="text-[12px] text-muted-foreground">{formatDate(r.createdAt)}{r.purpose ? ` · ${r.purpose}` : ''}{r.verificationCode ? ` · ${tx('kod {0}', [r.verificationCode])}` : ''}{r.decisionNote ? ` · ${r.decisionNote}` : ''}</p>
                     </div>
                     <StatusBadge tone={STATUS[r.status].tone}>{STATUS[r.status].label}</StatusBadge>
+                    {r.signed && <StatusBadge tone="success">{tx('İmzalı (basit e-imza)')}</StatusBadge>}
+                    {r.status === 'Issued' && !r.signed && <Button size="sm" variant="outline" onClick={() => setSigning({ id: r.id, name: r.templateName })}><FileSignature className="size-4" /> {tx('Kodla imzala')}</Button>}
                     {r.status === 'Issued' && <Button size="sm" variant="outline" onClick={() => open.mutate(r.id)}><Printer className="size-4" /> {tx('Yazdır / PDF')}</Button>}
                   </li>
                 ))}
@@ -74,6 +78,7 @@ export function MyDocumentsPage() {
           </PanelBody>
         </Panel>
       </div>
+      {signing && <SignDocumentModal docId={signing.id} name={signing.name} onClose={() => setSigning(null)} />}
     </>
   )
 }
@@ -108,6 +113,14 @@ export function VerifyDocumentPage() {
               <p className="font-semibold">{tx('Geçerli belge')}</p>
               <p>{q.data.document} · {formatDateTime(q.data.issuedAt)}</p>
               <p className="text-muted-foreground">{tx('Belge sahibi: {0}', [q.data.holder ?? '—'])}{q.data.company ? ` · ${q.data.company}` : ''}</p>
+              {q.data.signature?.signed && (
+                <div className="mt-2 space-y-0.5 border-t border-emerald-500/30 pt-2">
+                  <p className="flex items-center gap-1.5 font-medium"><FileSignature className="size-4" /> {tx('Çalışan tarafından kodla imzalandı')} · {formatDateTime(q.data.signature.signedAt)}</p>
+                  <p className="text-[12px] text-muted-foreground">{q.data.signature.method === 'OTP-Email' ? tx('Yöntem: e-postayla tek kullanımlık kod') : tx('Yöntem: uygulama içi tek kullanımlık kod')}{q.data.signature.matchesDocument ? '' : ` · ${tx('UYARI: belge özeti eşleşmiyor')}`}</p>
+                  <p className="break-all font-mono text-[11px] text-muted-foreground">SHA-256 {q.data.signature.documentSha256.slice(0, 32)}…</p>
+                  <p className="text-[11.5px] font-medium text-amber-700 dark:text-amber-400">{tx('Basit elektronik imza — 5070 sayılı Kanun kapsamında güvenli/nitelikli elektronik imza değildir')}</p>
+                </div>
+              )}
             </div>
           </div>
         ) : (

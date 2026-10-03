@@ -1,4 +1,4 @@
-import { apiFetch, qs } from './client'
+import { apiFetch, qs, type Paged } from './client'
 import { tx } from '@/lib/i18n'
 
 const BASE = '/api/leave'
@@ -92,6 +92,16 @@ export interface LeaveRequestFilters {
   status?: LeaveStatus
 }
 
+/** Sunucu tarafı sayfalama parametreleri (G24). `qTypes`: aramayla adı eşleşen izin türleri. */
+export interface LeaveRequestPageParams extends LeaveRequestFilters {
+  page: number
+  pageSize: number
+  q?: string
+  qTypes?: string
+  sort?: 'createdAt' | 'startDate' | 'days' | 'status' | 'type'
+  dir?: 'asc' | 'desc'
+}
+
 /* ------------------------------------------------------------------ servis */
 
 export const leaveApi = {
@@ -119,6 +129,9 @@ export const leaveApi = {
 
   listRequests: (filters: LeaveRequestFilters = {}, signal?: AbortSignal) =>
     apiFetch<LeaveRequest[]>(`${BASE}/leave-requests${qs(filters)}`, { signal }),
+
+  pageRequests: (params: LeaveRequestPageParams, signal?: AbortSignal) =>
+    apiFetch<Paged<LeaveRequest>>(`${BASE}/leave-requests${qs(params)}`, { signal }),
 
   getRequest: (id: string, signal?: AbortSignal) =>
     apiFetch<LeaveRequest>(`${BASE}/leave-requests/${id}`, { signal }),

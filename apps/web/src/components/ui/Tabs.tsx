@@ -66,7 +66,8 @@ export function Tabs<T extends string>({
               <span
                 className={cn(
                   'tabular relative z-10 rounded-full px-1.5 py-px text-[10.5px] font-semibold',
-                  active ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground',
+                  // Dolu zemin: açık temada da ≥ 4,5:1 (yarı saydam zemin 3,85:1 kalıyordu).
+                  active ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground',
                 )}
               >
                 {tab.count}

@@ -75,7 +75,7 @@ public class EthicsPublicController : ControllerBase
             INSERT INTO governance_ethics_reports ("Id","TenantSlug","Category","Description","ContactEnc","CodeHash","Status","ReceivedOn","UpdatedAt")
             VALUES ($1,$2,$3,$4,$5,$6,'Received',current_date,date_trunc('day', now()))
             """, ct, id, tenant, body.Category, description, contact is null ? null : SecretBox.Protect(contact), EthicsCode.Hash(code));
-        await NotifyCommitteeAsync(tenant, "Yeni etik bildirimi alındı", ct);
+        await NotifyCommitteeAsync(tenant, "Yeni etik bildirimi alındı", "New ethics report received", ct);
         return Ok(new
         {
             followUpCode = code,
@@ -83,11 +83,11 @@ public class EthicsPublicController : ControllerBase
         });
     }
 
-    private async Task NotifyCommitteeAsync(string tenant, string subject, CancellationToken ct)
+    private async Task NotifyCommitteeAsync(string tenant, string subject, string subjectEn, CancellationToken ct)
     {
         var members = await _sql.QueryAsync("SELECT \"EmployeeId\" FROM governance_ethics_committee WHERE \"TenantSlug\" = $1 AND \"EmployeeId\" IS NOT NULL",
             r => r.GetGuid(0), ct, tenant);
-        await BulkNotify.InAppAsync(_sql, tenant, members, subject, "Etik hattı gelen kutusunu açın.", "ethics.report", ct);
+        await BulkNotifyLocalized.InAppAsync(_sql, tenant, members, subject, subjectEn, "Etik hattı gelen kutusunu açın.", "Open the ethics hotline inbox.", "ethics.report", ct);
     }
 
     private async Task<(Guid Id, string Status)?> FindAsync(string tenant, string? code, CancellationToken ct)
@@ -154,7 +154,7 @@ public class EthicsPublicController : ControllerBase
             VALUES ($1,$2,$3,true,NULL,$4,current_date)
             """, ct, Guid.NewGuid(), tenant, r.Value.Id, text);
         await _sql.ExecuteAsync("UPDATE governance_ethics_reports SET \"UpdatedAt\" = date_trunc('day', now()) WHERE \"Id\" = $1", ct, r.Value.Id);
-        await NotifyCommitteeAsync(tenant, "Etik bildirimine yeni mesaj", ct);
+        await NotifyCommitteeAsync(tenant, "Etik bildirimine yeni mesaj", "New message on an ethics report", ct);
         return Ok(new { sent = true });
     }
 }

@@ -31,7 +31,9 @@ public class EmailSenderWorker : BackgroundService
 {
     private const int BatchSize = 20;
     private const int MaxAttempts = 3;
-    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(30);
+    // EMAIL_POLL_SECONDS: testte kısaltılır (varsayılan 30 sn).
+    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(
+        int.TryParse(Environment.GetEnvironmentVariable("EMAIL_POLL_SECONDS"), out var s) ? Math.Max(1, s) : 30);
 
     private readonly IServiceProvider _services;
     private readonly ILogger<EmailSenderWorker> _logger;
@@ -112,8 +114,10 @@ public class EmailSenderWorker : BackgroundService
         var db = scope.ServiceProvider.GetRequiredService<NotificationDbContext>();
         var branding = scope.ServiceProvider.GetRequiredService<TenantBrandingClient>();
 
+        var now = DateTimeOffset.UtcNow;
         var pending = await db.Notifications
-            .Where(n => n.Channel == NotificationChannel.Email && n.Status == NotificationStatus.Pending)
+            .Where(n => n.Channel == NotificationChannel.Email && n.Status == NotificationStatus.Pending
+                        && (n.DeferredUntil == null || n.DeferredUntil <= now))
             // Az denenmis olanlar once: bir kiracinin bozuk SMTP'sine takilan eski
             // kayitlar, saglikli kiracilarin yeni e-postalarini bekletmesin.
             .OrderBy(n => n.AttemptCount).ThenBy(n => n.CreatedAt)
@@ -121,6 +125,15 @@ public class EmailSenderWorker : BackgroundService
             .ToListAsync(ct);
 
         if (pending.Count == 0) return;
+
+        // G11 bildirim tercihleri: kapatılan kategori (Suppressed), günlük özete alınan (DigestQueued)
+        // ve sessiz saatte ertelenen (DeferredUntil) e-postalar bu turda gönderilmez.
+        pending = await ApplyPreferencesAsync(db, pending, now, ct);
+        if (pending.Count == 0)
+        {
+            await db.SaveChangesAsync(ct);
+            return;
+        }
 
         _logger.LogInformation("{Count} bekleyen e-posta bulundu, gonderiliyor", pending.Count);
 
@@ -162,6 +175,35 @@ public class EmailSenderWorker : BackgroundService
         }
 
         await db.SaveChangesAsync(ct);
+    }
+
+    private static async Task<List<Notification>> ApplyPreferencesAsync(
+        NotificationDbContext db, List<Notification> pending, DateTimeOffset now, CancellationToken ct)
+    {
+        var prefs = await Preferences.PreferenceStore.LoadAsync(db, pending.Select(n => (n.TenantSlug, n.RecipientEmployeeId)), ct);
+        var send = new List<Notification>();
+        foreach (var n in pending)
+        {
+            prefs.TryGetValue((n.TenantSlug, n.RecipientEmployeeId), out var p);
+            var (decision, until) = Preferences.DeliveryRules.DecideEmail(n.TemplateCode, !string.IsNullOrEmpty(n.ActionUrl), p, now);
+            switch (decision)
+            {
+                case Preferences.Delivery.Suppress:
+                    n.Status = NotificationStatus.Suppressed;
+                    n.FailureReason = "Kişi bu kategori için e-postayı kapatmış";
+                    break;
+                case Preferences.Delivery.Digest:
+                    n.Status = NotificationStatus.DigestQueued;
+                    break;
+                case Preferences.Delivery.Defer:
+                    n.DeferredUntil = until;
+                    break;
+                default:
+                    send.Add(n);
+                    break;
+            }
+        }
+        return send;
     }
 
     private async Task SendGroupAsync(

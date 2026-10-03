@@ -188,6 +188,8 @@ export interface FeatureContribution {
 export interface ExplainResponse {
   /** ml-inference giriş sırasına göre `number[]` döner. */
   feature_contributions: number[] | FeatureContribution[] | Record<string, number>
+  /** Katkıların giriş sırasındaki özellik adları (G5; model kartındaki sıra). */
+  feature_names?: string[]
   base_value: number
 }
 

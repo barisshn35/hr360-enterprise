@@ -25,6 +25,7 @@ public class NotificationDbContext : DbContext, ITenantAwareContext
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<ProcessedEvent> ProcessedEvents => Set<ProcessedEvent>();
     public DbSet<NotificationPreference> Preferences => Set<NotificationPreference>();
+    public DbSet<CategoryPreference> CategoryPreferences => Set<CategoryPreference>();
     public DbSet<PushSubscription> PushSubscriptions => Set<PushSubscription>();
     public DbSet<VapidKeyRow> VapidKeys => Set<VapidKeyRow>();
 
@@ -52,6 +53,10 @@ public class NotificationDbContext : DbContext, ITenantAwareContext
         modelBuilder.Entity<NotificationPreference>().ConfigureTenantColumn();
         modelBuilder.Entity<NotificationPreference>().ToTable("notification_preferences");
         modelBuilder.Entity<NotificationPreference>().HasKey(p => new { p.TenantSlug, p.EmployeeId });
+
+        modelBuilder.Entity<CategoryPreference>().ConfigureTenantColumn();
+        modelBuilder.Entity<CategoryPreference>().ToTable("notification_category_prefs");
+        modelBuilder.Entity<CategoryPreference>().HasKey(p => new { p.TenantSlug, p.EmployeeId, p.Category });
 
         modelBuilder.Entity<PushSubscription>().ConfigureTenantColumn();
         modelBuilder.Entity<PushSubscription>().ToTable("notification_push_subscriptions");

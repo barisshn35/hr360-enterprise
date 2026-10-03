@@ -23,9 +23,11 @@ import { CalendarConnections } from '@/features/shared/Meetings'
 import { MyAccessLog, MyObjections } from './PrivacyExtras'
 import { MyChatAccounts } from './ChatAccounts'
 import { DevicePanel } from './DevicePanel'
+import { AccessibilityPanel, NotificationPrefsPanel } from './NotificationPrefs'
+import { ExtraInfoPanel } from '@/features/governance/CustomFields'
 import { tx } from '@/lib/i18n'
 
-type TabKey = 'bilgiler' | 'gizlilik' | 'takvim' | 'guvenlik'
+type TabKey = 'bilgiler' | 'bildirimler' | 'gizlilik' | 'takvim' | 'guvenlik' | 'erisilebilirlik'
 
 const SKILL_HINTS = [tx('İletişim'), tx('Excel'), tx('Proje yönetimi'), tx('SQL'), tx('React'), tx('.NET'), tx('Satış'), tx('Liderlik'), tx('İngilizce')]
 
@@ -273,9 +275,12 @@ export function ProfilePage() {
             <div className="flex flex-wrap gap-1.5">{p.skills.slice(0, 6).map((s) => <span key={s} className="rounded-full bg-primary/10 px-2.5 py-0.5 text-[12px] text-primary">{s}</span>)}</div>
           </motion.div>
           <div className="mb-5">
-            <Tabs label={tx('Profil bölümleri')} value={tab} onChange={setTab} tabs={[{ key: 'bilgiler', label: tx('Bilgilerim') }, { key: 'gizlilik', label: tx('Gizlilik (KVKK)') }, { key: 'takvim', label: tx('Takvim') }, { key: 'guvenlik', label: tx('Güvenlik') }]} />
+            <Tabs label={tx('Profil bölümleri')} value={tab} onChange={setTab} tabs={[{ key: 'bilgiler', label: tx('Bilgilerim') }, { key: 'bildirimler', label: tx('Bildirimler') }, { key: 'gizlilik', label: tx('Gizlilik (KVKK)') }, { key: 'takvim', label: tx('Takvim') }, { key: 'guvenlik', label: tx('Güvenlik') }, { key: 'erisilebilirlik', label: tx('Erişilebilirlik') }]} />
           </div>
           {tab === 'bilgiler' && <InfoTab key={p.updatedAt ?? 'new'} p={p} />}
+          {tab === 'bilgiler' && <div className="mt-5"><ExtraInfoPanel /></div>}
+          {tab === 'bildirimler' && <NotificationPrefsPanel />}
+          {tab === 'erisilebilirlik' && <AccessibilityPanel />}
           {tab === 'gizlilik' && <PrivacyTab employeeId={p.employeeId} />}
           {tab === 'takvim' && <CalendarTab />}
           {tab === 'guvenlik' && <div className="space-y-5"><SecurityTab /><MySecurityPanel /><DevicePanel /><MyChatAccounts /></div>}

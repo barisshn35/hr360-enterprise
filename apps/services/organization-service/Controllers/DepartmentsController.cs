@@ -2,7 +2,9 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using OrganizationService.Data;
+using OrganizationService.Infrastructure;
 using OrganizationService.Models;
+using OrganizationService.Tenancy;
 
 namespace OrganizationService.Controllers;
 
@@ -12,18 +14,58 @@ namespace OrganizationService.Controllers;
 public class DepartmentsController : ControllerBase
 {
     private readonly OrganizationDbContext _db;
+    private readonly RefCache _cache;
+    private readonly ITenantContext _tenant;
 
-    public DepartmentsController(OrganizationDbContext db)
+    public DepartmentsController(OrganizationDbContext db, RefCache cache, ITenantContext tenant)
     {
         _db = db;
+        _cache = cache;
+        _tenant = tenant;
     }
 
+    internal const string CacheName = "departments";
+
+    /// <remarks>
+    /// Sayfalama (G24): <c>page</c> verilmezse eski biçim (düz dizi, tüm departmanlar; sayı
+    /// <c>X-Total-Count</c> başlığında). <c>page</c>/<c>pageSize</c> (en fazla 200) ile
+    /// <c>{ items, total, page, pageSize }</c>. <c>q</c>: ad (Türkçe harf katlamalı), <c>sort</c>=name|createdAt,
+    /// <c>dir</c>=asc|desc. Departman listesi kişisel veri içermediğinden kiracı başına 60 sn önbelleğe
+    /// alınır (yazma işlemleri önbelleği hemen eskitir).
+    /// </remarks>
     [HttpGet]
-    public async Task<IActionResult> GetAll([FromQuery] Guid? companyId)
+    public async Task<IActionResult> GetAll([FromQuery] Guid? companyId, [FromQuery] int? page = null,
+        [FromQuery] int? pageSize = null, [FromQuery] string? q = null, [FromQuery] string? sort = null,
+        [FromQuery] string? dir = null)
     {
-        var query = _db.Departments.AsQueryable();
-        if (companyId.HasValue) query = query.Where(d => d.CompanyId == companyId.Value);
-        return Ok(await query.ToListAsync());
+        var desc = Paging.Desc(dir);
+        var byCreated = string.Equals(sort, "createdAt", StringComparison.OrdinalIgnoreCase);
+        var (p, size) = Paging.Normalize(page ?? 1, pageSize);
+        var key = $"{companyId}|{(page is null ? "all" : $"{p}/{size}")}|{q?.Trim()}|{byCreated}|{desc}";
+        var (items, total) = await _cache.GetOrSetAsync(CacheName, RefCache.Scope(_tenant), key, async () =>
+        {
+            var query = _db.Departments.AsNoTracking().AsQueryable();
+            if (companyId.HasValue) query = query.Where(d => d.CompanyId == companyId.Value);
+            if (!string.IsNullOrWhiteSpace(q))
+            {
+                var like = Paging.FoldLike(q);
+                query = query.Where(d => EF.Functions.Like(OrganizationDbContext.Fold(d.Name), like, "\\"));
+            }
+            IOrderedQueryable<Department> ordered = byCreated
+                ? (desc ? query.OrderByDescending(d => d.CreatedAt) : query.OrderBy(d => d.CreatedAt))
+                : (desc ? query.OrderByDescending(d => d.Name) : query.OrderBy(d => d.Name));
+            ordered = ordered.ThenBy(d => d.Id);
+            if (page is null)
+            {
+                var all = await ordered.ToListAsync();
+                return (all, all.Count);
+            }
+            var count = await ordered.CountAsync();
+            var slice = count == 0 ? new List<Department>() : await ordered.Skip((p - 1) * size).Take(size).ToListAsync();
+            return (slice, count);
+        });
+        Paging.SetTotal(this, total);
+        return page is null ? Ok(items) : Ok(new PagedResult<Department>(items, total, p, size));
     }
 
     [HttpGet("{id}")]
@@ -48,6 +90,7 @@ public class DepartmentsController : ControllerBase
         };
         _db.Departments.Add(department);
         await _db.SaveChangesAsync();
+        _cache.Bump(CacheName, department.TenantSlug);
         return CreatedAtAction(nameof(GetAll), new { companyId = department.CompanyId }, department);
     }
 
@@ -69,6 +112,7 @@ public class DepartmentsController : ControllerBase
         department.Name = request.Name.Trim();
         department.HeadEmployeeId = request.HeadEmployeeId;
         await _db.SaveChangesAsync();
+        _cache.Bump(CacheName, department.TenantSlug);
         return Ok(department);
     }
 
@@ -122,6 +166,7 @@ public class DepartmentsController : ControllerBase
 
         _db.Departments.Remove(department);
         await _db.SaveChangesAsync();
+        _cache.Bump(CacheName, department.TenantSlug);
         return NoContent();
     }
 }

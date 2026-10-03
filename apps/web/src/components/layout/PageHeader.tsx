@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import { useLocation } from 'react-router-dom'
 import { motion, useReducedMotion } from 'motion/react'
 import { ChevronRight } from 'lucide-react'
@@ -28,6 +28,10 @@ export function PageHeader({
   const { pathname } = useLocation()
   const reduced = useReducedMotion()
   const here = locate(pathname)
+  // Sayfa başlığı (WCAG 2.4.2): her ekranın kendi adı sekme başlığında.
+  useEffect(() => {
+    document.title = `${title} · HR360`
+  }, [title, pathname])
   const trail =
     eyebrow ??
     [here.group?.heading, here.parent?.title, here.item && here.item.title !== title ? here.item.title : undefined].filter(
@@ -58,7 +62,7 @@ export function PageHeader({
             </motion.div>
           )}
           <TextReveal
-            as="h2"
+            as="h1"
             text={title}
             className="block text-[28px] leading-[1.1] font-semibold tracking-[-0.035em] sm:text-[36px]"
           />

@@ -81,7 +81,10 @@ export function AnalyticsPage() {
                 <ResponsiveContainer>
                   <PieChart>
                     <Pie data={q.data.departments} dataKey="headcount" nameKey="department" innerRadius={60} outerRadius={100} paddingAngle={3} animationDuration={1000}>
-                      {q.data.departments.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                      {q.data.departments.map((d, i) => (
+                        // Recharts dilimi role="img" çizer: ekran okuyucu için ad (WCAG 1.1.1).
+                        <Cell key={i} fill={COLORS[i % COLORS.length]} aria-label={`${d.department}: ${d.headcount}`} />
+                      ))}
                     </Pie>
                     <Tooltip contentStyle={TT} />
                     <Legend wrapperStyle={{ fontSize: 12 }} />

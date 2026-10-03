@@ -100,6 +100,13 @@ edilmiş kayıtlar yeniden silinir (bkz. README › Yedekleme). Tutanaklar silin
 | Yetkinlik/9-kutu | Yalnızca öneri ve tartışma aracı (otomatik karar yok); potansiyel puanı çalışana varsayılan gizli. |
 | Anketler | En az 5 yanıt; küçük grup çıkarımı engellenir; yorumlar ve duygu analizi yerel ve eşik üstünde. |
 | İşten ayrılış | Hesap kapatma, zimmet iadesi ve planlı anonimleştirme tarihi kayıtlı. |
+| Özel alanlar | Her alan için hukuki sebep, amaç ve saklama süresi zorunlu; özel nitelikli alan onaylı etki değerlendirmesi ister, şifreli saklanır ve envantere otomatik eklenir. |
+| Raporlar | 5 kişiden az gruplar her yerde gizli; zamanlanmış rapor yalnızca giriş gerektiren bağlantı gönderir, kişi bazlı rapor zamanlanamaz. |
+| Zapier/n8n | Zapier (ABD) ve n8n Cloud aktarım dayanağı olmadan bağlanamaz; kendi sunucunuzdaki n8n serbest. |
+| Bildirim tercihleri | Özet e-postası yalnızca konu başlıkları içerir; güvenlik bildirimleri kapatılamaz. |
+| SCIM/LDAP | Yalnızca kullanıcı adı, ad, soyad, e-posta, etkinlik, unvan, bölüm alınır; diğer öznitelikler saklanmaz. |
+| Basit e-imza | OTP özeti saklanır; delil kaydı (belge özeti, IP son okteti maskeli) değiştirilemez, belgeyle birlikte silinir; nitelikli e-imza değildir. |
+| Ayrılma modeli | Cinsiyet, yaş, medeni hal, sağlık ve vekil öznitelikler yasak (eğitim/tahmin reddedilir); kayma ölçümü yalnızca toplu histogramla; yeniden eğitim denetim kaydında. |
 
 ## Aydınlatma ve açık rıza metinleri
 

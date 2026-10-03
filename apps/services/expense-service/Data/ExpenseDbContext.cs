@@ -24,6 +24,8 @@ public class ExpenseDbContext : DbContext, ITenantAwareContext
     public DbSet<ExpenseClaim> Claims => Set<ExpenseClaim>();
     public DbSet<ExpenseItem> Items => Set<ExpenseItem>();
     public DbSet<Document> Documents => Set<Document>();
+    public DbSet<DocumentSignature> DocumentSignatures => Set<DocumentSignature>();
+    public DbSet<SignatureEvidence> SignatureEvidence => Set<SignatureEvidence>();
     public DbSet<HrCase> Cases => Set<HrCase>();
     public DbSet<FxRate> FxRates => Set<FxRate>();
     public DbSet<ExpensePolicy> Policies => Set<ExpensePolicy>();
@@ -49,6 +51,12 @@ public class ExpenseDbContext : DbContext, ITenantAwareContext
         modelBuilder.Entity<Document>().ToTable("expense_documents");
         modelBuilder.Entity<Document>().Property(d => d.Type).HasConversion<string>();
         modelBuilder.Entity<Document>().HasIndex(d => d.EmployeeId);
+
+        // Y28 basit e-imza (tablolar scripts/sql/2026-10-09_identity_sign.sql).
+        modelBuilder.Entity<DocumentSignature>().ConfigureTenantColumn();
+        modelBuilder.Entity<DocumentSignature>().ToTable("expense_document_signatures");
+        modelBuilder.Entity<SignatureEvidence>().ConfigureTenantColumn();
+        modelBuilder.Entity<SignatureEvidence>().ToTable("expense_signature_evidence");
 
         modelBuilder.Entity<HrCase>().ConfigureTenantColumn();
         modelBuilder.Entity<HrCase>().ToTable("expense_hr_cases");

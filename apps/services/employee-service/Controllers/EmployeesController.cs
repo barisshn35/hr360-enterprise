@@ -5,6 +5,7 @@ using EmployeeService.Data;
 using EmployeeService.Models;
 using EmployeeService.Messaging;
 using EmployeeService.Services;
+using EmployeeService.Infrastructure;
 using System.Text.Json;
 
 namespace EmployeeService.Controllers;
@@ -23,8 +24,18 @@ public class EmployeesController : ControllerBase
         _organizations = organizations;
     }
 
+    /// <remarks>
+    /// Sayfalama (G24): <c>page</c> verilmezse eski biçim (düz dizi, en fazla 2000 kayıt,
+    /// toplam <c>X-Total-Count</c> başlığında). <c>page</c>/<c>pageSize</c> (en fazla 200) ile
+    /// <c>{ items, total, page, pageSize }</c>. Filtreler: <c>q</c> (ad, soyad, e-posta, güncel
+    /// pozisyon; <c>qDepartmentIds</c> verilirse güncel departmanı bunlardan biri olanlar da
+    /// eşleşir - departman adları organization-service'te olduğundan istemci eşleyip gönderir),
+    /// <c>status</c>. Sıralama: <c>sort</c>=name|email|hireDate|status|createdAt, <c>dir</c>=asc|desc.
+    /// </remarks>
     [HttpGet]
-    public async Task<IActionResult> GetAll([FromQuery] string? email)
+    public async Task<IActionResult> GetAll([FromQuery] string? email, [FromQuery] int? page, [FromQuery] int? pageSize,
+        [FromQuery] string? q, [FromQuery] string? qDepartmentIds, [FromQuery] EmployeeStatus? status,
+        [FromQuery] string? sort, [FromQuery] string? dir, CancellationToken ct)
     {
         // manager+ serbestce sorgular (email'siz = tum liste dahil).
         // "employee" rolu ise SADECE kendi kaydini (JWT'deki email'iyle
@@ -47,15 +58,36 @@ public class EmployeesController : ControllerBase
                 return Forbid();
         }
 
-        var q = _db.Employees.Include(e => e.Assignments).AsQueryable();
+        var query = _db.Employees.Include(e => e.Assignments).AsQueryable();
 
         // E-posta filtresi: token sahibini calisan kaydiyla eslestirmek icin.
         // Olmadiginda cagiran tum listeyi cekip istemcide filtrelemek
         // zorunda kaliyordu - binlerce calisanli kiracida sorun olurdu.
         if (!string.IsNullOrWhiteSpace(email))
-            q = q.Where(e => e.Email.ToLower() == email.ToLower());
+            query = query.Where(e => e.Email.ToLower() == email.ToLower());
+        if (status.HasValue) query = query.Where(e => e.Status == status.Value);
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var like = Paging.FoldLike(q);
+            var deps = Paging.Guids(qDepartmentIds);
+            query = query.Where(e =>
+                EF.Functions.Like(EmployeeDbContext.Fold(e.FirstName + " " + e.LastName), like, "\\")
+                || EF.Functions.Like(EmployeeDbContext.Fold(e.Email), like, "\\")
+                || e.Assignments.Any(a => a.EffectiveTo == null
+                    && (EF.Functions.Like(EmployeeDbContext.Fold(a.PositionTitle ?? ""), like, "\\") || deps.Contains(a.DepartmentId))));
+        }
 
-        return Ok(await q.ToListAsync());
+        var desc = Paging.Desc(dir);
+        IOrderedQueryable<Employee> ordered = (sort ?? "name").ToLowerInvariant() switch
+        {
+            "email" => desc ? query.OrderByDescending(e => e.Email) : query.OrderBy(e => e.Email),
+            "hiredate" => desc ? query.OrderByDescending(e => e.HireDate) : query.OrderBy(e => e.HireDate),
+            "status" => desc ? query.OrderByDescending(e => e.Status) : query.OrderBy(e => e.Status),
+            "createdat" => desc ? query.OrderByDescending(e => e.CreatedAt) : query.OrderBy(e => e.CreatedAt),
+            _ => desc ? query.OrderByDescending(e => e.FirstName).ThenByDescending(e => e.LastName)
+                      : query.OrderBy(e => e.FirstName).ThenBy(e => e.LastName),
+        };
+        return await Paging.ListAsync(this, ordered.ThenBy(e => e.Id), page, pageSize, ct);
     }
 
     /// <summary>

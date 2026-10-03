@@ -40,33 +40,36 @@
   --popover: 0 0% 100%;
   --popover-foreground: 240 10% 6%;
 
-  /* marka rengi: #0b8f63 */
-  --primary: var(--tenant-primary, 160 86% 30%);
+  /* marka rengi: #0b8f63. Açık temada bir ton koyu (WCAG 1.4.3: beyaz zeminde ve
+     beyaz yazıyla ≥ 4,5:1); koyu tema markanın kendisini kullanır. */
+  --primary: var(--tenant-primary, 160 86% 26%);
   --primary-foreground: var(--tenant-primary-foreground, 0 0% 100%);
 
   --secondary: 240 5% 96%;
   --secondary-foreground: 240 6% 10%;
 
   --muted: 240 5% 96%;
-  --muted-foreground: 240 4% 44%;
+  /* WCAG 1.4.3: açık zeminde ve hafif renkli yüzeylerde ≥ 4,5:1 (44% → 40%). */
+  --muted-foreground: 240 4% 40%;
 
   --accent: 240 5% 95%;
   --accent-foreground: 240 6% 10%;
 
-  --destructive: 0 72% 51%;
+  --destructive: 0 72% 44%;
   --destructive-foreground: 0 0% 100%;
 
-  --success: 152 70% 36%;
-  --warning: 34 92% 44%;
-  --info: 199 89% 42%;
+  /* Durum renkleri metin olarak da kullanılıyor: açık zeminde ≥ 4,5:1. */
+  --success: 152 70% 28%;
+  --warning: 34 92% 30%;
+  --info: 199 89% 32%;
 
   --border: 240 6% 90%;
   --input: 240 6% 87%;
-  --ring: var(--tenant-primary, 160 86% 30%);
+  --ring: var(--tenant-primary, 160 86% 26%);
 
   --radius: 0.9rem;
 
-  --chart-1: var(--tenant-primary, 160 86% 30%);
+  --chart-1: var(--tenant-primary, 160 86% 26%);
   --chart-2: 199 89% 48%;
   --chart-3: 152 60% 52%;
   --chart-4: 38 92% 50%;
@@ -74,12 +77,12 @@
 
   --sidebar: 0 0% 98%;
   --sidebar-foreground: 240 10% 6%;
-  --sidebar-primary: var(--tenant-primary, 160 86% 30%);
+  --sidebar-primary: var(--tenant-primary, 160 86% 26%);
   --sidebar-primary-foreground: var(--tenant-primary-foreground, 0 0% 100%);
   --sidebar-accent: 240 5% 94%;
   --sidebar-accent-foreground: 240 6% 10%;
   --sidebar-border: 240 6% 90%;
-  --sidebar-ring: var(--tenant-primary, 160 86% 30%);
+  --sidebar-ring: var(--tenant-primary, 160 86% 26%);
 
   /* Yüzey derinliği: kartın üst kenarındaki ışık ve altındaki gölge */
   --edge-light: 0 0% 100% / 0.9;
@@ -370,6 +373,35 @@
   display: none;
 }
 
+
+/* ---------------------------------------------------------------------------
+ * Erişilebilirlik (WCAG 2.1 AA)
+ * ------------------------------------------------------------------------ */
+
+/* 2.4.7 Görünür odak: kendi odak halkası olmayan her etkileşimli öğe için
+   (bileşenlerin ring sınıfları utilities katmanında olduğundan öncelik onlarda). */
+@layer base {
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+  /* Programatik odak hedefi (içeriğe atla → main) çerçeve göstermez. */
+  [tabindex='-1']:focus:not(:focus-visible) {
+    outline: none;
+  }
+}
+
+/* 2.3.3 / hareket azaltma: sistem tercihi açıksa tüm geçiş ve animasyonlar anlık. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
 
 @media (prefers-reduced-motion: reduce) {
   .animate-border-beam,

@@ -16,6 +16,10 @@ import type { HrDocument } from '@/api/types'
 import { formatDateTime } from '@/lib/format'
 import { useEmployeeName } from '@/lib/useEmployeeName'
 import { tx } from '@/lib/i18n'
+import { docSignatureApi } from '@/api/docSignature'
+import {
+  DocumentSignaturesModal, MySignaturesPanel, SendForSignatureModal, SignatureStatusBadge, useSignatureStatus,
+} from '@/features/documents/DocumentSignature'
 
 function NewDocumentModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const toast = useToast()
@@ -125,12 +129,12 @@ function NewDocumentModal({ open, onClose }: { open: boolean; onClose: () => voi
   )
 }
 
-function DeleteConfirm({ doc, onClose }: { doc: HrDocument | null; onClose: () => void }) {
+function DeleteConfirm({ doc, signed, onClose }: { doc: HrDocument | null; signed?: boolean; onClose: () => void }) {
   const toast = useToast()
   const queryClient = useQueryClient()
 
   const mutation = useMutation({
-    mutationFn: () => expenseApi.deleteDocument(doc!.id),
+    mutationFn: () => (signed ? docSignatureApi.deleteSigned(doc!.id) : expenseApi.deleteDocument(doc!.id)),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['expense'] })
       toast.ok(tx('Doküman kaydı silindi'))
@@ -172,6 +176,11 @@ function DeleteConfirm({ doc, onClose }: { doc: HrDocument | null; onClose: () =
       <p className="text-[14px] leading-relaxed text-muted-foreground">
         {tx('Bu kayıt kalıcı olarak silinir ve geri alınamaz. Dosyanın kendisi varsa depoda kalmaya devam eder.')}
       </p>
+      {signed && (
+        <p className="mt-3 text-[13px] leading-relaxed text-destructive">
+          {tx('Bu doküman imzalanmış. Silme, imza kanıtlarını da imha eder; yalnızca saklama süresi dolduysa silin.')}
+        </p>
+      )}
     </Modal>
   )
 }
@@ -180,6 +189,9 @@ export function DocumentsPage() {
   const [employeeId, setEmployeeId] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [toDelete, setToDelete] = useState<HrDocument | null>(null)
+  const [toSign, setToSign] = useState<HrDocument | null>(null)
+  const [history, setHistory] = useState<HrDocument | null>(null)
+  const signatures = useSignatureStatus()
   const nameOf = useEmployeeName()
 
   const documents = useDocuments({ employeeId: employeeId || undefined })
@@ -217,6 +229,17 @@ export function DocumentsPage() {
       cell: (d) => <span className="text-muted-foreground">{nameOf(d.employeeId)}</span>,
     },
     {
+      id: 'signature',
+      header: tx('İmza'),
+      hideBelow: 'sm',
+      sortValue: (d) => signatures.data?.get(d.id)?.status ?? '',
+      exportText: (d) => signatures.data?.get(d.id)?.status ?? '',
+      cell: (d) => {
+        const s = signatures.data?.get(d.id)
+        return s ? <SignatureStatusBadge status={s.status} /> : <span className="text-muted-foreground">—</span>
+      },
+    },
+    {
       id: 'createdAt',
       header: tx('Kayıt'),
       align: 'right',
@@ -241,6 +264,8 @@ export function DocumentsPage() {
           </Button>
         }
       />
+
+      <MySignaturesPanel compact />
 
       <div className="max-w-sm">
         <EmployeePicker
@@ -270,6 +295,8 @@ export function DocumentsPage() {
           </Button>
         }
         rowActions={[
+          { label: tx('İmzaya gönder'), onSelect: (d) => setToSign(d), hidden: (d) => signatures.data?.get(d.id)?.status === 'Pending' },
+          { label: tx('İmza geçmişi'), onSelect: (d) => setHistory(d), hidden: (d) => !signatures.data?.get(d.id) },
           { label: tx('Kaydı sil'), destructive: true, onSelect: (d) => setToDelete(d) },
         ]}
         notice={
@@ -280,7 +307,9 @@ export function DocumentsPage() {
       />
 
       <NewDocumentModal open={modalOpen} onClose={() => setModalOpen(false)} />
-      <DeleteConfirm doc={toDelete} onClose={() => setToDelete(null)} />
+      <DeleteConfirm doc={toDelete} signed={!!(toDelete && signatures.data?.get(toDelete.id)?.signedAt)} onClose={() => setToDelete(null)} />
+      {toSign && <SendForSignatureModal doc={toSign} onClose={() => setToSign(null)} />}
+      {history && <DocumentSignaturesModal doc={history} onClose={() => setHistory(null)} />}
     </div>
   )
 }

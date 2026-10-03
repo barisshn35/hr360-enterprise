@@ -1,4 +1,4 @@
-import { ArrowRight, ExternalLink, Key, Monitor, Moon, Sun, TriangleAlert } from 'lucide-react'
+import { ArrowRight, ExternalLink, Key, Monitor, Moon, SlidersHorizontal, Sun, TriangleAlert } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { DataField, Panel, PanelBody, PanelHead } from '@/components/ui/Panel'
@@ -149,6 +149,26 @@ export function SettingsPage() {
                 <Key className="size-4 text-muted-foreground" />
                 <span className="text-[13px]">
                   {tx('Tüm çalışanların rollerini tek tablodan yönetin')}
+                </span>
+              </span>
+              <ArrowRight className="size-4 text-muted-foreground" />
+            </Link>
+          </PanelBody>
+        </Panel>
+      )}
+
+      {can('employee:manage') && (
+        <Panel>
+          <PanelHead title={tx('Özel alanlar')} note={tx('Çalışan profiline ek bilgi alanları (form tasarımcısı)')} />
+          <PanelBody>
+            <Link
+              to="/panel/ayarlar/ozel-alanlar"
+              className="flex items-center justify-between gap-3 rounded-md border border-border p-3 transition-colors hover:bg-muted/40"
+            >
+              <span className="flex items-center gap-2.5">
+                <SlidersHorizontal className="size-4 text-muted-foreground" />
+                <span className="text-[13px]">
+                  {tx('Alan ekleyin; KVKK bilgileri (hukuki sebep, amaç, saklama süresi) zorunludur')}
                 </span>
               </span>
               <ArrowRight className="size-4 text-muted-foreground" />

@@ -44,6 +44,7 @@ import { GradientText } from '@/components/fx/shiny-text'
 import { useAuth } from '@/auth/useAuth'
 import { EASE } from '@/motion/primitives'
 import { tx } from '@/lib/i18n'
+import { CustomDomainBrandBadge, loginWithTenantHint, useCustomDomainBranding } from './CustomDomainBranding'
 
 const MODULES = [
   { icon: CalendarDays, label: tx('İzin') },
@@ -67,6 +68,7 @@ export function SignInPage() {
   const { status, login, error } = useAuth()
   const [params] = useSearchParams()
   const next = params.get('devam') || '/panel'
+  const brand = useCustomDomainBranding()
 
   if (status === 'loading') return <AppShellSkeleton label={tx('Oturum doğrulanıyor')} />
   if (status === 'authenticated') return <Navigate to={next} replace />
@@ -112,6 +114,7 @@ export function SignInPage() {
         <motion.div {...up(0.45)} className="mt-9 w-full">
           <Card className="gap-0 overflow-hidden p-6 sm:p-7">
             <BorderBeam size={200} duration={9} />
+            {brand && <CustomDomainBrandBadge brand={brand} />}
 
             {error && (
               <div
@@ -123,7 +126,7 @@ export function SignInPage() {
               </div>
             )}
 
-            <Button size="lg" className="group h-12 w-full text-[15px]" onClick={() => login(next)}>
+            <Button size="lg" className="group h-12 w-full text-[15px]" onClick={() => (brand ? loginWithTenantHint(brand, next) : login(next))}>
               <KeyRound className="size-4.5 transition-transform group-hover:-rotate-12" strokeWidth={1.75} />
               {tx('Kurumsal hesabımla giriş yap')}
             </Button>

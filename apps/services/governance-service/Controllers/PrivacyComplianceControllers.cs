@@ -38,10 +38,12 @@ public class PrivacyComplianceController : AppController
         var policies = await _db.RetentionPolicies.AsNoTracking().ToListAsync(ct);
         var agreements = await _db.TransferAgreements.AsNoTracking().ToListAsync(ct);
         var inUse = await TransferGuard.InUseAsync(_db, _llm, ct);
+        // Y24: her özel alan dinamik bir işleme faaliyeti olarak envantere eklenir.
+        var dynamic = (await CustomFields.ListAsync(Db, Tenant, ct)).Select(CustomFields.Activity);
         return Ok(new
         {
             generatedAt = DateTime.UtcNow,
-            activities = PrivacyCatalog.Activities.Select(a =>
+            activities = PrivacyCatalog.Activities.Concat(dynamic).Select(a =>
             {
                 var policy = a.RetentionCategory is null ? null : policies.FirstOrDefault(p => p.Category == a.RetentionCategory);
                 return new
@@ -317,9 +319,12 @@ public class PrivacyComplianceController : AppController
         o.DecidedBy = Me.Name;
         o.DecidedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
-        await HttpContext.RequestServices.GetRequiredService<Notifier>().InAppAsync(Tenant, o.EmployeeId,
+        await HttpContext.RequestServices.GetRequiredService<Notifier>().LocalizedAsync(Tenant, o.EmployeeId,
             body.Status == "Upheld" ? "İtirazınız kabul edildi" : "İtirazınız sonuçlandı",
-            $"{PrivacyCatalog.Analyses.GetValueOrDefault(o.Analysis)}: {o.Response}", "KVKK_OBJECTION", ct);
+            body.Status == "Upheld" ? "Your objection was upheld" : "Your objection has been decided",
+            $"{PrivacyCatalog.Analyses.GetValueOrDefault(o.Analysis)}: {o.Response}",
+            $"{o.Analysis switch { "AttritionRisk" => "Attrition risk prediction", "PerformanceScore" => "Automated performance score", "AiSummary" => "AI performance summary", var x => x }}: {o.Response}",
+            "KVKK_OBJECTION", ct);
         return Ok(ObjectionView(o));
     }
 

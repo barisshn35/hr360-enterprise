@@ -103,6 +103,23 @@ public static class BulkNotify
     }
 }
 
+public static class BulkNotifyLocalized
+{
+    /// <summary>G2: toplu bildirim, her alıcının kayıtlı diline göre (tr varsayılan).</summary>
+    public static async Task<int> InAppAsync(Sql sql, string tenant, IEnumerable<Guid> employeeIds, string subjectTr, string subjectEn, string bodyTr, string bodyEn, string code, CancellationToken ct)
+    {
+        var ids = employeeIds.Distinct().ToArray();
+        if (ids.Length == 0) return 0;
+        return await sql.ExecuteAsync("""
+            INSERT INTO notification_messages ("Id","TenantSlug","RecipientEmployeeId","RecipientEmail","Channel","TemplateCode","Subject","Body","Status","AttemptCount","CreatedAt","Language")
+            SELECT gen_random_uuid(), $1, x, NULL, 'InApp', $2,
+                   CASE WHEN p."Language" = 'en' THEN $4 ELSE $3 END, CASE WHEN p."Language" = 'en' THEN $6 ELSE $5 END,
+                   'Pending', 0, now(), CASE WHEN p."Language" = 'en' THEN 'en' ELSE 'tr' END
+            FROM unnest($7::uuid[]) AS x LEFT JOIN notification_preferences p ON p."TenantSlug" = $1 AND p."EmployeeId" = x
+            """, ct, tenant, code, subjectTr, subjectEn, bodyTr, bodyEn, ids);
+    }
+}
+
 /// <summary>Hassas görüntüleme/işlem denetim satırı (audit_log değiştirilemez).</summary>
 public static class ComplianceAudit
 {

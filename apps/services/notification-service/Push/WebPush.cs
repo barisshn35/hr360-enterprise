@@ -169,14 +169,30 @@ public class PushSenderWorker : BackgroundService
         using var scope = _sp.CreateScope();
         scope.ServiceProvider.GetRequiredService<TenantContext>().IsPlatformAdmin = true;
         var db = scope.ServiceProvider.GetRequiredService<NotificationDbContext>();
-        var since = DateTimeOffset.UtcNow.AddMinutes(-30);
-        var fresh = await db.Notifications
-            .Where(n => n.Channel == NotificationChannel.InApp && n.PushedAt == null && n.CreatedAt > since)
-            .OrderBy(n => n.CreatedAt).Take(200).ToListAsync(ct);
-        if (fresh.Count == 0) return 0;
         var now = DateTimeOffset.UtcNow;
-        foreach (var n in fresh) n.PushedAt = now;
+        var since = now.AddMinutes(-30);
+        var deferredFloor = now.AddDays(-2);
+        // Yeni bildirimler (30 dk) ve sessiz saati biten ertelenmiş bildirimler.
+        var candidates = await db.Notifications
+            .Where(n => n.Channel == NotificationChannel.InApp && n.PushedAt == null
+                        && (n.DeferredUntil == null ? n.CreatedAt > since : n.DeferredUntil <= now && n.DeferredUntil > deferredFloor))
+            .OrderBy(n => n.CreatedAt).Take(200).ToListAsync(ct);
+        if (candidates.Count == 0) return 0;
+
+        // G11 bildirim tercihleri: kategori için push / uygulama içi kapalıysa iletilmez;
+        // sessiz saatteyse DeferredUntil'e ertelenir (uygulama içi kayıt etkilenmez).
+        var prefs = await Preferences.PreferenceStore.LoadAsync(db, candidates.Select(n => (n.TenantSlug, n.RecipientEmployeeId)), ct);
+        var fresh = new List<Notification>();
+        foreach (var n in candidates)
+        {
+            prefs.TryGetValue((n.TenantSlug, n.RecipientEmployeeId), out var p);
+            var (decision, until) = Preferences.DeliveryRules.DecidePush(n.TemplateCode, p, now);
+            if (decision == Preferences.Delivery.Defer) { n.DeferredUntil = until; continue; }
+            n.PushedAt = now;
+            if (decision == Preferences.Delivery.Send) fresh.Add(n);
+        }
         await db.SaveChangesAsync(ct);
+        if (fresh.Count == 0) return 0;
 
         var sent = 0;
         foreach (var g in fresh.GroupBy(n => (n.TenantSlug, n.RecipientEmployeeId)))

@@ -91,8 +91,9 @@ public class AnnouncementsController : AppController
         {
             var all = await people.ListAsync(a.Tenant, ct);
             var members = Audience.Members(a.Audience, a.Depts, all, new HashSet<Guid>()) ?? new List<Person>();
-            sent += await BulkNotify.InAppAsync(sql, a.Tenant, members.Select(p => p.Id), a.Title,
-                "Yeni duyuru: Duyurular sayfasından okuyabilirsiniz.", "announcement.published", ct);
+            // G2: başlık İK'nın yazdığı metindir (olduğu gibi); sistem metni alıcının dilinde.
+            sent += await BulkNotifyLocalized.InAppAsync(sql, a.Tenant, members.Select(p => p.Id), a.Title, a.Title,
+                "Yeni duyuru: Duyurular sayfasından okuyabilirsiniz.", "New announcement: you can read it on the Announcements page.", "announcement.published", ct);
         }
         return sent;
     }
@@ -388,14 +389,14 @@ public class LibraryController : AppController
         return vid;
     }
 
-    private async Task NotifyAckAsync(Doc d, string subject, CancellationToken ct)
+    private async Task NotifyAckAsync(Doc d, string subject, string subjectEn, CancellationToken ct)
     {
         if (!d.RequiresAck || d.Archived || d.Audience == Audience.Hr) return;
         var people = await People.ListAsync(Tenant, ct);
         var leaders = d.Audience == Audience.Managers ? await Audience.LeadersAsync(Db, Tenant, ct) : new HashSet<Guid>();
         var members = Audience.Members(d.Audience, d.DepartmentIds, people, leaders) ?? new List<Person>();
-        await BulkNotify.InAppAsync(Db, Tenant, members.Select(p => p.Id), subject,
-            "Doküman kütüphanesinden okuyup onaylamanız bekleniyor.", "library.ack", ct);
+        await BulkNotifyLocalized.InAppAsync(Db, Tenant, members.Select(p => p.Id), subject, subjectEn,
+            "Doküman kütüphanesinden okuyup onaylamanız bekleniyor.", "Please read and acknowledge it in the document library.", "library.ack", ct);
     }
 
     [HttpPost]
@@ -415,7 +416,7 @@ public class LibraryController : AppController
             """, ct, id, Tenant, title, category, audience, depts, body.RequiresAck, Me.Name);
         await AddVersionAsync(id, 1, title, text, body.ExternalUrl, body.StorageKey, body.ChangeNote ?? "İlk sürüm", ct);
         var d = (await Db.QueryAsync($"SELECT {Cols} FROM governance_library_documents d WHERE d.\"TenantSlug\" = $1 AND d.\"Id\" = $2", Map, ct, Tenant, id)).First();
-        await NotifyAckAsync(d, $"Okumanız gereken yeni belge: {title}", ct);
+        await NotifyAckAsync(d, $"Okumanız gereken yeni belge: {title}", $"New document to read: {title}", ct);
         return Ok(new { id, version = 1 });
     }
 
@@ -434,7 +435,7 @@ public class LibraryController : AppController
         if (ValidateVersion(text, body.ExternalUrl, body.StorageKey) is { } err) return BadRequest(new { message = err });
         var no = d.CurrentVersionNo + 1;
         await AddVersionAsync(id, no, title, text, body.ExternalUrl, body.StorageKey, body.ChangeNote, ct);
-        await NotifyAckAsync(d with { Title = title }, $"Belge güncellendi, yeniden onayınız gerekiyor: {title}", ct);
+        await NotifyAckAsync(d with { Title = title }, $"Belge güncellendi, yeniden onayınız gerekiyor: {title}", $"Document updated, please acknowledge again: {title}", ct);
         return Ok(new { id, version = no });
     }
 

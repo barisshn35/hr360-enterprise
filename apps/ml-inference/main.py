@@ -57,8 +57,6 @@ MODEL_NAME = os.getenv("MODEL_NAME", "hr360-attrition-risk")
 MODEL_STAGE = os.getenv("MODEL_STAGE", "1")  # version 1
 
 mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
-model = None
-explainer = None
 
 class PredictRequest(BaseModel):
     features: list[float]
@@ -88,53 +86,64 @@ from ocr import router as ocr_router
 app.include_router(ocr_router, dependencies=[Depends(verify_token)])
 
 
-def _load_model_blocking():
-    """MLflow'dan modeli senkron olarak yukler - asagida bir thread'de
-    calistirilir, boylece (MLflow henuz ayakta degilse) askida kalsa bile
-    FastAPI'nin startup'ini ve /health'i BLOKE ETMEZ."""
-    model_uri = f"models:/{MODEL_NAME}/{MODEL_STAGE}"
-    return mlflow.sklearn.load_model(model_uri)
+# Devir riski modeli: yuklenme, model karti, yeniden egitim ve veri kaymasi
+# (model_routes.py). Yayindaki surum MLflow'da "champion" takma adiyla isaretlenir;
+# takma ad yoksa MODEL_STAGE surumu yuklenir. Kayitli model hic yoksa (yeni kurulum)
+# sentetik ureteciyle ilk surum egitilir (ATTRITION_BOOTSTRAP=false ile kapatilir).
+from model_routes import ModelService, build_router, tenant_of
+from model_store import MlflowModelStore
+
+model_service = ModelService(
+    MlflowModelStore(MODEL_NAME, MODEL_STAGE),
+    MODEL_NAME,
+    explainer_factory=shap.TreeExplainer,
+    bootstrap=os.getenv("ATTRITION_BOOTSTRAP", "true").lower() != "false",
+)
+app.include_router(build_router(verify_token, model_service))
 
 
 async def _load_model_and_explainer():
-    global model, explainer
-    try:
-        model_uri = f"models:/{MODEL_NAME}/{MODEL_STAGE}"
-        model = await asyncio.to_thread(_load_model_blocking)
-        print(f"Model yüklendi: {model_uri}")
-    except Exception as e:
-        print(f"Model yüklenemedi: {e}")
-        return
-
-    try:
-        explainer = await asyncio.to_thread(shap.TreeExplainer, model)
-        print("SHAP explainer hazır")
-    except Exception as e:
-        print(f"SHAP explainer yüklenemedi: {e}")
+    await model_service.load()
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "service": "hr360-ml-inference", "model_loaded": model is not None}
+    st = model_service.state
+    return {"status": "ok", "service": "hr360-ml-inference", "model_loaded": st.model is not None,
+            "model_version": st.version}
+
+def _features(req: PredictRequest, model) -> np.ndarray:
+    expected = getattr(model, "n_features_in_", None)
+    if expected is not None and len(req.features) != expected:
+        raise HTTPException(status_code=422, detail=f"Model {expected} özellik bekliyor, {len(req.features)} geldi.")
+    return np.array(req.features, dtype=float).reshape(1, -1)
+
 
 @app.post("/predict")
 async def predict(req: PredictRequest, token_info: dict = Depends(verify_token)):
-    if model is None:
-        raise HTTPException(status_code=503, detail="Model not loaded")
-    X = np.array(req.features).reshape(1, -1)
+    st = model_service.state
+    # Dislanan nitelik denetimi (cinsiyet, yas, medeni durum, saglik ve vekilleri) gecmeyen
+    # bir model surumuyle tahmin yapilmaz.
+    model = model_service.guard()
+    X = _features(req, model)
     pred = model.predict(X)
     proba = model.predict_proba(X)
+    # Kayma izleme: girdi yalnizca kiracinin TOPLU histogramina sayilir (kisi/kimlik saklanmaz).
+    model_service.record_prediction(tenant_of(token_info), X[0])
     return {
         "prediction": int(pred[0]),
         "probability": proba[0].tolist(),
-        "model": f"{MODEL_NAME}/v{MODEL_STAGE}",
+        "model": f"{MODEL_NAME}/v{st.version}",
         "authenticated_client": token_info.get("client_id", token_info.get("azp")),
     }
 
 @app.post("/explain")
 async def explain(req: PredictRequest, token_info: dict = Depends(verify_token)):
-    if model is None or explainer is None:
+    st = model_service.state
+    model_service.guard()
+    explainer = st.explainer
+    if st.model is None or explainer is None:
         raise HTTPException(status_code=503, detail="Model or explainer not loaded")
-    X = np.array(req.features).reshape(1, -1)
+    X = _features(req, st.model)
     raw = explainer.shap_values(X)
     arr = np.array(raw)
     # arr shape genelde (n_samples, n_features, n_classes) ya da (n_classes, n_samples, n_features)
@@ -154,8 +163,10 @@ async def explain(req: PredictRequest, token_info: dict = Depends(verify_token))
 
     return {
         "feature_contributions": contributions,
+        # Katkilar giris sirasindadir; adlar model kartindaki ozellik sirasidir.
+        "feature_names": list(st.meta.get("features") or []),
         "base_value": base_value,
-        "model": f"{MODEL_NAME}/v{MODEL_STAGE}",
+        "model": f"{MODEL_NAME}/v{st.version}",
     }
 # CI deploy retry - variable adi duzeltildi
 # CI/CD deploy dogrulama - secret isim duzeltmesi sonrasi

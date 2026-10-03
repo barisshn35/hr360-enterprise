@@ -74,6 +74,29 @@ export type RowAction<T> = {
   hidden?: (row: T) => boolean
 }
 
+export type SortState = { columnId: string; dir: 'asc' | 'desc' }
+
+/**
+ * Sunucu tarafı sayfalama (G24). Verilirse tablo satırları kendisi süzmez, sıralamaz ve
+ * bölmez: `rows` o anki sayfadır; arama, sıralama ve sayfa değişimi çağırana bildirilir.
+ * Görünüm ve etkileşim istemci modundakiyle aynıdır.
+ */
+export type ServerPaging<T> = {
+  total: number
+  page: number
+  onPageChange: (page: number) => void
+  /** Arama kutusu değişti (çağıran gecikmeli olarak sunucuya gönderir ve 1. sayfaya döner). */
+  onQueryChange: (query: string) => void
+  sort: SortState | null
+  onSortChange: (sort: SortState) => void
+  /** Sunucunun sıralayabildiği sütun kimlikleri; diğerlerinde başlık tıklanmaz. */
+  sortable?: string[]
+  /** CSV için tüm eşleşen kayıtları getirir; verilmezse yalnızca görünen sayfa aktarılır. */
+  fetchAll?: () => Promise<T[]>
+  /** Arka planda yeni sayfa yükleniyor (önceki sayfa gösterilirken). */
+  fetching?: boolean
+}
+
 export interface DataTableProps<T> {
   rows: T[] | undefined
   rowKey: (row: T) => string
@@ -109,6 +132,9 @@ export interface DataTableProps<T> {
 
   /** Tablonun üstünde duran açıklama (ör. Kafka otomasyonu notu). */
   notice?: ReactNode
+
+  /** Sunucu tarafı sayfalama; bkz. {@link ServerPaging}. */
+  server?: ServerPaging<T>
 }
 
 const HEAD_CLASS = 'h-11 px-4 py-0 text-[11px] font-medium tracking-[0.08em] text-muted-foreground uppercase'
@@ -188,27 +214,33 @@ export function DataTable<T>({
   exportFileName,
   initialSort,
   notice,
+  server,
 }: DataTableProps<T>) {
   const reduced = useReducedMotion()
   const searchId = useId()
   const [query, setQuery] = useState('')
   const [page, setPage] = useState(1)
   const [selected, setSelected] = useState<string[]>([])
-  const [sort, setSort] = useState(initialSort ?? null)
+  const [localSort, setLocalSort] = useState<SortState | null>(initialSort ?? null)
+  const sort = server ? server.sort : localSort
+  const setSort = (next: (prev: SortState | null) => SortState) =>
+    server ? server.onSortChange(next(server.sort)) : setLocalSort(next)
+  const [exporting, setExporting] = useState(false)
 
   const searchable = useMemo(() => columns.filter((c) => c.searchText), [columns])
 
   const filtered = useMemo(() => {
     if (!rows) return []
+    if (server) return rows
     const needle = normalizeSearch(query)
     if (!needle) return rows
     return rows.filter((row) =>
       searchable.some((c) => normalizeSearch(c.searchText!(row)).includes(needle)),
     )
-  }, [rows, query, searchable])
+  }, [rows, query, searchable, server])
 
   const sorted = useMemo(() => {
-    if (!sort) return filtered
+    if (!sort || server) return filtered
     const column = columns.find((c) => c.id === sort.columnId)
     if (!column?.sortValue) return filtered
     const dir = sort.dir === 'asc' ? 1 : -1
@@ -218,11 +250,27 @@ export function DataTable<T>({
       if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir
       return String(va).localeCompare(String(vb), 'tr-TR') * dir
     })
-  }, [filtered, sort, columns])
+  }, [filtered, sort, columns, server])
 
-  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize))
-  const safePage = Math.min(page, totalPages)
-  const visible = sorted.slice((safePage - 1) * pageSize, safePage * pageSize)
+  const totalCount = server ? server.total : sorted.length
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize))
+  const safePage = server ? Math.min(server.page, totalPages) : Math.min(page, totalPages)
+  const visible = server ? sorted : sorted.slice((safePage - 1) * pageSize, safePage * pageSize)
+  const goTo = (p: number) => (server ? server.onPageChange(p) : setPage(p))
+
+  const exportCsv = async () => {
+    if (!exportFileName) return
+    if (!server?.fetchAll) {
+      download(`${exportFileName}.csv`, toCsv(sorted, columns))
+      return
+    }
+    setExporting(true)
+    try {
+      download(`${exportFileName}.csv`, toCsv(await server.fetchAll(), columns))
+    } finally {
+      setExporting(false)
+    }
+  }
 
   // Arama/filtre değişince ilk sayfaya dön — yoksa boş sayfada kalınıyor.
   useEffect(() => setPage(1), [query, filters?.map((f) => f.value).join('|')])
@@ -260,7 +308,10 @@ export function DataTable<T>({
               <InputGroupInput
                 id={searchId}
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={(e) => {
+                  setQuery(e.target.value)
+                  server?.onQueryChange(e.target.value)
+                }}
                 placeholder={searchPlaceholder}
                 aria-label={searchPlaceholder}
               />
@@ -287,8 +338,8 @@ export function DataTable<T>({
                   variant="outline"
                   size="sm"
                   className="cursor-pointer"
-                  disabled={sorted.length === 0}
-                  onClick={() => download(`${exportFileName}.csv`, toCsv(sorted, columns))}
+                  disabled={sorted.length === 0 || exporting}
+                  onClick={() => void exportCsv()}
                 >
                   <Download />
                   {tx('CSV')}
@@ -328,7 +379,7 @@ export function DataTable<T>({
               action={query ? undefined : emptyAction}
             />
           ) : (
-            <div className="w-full overflow-x-auto">
+            <div className={cn('w-full overflow-x-auto transition-opacity', server?.fetching && 'opacity-60')}>
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted/40 hover:bg-muted/40">
@@ -343,6 +394,7 @@ export function DataTable<T>({
                     )}
                     {columns.map((column) => {
                       const sortable = Boolean(column.sortValue)
+                        && (!server?.sortable || server.sortable.includes(column.id))
                       const active = sort?.columnId === column.id
                       const Icon = !active ? ChevronsUpDown : sort!.dir === 'asc' ? ArrowUp : ArrowDown
                       return (
@@ -474,14 +526,14 @@ export function DataTable<T>({
           {!isLoading && !error && sorted.length > 0 && (
             <div className="flex flex-col items-center justify-between gap-3 border-t border-border p-4 sm:flex-row">
               <p className="tabular text-[13px] text-muted-foreground">
-                {tx('{0} kayıttan {1}–{2} arası', [sorted.length, (safePage - 1) * pageSize + 1, Math.min(safePage * pageSize, sorted.length)])}</p>
+                {tx('{0} kayıttan {1}–{2} arası', [totalCount, (safePage - 1) * pageSize + 1, Math.min(safePage * pageSize, totalCount)])}</p>
               {totalPages > 1 && (
                 <div className="flex items-center gap-1">
                   <Button
                     variant="outline"
                     size="icon-sm"
                     className="cursor-pointer"
-                    onClick={() => setPage(Math.max(1, safePage - 1))}
+                    onClick={() => goTo(Math.max(1, safePage - 1))}
                     disabled={safePage === 1}
                     aria-label={tx('Önceki sayfa')}
                   >
@@ -498,7 +550,7 @@ export function DataTable<T>({
                         variant={entry === safePage ? 'default' : 'outline'}
                         size="icon-sm"
                         className="tabular cursor-pointer"
-                        onClick={() => setPage(entry)}
+                        onClick={() => goTo(entry)}
                         aria-label={tx('{0}. sayfa', [entry])}
                         aria-current={entry === safePage ? 'page' : undefined}
                       >
@@ -510,7 +562,7 @@ export function DataTable<T>({
                     variant="outline"
                     size="icon-sm"
                     className="cursor-pointer"
-                    onClick={() => setPage(Math.min(totalPages, safePage + 1))}
+                    onClick={() => goTo(Math.min(totalPages, safePage + 1))}
                     disabled={safePage === totalPages}
                     aria-label={tx('Sonraki sayfa')}
                   >

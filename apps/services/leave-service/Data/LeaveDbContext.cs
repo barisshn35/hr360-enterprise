@@ -27,8 +27,16 @@ public class LeaveDbContext : DbContext, ITenantAwareContext
     public DbSet<ProcessedEvent> ProcessedEvents => Set<ProcessedEvent>();
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
 
+    /// <summary>
+    /// Türkçe harf katlamalı küçük harf (SQL: public.hr360_fold, scripts/sql/2026-10-09_paging_indexes.sql).
+    /// Sunucu tarafı aramanın arayüzdeki gibi "ayse" ile "Ayşe"yi eşleştirmesi için; yalnızca sorgularda çevrilir.
+    /// </summary>
+    public static string Fold(string value) => throw new NotSupportedException("Yalnızca LINQ sorgusunda kullanılır.");
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.HasDbFunction(typeof(LeaveDbContext).GetMethod(nameof(Fold), new[] { typeof(string) })!)
+            .HasName("hr360_fold").HasSchema("public");
         modelBuilder.Entity<LeaveBalance>().ConfigureTenantColumn();
         modelBuilder.Entity<LeaveBalance>().ToTable("leave_balances");
         modelBuilder.Entity<LeaveBalance>().Property(b => b.Type).HasConversion<string>();

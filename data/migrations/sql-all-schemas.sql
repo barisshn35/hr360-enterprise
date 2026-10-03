@@ -2947,3 +2947,422 @@ CREATE TABLE IF NOT EXISTS timeshift_settings (
     "UpdatedAt"           timestamptz NOT NULL DEFAULT now()
 );
 CREATE UNIQUE INDEX IF NOT EXISTS "UX_timeshift_settings_TenantSlug" ON timeshift_settings ("TenantSlug");
+
+-- ===== 2026-10-09_platform_gov
+-- Dalga 5d (governance-service): özel alanlar (Y24), kayıtlı/zamanlanmış raporlar (Y25/G4),
+-- OTP ile basit elektronik imza (Y28), REST hook abonelikleri (G29). İdempotent.
+
+-- ---------------------------------------------------------------- Y24 özel alanlar
+CREATE TABLE IF NOT EXISTS governance_custom_fields (
+    "Id" uuid NOT NULL,
+    "TenantSlug" character varying(64) NOT NULL,
+    "Target" text NOT NULL DEFAULT 'Employee',
+    "Key" character varying(64) NOT NULL,
+    "Label" text NOT NULL,
+    "Type" text NOT NULL,
+    "Options" jsonb NOT NULL DEFAULT '[]'::jsonb,
+    "Required" boolean NOT NULL DEFAULT false,
+    "Visibility" text NOT NULL DEFAULT 'hr',
+    "SelfEditable" boolean NOT NULL DEFAULT false,
+    "IsSpecialCategory" boolean NOT NULL DEFAULT false,
+    "LegalBasis" text NOT NULL,
+    "Purpose" text NOT NULL,
+    "RetentionMonths" integer NOT NULL,
+    "AssessmentId" uuid NULL,
+    "IsActive" boolean NOT NULL DEFAULT true,
+    "SortOrder" integer NOT NULL DEFAULT 0,
+    "CreatedBy" text NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "UpdatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_governance_custom_fields" PRIMARY KEY ("Id")
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "UX_governance_custom_fields_key" ON governance_custom_fields ("TenantSlug", "Target", "Key");
+
+CREATE TABLE IF NOT EXISTS governance_custom_field_values (
+    "Id" uuid NOT NULL,
+    "TenantSlug" character varying(64) NOT NULL,
+    "FieldId" uuid NOT NULL REFERENCES governance_custom_fields ("Id") ON DELETE CASCADE,
+    "EmployeeId" uuid NOT NULL,
+    -- Özel nitelikli alanlarda "enc1:" + AES-256-GCM (TENANT_SECRET_KEY)
+    "Value" text NOT NULL,
+    "UpdatedBy" text NOT NULL,
+    "UpdatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_governance_custom_field_values" PRIMARY KEY ("Id")
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "UX_governance_custom_field_values" ON governance_custom_field_values ("FieldId", "EmployeeId");
+CREATE INDEX IF NOT EXISTS "IX_governance_custom_field_values_emp" ON governance_custom_field_values ("TenantSlug", "EmployeeId");
+
+-- ---------------------------------------------------------------- Y25 / G4 kayıtlı raporlar
+CREATE TABLE IF NOT EXISTS governance_saved_reports (
+    "Id" uuid NOT NULL,
+    "TenantSlug" character varying(64) NOT NULL,
+    "OwnerUserId" text NOT NULL,
+    "OwnerEmployeeId" uuid NULL,
+    "OwnerIsHr" boolean NOT NULL DEFAULT false,
+    "Name" text NOT NULL,
+    "Question" text NOT NULL,
+    "Lang" text NOT NULL DEFAULT 'tr',
+    "DepartmentId" uuid NULL,
+    "FromDate" date NULL,
+    "ToDate" date NULL,
+    "Compare" boolean NULL,
+    "Metric" text NOT NULL,
+    "GroupBy" text NOT NULL,
+    "PersonLevel" boolean NOT NULL DEFAULT false,
+    "Pinned" boolean NOT NULL DEFAULT false,
+    "Schedule" text NOT NULL DEFAULT 'None',
+    "NextRunAt" timestamp with time zone NULL,
+    "LastRunAt" timestamp with time zone NULL,
+    "DeliveryCount" integer NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "UpdatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_governance_saved_reports" PRIMARY KEY ("Id")
+);
+CREATE INDEX IF NOT EXISTS "IX_governance_saved_reports_owner" ON governance_saved_reports ("TenantSlug", "OwnerUserId");
+CREATE INDEX IF NOT EXISTS "IX_governance_saved_reports_due" ON governance_saved_reports ("NextRunAt") WHERE "Schedule" <> 'None';
+-- Teslim saati (Europe/Istanbul, SS:dd) ve günü (haftalık 1–7 pazartesi = 1; aylık 1–28; boşsa pazartesi / ayın 1'i).
+ALTER TABLE governance_saved_reports ADD COLUMN IF NOT EXISTS "ScheduleTime" character varying(5) NOT NULL DEFAULT '07:00';
+ALTER TABLE governance_saved_reports ADD COLUMN IF NOT EXISTS "ScheduleDay" integer NULL;
+
+-- ---------------------------------------------------------------- Y28 OTP ile basit elektronik imza
+CREATE TABLE IF NOT EXISTS governance_signature_otps (
+    "Id" uuid NOT NULL,
+    "TenantSlug" character varying(64) NOT NULL,
+    "DocumentId" uuid NOT NULL REFERENCES governance_document_requests ("Id") ON DELETE CASCADE,
+    "EmployeeId" uuid NOT NULL,
+    -- HMAC-SHA256(TENANT_SECRET_KEY, Id + kod); kodun kendisi saklanmaz
+    "CodeHash" text NOT NULL,
+    "Channel" text NOT NULL,
+    "Attempts" integer NOT NULL DEFAULT 0,
+    "ExpiresAt" timestamp with time zone NOT NULL,
+    "ConsumedAt" timestamp with time zone NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_governance_signature_otps" PRIMARY KEY ("Id")
+);
+CREATE INDEX IF NOT EXISTS "IX_governance_signature_otps_doc" ON governance_signature_otps ("DocumentId");
+
+-- İmza kanıtı belgeye bağlıdır: belge saklama süresi sonunda silinince kanıt da silinir (CASCADE).
+CREATE TABLE IF NOT EXISTS governance_signatures (
+    "Id" uuid NOT NULL,
+    "TenantSlug" character varying(64) NOT NULL,
+    "DocumentType" text NOT NULL DEFAULT 'DocumentRequest',
+    "DocumentId" uuid NOT NULL REFERENCES governance_document_requests ("Id") ON DELETE CASCADE,
+    "DocumentVersion" integer NOT NULL DEFAULT 1,
+    "DocumentSha256" text NOT NULL,
+    "SignerEmployeeId" uuid NOT NULL,
+    "SignedAt" timestamp with time zone NOT NULL,
+    "Method" text NOT NULL,
+    "IpPrefix" text NULL,
+    "Disclaimer" text NOT NULL,
+    "EvidenceSha256" text NOT NULL,
+    CONSTRAINT "PK_governance_signatures" PRIMARY KEY ("Id")
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "UX_governance_signatures_doc" ON governance_signatures ("DocumentId", "DocumentVersion", "SignerEmployeeId");
+
+-- ---------------------------------------------------------------- G29 REST hook abonelikleri (Zapier / n8n)
+ALTER TABLE governance_webhooks ADD COLUMN IF NOT EXISTS "Source" text NULL;
+ALTER TABLE governance_webhooks ADD COLUMN IF NOT EXISTS "ApiKeyId" uuid NULL;
+
+-- ===== 2026-10-09_notification_prefs
+-- Dalga 5d / G11: bildirim tercihleri (kategori x kanal), sessiz saatler, günlük özet.
+-- İdempotent; tekrar çalıştırılabilir.
+
+-- Kişi başı genel ayarlar (dil satırı zaten vardı): sessiz saatler ve günlük özet.
+ALTER TABLE notification_preferences ADD COLUMN IF NOT EXISTS "QuietHoursEnabled" boolean NOT NULL DEFAULT false;
+ALTER TABLE notification_preferences ADD COLUMN IF NOT EXISTS "QuietStart" time without time zone NOT NULL DEFAULT '22:00';
+ALTER TABLE notification_preferences ADD COLUMN IF NOT EXISTS "QuietEnd" time without time zone NOT NULL DEFAULT '08:00';
+-- Bit maskesi: 1 << DayOfWeek (Pazar = 0). 127 = her gün. Gün, pencerenin BAŞLADIĞI gündür.
+ALTER TABLE notification_preferences ADD COLUMN IF NOT EXISTS "QuietDays" integer NOT NULL DEFAULT 127;
+ALTER TABLE notification_preferences ADD COLUMN IF NOT EXISTS "DigestEnabled" boolean NOT NULL DEFAULT false;
+ALTER TABLE notification_preferences ADD COLUMN IF NOT EXISTS "DigestHour" integer NOT NULL DEFAULT 18;
+ALTER TABLE notification_preferences ADD COLUMN IF NOT EXISTS "DigestLastSentAt" timestamp with time zone NULL;
+
+-- Kategori x kanal tercihleri. Satır yoksa tüm kanallar açık (varsayılan).
+CREATE TABLE IF NOT EXISTS notification_category_prefs (
+    "TenantSlug" character varying(64) NOT NULL,
+    "EmployeeId" uuid NOT NULL,
+    "Category" character varying(32) NOT NULL,
+    "InApp" boolean NOT NULL DEFAULT true,
+    "Email" boolean NOT NULL DEFAULT true,
+    "Push" boolean NOT NULL DEFAULT true,
+    "Chat" boolean NOT NULL DEFAULT true,
+    "UpdatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_notification_category_prefs" PRIMARY KEY ("TenantSlug", "EmployeeId", "Category")
+);
+CREATE INDEX IF NOT EXISTS "IX_notification_category_prefs_EmployeeId" ON notification_category_prefs ("EmployeeId");
+
+-- E-posta / anlık bildirim ertelemesi (sessiz saatler): bu andan önce gönderilmez (düşürülmez).
+ALTER TABLE notification_messages ADD COLUMN IF NOT EXISTS "DeferredUntil" timestamp with time zone NULL;
+CREATE INDEX IF NOT EXISTS "IX_notification_messages_email_pending"
+    ON notification_messages ("CreatedAt") WHERE "Channel" = 'Email' AND "Status" = 'Pending';
+CREATE INDEX IF NOT EXISTS "IX_notification_messages_digest_queued"
+    ON notification_messages ("RecipientEmployeeId") WHERE "Status" = 'DigestQueued';
+
+-- ===== 2026-10-09_identity_sign
+-- Dalga 5d: Y26 (SCIM 2.0 + LDAP/AD dizin sağlama), G28 (kiracıya özel alan adı + marka),
+-- Y28 (OTP ile basit elektronik imza). Idempotent: tekrar çalıştırılabilir.
+--
+-- KVKK (veri minimizasyonu): dizinden yalnızca kullanıcı adı, ad, soyad, birincil e-posta, unvan,
+-- departman ve etkinlik durumu saklanır (+ IdP eşleştirmesi için teknik dış kimlik). Telefon,
+-- adres, fotoğraf, yönetici vb. nitelikler yok sayılır.
+
+/* ============================================================ SCIM erişim jetonları (tenant-service) */
+
+CREATE TABLE IF NOT EXISTS tenant_scim_tokens (
+    "Id"          uuid PRIMARY KEY,
+    "TenantSlug"  character varying(64) NOT NULL,
+    "Name"        text NOT NULL,
+    -- Jetonun kendisi ASLA saklanmaz: yalnızca SHA-256 özeti (hex) ve görüntüleme için ilk karakterleri.
+    "TokenHash"   character varying(64) NOT NULL,
+    "TokenPrefix" character varying(24) NOT NULL,
+    "CreatedAt"   timestamptz NOT NULL DEFAULT now(),
+    "CreatedBy"   text NULL,
+    "LastUsedAt"  timestamptz NULL,
+    "RevokedAt"   timestamptz NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "IX_tenant_scim_tokens_TokenHash" ON tenant_scim_tokens ("TokenHash");
+CREATE INDEX IF NOT EXISTS "IX_tenant_scim_tokens_TenantSlug" ON tenant_scim_tokens ("TenantSlug");
+
+/* ============================================================ dizin ayarları (SCIM + LDAP) */
+
+CREATE TABLE IF NOT EXISTS tenant_directory_settings (
+    "Id"                        uuid PRIMARY KEY,
+    "TenantSlug"                character varying(64) NOT NULL,
+    -- Yeni oluşturulan hesaplara parola belirleme e-postası gönderilsin mi (SSO kullanan kiracılar kapatır).
+    "SendInvitations"           boolean NOT NULL DEFAULT true,
+    "LdapEnabled"               boolean NOT NULL DEFAULT false,
+    "LdapAutoSync"              boolean NOT NULL DEFAULT false,
+    "LdapUrl"                   text NULL,
+    "LdapBindDn"                text NULL,
+    -- AES-256-GCM (TENANT_SECRET_KEY, SmtpCredentialProtector) ile şifreli; düz metin asla tutulmaz.
+    "LdapBindPasswordEncrypted" text NULL,
+    "LdapBaseDn"                text NULL,
+    "LdapUserFilter"            text NULL,
+    "LdapUsernameAttr"          text NOT NULL DEFAULT 'uid',
+    "LdapEmailAttr"             text NOT NULL DEFAULT 'mail',
+    "LdapDepartmentAttr"        text NULL,
+    "LdapTitleAttr"             text NULL,
+    "LdapDisabledAttr"          text NULL,
+    "LastSyncAt"                timestamptz NULL,
+    "LastSyncTrigger"           text NULL,
+    "LastSyncStatus"            text NULL,
+    "LastSyncSummary"           text NULL,
+    "UpdatedAt"                 timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "IX_tenant_directory_settings_TenantSlug" ON tenant_directory_settings ("TenantSlug");
+-- Önceki taslaktan kalan sütunlar (telefon izni) kaldırılır; yeni sütunlar eklenir.
+ALTER TABLE tenant_directory_settings DROP COLUMN IF EXISTS "ScimAllowPhone";
+ALTER TABLE tenant_directory_settings ADD COLUMN IF NOT EXISTS "LdapTitleAttr" text NULL;
+
+/* ============================================================ dizinden sağlanan kullanıcılar */
+
+CREATE TABLE IF NOT EXISTS tenant_directory_users (
+    "Id"             uuid PRIMARY KEY,
+    "TenantSlug"     character varying(64) NOT NULL,
+    -- scim | ldap
+    "Source"         text NOT NULL,
+    "ExternalId"     text NULL,
+    "UserName"       text NOT NULL,
+    "GivenName"      text NULL,
+    "FamilyName"     text NULL,
+    "Email"          text NOT NULL,
+    "Title"          text NULL,
+    "Department"     text NULL,
+    "Active"         boolean NOT NULL DEFAULT true,
+    "KeycloakUserId" text NULL,
+    "EmployeeId"     uuid NULL,
+    -- Pending | Linked | Failed
+    "EmployeeState"  text NOT NULL DEFAULT 'Pending',
+    "EmployeeError"  text NULL,
+    "CreatedAt"      timestamptz NOT NULL DEFAULT now(),
+    "UpdatedAt"      timestamptz NOT NULL DEFAULT now(),
+    "DeactivatedAt"  timestamptz NULL
+);
+ALTER TABLE tenant_directory_users DROP COLUMN IF EXISTS "Phone";
+ALTER TABLE tenant_directory_users DROP COLUMN IF EXISTS "HireDate";
+ALTER TABLE tenant_directory_users DROP COLUMN IF EXISTS "Roles";
+ALTER TABLE tenant_directory_users ADD COLUMN IF NOT EXISTS "Title" text NULL;
+CREATE INDEX IF NOT EXISTS "IX_tenant_directory_users_TenantSlug" ON tenant_directory_users ("TenantSlug");
+CREATE UNIQUE INDEX IF NOT EXISTS "IX_tenant_directory_users_Tenant_UserName"
+    ON tenant_directory_users ("TenantSlug", lower("UserName"));
+CREATE UNIQUE INDEX IF NOT EXISTS "IX_tenant_directory_users_Tenant_Email"
+    ON tenant_directory_users ("TenantSlug", lower("Email"));
+CREATE INDEX IF NOT EXISTS "IX_tenant_directory_users_Tenant_ExternalId"
+    ON tenant_directory_users ("TenantSlug", "Source", "ExternalId");
+
+/* ============================================================ G28 özel alan adı */
+
+CREATE TABLE IF NOT EXISTS tenant_custom_domains (
+    "Id"                uuid PRIMARY KEY,
+    "TenantSlug"        character varying(64) NOT NULL,
+    -- Küçük harf, IDN ise punycode (xn--) biçiminde.
+    "Domain"            text NOT NULL,
+    -- DNS TXT kaydı: _hr360-verify.<alan adı> = bu değer.
+    "VerificationToken" text NOT NULL,
+    -- Pending | Verified
+    "Status"            text NOT NULL DEFAULT 'Pending',
+    "CreatedAt"         timestamptz NOT NULL DEFAULT now(),
+    "VerifiedAt"        timestamptz NULL,
+    "LastCheckedAt"     timestamptz NULL,
+    "LastCheckError"    text NULL
+);
+CREATE INDEX IF NOT EXISTS "IX_tenant_custom_domains_TenantSlug" ON tenant_custom_domains ("TenantSlug");
+CREATE UNIQUE INDEX IF NOT EXISTS "IX_tenant_custom_domains_Tenant_Domain"
+    ON tenant_custom_domains ("TenantSlug", "Domain");
+-- Bir alan adı aynı anda yalnızca TEK kiracıda doğrulanmış olabilir.
+CREATE UNIQUE INDEX IF NOT EXISTS "IX_tenant_custom_domains_Verified"
+    ON tenant_custom_domains ("Domain") WHERE "Status" = 'Verified';
+
+/* ============================================================ Y28 basit e-imza (expense-service) */
+
+-- İmza talebi: İK bir özlük dokümanını çalışana imzaya gönderir. Tek kullanımlık kod (OTP)
+-- yalnızca SHA-256 (HMAC, TENANT_SECRET_KEY türevli anahtar) özetiyle tutulur; 10 dk geçerli, 5 deneme.
+CREATE TABLE IF NOT EXISTS expense_document_signatures (
+    "Id"                     uuid PRIMARY KEY,
+    "TenantSlug"             character varying(64) NOT NULL,
+    "DocumentId"             uuid NOT NULL,
+    "EmployeeId"             uuid NOT NULL,
+    "RequestedByEmployeeId"  uuid NULL,
+    "RequestedByUserId"      text NULL,
+    -- Pending | Signed | Cancelled | Superseded
+    "Status"                 text NOT NULL DEFAULT 'Pending',
+    -- Talep anındaki belge özeti; imzada yeniden hesaplanır, farklıysa imza reddedilir.
+    "DocumentHash"           character varying(64) NOT NULL,
+    "Message"                text NULL,
+    "CreatedAt"              timestamptz NOT NULL DEFAULT now(),
+    "OtpHash"                character varying(64) NULL,
+    "OtpChannel"             text NULL,
+    "OtpExpiresAt"           timestamptz NULL,
+    "OtpAttempts"            integer NOT NULL DEFAULT 0,
+    "OtpSentCount"           integer NOT NULL DEFAULT 0,
+    "OtpLastSentAt"          timestamptz NULL,
+    "SignedAt"               timestamptz NULL,
+    "CancelledAt"            timestamptz NULL
+);
+CREATE INDEX IF NOT EXISTS "IX_expense_document_signatures_TenantSlug" ON expense_document_signatures ("TenantSlug");
+CREATE INDEX IF NOT EXISTS "IX_expense_document_signatures_DocumentId" ON expense_document_signatures ("DocumentId");
+CREATE INDEX IF NOT EXISTS "IX_expense_document_signatures_EmployeeId" ON expense_document_signatures ("EmployeeId", "Status");
+-- Bir dokümanın aynı anda tek açık talebi olabilir.
+CREATE UNIQUE INDEX IF NOT EXISTS "IX_expense_document_signatures_OnePending"
+    ON expense_document_signatures ("DocumentId") WHERE "Status" = 'Pending';
+
+-- İmza kanıtı: değiştirilemez (UPDATE tetikleyiciyle engellenir). Doküman silindiğinde
+-- (saklama süresi dolduğunda imha) kanıt da birlikte silinir - doküman kadar saklanır.
+CREATE TABLE IF NOT EXISTS expense_signature_evidence (
+    "Id"                uuid PRIMARY KEY,
+    "TenantSlug"        character varying(64) NOT NULL,
+    "SignatureId"       uuid NOT NULL,
+    "DocumentId"        uuid NOT NULL,
+    "SignerEmployeeId"  uuid NOT NULL,
+    "SignedAt"          timestamptz NOT NULL,
+    "DocumentHash"      character varying(64) NOT NULL,
+    -- Son okteti maskelenmiş IP (IPv4 a.b.c.0, IPv6 /48).
+    "IpMasked"          text NULL,
+    -- Kullanıcı aracısının SHA-256 özeti (düz metin tutulmaz).
+    "UserAgentHash"     character varying(64) NULL,
+    "OtpChannel"        text NOT NULL,
+    -- Yukarıdaki alanların kanonik SHA-256 özeti (bütünlük kontrolü).
+    "EvidenceHash"      character varying(64) NOT NULL,
+    "Method"            text NOT NULL DEFAULT 'SimpleElectronicSignature-OTP'
+);
+CREATE INDEX IF NOT EXISTS "IX_expense_signature_evidence_TenantSlug" ON expense_signature_evidence ("TenantSlug");
+CREATE UNIQUE INDEX IF NOT EXISTS "IX_expense_signature_evidence_SignatureId" ON expense_signature_evidence ("SignatureId");
+CREATE INDEX IF NOT EXISTS "IX_expense_signature_evidence_DocumentId" ON expense_signature_evidence ("DocumentId");
+
+CREATE OR REPLACE FUNCTION expense_signature_evidence_immutable() RETURNS trigger AS $$
+BEGIN
+    RAISE EXCEPTION 'expense_signature_evidence kayıtları değiştirilemez';
+END;
+$$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS trg_expense_signature_evidence_immutable ON expense_signature_evidence;
+CREATE TRIGGER trg_expense_signature_evidence_immutable
+    BEFORE UPDATE ON expense_signature_evidence
+    FOR EACH ROW EXECUTE FUNCTION expense_signature_evidence_immutable();
+
+-- İmzalanmış doküman kilidi: imzalanan doküman satırı değiştirilemez (yeniden imza = yeni talep).
+ALTER TABLE expense_documents ADD COLUMN IF NOT EXISTS "SignedAt" timestamptz NULL;
+CREATE OR REPLACE FUNCTION expense_documents_signed_lock() RETURNS trigger AS $$
+BEGIN
+    IF OLD."SignedAt" IS NOT NULL THEN
+        RAISE EXCEPTION 'İmzalanmış doküman değiştirilemez';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS trg_expense_documents_signed_lock ON expense_documents;
+CREATE TRIGGER trg_expense_documents_signed_lock
+    BEFORE UPDATE ON expense_documents
+    FOR EACH ROW EXECUTE FUNCTION expense_documents_signed_lock();
+
+-- ===== 2026-10-09_paging_indexes
+-- Dalga 5d / G24: sunucu tarafı sayfalama için indeksler (employee, leave, organization, performance).
+-- İdempotent; canlıya: docker exec -i hr360-postgres-1 psql -v ON_ERROR_STOP=1 -q -U hr360admin -d hr360_operational < bu_dosya
+--
+-- Tipik sorgular (planlar: tests/perf/bench_lists.py - geri alınan bir işlemde TEST kiracısıyla EXPLAIN ANALYZE):
+--   çalışan listesi   : WHERE "TenantSlug"=$1 [AND "Status"=$2] ORDER BY "FirstName","LastName","Id" LIMIT/OFFSET
+--   izin talepleri    : WHERE "TenantSlug"=$1 [AND "EmployeeId"=$2] [AND "Status"=$3] ORDER BY "CreatedAt" DESC LIMIT/OFFSET
+--   tarih çakışması   : WHERE "TenantSlug"=$1 AND "StartDate" <= $2 AND "EndDate" >= $3
+--   izin bakiyeleri   : WHERE "TenantSlug"=$1 AND "Year"=$2 ORDER BY "Type","EmployeeId" LIMIT/OFFSET
+--   departman üyeleri : WHERE "TenantSlug"=$1 AND "DepartmentId"=$2 AND "EffectiveTo" IS NULL
+--   departman/ekip    : WHERE "TenantSlug"=$1 [AND "CompanyId"=$2] ORDER BY "Name","Id" LIMIT/OFFSET
+--   değerlendirmeler  : WHERE "TenantSlug"=$1 [AND "EmployeeId"=$2 | "ReviewerEmployeeId"=$3] ORDER BY "CreatedAt" DESC
+--   hedefler          : WHERE "TenantSlug"=$1 AND "EmployeeId"=$2 [AND "CycleId"=$3] ORDER BY "CreatedAt" DESC
+
+-- employee-service
+CREATE INDEX IF NOT EXISTS "IX_employee_employees_TenantSlug_Name"
+    ON employee_employees ("TenantSlug", "FirstName", "LastName", "Id");
+CREATE INDEX IF NOT EXISTS "IX_employee_employees_TenantSlug_Status"
+    ON employee_employees ("TenantSlug", "Status");
+CREATE INDEX IF NOT EXISTS "IX_employee_employees_TenantSlug_HireDate"
+    ON employee_employees ("TenantSlug", "HireDate");
+CREATE INDEX IF NOT EXISTS "IX_employee_assignments_TenantSlug_Department_Current"
+    ON employee_assignments ("TenantSlug", "DepartmentId") WHERE "EffectiveTo" IS NULL;
+
+-- leave-service
+CREATE INDEX IF NOT EXISTS "IX_leave_requests_TenantSlug_CreatedAt"
+    ON leave_requests ("TenantSlug", "CreatedAt" DESC);
+CREATE INDEX IF NOT EXISTS "IX_leave_requests_TenantSlug_Status_CreatedAt"
+    ON leave_requests ("TenantSlug", "Status", "CreatedAt" DESC);
+CREATE INDEX IF NOT EXISTS "IX_leave_requests_TenantSlug_Employee_CreatedAt"
+    ON leave_requests ("TenantSlug", "EmployeeId", "CreatedAt" DESC);
+CREATE INDEX IF NOT EXISTS "IX_leave_requests_TenantSlug_StartDate"
+    ON leave_requests ("TenantSlug", "StartDate");
+-- Tarih çakışması (StartDate <= bitiş AND EndDate >= başlangıç): güncel aya bakan takvim
+-- sorgularında EndDate alt sınırı seçicidir (geçmiş izinler elenir).
+CREATE INDEX IF NOT EXISTS "IX_leave_requests_TenantSlug_EndDate_StartDate"
+    ON leave_requests ("TenantSlug", "EndDate", "StartDate");
+CREATE INDEX IF NOT EXISTS "IX_leave_balances_TenantSlug_Year_Type_Employee"
+    ON leave_balances ("TenantSlug", "Year", "Type", "EmployeeId");
+
+-- organization-service
+CREATE INDEX IF NOT EXISTS "IX_organization_departments_TenantSlug_Name"
+    ON organization_departments ("TenantSlug", "Name", "Id");
+CREATE INDEX IF NOT EXISTS "IX_organization_teams_TenantSlug_Name"
+    ON organization_teams ("TenantSlug", "Name", "Id");
+
+-- performance-service
+CREATE INDEX IF NOT EXISTS "IX_performance_reviews_TenantSlug_CreatedAt"
+    ON performance_reviews ("TenantSlug", "CreatedAt" DESC);
+CREATE INDEX IF NOT EXISTS "IX_performance_reviews_TenantSlug_Employee_CreatedAt"
+    ON performance_reviews ("TenantSlug", "EmployeeId", "CreatedAt" DESC);
+CREATE INDEX IF NOT EXISTS "IX_performance_reviews_TenantSlug_Reviewer"
+    ON performance_reviews ("TenantSlug", "ReviewerEmployeeId");
+CREATE INDEX IF NOT EXISTS "IX_performance_goals_TenantSlug_Employee_CreatedAt"
+    ON performance_goals ("TenantSlug", "EmployeeId", "CreatedAt" DESC);
+CREATE INDEX IF NOT EXISTS "IX_performance_goals_TenantSlug_CreatedAt"
+    ON performance_goals ("TenantSlug", "CreatedAt" DESC);
+
+ANALYZE employee_employees;
+ANALYZE employee_assignments;
+ANALYZE leave_requests;
+ANALYZE leave_balances;
+ANALYZE organization_departments;
+ANALYZE organization_teams;
+ANALYZE performance_reviews;
+ANALYZE performance_goals;
+
+-- Sunucu tarafı arama arayüzdeki gibi Türkçe harf katlamalı olsun ("ayse" → "Ayşe").
+-- employee-service / leave-service EF sorgularında DbContext.Fold olarak eşlenir.
+CREATE OR REPLACE FUNCTION public.hr360_fold(value text) RETURNS text
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE
+    AS $$ SELECT translate(lower(translate(value, 'İI', 'ii')), 'ışğüöçâîû', 'isguocaiu') $$;
