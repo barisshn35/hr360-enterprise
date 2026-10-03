@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { motion, useReducedMotion } from 'motion/react'
-import { LoaderCircle } from 'lucide-react'
-import { mlApi } from '@/api/ml'
+import { LoaderCircle, ShieldAlert } from 'lucide-react'
+import { governanceApi } from '@/api/governance'
 import type { Employee, ExplainResponse, PredictResponse } from '@/api/types'
 import { Panel, PanelBody, PanelHead } from '@/components/ui/Panel'
 import { Button } from '@/components/ui/button'
@@ -52,18 +52,21 @@ export function AttritionRiskPanel({ employee }: { employee: Employee }) {
   const [explain, setExplain] = useState<ExplainResponse | null>(null)
 
   const mutation = useMutation({
-    mutationFn: async () => {
-      // Açıklama başarısız olursa tahmin yine gösterilir.
-      const prediction = await mlApi.predict(features)
-      const explanation = await mlApi.explain(features).catch(() => null)
-      return { prediction, explanation }
-    },
+    // KVKK m.11/1-g: istek governance'tan geçer; çalışanın itirazı varsa skor üretilmez ve
+    // her hesaplama çalışanın erişim kaydına yazılır.
+    mutationFn: () => governanceApi.attritionRisk(employee.id, features),
     onSuccess: ({ prediction, explanation }) => {
       setResult(prediction)
       setExplain(explanation)
     },
     onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Risk analizi yapılamadı.')),
   })
+
+  const objection = useQuery({
+    queryKey: ['privacy', 'objection-status', employee.id, 'AttritionRisk'],
+    queryFn: ({ signal }) => governanceApi.objectionStatus(employee.id, 'AttritionRisk', signal),
+  })
+  const blocked = objection.data?.blocked === true
 
   const probability = useMemo(() => {
     if (!result?.probability?.length) return null
@@ -83,7 +86,7 @@ export function AttritionRiskPanel({ employee }: { employee: Employee }) {
           ? 'warning'
           : 'success'
   const label =
-    probability === null ? '' : probability >= 0.66 ? tx('Yüksek') : probability >= 0.33 ? 'Orta' : tx('Düşük')
+    probability === null ? '' : probability >= 0.66 ? tx('Yüksek') : probability >= 0.33 ? tx('Orta') : tx('Düşük')
 
   return (
     <Panel>
@@ -96,6 +99,17 @@ export function AttritionRiskPanel({ employee }: { employee: Employee }) {
         <p className="border-l-2 border-border pl-3 text-[12px] leading-relaxed text-muted-foreground">
           {tx('Modelin özellik şeması belgelenmediği için değerleri elle girin. İlk alan kıdem (yıl) olarak kayıttan dolduruldu.')}
         </p>
+        <p className="rounded-xl bg-muted/50 p-3 text-[12px] leading-relaxed text-muted-foreground">
+          {tx('KVKK m.11: Bu skor otomatik bir analizdir; tek başına karar için kullanılamaz. Çalışan itiraz edebilir ve her hesaplama çalışanın erişim kaydında görünür.')}
+        </p>
+        {blocked && (
+          <div role="status" className="flex items-start gap-2 rounded-xl border border-[hsl(var(--warning))]/40 bg-[hsl(var(--warning))]/10 p-3 text-[12.5px]">
+            <ShieldAlert className="mt-0.5 size-4 shrink-0" />
+            <span>{objection.data?.status === 'Upheld'
+              ? tx('Çalışanın bu analize itirazı kabul edildi; skor üretilmez.')
+              : tx('Çalışan bu analize itiraz etti; itiraz sonuçlanana kadar skor üretilmez.')}</span>
+          </div>
+        )}
 
         <fieldset className="grid grid-cols-3 gap-2">
           <legend className="sr-only">{tx('Model giriş özellikleri')}</legend>
@@ -119,7 +133,7 @@ export function AttritionRiskPanel({ employee }: { employee: Employee }) {
 
         <Button
           className="w-full cursor-pointer"
-          disabled={mutation.isPending}
+          disabled={mutation.isPending || blocked || objection.isPending}
           onClick={() => mutation.mutate()}
         >
           {mutation.isPending && <LoaderCircle className="size-4 animate-spin" />}

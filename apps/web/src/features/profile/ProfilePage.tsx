@@ -19,6 +19,7 @@ import { useMyEmployeeId } from '@/api/queries'
 import { formatDate } from '@/lib/format'
 import { ChipInput, Initials, errMsg, useAction } from '@/features/shared/kit'
 import { CalendarConnections } from '@/features/shared/Meetings'
+import { MyAccessLog, MyObjections } from './PrivacyExtras'
 import { tx } from '@/lib/i18n'
 
 type TabKey = 'bilgiler' | 'gizlilik' | 'takvim' | 'guvenlik'
@@ -186,6 +187,8 @@ function PrivacyTab({ employeeId }: { employeeId: string }) {
             )}
           </PanelBody>
         </Panel>
+        <MyObjections />
+        <MyAccessLog />
       </div>
     </div>
   )

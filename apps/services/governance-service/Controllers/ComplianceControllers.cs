@@ -172,7 +172,7 @@ public class PrivacyController : AppController
             ["aciklama"] = "KVKK m.11 kapsamında, HR360'ta sizinle ilişkili tutulan kişisel verilerin dökümüdür.",
             ["calisan"] = await Rows("employee_employees", "\"Id\" = $2"),
             ["gorevlendirmeler"] = await Rows("employee_assignments", "\"EmployeeId\" = $2", "\"EffectiveFrom\""),
-            ["profil"] = await Rows("engagement_profiles", "\"EmployeeId\" = $2"),
+            ["profil"] = (await Rows("engagement_profiles", "\"EmployeeId\" = $2")).Select(OpenPii).ToList(),
             ["izinTalepleri"] = await Rows("leave_requests", "\"EmployeeId\" = $2", "\"StartDate\""),
             ["izinBakiyeleri"] = await Rows("leave_balances", "\"EmployeeId\" = $2", "\"Year\""),
             ["puantaj"] = await Rows("timeshift_time_entries", "\"EmployeeId\" = $2", "\"Date\""),
@@ -200,12 +200,23 @@ public class PrivacyController : AppController
         return File(json, "application/json", $"kisisel-veri-{person.Name.Replace(' ', '-').ToLowerInvariant()}-{DateTime.UtcNow:yyyyMMdd}.json");
     }
 
+    /// <summary>engagement-service'in şifrelediği TCKN/IBAN'ı döküm için açar.</summary>
+    private static Dictionary<string, object?> OpenPii(Dictionary<string, object?> row)
+    {
+        foreach (var k in new[] { "Iban", "NationalId" })
+            if (row.TryGetValue(k, out var v) && v is string sv && sv.StartsWith("enc1:", StringComparison.Ordinal))
+                row[k] = SecretBox.Unprotect(sv[5..]);
+        return row;
+    }
+
     [HttpPost("anonymize/{employeeId:guid}")]
     [Authorize(Policy = "RequireHrAdmin")]
     public async Task<IActionResult> Anonymize(Guid employeeId, CancellationToken ct)
     {
         var n = await Infrastructure.Retention.AnonymizeEmployeesAsync(Db, Tenant, employeeId, 0, ct);
         if (n == 0) return BadRequest(new { message = "Yalnızca işten ayrılmış (Terminated) çalışanlar anonimleştirilebilir." });
+        Infrastructure.Retention.Log(_db, Tenant, "TerminatedEmployees", "Anonymize", n, 0, "Manual", Me.Name);
+        await _db.SaveChangesAsync(ct);
         await Db.ExecuteAsync("""
             INSERT INTO audit_log ("TenantSlug","Service","EntityType","EntityId","Action","Changes","UserId","UserName","OccurredAt")
             VALUES ($1,'governance-service','Employee',$2,'Anonymized','{}'::jsonb,$3,$4,now())
@@ -259,6 +270,7 @@ public class PrivacyController : AppController
         if (p is null) return NotFound();
         p.LastAffected = await Infrastructure.Retention.RunAsync(Db, p, ct);
         p.LastRunAt = DateTime.UtcNow;
+        Infrastructure.Retention.Log(_db, Tenant, p.Category, p.Action, p.LastAffected, p.RetentionMonths, "Manual", Me.Name);
         await _db.SaveChangesAsync(ct);
         return Ok(new { affected = p.LastAffected });
     }

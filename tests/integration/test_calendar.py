@@ -13,11 +13,12 @@ import urllib.parse
 import urllib.request
 
 sys.path.insert(0, __import__("os").path.dirname(__file__))
-from common import AYSE, FAIL, api, check, mock, wait_for  # noqa: E402
+from common import ensure_transfers, AYSE, FAIL, api, check, mock, wait_for  # noqa: E402
 
 G = "/api/governance"
 MEHMET = "64acb636-275c-4519-a7e5-979f2e54f209"
 FAIL.clear()
+ensure_transfers("google", "microsoft", "zoom")
 mock("/_reset", "POST")
 
 

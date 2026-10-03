@@ -49,6 +49,67 @@ public class DataRequest : ITenantOwned
     public DateTime? CompletedAt { get; set; }
 }
 
+/// <summary>
+/// Yurt dışına kişisel veri aktaran bir hizmet için hukuki dayanak kaydı (KVKK m.9).
+/// Kayıt olmadan ilgili entegrasyon açılamaz ve veri gönderilmez.
+/// </summary>
+public class TransferAgreement : ITenantOwned
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string TenantSlug { get; set; } = "";
+    /// <summary>slack | microsoft | google | zoom | anthropic | openai</summary>
+    public string Provider { get; set; } = "";
+    /// <summary>StandardContract | Adequacy | BindingCorporateRules | Undertaking</summary>
+    public string Mechanism { get; set; } = "StandardContract";
+    public DateOnly SignedAt { get; set; }
+    /// <summary>Standart sözleşmenin Kurul'a bildirildiği tarih (imzadan itibaren 5 iş günü).</summary>
+    public DateOnly? NotifiedAt { get; set; }
+    public string? Reference { get; set; }
+    public string? Notes { get; set; }
+    public string UpdatedBy { get; set; } = "";
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>Silme / anonimleştirme işlemlerinin kaydı (imha tutanağı). En az 3 yıl saklanır.</summary>
+public class DestructionLog : ITenantOwned
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string TenantSlug { get; set; } = "";
+    public string Category { get; set; } = "";
+    /// <summary>Anonymize | Delete</summary>
+    public string Action { get; set; } = "";
+    public int Affected { get; set; }
+    public int RetentionMonths { get; set; }
+    /// <summary>Periodic | Manual | Request</summary>
+    public string Trigger { get; set; } = "Periodic";
+    public string Actor { get; set; } = "";
+    public string Method { get; set; } = "";
+    public DateTime RanAt { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>
+/// Otomatik analize itiraz (KVKK m.11/1-g). Açık ya da kabul edilmiş itirazda kişinin
+/// skoru üretilmez ve gösterilmez.
+/// </summary>
+public class AnalysisObjection : ITenantOwned
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string TenantSlug { get; set; } = "";
+    public Guid EmployeeId { get; set; }
+    public string UserId { get; set; } = "";
+    public string PersonName { get; set; } = "";
+    /// <summary>AttritionRisk | PerformanceScore | AiSummary</summary>
+    public string Analysis { get; set; } = "";
+    public string? Reason { get; set; }
+    /// <summary>Open | Upheld | Rejected</summary>
+    public string Status { get; set; } = "Open";
+    public string? Response { get; set; }
+    public string? DecidedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? DecidedAt { get; set; }
+    public DateTime DueAt { get; set; } = DateTime.UtcNow.AddDays(30);
+}
+
 public class RetentionPolicy : ITenantOwned
 {
     public Guid Id { get; set; } = Guid.NewGuid();

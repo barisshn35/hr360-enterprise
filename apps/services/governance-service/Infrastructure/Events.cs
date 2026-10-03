@@ -404,6 +404,7 @@ public sealed class Housekeeping : BackgroundService
                 {
                     p.LastAffected = await Retention.RunAsync(sql, p, ct);
                     p.LastRunAt = DateTime.UtcNow;
+                    Retention.Log(db, p.TenantSlug, p.Category, p.Action, p.LastAffected, p.RetentionMonths, "Periodic", "Sistem (periyodik imha)");
                 }
                 await db.SaveChangesAsync(ct);
                 if (FeatureFlags.Billing) await Billing.GenerateAsync(sql, db, DateTime.UtcNow, ct);
@@ -426,7 +427,25 @@ public static class Retention
         ["TerminatedEmployees"] = ("Ayrılmış çalışanların kişisel verileri", new[] { "Anonymize" }, 120),
         ["AuditLog"] = ("Denetim kayıtları", new[] { "Delete" }, 24),
         ["Notifications"] = ("Bildirim geçmişi", new[] { "Delete" }, 6),
+        ["AiUsage"] = ("Yapay zekâ kullanım kayıtları", new[] { "Delete" }, 12),
+        ["ChatMessages"] = ("Sohbet botu mesaj kayıtları", new[] { "Delete" }, 6),
+        ["WebhookDeliveries"] = ("Webhook gönderim kayıtları", new[] { "Delete" }, 3),
     };
+
+    public static string MethodOf(string action) => action == "Anonymize"
+        ? "Geri döndürülemez anonimleştirme: kimlik ve iletişim alanları silinir, istatistik alanları kalır"
+        : "Veritabanından kalıcı silme";
+
+    /// <summary>İmha tutanağı satırı (Silme, Yok Etme veya Anonim Hale Getirme Yönetmeliği: kayıtlar en az 3 yıl saklanır).</summary>
+    public static void Log(GovernanceDbContext db, string tenant, string category, string action, int affected, int months, string trigger, string actor)
+    {
+        if (affected == 0 && trigger == "Periodic") return;
+        db.DestructionLogs.Add(new DestructionLog
+        {
+            TenantSlug = tenant, Category = category, Action = action, Affected = affected, RetentionMonths = months,
+            Trigger = trigger, Actor = actor, Method = MethodOf(action),
+        });
+    }
 
     public static async Task<int> RunAsync(Sql sql, RetentionPolicy p, CancellationToken ct)
     {
@@ -454,6 +473,12 @@ public static class Retention
                 return await sql.ExecuteAsync("DELETE FROM audit_log WHERE \"TenantSlug\" = $1 AND \"OccurredAt\" < now() - make_interval(months => $2)", ct, t, months);
             case "Notifications":
                 return await sql.ExecuteAsync("DELETE FROM notification_messages WHERE \"TenantSlug\" = $1 AND \"CreatedAt\" < now() - make_interval(months => $2)", ct, t, months);
+            case "AiUsage":
+                return await sql.ExecuteAsync("DELETE FROM governance_ai_usage WHERE \"TenantSlug\" = $1 AND \"At\" < now() - make_interval(months => $2)", ct, t, months);
+            case "ChatMessages":
+                return await sql.ExecuteAsync("DELETE FROM governance_chat_messages WHERE \"TenantSlug\" = $1 AND \"State\" <> 'Open' AND \"CreatedAt\" < now() - make_interval(months => $2)", ct, t, months);
+            case "WebhookDeliveries":
+                return await sql.ExecuteAsync("DELETE FROM governance_webhook_deliveries WHERE \"TenantSlug\" = $1 AND \"OccurredAt\" < now() - make_interval(months => $2)", ct, t, months);
             default:
                 return 0;
         }

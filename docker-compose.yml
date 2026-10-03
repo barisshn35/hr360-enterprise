@@ -358,6 +358,8 @@ services:
       KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
       TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=3"
       EMPLOYEE_SERVICE_URL: "http://employee-service:8080"
+      # KVKK m.12: profildeki TCKN ve IBAN bu anahtarla veritabaninda sifrelenir.
+      TENANT_SECRET_KEY: "${TENANT_SECRET_KEY}"
       # Paylasilan onbellek (dizin, ofis dolulugu, ekip sagligi). Bos ise kapali.
       REDIS_URL: "redis:6379,password=${REDIS_PASSWORD:-}"
       ASPNETCORE_ENVIRONMENT: "Production"
@@ -386,6 +388,8 @@ services:
       # Entegrasyon sirlari (bot jetonlari, OAuth) bu anahtarla sifrelenir.
       TENANT_SECRET_KEY: "${TENANT_SECRET_KEY}"
       ML_INFERENCE_URL: "http://ml-inference:8000"
+      # KVKK uyum ekrani: SMTP saglayicisi yurt disindaysa uyari verir.
+      SMTP_HOST: "${SMTP_HOST:-mailpit}"
       # Yapay zeka (istege bagli): anthropic | openai | ollama. Bos ise kapali.
       # Kiraci yoneticisi ayrica AI araclari ekranindan acmadikca veri gonderilmez.
       LLM_PROVIDER: "${LLM_PROVIDER:-}"

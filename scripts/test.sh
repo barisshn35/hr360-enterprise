@@ -47,7 +47,7 @@ integration() {
   docker compose -f docker-compose.yml -f deploy/testing/chat-mock.yml up -d governance-service >/dev/null
   for _ in $(seq 1 60); do docker logs chatmock 2>&1 | grep -q "chatmock :8000" && break; sleep 2; done
   sleep 10
-  for t in test_chat test_calendar test_ai_llm test_cache test_report_lang test_email_lang; do
+  for t in test_chat test_calendar test_ai_llm test_cache test_report_lang test_email_lang test_kvkk; do
     step "Entegrasyon: $t"
     run python3 "tests/integration/$t.py"
   done

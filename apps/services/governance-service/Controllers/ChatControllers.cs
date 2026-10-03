@@ -68,6 +68,8 @@ public class ChatAppsController : AppController
 
     private async Task<string?> ApplyAsync(ChatApp a, ChatAppInput body, bool creating, CancellationToken ct)
     {
+        if (body.IsEnabled && await TransferGuard.MissingAsync(_db, Tenant, TransferGuard.KeyOf(a.Platform), ct) is { } transferError)
+            return transferError;
         a.Name = string.IsNullOrWhiteSpace(body.Name) ? a.Platform : body.Name.Trim();
         a.IsEnabled = body.IsEnabled;
         a.NotifyApprovals = body.NotifyApprovals;
@@ -317,6 +319,8 @@ public class SlackEndpointsController : ControllerBase
         if (secret is null || !SlackApi.VerifySignature(secret, Request.Headers["X-Slack-Request-Timestamp"].ToString(),
                 Request.Headers["X-Slack-Signature"].ToString(), raw))
             return (null, raw);
+        // KVKK m.9: dayanak kaydı kaldırıldıysa uygulama veri alışverişi yapmaz.
+        if (await TransferGuard.MissingAsync(_db, app.TenantSlug, "slack", ct) is not null) return (null, raw);
         _tenant.TenantSlug = app.TenantSlug;
         return (app, raw);
     }
@@ -485,6 +489,7 @@ public class TeamsEndpointsController : ControllerBase
         var msTenant = S(activity, "conversation", "tenantId") ?? S(activity, "channelData", "tenant", "id");
         if (msTenant is not null && app.TeamsAzureTenantId is not null && !string.Equals(msTenant, app.TeamsAzureTenantId, StringComparison.OrdinalIgnoreCase))
             return StatusCode(403);
+        if (await TransferGuard.MissingAsync(_db, app.TenantSlug, "microsoft", ct) is not null) return Ok();
         _tenant.TenantSlug = app.TenantSlug;
 
         var type = S(activity, "type");

@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using CompensationService.Data;
 using CompensationService.Models;
+using CompensationService.Tenancy;
+using System.Security.Claims;
 
 namespace CompensationService.Controllers;
 
@@ -17,7 +19,26 @@ namespace CompensationService.Controllers;
 public class CompensationController : ControllerBase
 {
     private readonly CompensationDbContext _db;
-    public CompensationController(CompensationDbContext db) => _db = db;
+    private readonly ITenantContext _tenant;
+    public CompensationController(CompensationDbContext db, ITenantContext tenant) { _db = db; _tenant = tenant; }
+
+    /// <summary>KVKK m.12: ücret görüntülemesi hassas veri erişim kaydına yazılır (KVKK › Erişim kayıtları).</summary>
+    private async Task LogViewAsync(string entityId, string field)
+    {
+        try
+        {
+            var user = HttpContext.User;
+            await _db.Database.ExecuteSqlRawAsync(
+                "INSERT INTO audit_log (\"TenantSlug\",\"Service\",\"EntityType\",\"EntityId\",\"Action\",\"Changes\",\"UserId\",\"UserName\",\"CorrelationId\",\"IpAddress\",\"OccurredAt\") " +
+                "VALUES ({0},'compensation-service','CompensationRecord',{1},'SensitiveViewed',{2}::jsonb,{3},{4},{5},{6},now())",
+                (object?)_tenant.TenantSlug ?? DBNull.Value, entityId, $"{{\"field\":\"{field}\"}}",
+                user.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? user.FindFirst("sub")?.Value ?? "unknown",
+                (object?)(user.FindFirst("name")?.Value ?? user.FindFirst("preferred_username")?.Value) ?? DBNull.Value,
+                (object?)(Request.Headers["X-Correlation-Id"].FirstOrDefault() ?? HttpContext.TraceIdentifier) ?? DBNull.Value,
+                (object?)Request.Headers["X-Real-IP"].FirstOrDefault() ?? DBNull.Value);
+        }
+        catch (Exception) { /* denetim yazılamazsa iş akışı bozulmaz */ }
+    }
 
     // ---- Ucret bantlari ----
 
@@ -61,7 +82,10 @@ public class CompensationController : ControllerBase
     {
         var q = _db.Records.AsQueryable();
         if (employeeId.HasValue) q = q.Where(r => r.EmployeeId == employeeId.Value);
-        return Ok(await q.OrderByDescending(r => r.EffectiveFrom).ToListAsync());
+        var rows = await q.OrderByDescending(r => r.EffectiveFrom).ToListAsync();
+        // Kişi bazında görüntüleme o kişinin erişim kaydına; toplu liste tek satır olarak yazılır.
+        await LogViewAsync(employeeId?.ToString() ?? "list", employeeId.HasValue ? "salary" : "salaryList");
+        return Ok(rows);
     }
 
     /// <summary>Yeni ucret kaydi; onceki acik kaydi otomatik kapatir.</summary>

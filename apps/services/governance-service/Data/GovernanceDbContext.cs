@@ -25,6 +25,9 @@ public class GovernanceDbContext : DbContext, ITenantAwareContext
     public DbSet<Consent> Consents => Set<Consent>();
     public DbSet<DataRequest> DataRequests => Set<DataRequest>();
     public DbSet<RetentionPolicy> RetentionPolicies => Set<RetentionPolicy>();
+    public DbSet<TransferAgreement> TransferAgreements => Set<TransferAgreement>();
+    public DbSet<DestructionLog> DestructionLogs => Set<DestructionLog>();
+    public DbSet<AnalysisObjection> AnalysisObjections => Set<AnalysisObjection>();
     public DbSet<DocTemplate> DocTemplates => Set<DocTemplate>();
     public DbSet<Rule> Rules => Set<Rule>();
     public DbSet<RuleRun> RuleRuns => Set<RuleRun>();
@@ -53,6 +56,9 @@ public class GovernanceDbContext : DbContext, ITenantAwareContext
         b.Entity<Consent>().ToTable("governance_consents").ConfigureTenantColumn();
         b.Entity<DataRequest>().ToTable("governance_data_requests").ConfigureTenantColumn();
         b.Entity<RetentionPolicy>().ToTable("governance_retention_policies").ConfigureTenantColumn();
+        b.Entity<TransferAgreement>().ToTable("governance_transfer_agreements").ConfigureTenantColumn();
+        b.Entity<DestructionLog>().ToTable("governance_destruction_logs").ConfigureTenantColumn();
+        b.Entity<AnalysisObjection>().ToTable("governance_analysis_objections").ConfigureTenantColumn();
         b.Entity<DocTemplate>().ToTable("governance_doc_templates").ConfigureTenantColumn();
         b.Entity<Rule>().ToTable("governance_rules").ConfigureTenantColumn();
         b.Entity<Rule>().Property(x => x.Conditions).HasColumnType("jsonb");

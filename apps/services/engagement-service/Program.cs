@@ -29,6 +29,7 @@ builder.Services.AddSingleton<EngagementService.Infrastructure.Sql>();
 builder.Services.AddSingleton<EngagementService.Infrastructure.AppCache>();
 builder.Services.AddSingleton<EngagementService.Infrastructure.PeopleDirectory>();
 builder.Services.AddSingleton<EngagementService.Infrastructure.Notifier>();
+builder.Services.AddHostedService<EngagementService.Infrastructure.PiiBackfill>();
 builder.Services.AddHttpClient();
 
 

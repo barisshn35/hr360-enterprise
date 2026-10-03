@@ -401,6 +401,87 @@ export interface AiSettingsInfo {
   usage: { task: string; calls: number; failed: number; inputTokens: number; outputTokens: number }[] | null
 }
 
+/* ------------------------------------------------- KVKK temeli */
+export type TransferStatus = 'Missing' | 'NotifyPending' | 'NotifyOverdue' | 'Ok'
+export interface InventoryActivity {
+  id: string
+  module: string
+  activity: string
+  subjects: string[]
+  dataCategories: string[]
+  purpose: string
+  legalBasis: string
+  special: boolean
+  retention: string
+  retentionCategory: string | null
+  recipients: string[]
+  measures: string
+  retentionPolicy: { retentionMonths: number; action: string; isEnabled: boolean } | null
+  transfers: { key: string; name: string; inUse: boolean; status: TransferStatus }[]
+}
+export interface TransferProviderInfo {
+  key: string
+  name: string
+  country: string
+  dataSent: string
+  usedBy: string
+  inUse: boolean
+  status: TransferStatus
+  notifyDeadline: string | null
+  agreement: { mechanism: string; signedAt: string; notifiedAt: string | null; reference: string | null; notes: string | null; updatedBy: string; updatedAt: string } | null
+}
+export interface TransfersInfo {
+  mechanisms: { value: string; label: string }[]
+  llmLocal: boolean
+  providers: TransferProviderInfo[]
+}
+export interface DestructionLogRow {
+  id: string
+  category: string
+  label: string
+  action: 'Anonymize' | 'Delete'
+  affected: number
+  retentionMonths: number
+  trigger: 'Periodic' | 'Manual' | 'Request'
+  actor: string
+  method: string
+  ranAt: string
+}
+export interface AccessLogRow {
+  at: string
+  service: string
+  entity: string
+  employeeId: string | null
+  action: 'Revealed' | 'SensitiveViewed' | 'Exported' | 'AutomatedAnalysis'
+  field: string | null
+  reason: string | null
+  viewer: string
+  ip: string | null
+  person: string | null
+}
+export interface ComplianceCheck {
+  key: string
+  title: string
+  status: 'ok' | 'warn' | 'error' | 'info'
+  detail: string
+  tab: string | null
+}
+export interface AnalysisObjection {
+  id: string
+  employeeId: string
+  personName: string
+  analysis: string
+  analysisLabel: string
+  reason: string | null
+  status: 'Open' | 'Upheld' | 'Rejected'
+  response: string | null
+  decidedBy: string | null
+  createdAt: string
+  decidedAt: string | null
+  dueAt: string
+  overdue: boolean
+}
+
 export const governanceApi = {
   plan: (signal?: AbortSignal) => apiFetch<PlanInfo>(`${BASE}/plan`, { signal }),
 
@@ -440,6 +521,27 @@ export const governanceApi = {
   updateRetention: (id: string, body: { retentionMonths: number; action: string; isEnabled: boolean }) =>
     apiFetch<RetentionPolicy>(`${BASE}/privacy/retention/${id}`, { method: 'PUT', body }),
   runRetention: (id: string) => apiFetch<{ affected: number }>(`${BASE}/privacy/retention/${id}/run`, { method: 'POST' }),
+  inventory: (signal?: AbortSignal) => apiFetch<{ generatedAt: string; activities: InventoryActivity[] }>(`${BASE}/privacy/inventory`, { signal }),
+  transfers: (signal?: AbortSignal) => apiFetch<TransfersInfo>(`${BASE}/privacy/transfers`, { signal }),
+  saveTransfer: (provider: string, body: { mechanism: string; signedAt: string; notifiedAt: string | null; reference?: string; notes?: string }) =>
+    apiFetch<{ provider: string; status: TransferStatus }>(`${BASE}/privacy/transfers/${provider}`, { method: 'PUT', body }),
+  deleteTransfer: (provider: string) => apiFetch<void>(`${BASE}/privacy/transfers/${provider}`, { method: 'DELETE' }),
+  destructionLogs: (f: { from?: string; to?: string }, signal?: AbortSignal) =>
+    apiFetch<DestructionLogRow[]>(`${BASE}/privacy/destruction-logs${qs(f)}`, { signal }),
+  accessLog: (f: { employeeId?: string; days?: number }, signal?: AbortSignal) => apiFetch<AccessLogRow[]>(`${BASE}/privacy/access-log${qs(f)}`, { signal }),
+  myAccessLog: (signal?: AbortSignal) => apiFetch<AccessLogRow[]>(`${BASE}/privacy/access-log/me`, { signal }),
+  compliance: (signal?: AbortSignal) => apiFetch<ComplianceCheck[]>(`${BASE}/privacy/compliance`, { signal }),
+  analyses: (signal?: AbortSignal) => apiFetch<{ value: string; label: string }[]>(`${BASE}/privacy/analyses`, { signal }),
+  objections: (signal?: AbortSignal) => apiFetch<AnalysisObjection[]>(`${BASE}/privacy/objections`, { signal }),
+  createObjection: (analysis: string, reason?: string) =>
+    apiFetch<AnalysisObjection>(`${BASE}/privacy/objections`, { method: 'POST', body: { analysis, reason } }),
+  decideObjection: (id: string, status: 'Upheld' | 'Rejected', response: string) =>
+    apiFetch<AnalysisObjection>(`${BASE}/privacy/objections/${id}`, { method: 'PATCH', body: { status, response } }),
+  objectionStatus: (employeeId: string, analysis: string, signal?: AbortSignal) =>
+    apiFetch<{ blocked: boolean; status: string | null; since: string | null }>(`${BASE}/privacy/objections/status/${employeeId}${qs({ analysis })}`, { signal }),
+  attritionRisk: (employeeId: string, features: number[]) =>
+    apiFetch<{ prediction: import('./types').PredictResponse; explanation: import('./types').ExplainResponse | null }>(
+      `${BASE}/privacy/analysis/attrition/${employeeId}`, { method: 'POST', body: { features } }),
 
   /* belge şablonları */
   templates: (signal?: AbortSignal) => apiFetch<DocTemplate[]>(`${BASE}/documents/templates`, { signal }),

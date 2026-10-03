@@ -74,3 +74,14 @@ def wait_for(substr, pred=lambda c: True, since=0, timeout=40):
     return []
 
 
+
+
+def ensure_transfers(*providers):
+    """KVKK m.9: yurt dışı hizmetler dayanak kaydı olmadan açılamaz; testler için standart sözleşme kaydı."""
+    import datetime as _dt
+    today = _dt.date.today().isoformat()
+    for p in providers:
+        code, _ = api("admin", "PUT", f"{G}/privacy/transfers/{p}",
+                      {"mechanism": "StandardContract", "signedAt": today, "notifiedAt": today, "reference": "test"})
+        if code != 200:
+            raise SystemExit(f"aktarım dayanağı kaydedilemedi: {p} ({code})")

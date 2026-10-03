@@ -72,6 +72,9 @@ public sealed class CalendarService
         if (type != "leave.approved") return;
         if (!Guid.TryParse(EventHub.Field(payload, "LeaveRequestId"), out var leaveId) || !Guid.TryParse(EventHub.Field(payload, "EmployeeId"), out var empId)) return;
         var conns = await db.CalendarConnections.Where(c => c.TenantSlug == tenant && c.EmployeeId == empId && c.Status == "Active" && c.SyncLeaves).ToListAsync(ct);
+        // KVKK m.9: dayanak kaydı olmayan yurt dışı hizmete veri gönderilmez.
+        var allowed = await TransferGuard.AllowedAsync(db, tenant, ct);
+        conns = conns.Where(c => allowed.Contains(TransferGuard.KeyOf(c.Provider))).ToList();
         if (conns.Count == 0) return;
         var leave = (await _sql.QueryAsync("""
             SELECT "Type", "StartDate", "EndDate", "Days" FROM leave_requests WHERE "TenantSlug" = $1 AND "Id" = $2 AND "Status" = 'Approved'
@@ -113,6 +116,8 @@ public sealed class CalendarService
     {
         if (req.DurationMinutes is < 5 or > 600) throw new CalendarFlowException("Süre 5–600 dakika olmalı.");
         if (req.Provider is not ("zoom" or "teams" or "google" or "none")) throw new CalendarFlowException("Toplantı türü zoom, teams, google ya da none olmalı.");
+        if (req.Provider != "none" && await TransferGuard.MissingAsync(db, tenant, TransferGuard.KeyOf(req.Provider), ct) is { } transferError)
+            throw new CalendarFlowException(transferError);
         var participants = req.ParticipantEmployeeIds.Where(p => p != organizerId).Distinct().ToList();
         var people = await PeopleAsync(tenant, participants.Append(organizerId), ct);
         if (!people.ContainsKey(organizerId)) throw new CalendarFlowException("Düzenleyicinin çalışan kaydı bulunamadı.");
@@ -232,6 +237,8 @@ public sealed class CalendarService
     {
         var people = await PeopleAsync(tenant, ids, ct);
         var conns = await db.CalendarConnections.Where(c => c.TenantSlug == tenant && c.Status == "Active" && ids.Contains(c.EmployeeId)).ToListAsync(ct);
+        var allowedTransfers = await TransferGuard.AllowedAsync(db, tenant, ct);
+        conns = conns.Where(c => allowedTransfers.Contains(TransferGuard.KeyOf(c.Provider))).ToList();
         var leaves = await _sql.QueryAsync("""
             SELECT "EmployeeId", "StartDate", "EndDate" FROM leave_requests
             WHERE "TenantSlug" = $1 AND "EmployeeId" = ANY($2) AND "Status" = 'Approved' AND "EndDate" >= $3 AND "StartDate" <= $4

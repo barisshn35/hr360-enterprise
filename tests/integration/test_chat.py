@@ -16,10 +16,11 @@ import urllib.parse
 import urllib.request
 import uuid
 
-from common import AYSE, BASE, FAIL, api, check, http, mock, mock_calls, tok, wait_for  # noqa: E402
+from common import ensure_transfers, AYSE, BASE, FAIL, api, check, http, mock, mock_calls, tok, wait_for  # noqa: E402
 
 G = "/api/governance"
 SIGNING = "slack-signing-secret"
+ensure_transfers("slack", "microsoft")
 
 
 def slack_post(app_id, kind, form=None, raw=None, secret=SIGNING, ts=None):

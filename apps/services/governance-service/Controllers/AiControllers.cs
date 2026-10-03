@@ -60,6 +60,8 @@ public class AiController : AppController
     [Authorize(Policy = "RequireHrAdmin")]
     public async Task<IActionResult> PutSettings(SettingsInput body, CancellationToken ct)
     {
+        if (body.Enabled && TransferGuard.LlmProviderKey(_llm) is { } key && await TransferGuard.MissingAsync(_db, Tenant, key, ct) is { } transferError)
+            return BadRequest(new { message = transferError, code = "kvkk_transfer" });
         var s = await SettingsAsync(ct);
         if (s is null) { s = new AiSettings(); _db.AiSettings.Add(s); }
         s.Enabled = body.Enabled;

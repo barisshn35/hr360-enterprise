@@ -140,6 +140,8 @@ public sealed class AiGateway(Data.GovernanceDbContext db, LlmClient llm)
         var s = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.FirstOrDefaultAsync(db.AiSettings, ct);
         if (s?.Enabled != true) return (null, new(403, "llm_disabled", "Yapay zekâ bu şirkette kapalı; İK yöneticisi AI araçları ekranından açabilir."));
         if (personal && !s.AllowPersonalData) return (null, new(403, "llm_personal_data", "Kişisel veri içeren yapay zekâ isteklerine izin verilmemiş."));
+        if (TransferGuard.LlmProviderKey(llm) is { } key && await TransferGuard.MissingAsync(db, s.TenantSlug, key, ct) is { } transferError)
+            return (null, new(403, "kvkk_transfer", transferError));
         if (await UsedInWindowAsync(ct) >= HourlyLimit)
             return (null, new(429, "llm_rate_limited", $"Saatlik yapay zekâ kotası ({HourlyLimit}) doldu."));
         var usage = new Models.AiUsage { UserId = userId, Task = task, Provider = llm.Provider, Model = llm.Model };

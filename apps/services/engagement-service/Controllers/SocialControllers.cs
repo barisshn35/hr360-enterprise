@@ -248,21 +248,32 @@ public class ProfileController : AppController
 
     /// <summary>Maskeli alanın açık hâli. Sahibi veya İK; her açılış denetim kaydına yazılır.</summary>
     [HttpGet("{employeeId:guid}/reveal")]
-    public async Task<IActionResult> Reveal(Guid employeeId, [FromQuery] string field, CancellationToken ct)
+    public async Task<IActionResult> Reveal(Guid employeeId, [FromQuery] string field, [FromQuery] string? reason, CancellationToken ct)
     {
+        if (field is not ("iban" or "nationalId")) return BadRequest(new { message = "Geçersiz alan." });
         var mine = await MyPersonAsync(ct);
-        if (mine?.Id != employeeId && !Me.IsHr) return Forbid();
+        var own = mine?.Id == employeeId;
+        if (!own && !Me.IsHr) return Forbid();
+        // KVKK m.12: başkasının TCKN/IBAN'ını açan kişi gerekçe yazar; gerekçe erişim kaydına girer.
+        if (!own && (string.IsNullOrWhiteSpace(reason) || reason.Trim().Length < 5))
+            return BadRequest(new { message = "Başka bir çalışanın bu bilgisini görmek için gerekçe yazın (en az 5 karakter).", code = "reason_required" });
         var pr = await _db.Profiles.AsNoTracking().FirstOrDefaultAsync(x => x.EmployeeId == employeeId, ct);
-        string? value = field switch { "iban" => pr?.Iban, "nationalId" => pr?.NationalId, _ => null };
-        await Db.ExecuteAsync(
-            """
-            INSERT INTO audit_log ("TenantSlug","Service","EntityType","EntityId","Action","Changes","UserId","UserName","CorrelationId","IpAddress","OccurredAt")
-            VALUES ($1,'engagement-service','EmployeeProfile',$2,'Revealed',$3::jsonb,$4,$5,$6,$7,now())
-            """, ct, Tenant, employeeId.ToString(), $"{{\"field\":\"{field}\"}}", Me.UserId, Me.Name,
-            HttpContext.Request.Headers["X-Correlation-Id"].FirstOrDefault() ?? HttpContext.TraceIdentifier,
-            HttpContext.Request.Headers["X-Real-IP"].FirstOrDefault());
+        string? value = field == "iban" ? pr?.Iban : pr?.NationalId;
+        await LogSensitiveAsync(employeeId, "Revealed", field, own ? null : reason!.Trim(), ct);
         return Ok(new { field, value });
     }
+
+    /// <summary>Hassas veri erişimini denetim kaydına yazar (KVKK › Erişim kayıtları ekranı okur).</summary>
+    private Task LogSensitiveAsync(Guid employeeId, string action, string field, string? reason, CancellationToken ct) =>
+        Db.ExecuteAsync(
+            """
+            INSERT INTO audit_log ("TenantSlug","Service","EntityType","EntityId","Action","Changes","UserId","UserName","CorrelationId","IpAddress","OccurredAt")
+            VALUES ($1,'engagement-service','EmployeeProfile',$2,$3,$4::jsonb,$5,$6,$7,$8,now())
+            """, ct, Tenant, employeeId.ToString(), action,
+            System.Text.Json.JsonSerializer.Serialize(reason is null ? new Dictionary<string, string> { ["field"] = field } : new() { ["field"] = field, ["reason"] = reason[..Math.Min(500, reason.Length)] }),
+            Me.UserId, Me.Name,
+            HttpContext.Request.Headers["X-Correlation-Id"].FirstOrDefault() ?? HttpContext.TraceIdentifier,
+            HttpContext.Request.Headers["X-Real-IP"].FirstOrDefault());
 
     [HttpGet("{employeeId:guid}")]
     public async Task<IActionResult> Get(Guid employeeId, CancellationToken ct)
@@ -280,6 +291,10 @@ public class ProfileController : AppController
                 linkedInUrl = pr?.LinkedInUrl,
             });
         }
+        // İK başkasının özel profil alanlarını (adres, doğum tarihi, acil durum kişisi) görüntüledi.
+        if (pr is not null && (pr.Address ?? pr.EmergencyContactName ?? pr.EmergencyContactPhone ?? (object?)pr.BirthDate) is not null
+            && (await MyPersonAsync(ct))?.Id != employeeId)
+            await LogSensitiveAsync(employeeId, "SensitiveViewed", "profile", null, ct);
         return Ok(Shape(p, pr, false));
     }
 

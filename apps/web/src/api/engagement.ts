@@ -462,8 +462,8 @@ export const engagementApi = {
   /* profil */
   myProfile: (signal?: AbortSignal) => apiFetch<MyProfile>(`${BASE}/profile/me`, { signal }),
   updateMyProfile: (body: ProfileUpdate) => apiFetch<MyProfile>(`${BASE}/profile/me`, { method: 'PUT', body }),
-  reveal: (employeeId: string, field: 'iban' | 'nationalId') =>
-    apiFetch<{ field: string; value: string | null }>(`${BASE}/profile/${employeeId}/reveal${qs({ field })}`),
+  reveal: (employeeId: string, field: 'iban' | 'nationalId', reason?: string) =>
+    apiFetch<{ field: string; value: string | null }>(`${BASE}/profile/${employeeId}/reveal${qs({ field, reason })}`),
   profile: (employeeId: string, signal?: AbortSignal) => apiFetch<Partial<MyProfile>>(`${BASE}/profile/${employeeId}`, { signal }),
   directory: (q: string, signal?: AbortSignal) =>
     apiFetch<{ people: DirectoryEntry[]; topSkills: Array<{ skill: string; count: number }> }>(`${BASE}/profile/directory${qs({ q })}`, { signal }),

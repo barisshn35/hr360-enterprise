@@ -43,6 +43,9 @@ public class EngagementDbContext : DbContext, ITenantAwareContext
     {
         b.Entity<Kudos>().ToTable("engagement_kudos").ConfigureTenantColumn();
         b.Entity<EmployeeProfile>().ToTable("engagement_profiles").ConfigureTenantColumn();
+        // KVKK m.12: TCKN ve IBAN veritabanında şifreli (bkz. PiiProtector).
+        b.Entity<EmployeeProfile>().Property(x => x.Iban).HasConversion(EngagementService.Infrastructure.PiiProtector.Converter);
+        b.Entity<EmployeeProfile>().Property(x => x.NationalId).HasConversion(EngagementService.Infrastructure.PiiProtector.Converter);
         b.Entity<Desk>().ToTable("engagement_desks").ConfigureTenantColumn();
         b.Entity<DeskBooking>().ToTable("engagement_desk_bookings").ConfigureTenantColumn();
         b.Entity<Presence>().ToTable("engagement_presence").ConfigureTenantColumn();

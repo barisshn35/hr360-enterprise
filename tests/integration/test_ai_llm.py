@@ -10,10 +10,11 @@ import sys
 import time
 
 sys.path.insert(0, __import__("os").path.dirname(__file__))
-from common import FAIL, api, check, mock, wait_for  # noqa: E402
+from common import ensure_transfers, FAIL, api, check, mock, wait_for  # noqa: E402
 
 A = "/api/governance/ai"
 FAIL.clear()
+ensure_transfers("anthropic")
 mock("/_reset", "POST")
 
 # Önceki çalıştırmanın kota penceresi boşalsın (testte pencere 1 dakika).

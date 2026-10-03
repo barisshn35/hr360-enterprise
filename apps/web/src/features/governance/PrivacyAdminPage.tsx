@@ -16,6 +16,7 @@ import { dataRequestLabels, governanceApi, type DataRequest, type RetentionPolic
 import { formatDate, formatDateTime } from '@/lib/format'
 import { PersonSelect, PlanGate, errMsg, useAction } from '@/features/shared/kit'
 import { tx } from '@/lib/i18n'
+import { AccessLogPanel, ComplianceOverview, DestructionLogsPanel, InventoryPanel, ObjectionsPanel, TransfersPanel } from './PrivacyFoundation'
 
 function Consents() {
   const q = useQuery({ queryKey: ['privacy', 'consents', 'all'], queryFn: ({ signal }) => governanceApi.consentSummary(signal) })
@@ -124,18 +125,30 @@ function Retention() {
           <Button variant="destructive" disabled={!emp || anon.isPending} onClick={() => anon.mutate(undefined)}>{tx('Anonimleştir')}</Button>
         </PanelBody>
       </Panel>
+      <DestructionLogsPanel />
     </div>
   )
 }
 
+type PrivacyTab = 'uyum' | 'envanter' | 'aktarim' | 'riza' | 'basvuru' | 'itiraz' | 'erisim' | 'saklama'
+
 export function PrivacyAdminPage() {
-  const [tab, setTab] = useTabParam<'riza' | 'basvuru' | 'saklama'>('sekme', 'riza')
+  const [tab, setTab] = useTabParam<PrivacyTab>('sekme', 'uyum')
   return (
     <PlanGate feature="privacy">
-      <PageHeader title={tx('KVKK')} description={tx('Aydınlatma ve açık rıza kayıtları, ilgili kişi başvuruları (30 gün kuralı), kişisel veri dökümü, saklama süresi ve anonimleştirme.')} />
-      <div className="mb-5"><Tabs label={tx('KVKK')} value={tab} onChange={setTab} tabs={[{ key: 'riza', label: tx('Rıza durumu') }, { key: 'basvuru', label: tx('Başvurular') }, { key: 'saklama', label: tx('Saklama & imha') }]} /></div>
+      <PageHeader title={tx('KVKK')} description={tx('Uyum durumu, işleme envanteri, yurt dışı aktarım, rıza kayıtları, ilgili kişi başvuruları, otomatik analize itirazlar, hassas veri erişim kayıtları, saklama ve imha.')} />
+      <div className="mb-5"><Tabs label={tx('KVKK')} value={tab} onChange={setTab} tabs={[
+        { key: 'uyum', label: tx('Uyum durumu') }, { key: 'envanter', label: tx('Envanter') }, { key: 'aktarim', label: tx('Yurt dışı aktarım') },
+        { key: 'riza', label: tx('Rıza durumu') }, { key: 'basvuru', label: tx('Başvurular') }, { key: 'itiraz', label: tx('İtirazlar') },
+        { key: 'erisim', label: tx('Erişim kayıtları') }, { key: 'saklama', label: tx('Saklama & imha') },
+      ]} /></div>
+      {tab === 'uyum' && <ComplianceOverview onOpen={(t) => setTab(t as PrivacyTab)} />}
+      {tab === 'envanter' && <InventoryPanel />}
+      {tab === 'aktarim' && <TransfersPanel />}
       {tab === 'riza' && <Consents />}
       {tab === 'basvuru' && <Requests />}
+      {tab === 'itiraz' && <ObjectionsPanel />}
+      {tab === 'erisim' && <AccessLogPanel />}
       {tab === 'saklama' && <Retention />}
     </PlanGate>
   )

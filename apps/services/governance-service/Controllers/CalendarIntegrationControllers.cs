@@ -55,6 +55,8 @@ public class ProviderConfigsController : AppController
         if (provider == "Microsoft" && !string.IsNullOrWhiteSpace(body.MsTenant) && !Guid.TryParse(body.MsTenant, out _) && body.MsTenant is not ("organizations" or "common"))
             return BadRequest(new { message = "Dizin (kiracı) kimliği bir GUID ya da \"organizations\" olmalı." });
         if (provider == "Zoom" && string.IsNullOrWhiteSpace(body.ZoomAccountId)) return BadRequest(new { message = "Zoom hesap kimliği (Account ID) zorunlu." });
+        if (body.IsEnabled && await TransferGuard.MissingAsync(_db, Tenant, TransferGuard.KeyOf(provider), ct) is { } transferError)
+            return BadRequest(new { message = transferError, code = "kvkk_transfer" });
         var c = await _db.ProviderConfigs.FirstOrDefaultAsync(x => x.Provider == provider, ct);
         var creating = c is null;
         c ??= new ProviderConfig { Provider = provider };
@@ -125,6 +127,8 @@ public class CalendarConnectionsController : AppController
         if (me is null) return BadRequest(new { message = "Hesabınıza bağlı çalışan kaydı yok." });
         var cfg = await CalendarService.ConfigAsync(_db, Tenant, provider, ct);
         if (cfg is null) return BadRequest(new { message = $"{(provider == "Google" ? "Google" : "Microsoft 365")} entegrasyonu yönetici tarafından açılmamış." });
+        if (await TransferGuard.MissingAsync(_db, Tenant, TransferGuard.KeyOf(provider), ct) is { } transferError)
+            return BadRequest(new { message = transferError, code = "kvkk_transfer" });
         var verifier = Pkce.NewVerifier();
         var state = Pkce.NewState();
         await _db.OAuthStates.Where(s => s.ExpiresAt < DateTime.UtcNow).ExecuteDeleteAsync(ct);

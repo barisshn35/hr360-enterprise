@@ -1,14 +1,11 @@
 import { apiFetch } from './client'
-import type { ExplainResponse, MlHealth, PredictResponse } from './types'
+import type { MlHealth } from './types'
 
 export const mlApi = {
   health: (signal?: AbortSignal) => apiFetch<MlHealth>('/ml/health', { signal, anonymous: true }),
 
-  predict: (features: number[]) =>
-    apiFetch<PredictResponse>('/ml/predict', { method: 'POST', body: { features } }),
-
-  explain: (features: number[]) =>
-    apiFetch<ExplainResponse>('/ml/explain', { method: 'POST', body: { features } }),
+  // Kişi bazlı risk tahmini KVKK m.11 nedeniyle governanceApi.attritionRisk üzerinden yapılır;
+  // /ml/predict ve /ml/explain gateway'de dışarıya kapalıdır.
 }
 
 export const gatewayApi = {

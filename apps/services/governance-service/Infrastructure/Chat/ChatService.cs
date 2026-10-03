@@ -53,6 +53,9 @@ public sealed class ChatService
     {
         if (type is not ("workflow.submitted" or "workflow.approved" or "workflow.rejected")) return;
         var apps = await db.ChatApps.Where(a => a.TenantSlug == tenant && a.IsEnabled).ToListAsync(ct);
+        // KVKK m.9: dayanak kaydı olmayan yurt dışı hizmete veri gönderilmez.
+        var allowed = await TransferGuard.AllowedAsync(db, tenant, ct);
+        apps = apps.Where(a => allowed.Contains(TransferGuard.KeyOf(a.Platform))).ToList();
         if (apps.Count == 0) return;
         if (!Guid.TryParse(EventHub.Field(payload, "WorkflowRequestId"), out var wfId)) return;
 
