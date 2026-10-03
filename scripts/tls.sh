@@ -28,8 +28,8 @@
 #       olarak guncellenir. Dengeleyici X-Forwarded-Proto: https gondermelidir.
 #
 #   scripts/tls.sh auto --host hr.sirket.com [--email it@sirket.com]
-#       Kurulumun kullandigi yol: Let's Encrypt'i dener (once DNS kaydini denetler,
-#       yerel guvenlik duvarinda 80/443'u acar). Olmazsa gecici olarak kendinden imzali
+#       Kurulumun kullandigi yol: Let's Encrypt'i dener (once DNS kaydini denetler;
+#       sunucunun kendi guvenlik duvarina dokunmaz, izinler dis guvenlik duvarinda verilir). Olmazsa gecici olarak kendinden imzali
 #       sertifikayla HTTPS acar ve Let's Encrypt'i saatte bir kendiliginden yeniden dener
 #       (systemd zamanlayici ya da cron). DNS duzeldiginde gercek sertifikaya kendisi gecer.
 #
@@ -188,8 +188,8 @@ letsencrypt_issue() {
     die "Let's Encrypt dogrulamasi 80. porttan yapilir; GATEWAY_PORT=$gport. .env'de GATEWAY_PORT=80 yapin."
   fi
 
-  # 80 (dogrulama) ve 443 (HTTPS) yerel guvenlik duvari aciksa izinli hale getirilir.
-  open_firewall_ports 80 443
+  # Sunucunun kendi guvenlik duvarina dokunulmaz; yalnizca 80/443 kapaliysa uyarilir.
+  warn_host_firewall 80 443
   # DNS bu sunucuyu gostermiyorsa certbot hic calistirilmaz: her basarisiz deneme Let's
   # Encrypt'in saatlik limitinden (alan adi basina 5) duser.
   if [ "${TLS_SKIP_DNS_CHECK:-0}" != 1 ]; then

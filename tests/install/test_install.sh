@@ -4,7 +4,7 @@
 # Depo kopyasinda, docker / curl / crontab / ufw / ss / sudo yerine kayit tutan sahte
 # komutlarla calisir. Denetlenenler: komut satiri secenekleri, soru sormadan (--yes) kurulum,
 # alan adindan Let's Encrypt, DNS hazir degilse gecici sertifika + saatlik yeniden deneme ve
-# DNS duzelince gercek sertifikaya gecis, guvenlik duvari, gonderen adresten SMTP sunucusu
+# DNS duzelince gercek sertifikaya gecis, sunucu guvenlik duvarina dokunulmamasi, gonderen adresten SMTP sunucusu
 # bulma, deneme e-postasi, hatali parolada yeniden sorma, yonetici e-postasinin uyari alicisi
 # olmasi.
 #
@@ -77,7 +77,11 @@ EOF
 cat > "$BIN/ufw" <<'EOF'
 #!/usr/bin/env bash
 echo "ufw $*" >> "$HR360_TEST_LOG"
-[ "${1:-}" = status ] && echo "Status: active"
+if [ "${1:-}" = status ]; then
+  echo "Status: active"; echo; echo "To                         Action      From"
+  echo "22/tcp                     ALLOW       Anywhere"
+  [ -n "${FAKE_UFW_WEB:-}" ] && { echo "80/tcp                     ALLOW       Anywhere"; echo "443                        ALLOW       Anywhere"; }
+fi
 exit 0
 EOF
 printf '#!/usr/bin/env bash\nexit 0\n' > "$BIN/ss"
@@ -125,8 +129,8 @@ check "adres https://hr.example.com" [ "$(envv "$d" PUBLIC_ORIGIN)" = https://hr
 check "HTTP portu 80" [ "$(envv "$d" GATEWAY_PORT)" = 80 ]
 check "TLS_MODE=letsencrypt" [ "$(envv "$d" TLS_MODE)" = letsencrypt ]
 check "certbot yonetici e-postasiyla cagrildi" grep -q "certonly.*-d hr.example.com.*--email admin@example.com" "$WORK/log-le"
-check "guvenlik duvarinda 80 ve 443 acildi" grep -q "ufw allow 80/tcp" "$WORK/log-le"
-check "  (443)" grep -q "ufw allow 443/tcp" "$WORK/log-le"
+check "ufw'ye hicbir kural eklenmedi / devreye alinmadi" eval '! grep -Eq "ufw (allow|enable|deny|reject|delete|reset|disable)" "$WORK/log-le"'
+check "ufw 80/443'u engelliyor: yalnizca uyari" grep -q "ufw calisiyor ve su portlara izin yok: 80 443/tcp" <<< "$out"
 check "HSTS acik (guvenilir sertifika)" grep -q Strict-Transport-Security "$d/deploy/nginx/tls/listen.conf"
 check "MX'ten Google bulundu: smtp.gmail.com:587" eval '[ "$(envv "$d" SMTP_HOST)" = "'\''smtp.gmail.com'\''" ] && [ "$(envv "$d" SMTP_PORT)" = 587 ]'
 check "kullanici adi = gonderen adres" [ "$(envv "$d" SMTP_USER)" = "'ik@example.com'" ]
@@ -139,9 +143,10 @@ check "ozet: deneme e-postasi gonderildi" grep -q "deneme e-postasi gonderildi: 
 
 echo "3) DNS hazir degil: gecici sertifika + saatlik yeniden deneme, DNS duzelince gecis"
 d="$(new_copy dns)"
-out="$(run_in dns "$d" FAKE_DNS_A=198.51.100.7 FAKE_LE=ok \
+out="$(run_in dns "$d" FAKE_DNS_A=198.51.100.7 FAKE_LE=ok FAKE_UFW_WEB=1 \
         ./install.sh --domain hr.example.com --email admin@example.com --yes 2>&1)"; rc=$?
 check "kurulum yine de tamamlandi" [ "$rc" = 0 ]
+check "ufw 80/443'e izin veriyorsa uyari yok" eval '! grep -q "portlara izin yok" <<< "$out"'
 check "DNS uyarisi dogru IP'yi soyluyor" grep -q "198.51.100.7; bu sunucu: 203.0.113.10" <<< "$out"
 check "certbot hic cagrilmadi (limit korunur)" bash -c "! grep -q certonly '$WORK/log-dns'"
 check "gecici kendinden imzali sertifikayla HTTPS acik" eval '[ "$(envv "$d" TLS_MODE)" = self-signed ] && [ -f "$d/deploy/nginx/tls/fullchain.pem" ]'

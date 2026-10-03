@@ -18,7 +18,7 @@
 # build edilir.
 #
 # Alan adiyla kurulumda zorunlu iki adim kendiliginden yapilir:
-#   - HTTPS: guvenlik duvarinda 80/443 acilir, DNS kaydinin bu sunucuyu gosterdigi
+#   - HTTPS: DNS kaydinin bu sunucuyu gosterdigi
 #     denetlenir, Let's Encrypt sertifikasi alinir. Alinamazsa (DNS henuz yayilmadi vb.)
 #     gecici bir sertifikayla HTTPS acilir ve Let's Encrypt saatte bir kendiliginden
 #     yeniden denenir; DNS duzeldiginde gercek sertifikaya gecilir.
@@ -686,7 +686,7 @@ case "$OPT_TLS" in
       echo ""
       echo "HTTPS (adres: ${PUBLIC_HOST}):"
       echo "  1) Let's Encrypt ile otomatik, ucretsiz sertifika + otomatik yenileme"
-      echo "     (DNS kaydi ve guvenlik duvari otomatik denetlenir; hazir degilse gecici sertifikayla"
+      echo "     (DNS kaydi otomatik denetlenir; hazir degilse gecici sertifikayla"
       echo "      acilir ve hazir oldugunda kendiliginden gercek sertifikaya gecilir)"
       echo "  2) Kendi sertifikam var (fullchain + private key dosya yollari)"
       echo "  3) Kendinden imzali sertifika (yalnizca test - tarayici uyari verir)"
@@ -724,11 +724,13 @@ if [ "$TLS_MODE" = none ] && [[ "${PUBLIC_URL}" == https://* ]]; then
   warn "HTTPS acilmayacagi icin adres ${PUBLIC_URL} olarak kullanilacak."
 fi
 
-# Disariya acik kurulumda yerel guvenlik duvari (ufw/firewalld; yalnizca zaten aciksa)
-# HTTP/HTTPS portlarina izin verir ve portlari baska bir web sunucusunun tutmadigi denetlenir.
+# Disariya acik kurulumda portlari baska bir web sunucusunun tutmadigi denetlenir. Sunucunun
+# kendi guvenlik duvarina (ufw/firewalld) HICBIR ZAMAN dokunulmaz; erisim izni dis guvenlik
+# duvarinda (bulut guvenlik grubu, vCloud Edge Gateway) verilir. Yerel duvar portu
+# engelliyorsa yalnizca uyarilir.
 if [ "$OS_KERNEL" = Linux ] && [ "$IS_WSL" = 0 ] && [ "$PUBLIC_HOST" != localhost ] && [[ ! "$PUBLIC_HOST" =~ ^127\. ]]; then
   fw_ports=("$GATEWAY_PORT"); [ "$TLS_MODE" != none ] && fw_ports+=(443)
-  open_firewall_ports "${fw_ports[@]}"
+  warn_host_firewall "${fw_ports[@]}"
   for p in "${fw_ports[@]}"; do
     if owner="$(port_owner "$p")"; then
       warn "Port $p su anda '$owner' tarafindan kullaniliyor; HR360 bu portu acamaz."
@@ -749,7 +751,8 @@ if [ "$TLS_MODE" = letsencrypt ]; then
        warn "sertifikayla HTTPS acilir ve Let's Encrypt saatte bir kendiliginden yeniden denenir." ;;
     *) warn "DNS denetlenemedi (${DNS_CHECK_MSG}); sertifika kurulum sonunda yine de denenecek." ;;
   esac
-  warn "Bulut sunucularda (AWS, Azure, GCP...) guvenlik grubunda da 80 ve 443/tcp gelen trafige acik olmali."
+  warn "Dis guvenlik duvarinda (bulut guvenlik grubu, vCloud Edge Gateway firewall/NAT) 80 ve 443/tcp"
+  warn "disaridan gelen trafige acik olmali; betik bunu ayarlamaz."
 fi
 
 # E-posta (SMTP) -------------------------------------------------------------

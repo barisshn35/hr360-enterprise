@@ -78,18 +78,25 @@ dns_points_here() {
   return 1
 }
 
-# Yerel guvenlik duvari (ufw / firewalld) aciksa verilen TCP portlarina izin verir.
-# Kapali bir guvenlik duvarini ACMAZ (SSH erisimini kesebilir). Bulut saglayicisinin
-# guvenlik grubu buradan yonetilemez; o kural ayrica eklenmelidir.
-open_firewall_ports() { # open_firewall_ports 80 443 ...
-  local p opened=""
-  if command -v ufw >/dev/null 2>&1 && as_root ufw status 2>/dev/null | grep -q "Status: active"; then
-    for p in "$@"; do as_root ufw allow "$p/tcp" >/dev/null 2>&1 && opened="$opened $p"; done
-    [ -n "$opened" ] && echo "ufw: izin verilen portlar:$opened"
+# Sunucunun kendi guvenlik duvari (ufw / firewalld) yalnizca DENETLENIR; betikler ona hicbir
+# zaman kural eklemez, onu devreye almaz ya da kapatmaz. Erisim izinleri disaridaki guvenlik
+# duvarinda (bulut guvenlik grubu, vCloud Edge Gateway vb.) verilir. Yerel guvenlik duvari
+# calisiyor ve verilen portlara izin yoksa uyari basar.
+warn_host_firewall() { # warn_host_firewall 80 443 ...
+  local p blocked="" out
+  if command -v ufw >/dev/null 2>&1 && out="$(as_root ufw status 2>/dev/null)" && printf '%s' "$out" | grep -q "Status: active"; then
+    for p in "$@"; do
+      printf '%s\n' "$out" | grep -Eq "^${p}(/tcp)?([[:space:]]|$).*ALLOW" || blocked="$blocked $p"
+    done
+    [ -z "$blocked" ] || echo "UYARI: sunucuda ufw calisiyor ve su portlara izin yok:$blocked/tcp. Betik ufw'ye dokunmaz; gerekiyorsa kurali siz ekleyin." >&2
   elif command -v firewall-cmd >/dev/null 2>&1 && as_root firewall-cmd --state >/dev/null 2>&1; then
-    for p in "$@"; do as_root firewall-cmd -q --permanent --add-port="$p/tcp" 2>/dev/null && opened="$opened $p"; done
-    as_root firewall-cmd -q --reload 2>/dev/null || true
-    [ -n "$opened" ] && echo "firewalld: izin verilen portlar:$opened"
+    for p in "$@"; do
+      as_root firewall-cmd -q --query-port="$p/tcp" 2>/dev/null && continue
+      case "$p" in 80) as_root firewall-cmd -q --query-service=http 2>/dev/null && continue ;;
+                   443) as_root firewall-cmd -q --query-service=https 2>/dev/null && continue ;; esac
+      blocked="$blocked $p"
+    done
+    [ -z "$blocked" ] || echo "UYARI: sunucuda firewalld calisiyor ve su portlara izin yok:$blocked/tcp. Betik firewalld'ye dokunmaz; gerekiyorsa kurali siz ekleyin." >&2
   fi
   return 0
 }

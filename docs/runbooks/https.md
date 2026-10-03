@@ -60,8 +60,10 @@ Denetim:
   olmadan tekrar çalıştırın.
 
 Ön denetimler (`enable --letsencrypt` ve `auto`):
-- Yerel güvenlik duvarı (ufw ya da firewalld) açıksa 80 ve 443/tcp'ye izin verilir.
-  Kapalı güvenlik duvarı açılmaz. Bulut güvenlik grubu betikten yönetilemez.
+- Sunucunun kendi güvenlik duvarına (ufw ya da firewalld) hiçbir zaman dokunulmaz: devreye
+  alınmaz, kural eklenmez. Çalışıyor ve 80/443'ü engelliyorsa yalnızca uyarı basılır.
+  Erişim izni dış güvenlik duvarında verilir (bulut güvenlik grubu, vCloud Edge Gateway
+  firewall + DNAT).
 - Alan adının A kaydı, sunucunun genel IPv4 adresiyle karşılaştırılır. Sorgu
   DNS-over-HTTPS ile yapılır (Cloudflare, Google), yani Let's Encrypt'in gördüğü genel DNS
   denetlenir; yerel `/etc/hosts` yanıltmaz. Kayıt yanlışsa certbot hiç çalıştırılmaz:

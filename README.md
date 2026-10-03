@@ -68,8 +68,9 @@ Kurulumun sorduğu sorular:
 
 Alan adıyla kurulumda zorunlu iki adım kendiliğinden yapılır:
 
-- **HTTPS.** Yerel güvenlik duvarı (ufw/firewalld) açıksa 80 ve 443'e izin verilir.
-  Kapalı bir güvenlik duvarı açılmaz. Alan adının DNS kaydının bu sunucunun genel IP'sini
+- **HTTPS.** Sunucunun kendi güvenlik duvarına (ufw/firewalld) dokunulmaz: devreye alınmaz,
+  kural eklenmez. Erişim izni dış güvenlik duvarında verilir (aşağıya bakın); yerel duvar
+  çalışıyor ve 80/443'ü engelliyorsa yalnızca uyarı basılır. Alan adının DNS kaydının bu sunucunun genel IP'sini
   gösterip göstermediği denetlenir; göstermiyorsa eklenecek kayıt (`hr.sirket.com A 203.0.113.10`)
   ekrana basılır. Kayıt build sürerken eklenebilir. Sertifika kurulumun sonunda istenir.
   DNS o zamana kadar yayılmadıysa ya da 80 dışarıdan kapalıysa kurulum durmaz: HTTPS
@@ -98,8 +99,9 @@ Tüm seçenekler: `./install.sh --help` (`--url`, `--tls`, `--cert/--key`, `--sm
 `--smtp-port`, `--smtp-user`, `--no-smtp-test`, `--keycloak-admin` ...). Verilmeyen her şey
 için varsayılan kullanılır, sırlar rastgele üretilir. Mevcut kurulumda `--yes` güncelleme yapar.
 
-Bulut sunucularda (AWS, Azure, GCP...) güvenlik grubunu betik değiştiremez; 80 ve 443/tcp
-gelen trafiğe orada açılmalıdır.
+80 ve 443/tcp dış güvenlik duvarında gelen trafiğe açılmalıdır: bulut güvenlik grubu
+(AWS Security Group, Azure NSG, GCP firewall) ya da vCloud Director'da Edge Gateway firewall
+kuralı ve genel IP'den sunucuya DNAT. Betik bunları ayarlamaz.
 
 ### 3. Kontrol edin
 
