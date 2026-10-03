@@ -234,6 +234,25 @@ public class PrivacyComplianceController : AppController
                 L($"SMTP sunucusu {smtp}. Sağlayıcı yurt dışındaysa (Gmail, Microsoft 365 vb.) yurt dışı aktarım dayanağı gerekir.",
                   $"SMTP server {smtp}. If the provider is abroad (Gmail, Microsoft 365, etc.) a cross-border transfer basis is required."));
 
+        var breaches = await _db.DataBreaches.AsNoTracking().Where(b => b.Status != "Closed").ToListAsync(ct);
+        var lateBreaches = breaches.Count(b => b.ReportedToBoardAt is null && b.DetectedAt.AddHours(KvkkOpsController.BoardDeadlineHours) < now);
+        var unreported = breaches.Count(b => b.ReportedToBoardAt is null);
+        Add("breaches", L("Veri ihlalleri (72 saat)", "Data breaches (72 hours)"), lateBreaches > 0 ? "error" : breaches.Count > 0 ? "warn" : "ok",
+            lateBreaches > 0 ? L($"{lateBreaches} ihlal 72 saat içinde Kurul'a bildirilmedi.", $"{lateBreaches} breaches were not reported to the Board within 72 hours.")
+            : unreported > 0 ? L($"{unreported} ihlal Kurul'a bildirim bekliyor.", $"{unreported} breaches await Board notification.")
+            : breaches.Count > 0 ? L($"{breaches.Count} açık ihlal kaydı var.", $"{breaches.Count} breach records are open.") : L("Açık ihlal kaydı yok.", "No open breach records."), "ihlal");
+
+        var approvedPia = await _db.PrivacyAssessments.AsNoTracking().Where(a => a.Status == "Approved" && a.ProviderKey != null).Select(a => a.ProviderKey!).ToListAsync(ct);
+        var noPia = PrivacyCatalog.Providers.Where(p => inUse.GetValueOrDefault(p.Key) && !approvedPia.Contains(p.Key)).Select(p => p.Name).ToList();
+        Add("assessments", L("Gizlilik etki değerlendirmesi", "Privacy impact assessment"), noPia.Count > 0 ? "warn" : "ok",
+            noPia.Count > 0 ? L("Onaylı değerlendirmesi olmayan entegrasyon: ", "Integrations without an approved assessment: ") + string.Join(", ", noPia)
+            : L("Kullanılan tüm entegrasyonlar değerlendirilmiş.", "All integrations in use have been assessed."), "pia");
+
+        var unverified = await _db.DataRequests.CountAsync(r => !r.IdentityVerified && (r.Status == "Received" || r.Status == "InProgress"), ct);
+        if (unverified > 0)
+            Add("identity", L("Başvuru kimlik doğrulaması", "Request identity verification"), "warn",
+                L($"{unverified} başvurucunun kimliği henüz doğrulanmadı.", $"{unverified} applicants have not been verified yet."), "basvuru");
+
         var special = PrivacyCatalog.Activities.Count(a => a.Special);
         Add("inventory", L("İşleme envanteri", "Processing inventory"), "ok",
             L($"{PrivacyCatalog.Activities.Length} işleme faaliyeti, {special} tanesi özel nitelikli veri içeriyor.",

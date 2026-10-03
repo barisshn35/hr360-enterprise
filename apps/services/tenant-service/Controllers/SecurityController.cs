@@ -169,4 +169,91 @@ public class SecurityController : ControllerBase
         }
         return Ok(new { required = changed, members = ids.Count });
     }
+
+    /* ------------------------------------------------------------ G22 IP kısıtı */
+
+    private string? CallerIp => Request.Headers["X-Real-IP"].FirstOrDefault() ?? HttpContext.Connection.RemoteIpAddress?.ToString();
+
+    [HttpGet("ip-allowlist")]
+    public async Task<IActionResult> GetIpAllowlist(CancellationToken ct)
+    {
+        var t = await TenantAsync();
+        if (t is null) return NotFound();
+        var raw = await _db.Tenants.Where(x => x.Slug == t.Value.Slug).Select(x => x.IpAllowlist).FirstOrDefaultAsync(ct);
+        return Ok(new { entries = TenantService.Tenancy.TenantStatusGate.ParseList(raw).Select(n => n.ToString()), yourIp = CallerIp });
+    }
+
+    public record IpAllowlistInput(List<string> Entries);
+
+    /// <summary>
+    /// Boş liste kısıtı kaldırır. Yöneticinin kendini dışarıda bırakmaması için şu anki
+    /// adresi listede olmalıdır. Değişiklik servislerde en geç 30 sn içinde geçerli olur.
+    /// </summary>
+    [HttpPut("ip-allowlist")]
+    public async Task<IActionResult> SetIpAllowlist(IpAllowlistInput body, CancellationToken ct)
+    {
+        var t = await TenantAsync();
+        if (t is null) return NotFound();
+        var entries = (body.Entries ?? new()).Select(e => e.Trim()).Where(e => e != "").Distinct().ToList();
+        if (entries.Count > 50) return BadRequest(new { message = "En fazla 50 adres/aralık girilebilir." });
+        var parsed = new List<System.Net.IPNetwork>();
+        foreach (var e in entries)
+        {
+            var list = TenantService.Tenancy.TenantStatusGate.ParseList(e);
+            if (list.Count != 1) return BadRequest(new { message = $"Geçersiz adres ya da aralık: {e}" });
+            if (list[0].PrefixLength < (list[0].BaseAddress.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork ? 8 : 16))
+                return BadRequest(new { message = $"Aralık çok geniş: {e}" });
+            parsed.Add(list[0]);
+        }
+        if (parsed.Count > 0 && (CallerIp is null || !TenantService.Tenancy.TenantStatusGate.Allowed(parsed, CallerIp)))
+            return BadRequest(new { message = $"Şu anki adresiniz ({CallerIp ?? "bilinmiyor"}) listede yok; kendinizi dışarıda bırakırsınız.", code = "self_lockout" });
+        var tenant = await _db.Tenants.FirstAsync(x => x.Slug == t.Value.Slug, ct);
+        tenant.IpAllowlist = parsed.Count == 0 ? null : string.Join(",", parsed.Select(n => n.ToString()));
+        await _db.SaveChangesAsync(ct);
+        return Ok(new { entries = parsed.Select(n => n.ToString()) });
+    }
+
+    /* ------------------------------------------------------------ G22 oturumlar */
+
+    [HttpGet("sessions")]
+    public async Task<IActionResult> Sessions(CancellationToken ct)
+    {
+        var t = await TenantAsync();
+        if (t is null) return NotFound();
+        var ids = await _kc.ListOrganizationMemberIdsAsync(t.Value.OrgId, ct);
+        var rows = new List<object>();
+        foreach (var id in ids.Take(500))
+        {
+            var sessions = await _kc.ListUserSessionsAsync(id, ct);
+            if (sessions.Count == 0) continue;
+            var (_, _, username) = await _kc.GetOtpStatusAsync(id, ct);
+            rows.Add(new { userId = id, username, sessions = sessions.Select(s => new { s.Id, s.IpAddress, s.Start, s.LastAccess }) });
+        }
+        return Ok(rows);
+    }
+
+    /// <summary>Kullanıcının tüm oturumlarını kapatır (kayıp cihaz, ayrılan çalışan).</summary>
+    [HttpPost("sessions/{userId}/logout")]
+    public async Task<IActionResult> LogoutUser(string userId, CancellationToken ct)
+    {
+        var t = await TenantAsync();
+        if (t is null) return NotFound();
+        if (!await _kc.IsOrganizationMemberAsync(t.Value.OrgId, userId, ct)) return NotFound();
+        await _kc.LogoutUserAsync(userId, ct);
+        return NoContent();
+    }
+
+    /* ------------------------------------------------------------ G22 passkey */
+
+    [HttpGet("passkeys")]
+    public async Task<IActionResult> Passkeys(CancellationToken ct)
+    {
+        var t = await TenantAsync();
+        if (t is null) return NotFound();
+        var ids = await _kc.ListOrganizationMemberIdsAsync(t.Value.OrgId, ct);
+        var with = 0;
+        foreach (var id in ids.Take(500))
+            if ((await _kc.GetCredentialTypesAsync(id, ct)).Any(x => x.StartsWith("webauthn", StringComparison.Ordinal))) with++;
+        return Ok(new { members = ids.Count, withPasskey = with });
+    }
 }

@@ -17,6 +17,7 @@ import { formatDate, formatDateTime } from '@/lib/format'
 import { PersonSelect, PlanGate, errMsg, useAction } from '@/features/shared/kit'
 import { tx } from '@/lib/i18n'
 import { AccessLogPanel, ComplianceOverview, DestructionLogsPanel, InventoryPanel, ObjectionsPanel, TransfersPanel } from './PrivacyFoundation'
+import { AssessmentsPanel, BreachesPanel, ExternalRequestModal, FieldPoliciesPanel, NoticesPanel, ResponseTemplatePicker, VerifyIdentityButton } from './KvkkOps'
 
 function Consents() {
   const q = useQuery({ queryKey: ['privacy', 'consents', 'all'], queryFn: ({ signal }) => governanceApi.consentSummary(signal) })
@@ -35,7 +36,7 @@ function Consents() {
                 <motion.div initial={{ width: 0 }} animate={{ width: `${(100 * t.granted) / total}%` }} className="bg-[hsl(var(--success))]" />
                 <motion.div initial={{ width: 0 }} animate={{ width: `${(100 * t.denied) / total}%` }} className="bg-destructive" />
               </div>
-              <p className="mt-2 text-[12px] text-muted-foreground">{tx('{0} onay · {1} ret · {2} bekliyor', [t.granted, t.denied, t.pending])}</p>
+              <p className="mt-2 text-[12px] text-muted-foreground">{tx('{0} onay · {1} ret · {2} bekliyor', [t.granted, t.denied, t.pending])}{t.outdated ? ` · ${tx('{0} eski sürümde', [t.outdated])}` : ''}</p>
             </motion.div>
           )
         })}
@@ -57,18 +58,24 @@ function Requests() {
   const [sel, setSel] = useState<DataRequest | null>(null)
   const [status, setStatus] = useState<DataRequest['status']>('InProgress')
   const [response, setResponse] = useState('')
+  const [ext, setExt] = useState(false)
   const toast = useToast()
   const upd = useAction(() => governanceApi.updateDataRequest(sel!.id, status, response), { success: tx('Başvuru güncellendi'), invalidate: [['privacy']], onDone: () => setSel(null) })
+  const channelLabel: Record<string, string> = { Panel: tx('Panel'), Email: tx('E-posta'), Kep: tx('KEP'), Mail: tx('Posta'), InPerson: tx('Elden') }
   if (q.isPending) return <RowsSkeleton />
-  if (!q.data?.length) return <EmptyState icon={ShieldCheck} title={tx('Başvuru yok')} detail={tx('Çalışanlar KVKK m.11 başvurularını Profilim → Gizlilik ekranından yapar.')} />
+  const head = <div className="mb-3 flex justify-end"><Button variant="outline" onClick={() => setExt(true)}>{tx('Panel dışı başvuru kaydet')}</Button></div>
+  if (!q.data?.length) return <>{head}<EmptyState icon={ShieldCheck} title={tx('Başvuru yok')} detail={tx('Çalışanlar KVKK m.11 başvurularını Profilim → Gizlilik ekranından yapar.')} />{ext && <ExternalRequestModal onClose={() => setExt(false)} />}</>
   return (
     <>
+      {head}
       <Panel>
         <PanelBody className="p-0">
           <ul className="divide-y divide-border">
             {q.data.map((r) => (
               <li key={r.id} className="flex flex-wrap items-center gap-3 px-5 py-3">
-                <div className="min-w-0 flex-1"><p className="text-[13.5px] font-medium">{r.personName} — {dataRequestLabels[r.kind]}</p><p className="truncate text-[12px] text-muted-foreground">{r.details ?? '—'} · {formatDate(r.createdAt)}</p></div>
+                <div className="min-w-0 flex-1"><p className="text-[13.5px] font-medium">{r.personName} — {dataRequestLabels[r.kind]}</p><p className="truncate text-[12px] text-muted-foreground">{r.details ?? '—'} · {formatDate(r.createdAt)} · {channelLabel[r.channel ?? 'Panel']}{r.contact ? ` · ${r.contact}` : ''}</p></div>
+                {r.identityVerified === false && <StatusBadge tone="warning">{tx('Kimlik doğrulanmadı')}</StatusBadge>}
+                {r.identityVerified === false && (r.status === 'Received' || r.status === 'InProgress') && <VerifyIdentityButton id={r.id} />}
                 <StatusBadge tone={r.status === 'Completed' ? 'success' : r.status === 'Rejected' ? 'neutral' : r.overdue ? 'danger' : 'warning'}>
                   {r.status === 'Completed' ? tx('Yanıtlandı') : r.status === 'Rejected' ? tx('Reddedildi') : r.overdue ? tx('Süre aşıldı') : tx('{0} gün kaldı', [r.daysLeft])}
                 </StatusBadge>
@@ -84,11 +91,14 @@ function Requests() {
           footer={<><Button variant="outline" onClick={() => setSel(null)}>{tx('Vazgeç')}</Button><Button onClick={() => upd.mutate(undefined)} disabled={upd.isPending}>{tx('Kaydet')}</Button></>}>
           <div className="space-y-4">
             <p className="rounded-xl bg-muted/50 p-3 text-[13px]">{sel.details ?? tx('Açıklama yok.')}</p>
+            {sel.identityVerified === false && <InfoNote>{tx('Başvurucunun kimliği doğrulanmadı: başvuru “Sonuçlandı” yapılamaz. Kimlik doğrulama isteği şablonunu gönderebilir ya da reddedebilirsiniz.')}</InfoNote>}
+            <ResponseTemplatePicker kind={sel.kind} name={sel.personName} date={formatDate(sel.createdAt)} onPick={(text, outcome) => { setResponse(text); if (outcome === 'Completed' || outcome === 'Rejected' || outcome === 'InProgress') setStatus(outcome) }} />
             <SelectField label={tx('Durum')} value={status} onChange={(v) => setStatus(v as DataRequest['status'])} options={[{ value: 'InProgress', label: tx('İnceleniyor') }, { value: 'Completed', label: tx('Sonuçlandı') }, { value: 'Rejected', label: tx('Reddedildi') }]} />
             <TextAreaField label={tx('Başvurucuya yanıt')} rows={4} value={response} onChange={(e) => setResponse(e.target.value)} />
           </div>
         </Modal>
       )}
+      {ext && <ExternalRequestModal onClose={() => setExt(false)} />}
     </>
   )
 }
@@ -130,22 +140,27 @@ function Retention() {
   )
 }
 
-type PrivacyTab = 'uyum' | 'envanter' | 'aktarim' | 'riza' | 'basvuru' | 'itiraz' | 'erisim' | 'saklama'
+type PrivacyTab = 'uyum' | 'envanter' | 'aktarim' | 'metinler' | 'riza' | 'basvuru' | 'ihlal' | 'pia' | 'alan' | 'itiraz' | 'erisim' | 'saklama'
 
 export function PrivacyAdminPage() {
   const [tab, setTab] = useTabParam<PrivacyTab>('sekme', 'uyum')
   return (
     <PlanGate feature="privacy">
-      <PageHeader title={tx('KVKK')} description={tx('Uyum durumu, işleme envanteri, yurt dışı aktarım, rıza kayıtları, ilgili kişi başvuruları, otomatik analize itirazlar, hassas veri erişim kayıtları, saklama ve imha.')} />
+      <PageHeader title={tx('KVKK')} description={tx('Uyum durumu, işleme envanteri, yurt dışı aktarım, aydınlatma ve rıza metinleri, ilgili kişi başvuruları, veri ihlalleri, etki değerlendirmesi, alan yetkileri, itirazlar, erişim kayıtları, saklama ve imha.')} />
       <div className="mb-5"><Tabs label={tx('KVKK')} value={tab} onChange={setTab} tabs={[
         { key: 'uyum', label: tx('Uyum durumu') }, { key: 'envanter', label: tx('Envanter') }, { key: 'aktarim', label: tx('Yurt dışı aktarım') },
-        { key: 'riza', label: tx('Rıza durumu') }, { key: 'basvuru', label: tx('Başvurular') }, { key: 'itiraz', label: tx('İtirazlar') },
+        { key: 'metinler', label: tx('Metinler') }, { key: 'riza', label: tx('Rıza durumu') }, { key: 'basvuru', label: tx('Başvurular') },
+        { key: 'ihlal', label: tx('Veri ihlali') }, { key: 'pia', label: tx('Etki değerlendirmesi') }, { key: 'alan', label: tx('Alan yetkileri') }, { key: 'itiraz', label: tx('İtirazlar') },
         { key: 'erisim', label: tx('Erişim kayıtları') }, { key: 'saklama', label: tx('Saklama & imha') },
       ]} /></div>
       {tab === 'uyum' && <ComplianceOverview onOpen={(t) => setTab(t as PrivacyTab)} />}
       {tab === 'envanter' && <InventoryPanel />}
       {tab === 'aktarim' && <TransfersPanel />}
+      {tab === 'metinler' && <NoticesPanel />}
       {tab === 'riza' && <Consents />}
+      {tab === 'ihlal' && <BreachesPanel />}
+      {tab === 'pia' && <AssessmentsPanel />}
+      {tab === 'alan' && <FieldPoliciesPanel />}
       {tab === 'basvuru' && <Requests />}
       {tab === 'itiraz' && <ObjectionsPanel />}
       {tab === 'erisim' && <AccessLogPanel />}

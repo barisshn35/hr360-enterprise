@@ -538,4 +538,144 @@ public class KeycloakAdminClient
         user["requiredActions"] = actions.DeepClone();
         await PutUserAsync(userId, user, ct);
     }
+
+    // ------------------------------------------------------- oturumlar (G22)
+
+    public sealed record SessionInfo(string Id, string? IpAddress, DateTimeOffset Start, DateTimeOffset LastAccess, IReadOnlyList<string> Clients);
+
+    /// <summary>Kullanıcının etkin Keycloak oturumları (cihaz/IP, başlangıç, son erişim).</summary>
+    public async Task<List<SessionInfo>> ListUserSessionsAsync(string userId, CancellationToken ct)
+    {
+        var req = await BuildAsync(HttpMethod.Get, $"/users/{Uri.EscapeDataString(userId)}/sessions", null, ct);
+        using var resp = await _http.SendAsync(req, ct);
+        if (resp.StatusCode == System.Net.HttpStatusCode.NotFound) return new();
+        if (!resp.IsSuccessStatusCode) throw new InvalidOperationException($"Oturumlar okunamadı ({(int)resp.StatusCode})");
+        using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
+        return doc.RootElement.EnumerateArray().Select(s => new SessionInfo(
+            s.GetProperty("id").GetString()!,
+            s.TryGetProperty("ipAddress", out var ip) ? ip.GetString() : null,
+            DateTimeOffset.FromUnixTimeMilliseconds(s.TryGetProperty("start", out var st) ? st.GetInt64() : 0),
+            DateTimeOffset.FromUnixTimeMilliseconds(s.TryGetProperty("lastAccess", out var la) ? la.GetInt64() : 0),
+            s.TryGetProperty("clients", out var c) && c.ValueKind == JsonValueKind.Object
+                ? c.EnumerateObject().Select(p => p.Value.GetString() ?? p.Name).ToList() : new List<string>())).ToList();
+    }
+
+    public async Task DeleteSessionAsync(string sessionId, CancellationToken ct)
+    {
+        var req = await BuildAsync(HttpMethod.Delete, $"/sessions/{Uri.EscapeDataString(sessionId)}", null, ct);
+        using var resp = await _http.SendAsync(req, ct);
+        if (!resp.IsSuccessStatusCode && resp.StatusCode != System.Net.HttpStatusCode.NotFound)
+            throw new InvalidOperationException($"Oturum kapatılamadı ({(int)resp.StatusCode})");
+    }
+
+    public async Task LogoutUserAsync(string userId, CancellationToken ct)
+    {
+        var req = await BuildAsync(HttpMethod.Post, $"/users/{Uri.EscapeDataString(userId)}/logout", null, ct);
+        using var resp = await _http.SendAsync(req, ct);
+        if (!resp.IsSuccessStatusCode) throw new InvalidOperationException($"Oturumlar kapatılamadı ({(int)resp.StatusCode})");
+    }
+
+    /// <summary>Kullanıcının kayıtlı kimlik bilgisi türleri (password, otp, webauthn...).</summary>
+    public async Task<List<string>> GetCredentialTypesAsync(string userId, CancellationToken ct)
+    {
+        var req = await BuildAsync(HttpMethod.Get, $"/users/{Uri.EscapeDataString(userId)}/credentials", null, ct);
+        using var resp = await _http.SendAsync(req, ct);
+        if (!resp.IsSuccessStatusCode) return new();
+        using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
+        return doc.RootElement.EnumerateArray().Select(c => c.TryGetProperty("type", out var t) ? t.GetString() ?? "" : "").Where(t => t != "").ToList();
+    }
+
+    public async Task<bool> AddRequiredActionAsync(string userId, string action, CancellationToken ct)
+    {
+        var user = await GetUserRepresentationAsync(userId, ct);
+        if (user is null) return false;
+        var actions = user["requiredActions"] as System.Text.Json.Nodes.JsonArray ?? new System.Text.Json.Nodes.JsonArray();
+        if (actions.Any(a => a?.GetValue<string>() == action)) return true;
+        actions.Add(action);
+        user["requiredActions"] = actions.DeepClone();
+        await PutUserAsync(userId, user, ct);
+        return true;
+    }
+
+    // ------------------------------------------------------- passkey / WebAuthn (G22)
+
+    public const string PasskeyFlowAlias = "hr360 browser";
+
+    private async Task<JsonElement> GetJsonAsync(string path, CancellationToken ct)
+    {
+        var req = await BuildAsync(HttpMethod.Get, path, null, ct);
+        using var resp = await _http.SendAsync(req, ct);
+        if (!resp.IsSuccessStatusCode) throw new InvalidOperationException($"Keycloak {path} okunamadı ({(int)resp.StatusCode})");
+        using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
+        return doc.RootElement.Clone();
+    }
+
+    private async Task SendAsync(HttpMethod m, string path, object? body, CancellationToken ct, bool allowConflict = false)
+    {
+        var req = await BuildAsync(m, path, body, ct);
+        using var resp = await _http.SendAsync(req, ct);
+        if (resp.IsSuccessStatusCode || (allowConflict && resp.StatusCode == System.Net.HttpStatusCode.Conflict)) return;
+        throw new InvalidOperationException($"Keycloak {m} {path} başarısız ({(int)resp.StatusCode}): {await resp.Content.ReadAsStringAsync(ct)}");
+    }
+
+    /// <summary>
+    /// Giriş akışına güvenlik anahtarı / passkey (WebAuthn) ikinci adımını ekler: varsayılan
+    /// "browser" akışının kopyasında koşullu OTP alt akışına WebAuthn doğrulayıcısı
+    /// ALTERNATIVE olarak eklenir. Kullanıcı OTP ya da passkey'den birini kullanabilir;
+    /// ikisini de kurmamış kullanıcının girişi değişmez. Idempotent.
+    /// </summary>
+    public async Task<bool> EnsurePasskeyFlowAsync(CancellationToken ct)
+    {
+        var flows = await GetJsonAsync("/authentication/flows", ct);
+        var exists = flows.EnumerateArray().Any(f => f.GetProperty("alias").GetString() == PasskeyFlowAlias);
+        var alias = Uri.EscapeDataString(PasskeyFlowAlias);
+        if (!exists)
+            await SendAsync(HttpMethod.Post, "/authentication/flows/browser/copy", new { newName = PasskeyFlowAlias }, ct, allowConflict: true);
+
+        var execs = await GetJsonAsync($"/authentication/flows/{alias}/executions", ct);
+        var sub = execs.EnumerateArray().FirstOrDefault(e => e.TryGetProperty("authenticationFlow", out var af) && af.GetBoolean()
+            && (e.GetProperty("displayName").GetString() ?? "").Contains("Conditional OTP", StringComparison.OrdinalIgnoreCase));
+        if (sub.ValueKind == JsonValueKind.Undefined) throw new InvalidOperationException("Koşullu OTP alt akışı bulunamadı");
+        var subAlias = sub.GetProperty("displayName").GetString()!;
+        var subLevel = sub.GetProperty("level").GetInt32();
+        bool InSub(JsonElement e) => e.GetProperty("level").GetInt32() == subLevel + 1;
+
+        if (!execs.EnumerateArray().Any(e => InSub(e) && e.TryGetProperty("providerId", out var p) && p.GetString() == "webauthn-authenticator"))
+        {
+            await SendAsync(HttpMethod.Post, $"/authentication/flows/{Uri.EscapeDataString(subAlias)}/executions/execution",
+                new { provider = "webauthn-authenticator" }, ct);
+            execs = await GetJsonAsync($"/authentication/flows/{alias}/executions", ct);
+        }
+        foreach (var e in execs.EnumerateArray().Where(InSub))
+        {
+            var pid = e.TryGetProperty("providerId", out var p) ? p.GetString() : null;
+            if (pid is not ("auth-otp-form" or "webauthn-authenticator")) continue;
+            if (e.GetProperty("requirement").GetString() == "ALTERNATIVE") continue;
+            await SendAsync(HttpMethod.Put, $"/authentication/flows/{alias}/executions",
+                new { id = e.GetProperty("id").GetString(), requirement = "ALTERNATIVE" }, ct);
+        }
+
+        // "Güvenlik anahtarı kaydet" gerekli eylemi açık olmalı (uygulamadan başlatılır: kc_action).
+        var actions = await GetJsonAsync("/authentication/required-actions", ct);
+        var reg = actions.EnumerateArray().FirstOrDefault(a => a.GetProperty("alias").GetString() == "webauthn-register");
+        if (reg.ValueKind == JsonValueKind.Undefined)
+        {
+            await SendAsync(HttpMethod.Post, "/authentication/register-required-action", new { providerId = "webauthn-register", name = "Webauthn Register" }, ct, allowConflict: true);
+            reg = (await GetJsonAsync("/authentication/required-actions", ct)).EnumerateArray().First(a => a.GetProperty("alias").GetString() == "webauthn-register");
+        }
+        if (!reg.GetProperty("enabled").GetBoolean())
+        {
+            var node = System.Text.Json.Nodes.JsonNode.Parse(reg.GetRawText())!.AsObject();
+            node["enabled"] = true;
+            var req = await BuildAsync(HttpMethod.Put, "/authentication/required-actions/webauthn-register", null, ct);
+            req.Content = new StringContent(node.ToJsonString(), Encoding.UTF8, "application/json");
+            using var r = await _http.SendAsync(req, ct);
+            r.EnsureSuccessStatusCode();
+        }
+
+        var realm = await GetJsonAsync("", ct);
+        if (realm.TryGetProperty("browserFlow", out var bf) && bf.GetString() == PasskeyFlowAlias) return !exists;
+        await SendAsync(HttpMethod.Put, "", new { browserFlow = PasskeyFlowAlias }, ct);
+        return true;
+    }
 }

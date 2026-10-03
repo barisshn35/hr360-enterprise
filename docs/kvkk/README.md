@@ -86,6 +86,64 @@ edilmiş kayıtlar yeniden silinir (bkz. README › Yedekleme). Tutanaklar silin
 | Anlık bildirim (PWA) | Push içeriğinde kişisel veri yok; oturum kapanınca cihaz aboneliği ve çevrimdışı kuyruk silinir. |
 | Yasal izin hakkı | Doğum tarihi yalnızca yaş kuralı için kullanılır, gösterilmez. |
 
+## Aydınlatma ve açık rıza metinleri
+
+**KVKK › Metinler** sekmesinde şirket her metnin yeni sürümünü yayımlar. Aydınlatma metni
+"okundu" olarak, açık rıza metinleri ayrı ayrı "verildi/verilmedi" olarak kaydedilir; ikisi tek
+onay kutusunda birleştirilmez. Yeni sürüm yayımlanınca eski onaylar "güncel değil" görünür ve
+çalışandan yeniden okuması istenir. Eski sürümler silinmez: kimin hangi metni gördüğü kanıttır.
+
+## Veri ihlali (m.12/5)
+
+**KVKK › Veri ihlali**: tespit anı, etkilenen veri kategorileri ve çalışanlar, neden ve önlemler
+kaydedilir. 72 saatlik Kurul bildirim süresi tespitten başlar; uyum ekranı süre aşımını hata
+olarak gösterir. Kurul'un bildirim formu alanlarına göre taslak üretilir (VERBİS'e elle girilir),
+etkilenen çalışanlara uygulama içi bilgilendirme gönderilir (başka kişilerin verisi içermez).
+
+## İlgili kişi başvuruları (m.11, m.13)
+
+Panelden gelen başvuruda kimlik oturumla doğrulanmış sayılır. E-posta, KEP, posta ya da elden
+gelen başvuru İK tarafından kaydedilir; 30 günlük süre başvurunun ulaştığı tarihten başlar.
+Kimlik doğrulanmadan (KEP, güvenli e-imza, kayıtlı e-posta, kimlik belgesi görülerek) başvuru
+"Sonuçlandı" yapılamaz; kimlik belgesinin kopyası saklanmaz. Yanıt şablonları (bilgi, düzeltme,
+silme, yasal saklama nedeniyle ret, itiraz, kimlik doğrulama isteği) hazır gelir.
+
+## Gizlilik etki değerlendirmesi
+
+**KVKK › Etki değerlendirmesi**: yeni entegrasyon, özel alan ya da süreç öncesi 12 soruluk
+kontrol listesi. Risk yanıtlardan hesaplanır (özel nitelikli veri + yurt dışı = yüksek). Yüksek
+riskli değerlendirmeyi hazırlayan kişi onaylayamaz; yanıt değişince onay düşer. Uyum ekranı,
+kullanılan ama onaylı değerlendirmesi olmayan entegrasyonları uyarı olarak gösterir.
+
+## Alan düzeyinde yetki
+
+**KVKK › Alan yetkileri**: profil alanlarının başkalarına hangi düzeyden itibaren görüneceği
+(tüm çalışanlar / bölüm yöneticisi / yalnızca İK / yalnızca kişinin kendisi). T.C. kimlik no ve
+IBAN yalnızca İK'ya ya da yalnızca kişiye açılabilir. Yönetici bir özel alanı görüntülediğinde
+erişim kaydına yazılır.
+
+## Değiştirilemez denetim kaydı ve SIEM
+
+Her kiracının denetim kaydı bir hash zinciridir: her satır önceki satırın SHA-256 özetini içerir,
+satırlar güncellenemez (veritabanı tetikleyicisi). **Denetim kaydı › Zinciri doğrula** değiştirilmiş
+satırı, kopuk bağı ve eksik sırayı gösterir. Saklama süresi dolan en eski kayıtların silinmesi
+zincirin başını kısaltır, hata sayılmaz.
+
+`SIEM_SYSLOG_ENDPOINT=udp://sunucu:514` (ya da `tcp://`) tanımlanırsa kayıtlar RFC 5424 syslog
+olarak aktarılır. Veri en aza indirme: kullanıcı ve kayıt kimlikleri HMAC takma adına çevrilir
+(`SIEM_PSEUDONYM_KEY`), ad, e-posta ve değişiklik içeriği gönderilmez, IP'nin son okteti
+sıfırlanır. SIEM yurt dışındaysa yurt dışı aktarım dayanağı gerekir.
+
+## Erişim güvenliği
+
+- **IP kısıtı** (Ayarlar › Güvenlik): şirket kullanıcıları API'ye yalnızca listedeki adreslerden
+  erişir; yönetici kendini dışarıda bırakan listeyi kaydedemez. Platform yöneticisi etkilenmez.
+- **Oturumlar**: çalışan Profilim › Güvenlik'ten kendi oturumlarını görür ve kapatır; şirket
+  yöneticisi bir kullanıcının tüm oturumlarını kapatabilir.
+- **Passkey / güvenlik anahtarı**: giriş akışında doğrulayıcı uygulamaya alternatif ikinci adım
+  (WebAuthn). Biyometrik veri cihazdan çıkmaz; yalnızca açık anahtar saklanır. Gerçek bir
+  cihazla kayıt bu ortamda denenmedi (akış yapılandırması test edildi).
+
 ## Otomatik analize itiraz (m.11/1-g)
 
 Yalnızca otomatik sistemlerle yapılan analizler: işten ayrılma riski tahmini, otomatik
@@ -104,3 +162,6 @@ performans puanı, yapay zekâ özetleri. Çalışan **Profilim › Gizlilik**'t
 önlemlerini (koordinat ve kart numarasının saklanmaması, pusula/belge erişim kaydı, push içeriği,
 gizlenen alanlar) denetler. `tests/integration/test_kvkk.py` uyum durumu, envanter, aktarım kilidi ve 5 iş günü kuralı,
 imha tutanağı, şifreleme, gerekçe zorunluluğu, erişim kaydı ve itiraz akışını uçtan uca denetler.
+`tests/integration/test_kvkk_ops.py` metin sürümlerini, 72 saat kuralını, kimlik doğrulama
+zorunluluğunu, etki değerlendirmesini, alan yetkilerini, hash zincirinin kurcalamayı yakalamasını,
+SIEM'de takma ad kullanımını, IP kısıtını ve oturum yönetimini denetler.

@@ -602,6 +602,12 @@ ve 5 dakika önbellekte tutar. Değişiklikler e-postalara en geç 5 dakikada ya
 - Hiçbir uygulama konteyneri root çalışmaz. Gateway IP başına hız sınırı uygular
   (API 50 istek/sn, giriş 10 istek/sn), arayüz katı bir içerik güvenliği politikası
   (CSP) ile sunulur; güvenilir sertifikayla HTTPS açıldığında HSTS eklenir.
+- Şirket yöneticisi **Ayarlar › Güvenlik**'ten IP kısıtı tanımlayabilir, kullanıcıların açık
+  oturumlarını kapatabilir; çalışanlar **Profilim › Güvenlik**'ten kendi oturumlarını yönetir ve
+  passkey/güvenlik anahtarı (WebAuthn) ekler. Passkey, doğrulayıcı uygulamaya alternatif ikinci
+  adımdır (`KEYCLOAK_PASSKEYS=false` ile kapatılır).
+- Denetim kaydı hash zinciriyle değiştirilemezdir (**Denetim kaydı › Zinciri doğrula**);
+  `SIEM_SYSLOG_ENDPOINT` ile syslog'a takma adlı olarak aktarılır. Ayrıntı: [docs/kvkk/README.md](docs/kvkk/README.md).
 - Bağımlılıklar, imajlar ve repo her push'ta Trivy, `npm audit` ve NuGet denetimiyle
   taranır. Korumaların tam listesi, son taramanın bulguları ve kabul edilen riskler:
   [docs/guvenlik/README.md](docs/guvenlik/README.md).

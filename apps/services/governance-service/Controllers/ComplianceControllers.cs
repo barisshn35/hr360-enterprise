@@ -41,13 +41,14 @@ public class PrivacyController : AppController
     public PrivacyController(GovernanceDbContext db) => _db = db;
 
     [HttpGet("consent-types")]
-    public IActionResult Types() => Ok(ConsentTypes);
+    public async Task<IActionResult> Types(CancellationToken ct) => Ok(await ConsentCatalog.EffectiveAsync(_db, ct));
 
     [HttpGet("consents/me")]
     public async Task<IActionResult> MyConsents(CancellationToken ct)
     {
         var mine = await _db.Consents.AsNoTracking().Where(c => c.UserId == Me.UserId).OrderByDescending(c => c.RecordedAt).ToListAsync(ct);
-        return Ok(ConsentTypes.Select(t =>
+        var types = await ConsentCatalog.EffectiveAsync(_db, ct);
+        return Ok(types.Select(t =>
         {
             var last = mine.FirstOrDefault(c => c.ConsentType == t.Type);
             return new { t.Type, t.Title, t.Version, t.Required, t.Text, granted = last?.Granted, recordedAt = last?.RecordedAt,
@@ -60,7 +61,7 @@ public class PrivacyController : AppController
     [HttpPost("consents/me")]
     public async Task<IActionResult> Record(ConsentInput body, CancellationToken ct)
     {
-        var t = ConsentTypes.FirstOrDefault(x => x.Type == body.ConsentType);
+        var t = (await ConsentCatalog.EffectiveAsync(_db, ct)).FirstOrDefault(x => x.Type == body.ConsentType);
         if (t is null) return BadRequest(new { message = "Bilinmeyen onay tipi." });
         if (t.Required && !body.Granted) return BadRequest(new { message = "Aydınlatma metni okundu olarak işaretlenmelidir (bu bir rıza değil, bilgilendirmedir)." });
         var me = await MyPersonAsync(ct);
@@ -80,15 +81,17 @@ public class PrivacyController : AppController
         var people = await People.ListAsync(Tenant, ct);
         var all = await _db.Consents.AsNoTracking().ToListAsync(ct);
         var latest = all.GroupBy(c => (c.UserId, c.ConsentType)).Select(g => g.OrderByDescending(c => c.RecordedAt).First()).ToList();
+        var effective = await ConsentCatalog.EffectiveAsync(_db, ct);
         return Ok(new
         {
             population = people.Count,
-            types = ConsentTypes.Select(t => new
+            types = effective.Select(t => new
             {
                 t.Type, t.Title, t.Required, t.Version,
                 granted = latest.Count(c => c.ConsentType == t.Type && c.Granted),
                 denied = latest.Count(c => c.ConsentType == t.Type && !c.Granted),
                 pending = Math.Max(0, people.Count - latest.Count(c => c.ConsentType == t.Type)),
+                outdated = latest.Count(c => c.ConsentType == t.Type && c.Version != t.Version),
             }),
             missingRequired = people.Where(p => p.UserId is not null && !latest.Any(c => c.UserId == p.UserId && c.ConsentType == "KVKK_AYDINLATMA"))
                 .Select(p => new { employeeId = p.Id, name = p.Name, department = p.Department }),
@@ -105,7 +108,10 @@ public class PrivacyController : AppController
         if (body.Kind is not ("Access" or "Rectification" or "Erasure" or "Objection"))
             return BadRequest(new { message = "Geçersiz başvuru türü." });
         var me = await MyPersonAsync(ct);
-        var r = new DataRequest { UserId = Me.UserId, EmployeeId = me?.Id, PersonName = me?.Name ?? Me.Name, Kind = body.Kind, Details = body.Details?.Trim() };
+        if (body.Details is { Length: > 4000 }) return BadRequest(new { message = L("Açıklama en fazla 4000 karakter.", "Details must be at most 4000 characters.") });
+        // Kendi oturumundan gelen başvuruda kimlik oturumla doğrulanmıştır.
+        var r = new DataRequest { UserId = Me.UserId, EmployeeId = me?.Id, PersonName = me?.Name ?? Me.Name, Kind = body.Kind, Details = body.Details?.Trim(),
+            Channel = "Panel", IdentityVerified = true, VerificationMethod = "Session", VerifiedAt = DateTime.UtcNow, VerifiedBy = "HR360" };
         _db.DataRequests.Add(r);
         await _db.SaveChangesAsync(ct);
         return Ok(r);
@@ -118,6 +124,7 @@ public class PrivacyController : AppController
         if (!Me.IsHr) q = q.Where(r => r.UserId == Me.UserId);
         var rows = await q.OrderByDescending(r => r.CreatedAt).ToListAsync(ct);
         return Ok(rows.Select(r => new { r.Id, r.PersonName, r.EmployeeId, r.Kind, r.Details, r.Status, r.Response, r.DueAt, r.CreatedAt, r.CompletedAt,
+            r.Channel, contact = Me.IsHr ? r.Contact : null, r.IdentityVerified, r.VerificationMethod, r.VerifiedBy, r.VerifiedAt,
             overdue = r.Status is "Received" or "InProgress" && r.DueAt < DateTime.UtcNow, daysLeft = (int)Math.Ceiling((r.DueAt - DateTime.UtcNow).TotalDays) }));
     }
 
@@ -132,6 +139,8 @@ public class PrivacyController : AppController
         if (body.Status is not ("Received" or "InProgress" or "Completed" or "Rejected")) return BadRequest(new { message = "Geçersiz durum." });
         if (body.Status is "Completed" or "Rejected" && string.IsNullOrWhiteSpace(body.Response))
             return BadRequest(new { message = "Sonuçlandırırken başvurucuya yanıt yazılmalı (KVKK m.13)." });
+        if (body.Status == "Completed" && !r.IdentityVerified)
+            return BadRequest(new { message = L("Başvurucunun kimliği doğrulanmadan başvuru karşılanamaz (kişisel veri yanlış kişiye verilmemeli).", "The request cannot be fulfilled before the applicant's identity is verified."), code = "identity_unverified" });
         r.Status = body.Status;
         r.Response = body.Response ?? r.Response;
         r.CompletedAt = body.Status is "Completed" or "Rejected" ? DateTime.UtcNow : null;

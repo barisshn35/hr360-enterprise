@@ -45,6 +45,7 @@ builder.Services.AddScoped<GovernanceService.Infrastructure.Ai.AiGateway>();
 builder.Services.AddScoped<GovernanceService.Infrastructure.HrAssistant>();
 builder.Services.AddHostedService<GovernanceService.Infrastructure.EventConsumer>();
 builder.Services.AddHostedService<GovernanceService.Infrastructure.Housekeeping>();
+builder.Services.AddHostedService<GovernanceService.Infrastructure.SiemExporter>();
 builder.Services.AddHostedService<GovernanceService.Infrastructure.Chat.ChatOutboxWorker>();
 builder.Services.AddHostedService<GovernanceService.Infrastructure.Chat.ChatDigestWorker>();
 

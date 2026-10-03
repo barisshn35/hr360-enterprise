@@ -22,6 +22,9 @@ services:
       LLM_QUOTA_WINDOW_MINUTES: "1"
       # Gonderilemeyen sohbet mesajlari 2, 10, 30... sn sonra yeniden denenir.
       CHAT_RETRY_BASE_SECONDS: "2"
+      # Denetim kaydi SIEM aktarimi (sahte syslog alicisi, 2 sn'de bir).
+      SIEM_SYSLOG_ENDPOINT: "udp://chatmock:5514"
+      SIEM_INTERVAL_SECONDS: "2"
   notification-service:
     environment:
       # Sahte Web Push servisine (chatmock) gonderime izin; anlik bildirim turu 2 sn.

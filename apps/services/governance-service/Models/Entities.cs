@@ -47,6 +47,15 @@ public class DataRequest : ITenantOwned
     public DateTime DueAt { get; set; } = DateTime.UtcNow.AddDays(30);
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? CompletedAt { get; set; }
+    /// <summary>Panel | Email | Kep | Mail | InPerson — başvurunun geldiği kanal.</summary>
+    public string Channel { get; set; } = "Panel";
+    /// <summary>Panel dışı başvuruda başvurucunun iletişim bilgisi (yanıt için).</summary>
+    public string? Contact { get; set; }
+    /// <summary>KVKK: kimliği doğrulanmadan başvuruya kişisel veri içeren yanıt verilmez.</summary>
+    public bool IdentityVerified { get; set; }
+    public string? VerificationMethod { get; set; }
+    public string? VerifiedBy { get; set; }
+    public DateTime? VerifiedAt { get; set; }
 }
 
 /// <summary>
@@ -542,4 +551,70 @@ public class AiUsage : ITenantOwned
     public int DurationMs { get; set; }
     public bool Success { get; set; }
     public DateTime At { get; set; } = DateTime.UtcNow;
+}
+
+
+/* ======================================================= KVKK operasyonları */
+
+/// <summary>Aydınlatma metni ya da açık rıza metninin kiracıya özel sürümü (K2).</summary>
+public class PrivacyNotice : ITenantOwned
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string TenantSlug { get; set; } = "";
+    /// <summary>Onay tipi kodu (KVKK_AYDINLATMA, ACIK_RIZA_SAGLIK, ...).</summary>
+    public string Type { get; set; } = "KVKK_AYDINLATMA";
+    public string Version { get; set; } = "";
+    public string Title { get; set; } = "";
+    public string Text { get; set; } = "";
+    public string? ChangeNote { get; set; }
+    public string PublishedBy { get; set; } = "";
+    public DateTime PublishedAt { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>Kişisel veri ihlali kaydı (K3): 72 saatte Kurul'a bildirim, ilgililere bilgilendirme.</summary>
+public class DataBreach : ITenantOwned
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string TenantSlug { get; set; } = "";
+    public string Title { get; set; } = "";
+    public string Description { get; set; } = "";
+    public DateTime DetectedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? OccurredAt { get; set; }
+    public string? DataCategories { get; set; }
+    public int? AffectedCount { get; set; }
+    /// <summary>Etkilenen çalışanlar (JSON dizi) — bilgilendirme için.</summary>
+    public string AffectedEmployeesJson { get; set; } = "[]";
+    /// <summary>Low | Medium | High</summary>
+    public string Severity { get; set; } = "Medium";
+    public string? Cause { get; set; }
+    public string? Measures { get; set; }
+    /// <summary>Open | Reported | Closed</summary>
+    public string Status { get; set; } = "Open";
+    public DateTime? ReportedToBoardAt { get; set; }
+    public string? BoardReference { get; set; }
+    public DateTime? SubjectsNotifiedAt { get; set; }
+    public string CreatedBy { get; set; } = "";
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>Gizlilik etki kontrol listesi (K9): yeni entegrasyon, özel alan ya da süreç öncesi.</summary>
+public class PrivacyAssessment : ITenantOwned
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string TenantSlug { get; set; } = "";
+    public string Subject { get; set; } = "";
+    /// <summary>Integration | CustomField | Process</summary>
+    public string Kind { get; set; } = "Integration";
+    /// <summary>Entegrasyon ise sağlayıcı anahtarı (slack, google...).</summary>
+    public string? ProviderKey { get; set; }
+    /// <summary>{"soruKodu": {"answer": "yes|no|na", "note": "..."}}</summary>
+    public string AnswersJson { get; set; } = "{}";
+    /// <summary>Low | Medium | High (yanıtlardan hesaplanır)</summary>
+    public string Risk { get; set; } = "Low";
+    /// <summary>Draft | Approved</summary>
+    public string Status { get; set; } = "Draft";
+    public string CreatedBy { get; set; } = "";
+    public string? ApprovedBy { get; set; }
+    public DateTime? ApprovedAt { get; set; }
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }

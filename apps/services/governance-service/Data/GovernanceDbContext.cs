@@ -24,6 +24,9 @@ public class GovernanceDbContext : DbContext, ITenantAwareContext
     public DbSet<GovernanceEvent> Events => Set<GovernanceEvent>();
     public DbSet<Consent> Consents => Set<Consent>();
     public DbSet<DataRequest> DataRequests => Set<DataRequest>();
+    public DbSet<PrivacyNotice> PrivacyNotices => Set<PrivacyNotice>();
+    public DbSet<DataBreach> DataBreaches => Set<DataBreach>();
+    public DbSet<PrivacyAssessment> PrivacyAssessments => Set<PrivacyAssessment>();
     public DbSet<RetentionPolicy> RetentionPolicies => Set<RetentionPolicy>();
     public DbSet<TransferAgreement> TransferAgreements => Set<TransferAgreement>();
     public DbSet<DestructionLog> DestructionLogs => Set<DestructionLog>();
@@ -62,6 +65,9 @@ public class GovernanceDbContext : DbContext, ITenantAwareContext
         b.Entity<DestructionLog>().ToTable("governance_destruction_logs").ConfigureTenantColumn();
         b.Entity<AnalysisObjection>().ToTable("governance_analysis_objections").ConfigureTenantColumn();
         b.Entity<DocTemplate>().ToTable("governance_doc_templates").ConfigureTenantColumn();
+        b.Entity<PrivacyNotice>().ToTable("governance_privacy_notices").ConfigureTenantColumn();
+        b.Entity<DataBreach>().ToTable("governance_data_breaches").ConfigureTenantColumn();
+        b.Entity<PrivacyAssessment>().ToTable("governance_privacy_assessments").ConfigureTenantColumn();
         b.Entity<DocumentRequest>().ToTable("governance_document_requests").ConfigureTenantColumn();
         b.Entity<DocumentRequest>().HasIndex(r => r.VerificationCode).IsUnique();
         b.Entity<DocumentRequest>().HasIndex(r => new { r.TenantSlug, r.EmployeeId });

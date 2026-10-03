@@ -48,7 +48,7 @@ integration() {
   for _ in $(seq 1 60); do docker logs chatmock 2>&1 | grep -q "chatmock :8000" && break; sleep 2; done
   sleep 10
   for t in test_chat test_calendar test_ai_llm test_cache test_report_lang test_email_lang test_kvkk \
-           test_payroll_time test_push test_workflow_docs; do
+           test_payroll_time test_push test_workflow_docs test_kvkk_ops; do
     step "Entegrasyon: $t"
     run python3 "tests/integration/$t.py"
   done

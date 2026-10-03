@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis } from 'recharts'
 import { ChevronDown, Download, Link2, ScrollText, Search } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
+import { AuditIntegrityPanel } from './KvkkOps'
 import { Panel, PanelBody, PanelHead } from '@/components/ui/Panel'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -66,6 +67,7 @@ export function AuditPage() {
   return (
     <PlanGate feature="audit">
       <PageHeader title={tx('Denetim kaydı')} description={tx('Kim, neyi, ne zaman, hangi istekle değiştirdi? Tüm servislerdeki ekleme/güncelleme/silme işlemleri eski → yeni değerleriyle.')} actions={<Button variant="outline" onClick={() => governanceApi.auditExport(f).catch((e) => toast.stop(errMsg(e)))}><Download className="size-4" />{' '}{tx('CSV')}</Button>} />
+      <div className="mb-6"><AuditIntegrityPanel /></div>
       <div className="grid gap-6 xl:grid-cols-[300px_1fr]">
         <div className="space-y-5">
           <Panel>

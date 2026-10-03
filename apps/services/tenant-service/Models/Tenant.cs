@@ -94,4 +94,10 @@ public class Tenant
     /// sakladigi icin isaret Keycloak'ta degil burada tutulur.)
     /// </summary>
     public string? SuspendedUserIdsJson { get; set; }
+
+    /// <summary>
+    /// G22: Bos degilse kiracinin kullanicilari API'ye yalnizca bu adreslerden (CIDR,
+    /// virgulle ayrilmis) erisebilir. Tum servislerdeki TenantStatusGate uygular.
+    /// </summary>
+    public string? IpAllowlist { get; set; }
 }

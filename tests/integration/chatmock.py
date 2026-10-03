@@ -29,6 +29,7 @@ KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 OTHER_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 KID = "mock-key-1"
 LOG = []
+SYSLOG = []  # SIEM aktarımı (UDP 5514) ile gelen satırlar
 FAILS = {}
 LOCK = threading.Lock()
 EMAILS = {}  # slack user id -> email
@@ -106,6 +107,9 @@ class H(BaseHTTPRequestHandler):
         if u.path == "/_log":
             with LOCK:
                 return self._send(200, LOG)
+        if u.path == "/_syslog":
+            with LOCK:
+                return self._send(200, SYSLOG[-int(q.get("n", "500")):])
         if u.path == "/botframework/openid":
             return self._send(200, {"issuer": "https://api.botframework.com",
                                     "jwks_uri": "http://chatmock:8000/botframework/jwks",
@@ -300,5 +304,15 @@ if __name__ == "__main__":
     # Bilinen test kullanıcıları önceden kaydedilir (users.info e-postası için).
     for e in ("mehmet.demir@demo.hr360", "ayse.yilmaz@demo.hr360", "zeynep.kaya@demo.hr360"):
         slack_user_for(e)
-    print("chatmock :8000", flush=True)
+    def syslog_udp():
+        import socket
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.bind(("", 5514))
+        while True:
+            data, _ = sock.recvfrom(16384)
+            with LOCK:
+                SYSLOG.append(data.decode("utf-8", "replace"))
+                del SYSLOG[:-5000]
+    threading.Thread(target=syslog_udp, daemon=True).start()
+    print("chatmock :8000 (syslog udp :5514)", flush=True)
     ThreadingHTTPServer(("", 8000), H).serve_forever()

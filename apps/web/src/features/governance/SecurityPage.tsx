@@ -13,6 +13,7 @@ import { useToast } from '@/components/ui/Toast'
 import { securityApi, type SsoStatus } from '@/api/governance'
 import { Metric, PlanGate, useAction } from '@/features/shared/kit'
 import { tx } from '@/lib/i18n'
+import { IpAllowlistPanel, TenantSessionsPanel } from './AccessControlPanels'
 
 function SsoModal({ provider, s, onClose }: { provider: SsoStatus['supported'][number]; s: SsoStatus; onClose: () => void }) {
   const toast = useToast()
@@ -98,6 +99,7 @@ export function SecurityPage() {
           </PanelBody>
         </Panel>
       </div>
+      <div className="mt-6 grid gap-6 xl:grid-cols-2"><IpAllowlistPanel /><TenantSessionsPanel /></div>
       {adding && sso.data && <SsoModal provider={adding} s={sso.data} onClose={() => setAdding(null)} />}
     </PlanGate>
   )

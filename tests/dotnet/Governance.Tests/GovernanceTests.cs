@@ -285,3 +285,54 @@ public class AppCacheTests
         Assert.Equal(p, (await cache.GetOrSetAsync("people", "acme", "active", TimeSpan.FromSeconds(30), _ => Task.FromResult(new List<Person> { p }), default))[0]);
     }
 }
+
+public class KvkkOpsTests
+{
+    private static Dictionary<string, KvkkOpsController.AnswerInput> A(params (string Code, string Answer)[] xs) =>
+        xs.ToDictionary(x => x.Code, x => new KvkkOpsController.AnswerInput(x.Answer, null));
+
+    [Fact]
+    public void Ozel_nitelikli_ve_yurt_disi_yuksek_risk() =>
+        Assert.Equal("High", KvkkOpsController.ComputeRisk(A(("special", "yes"), ("abroad", "yes"))));
+
+    [Fact]
+    public void Guvenli_yanitlar_dusuk_risk()
+    {
+        var safe = KvkkOpsController.Questions.ToDictionary(q => q.Code, q => new KvkkOpsController.AnswerInput(q.RiskyAnswer == "yes" ? "no" : "yes", null));
+        Assert.Equal("Low", KvkkOpsController.ComputeRisk(safe));
+    }
+
+    [Fact]
+    public void Izleme_ve_eksik_onlem_orta_risk() =>
+        Assert.Equal("Medium", KvkkOpsController.ComputeRisk(A(("monitoring", "yes"), ("minimal", "no"))));
+
+    [Fact]
+    public void Siem_takma_ad_sabit_ve_geri_cevrilemez()
+    {
+        var a = SiemExporter.Pseudonym("user-123");
+        Assert.Equal(a, SiemExporter.Pseudonym("user-123"));
+        Assert.NotEqual(a, SiemExporter.Pseudonym("user-124"));
+        Assert.StartsWith("p_", a);
+        Assert.DoesNotContain("user", a);
+        Assert.Equal("-", SiemExporter.Pseudonym(null));
+    }
+
+    [Theory]
+    [InlineData("203.0.113.57", "203.0.113.0/24")]
+    [InlineData("bozuk", "-")]
+    [InlineData(null, "-")]
+    public void Siem_ip_maskeleme(string? ip, string expected) => Assert.Equal(expected, SiemExporter.MaskIp(ip));
+
+    [Fact]
+    public void Siem_satiri_rfc5424_ve_icerik_yok()
+    {
+        var line = SiemExporter.Format(new DateTime(2026, 10, 6, 8, 0, 0, DateTimeKind.Utc), "demo", "leave-service", "LeaveRequest",
+            "8c7dd608-46e2-4bee-900f-6a175b21d3b2", "Modified", "kc-user-1", "10.1.2.3", 42, "abc");
+        Assert.StartsWith("<110>1 2026-10-06T08:00:00.000000Z ", line);
+        Assert.Contains("[hr360@32473 tenant=\"demo\"", line);
+        Assert.Contains("net=\"10.1.2.0/24\"", line);
+        Assert.Contains("seq=\"42\"", line);
+        Assert.DoesNotContain("kc-user-1", line);
+        Assert.DoesNotContain("8c7dd608", line);
+    }
+}

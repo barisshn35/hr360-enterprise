@@ -254,6 +254,9 @@ public class ProfileController : AppController
         var mine = await MyPersonAsync(ct);
         var own = mine?.Id == employeeId;
         if (!own && !Me.IsHr) return Forbid();
+        // G20: kiracı alanı "yalnızca kendisi" yaptıysa İK da açamaz.
+        if (!own && (await FieldPolicies.ForTenantAsync(Db, Tenant, ct))[field] == "self")
+            return StatusCode(403, new { message = "Bu alan şirket politikasıyla yalnızca çalışanın kendisine açık.", code = "field_policy" });
         // KVKK m.12: başkasının TCKN/IBAN'ını açan kişi gerekçe yazar; gerekçe erişim kaydına girer.
         if (!own && (string.IsNullOrWhiteSpace(reason) || reason.Trim().Length < 5))
             return BadRequest(new { message = "Başka bir çalışanın bu bilgisini görmek için gerekçe yazın (en az 5 karakter).", code = "reason_required" });
@@ -281,21 +284,42 @@ public class ProfileController : AppController
         var p = await People.FindAsync(Tenant, employeeId, ct);
         if (p is null) return NotFound();
         var pr = await _db.Profiles.AsNoTracking().FirstOrDefaultAsync(x => x.EmployeeId == employeeId, ct);
-        if (!Me.IsHr && (await MyPersonAsync(ct))?.Id != employeeId)
+        var mine = await MyPersonAsync(ct);
+        // G20: görüntüleyenin düzeyi ve kiracının alan politikası.
+        var viewer = mine?.Id == employeeId ? "self" : Me.IsHr ? "hr"
+            : mine is not null && p.DepartmentHeadId == mine.Id ? "manager" : "other";
+        var policy = await FieldPolicies.ForTenantAsync(Db, Tenant, ct);
+        bool See(string f) => FieldPolicies.CanSee(policy[f], viewer);
+        var hidden = policy.Keys.Where(f => !See(f)).ToList();
+        if (viewer is "self" or "hr")
         {
-            // Diğer çalışanlar yalnızca "kartvizit" alanlarını görür.
-            return Ok(new
-            {
-                employeeId = p.Id, name = p.Name, email = p.Email, position = p.Position, department = p.Department,
-                bio = pr?.Bio, pronouns = pr?.Pronouns, skills = pr?.Skills ?? new(), interests = pr?.Interests ?? new(),
-                linkedInUrl = pr?.LinkedInUrl,
-            });
+            // İK başkasının özel profil alanlarını (adres, doğum tarihi, acil durum kişisi) görüntüledi.
+            if (viewer == "hr" && pr is not null && (pr.Address ?? pr.EmergencyContactName ?? pr.EmergencyContactPhone ?? (object?)pr.BirthDate) is not null)
+                await LogSensitiveAsync(employeeId, "SensitiveViewed", "profile", null, ct);
+            var full = Shape(p, pr, false);
+            if (hidden.Count == 0) return Ok(full);
+            // Kiracı bir alanı "yalnızca kendisi" yaptıysa İK da göremez.
+            var d = System.Text.Json.JsonSerializer.SerializeToNode(full)!.AsObject();
+            foreach (var f in hidden)
+                foreach (var k in f == "emergencyContact" ? new[] { "emergencyContactName", "emergencyContactPhone" } : new[] { f })
+                    d[k] = null;
+            d["hiddenFields"] = System.Text.Json.JsonSerializer.SerializeToNode(hidden);
+            return Ok(d);
         }
-        // İK başkasının özel profil alanlarını (adres, doğum tarihi, acil durum kişisi) görüntüledi.
-        if (pr is not null && (pr.Address ?? pr.EmergencyContactName ?? pr.EmergencyContactPhone ?? (object?)pr.BirthDate) is not null
-            && (await MyPersonAsync(ct))?.Id != employeeId)
+        if (viewer == "manager" && pr is not null && (See("address") && pr.Address is not null || See("emergencyContact") && pr.EmergencyContactName is not null || See("birthDate") && pr.BirthDate is not null))
             await LogSensitiveAsync(employeeId, "SensitiveViewed", "profile", null, ct);
-        return Ok(Shape(p, pr, false));
+        // Diğer çalışanlar/yönetici yalnızca politikanın izin verdiği alanları görür.
+        return Ok(new
+        {
+            employeeId = p.Id, name = p.Name, email = p.Email, position = p.Position, department = p.Department,
+            bio = See("bio") ? pr?.Bio : null, pronouns = See("pronouns") ? pr?.Pronouns : null,
+            skills = See("skills") ? pr?.Skills ?? new() : new(), interests = See("interests") ? pr?.Interests ?? new() : new(),
+            linkedInUrl = See("linkedInUrl") ? pr?.LinkedInUrl : null,
+            birthDate = See("birthDate") ? pr?.BirthDate : null, address = See("address") ? pr?.Address : null,
+            emergencyContactName = See("emergencyContact") ? pr?.EmergencyContactName : null,
+            emergencyContactPhone = See("emergencyContact") ? pr?.EmergencyContactPhone : null,
+            hiddenFields = hidden,
+        });
     }
 
     /// <summary>Yetenek dizini: "Kim Kubernetes biliyor?" — profilde beceri girenler.</summary>
@@ -304,6 +328,9 @@ public class ProfileController : AppController
     {
         var people = await People.ListAsync(Tenant, ct);
         var profiles = (await _db.Profiles.AsNoTracking().ToListAsync(ct)).ToDictionary(p => p.EmployeeId);
+        var policy = await FieldPolicies.ForTenantAsync(Db, Tenant, ct);
+        var dirViewer = Me.IsHr ? "hr" : "other";
+        bool DirSee(string f) => FieldPolicies.CanSee(policy[f], dirViewer);
         var term = q?.Trim().ToLowerInvariant();
         var rows = people.Select(p =>
         {
@@ -311,7 +338,8 @@ public class ProfileController : AppController
             return new
             {
                 employeeId = p.Id, name = p.Name, position = p.Position, department = p.Department, email = p.Email,
-                skills = pr?.Skills ?? new(), interests = pr?.Interests ?? new(), bio = pr?.Bio,
+                skills = DirSee("skills") ? pr?.Skills ?? new() : new(), interests = DirSee("interests") ? pr?.Interests ?? new() : new(),
+                bio = DirSee("bio") ? pr?.Bio : null,
             };
         });
         if (!string.IsNullOrEmpty(term))

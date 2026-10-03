@@ -26,6 +26,7 @@ builder.Services.AddSingleton<TenantService.Services.LogoStorageService>();
 // NOT: install.sh'nin urettigi "demo.admin" Keycloak kullanicisinin gercekten
 // calisir bir demo tenant'i olmasini saglar - bkz. dosyanin basindaki aciklama.
 builder.Services.AddHostedService<DemoTenantSeederHostedService>();
+builder.Services.AddHostedService<KeycloakHardeningHostedService>();
 
 var keycloakAuthority = Environment.GetEnvironmentVariable("KEYCLOAK_AUTHORITY")
     ?? "http://keycloak:8080/auth/realms/hr360";
@@ -167,9 +168,19 @@ app.Use(async (ctx, next) =>
         if (!string.IsNullOrWhiteSpace(slug))
         {
             var db = ctx.RequestServices.GetRequiredService<TenantService.Data.TenantDbContext>();
-            var status = await db.Tenants.Where(t => t.Slug == slug)
-                .Select(t => (TenantService.Models.TenantStatus?)t.Status)
+            var row = await db.Tenants.Where(t => t.Slug == slug)
+                .Select(t => new { t.Status, t.IpAllowlist })
                 .FirstOrDefaultAsync(ctx.RequestAborted);
+            var status = row?.Status;
+            // G22: kiracı IP kısıtı (gateway'den gelen isteklerde).
+            var realIp = ctx.Request.Headers["X-Real-IP"].FirstOrDefault();
+            var allow = TenantService.Tenancy.TenantStatusGate.ParseList(row?.IpAllowlist);
+            if (allow.Count > 0 && realIp is not null && !TenantService.Tenancy.TenantStatusGate.Allowed(allow, realIp))
+            {
+                ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await ctx.Response.WriteAsJsonAsync(new { message = "Bu ağdan erişim şirketiniz tarafından kısıtlanmış.", code = "ip_not_allowed" });
+                return;
+            }
             if (status == TenantService.Models.TenantStatus.Suspended)
             {
                 ctx.Response.StatusCode = StatusCodes.Status403Forbidden;

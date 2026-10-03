@@ -304,4 +304,50 @@ public class MyTenantController : ControllerBase
         await _db.SaveChangesAsync();
         return Ok(new { message = "Logo kaldırıldı" });
     }
+
+    /* ------------------------------------------------------------ G22 kendi oturumlarım */
+
+    private string? MyUserId => User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? User.FindFirst("sub")?.Value;
+
+    [HttpGet("me/sessions")]
+    public async Task<IActionResult> MySessions(CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(MyUserId)) return BadRequest(new { message = "Kullanıcı kimliği jetonda yok." });
+        var current = User.FindFirst("sid")?.Value ?? User.FindFirst("session_state")?.Value;
+        var sessions = await _keycloak.ListUserSessionsAsync(MyUserId, ct);
+        var types = await _keycloak.GetCredentialTypesAsync(MyUserId, ct);
+        return Ok(new
+        {
+            sessions = sessions.OrderByDescending(s => s.LastAccess).Select(s => new { s.Id, s.IpAddress, s.Start, s.LastAccess, current = s.Id == current }),
+            hasOtp = types.Contains("otp"),
+            hasPasskey = types.Any(x => x.StartsWith("webauthn", StringComparison.Ordinal)),
+        });
+    }
+
+    [HttpDelete("me/sessions/{sessionId}")]
+    public async Task<IActionResult> EndMySession(string sessionId, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(MyUserId)) return BadRequest();
+        // Yalnızca kendi oturumu kapatılabilir.
+        var mine = await _keycloak.ListUserSessionsAsync(MyUserId, ct);
+        if (mine.All(s => s.Id != sessionId)) return NotFound();
+        await _keycloak.DeleteSessionAsync(sessionId, ct);
+        return NoContent();
+    }
+
+    /// <summary>Bu oturum dışındaki tüm oturumları kapatır.</summary>
+    [HttpPost("me/sessions/logout-others")]
+    public async Task<IActionResult> EndOtherSessions(CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(MyUserId)) return BadRequest();
+        var current = User.FindFirst("sid")?.Value ?? User.FindFirst("session_state")?.Value;
+        var n = 0;
+        foreach (var s in await _keycloak.ListUserSessionsAsync(MyUserId, ct))
+        {
+            if (s.Id == current) continue;
+            await _keycloak.DeleteSessionAsync(s.Id, ct);
+            n++;
+        }
+        return Ok(new { closed = n });
+    }
 }

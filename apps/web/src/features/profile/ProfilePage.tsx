@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { MySecurityPanel } from '@/features/governance/AccessControlPanels'
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'motion/react'
 import { CalendarPlus, Copy, Download, Eye, EyeOff, Fingerprint, KeyRound, RefreshCw, Save, ShieldCheck } from 'lucide-react'
@@ -277,7 +278,7 @@ export function ProfilePage() {
           {tab === 'bilgiler' && <InfoTab key={p.updatedAt ?? 'new'} p={p} />}
           {tab === 'gizlilik' && <PrivacyTab employeeId={p.employeeId} />}
           {tab === 'takvim' && <CalendarTab />}
-          {tab === 'guvenlik' && <div className="space-y-5"><SecurityTab /><DevicePanel /><MyChatAccounts /></div>}
+          {tab === 'guvenlik' && <div className="space-y-5"><SecurityTab /><MySecurityPanel /><DevicePanel /><MyChatAccounts /></div>}
         </>
       )}
     </>

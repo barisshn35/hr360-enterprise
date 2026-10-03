@@ -398,6 +398,8 @@ services:
       SMTP_HOST: "${SMTP_HOST:-mailpit}"
       # Yapay zeka (istege bagli): anthropic | openai | ollama. Bos ise kapali.
       # Kiraci yoneticisi ayrica AI araclari ekranindan acmadikca veri gonderilmez.
+      SIEM_SYSLOG_ENDPOINT: "${SIEM_SYSLOG_ENDPOINT:-}"
+      SIEM_PSEUDONYM_KEY: "${SIEM_PSEUDONYM_KEY:-}"
       LLM_PROVIDER: "${LLM_PROVIDER:-}"
       LLM_MODEL: "${LLM_MODEL:-}"
       LLM_API_KEY: "${LLM_API_KEY:-}"
@@ -478,6 +480,7 @@ services:
     <<: *dotnet-service
     build: ./apps/services/tenant-service
     environment:
+      KEYCLOAK_PASSKEYS: "${KEYCLOAK_PASSKEYS:-true}"
       TENANT_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=12"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
       KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"

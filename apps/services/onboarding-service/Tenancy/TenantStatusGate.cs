@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Net;
 using Npgsql;
 
 namespace OnboardingService.Tenancy;
@@ -10,13 +11,18 @@ namespace OnboardingService.Tenancy;
 /// dogrulanmis istekte kiracinin durumunu (platform_tenants, 30 sn onbellek) kontrol
 /// eder; askidaysa 403 doner. Platform yoneticisi etkilenmez.
 ///
+/// G22: Kiraci bir IP izin listesi tanimladiysa (platform_tenants.IpAllowlist, CIDR
+/// listesi) gateway'den gelen (X-Real-IP tasiyan) istekler yalnizca bu adreslerden
+/// kabul edilir. Servisler arasi ic cagrilar (gateway'den gecmeyen) etkilenmez.
+///
 /// Baglanti: TENANT_STATUS_DB_CONNECTION (tanimsizsa kapi devre disi). Veritabani
 /// gecici olarak okunamazsa istek gecirilir (kesinti yerine kisa sureli izin) ve
 /// uyari yazilir.
 /// </summary>
 public class TenantStatusGate
 {
-    private static readonly ConcurrentDictionary<string, (bool Suspended, DateTime At)> Cache = new();
+    private sealed record Entry(bool Suspended, IReadOnlyList<IPNetwork> Allow, DateTime At);
+    private static readonly ConcurrentDictionary<string, Entry> Cache = new();
     private static readonly TimeSpan Ttl = TimeSpan.FromSeconds(30);
     private static readonly string? ConnectionString =
         Environment.GetEnvironmentVariable("TENANT_STATUS_DB_CONNECTION");
@@ -35,40 +41,78 @@ public class TenantStatusGate
         if (!string.IsNullOrEmpty(ConnectionString)
             && context.User?.Identity?.IsAuthenticated == true
             && !tenant.IsPlatformAdmin
-            && !string.IsNullOrWhiteSpace(tenant.TenantSlug)
-            && await IsSuspendedAsync(tenant.TenantSlug!, context.RequestAborted))
+            && !string.IsNullOrWhiteSpace(tenant.TenantSlug))
         {
-            context.Response.StatusCode = StatusCodes.Status403Forbidden;
-            await context.Response.WriteAsJsonAsync(new
+            var e = await ReadAsync(tenant.TenantSlug!, context.RequestAborted);
+            if (e.Suspended)
             {
-                message = "Şirket hesabı askıya alınmış. Lütfen yöneticinizle iletişime geçin.",
-                code = "tenant_suspended",
-            });
-            return;
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await context.Response.WriteAsJsonAsync(new
+                {
+                    message = "Şirket hesabı askıya alınmış. Lütfen yöneticinizle iletişime geçin.",
+                    code = "tenant_suspended",
+                });
+                return;
+            }
+            var realIp = context.Request.Headers["X-Real-IP"].FirstOrDefault();
+            if (e.Allow.Count > 0 && realIp is not null && !Allowed(e.Allow, realIp))
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await context.Response.WriteAsJsonAsync(new
+                {
+                    message = "Bu ağdan erişim şirketiniz tarafından kısıtlanmış.",
+                    code = "ip_not_allowed",
+                });
+                return;
+            }
         }
         await _next(context);
     }
 
-    private async Task<bool> IsSuspendedAsync(string slug, CancellationToken ct)
+    public static bool Allowed(IReadOnlyList<IPNetwork> allow, string ip)
+    {
+        if (!IPAddress.TryParse(ip.Trim(), out var addr)) return false;
+        if (addr.IsIPv4MappedToIPv6) addr = addr.MapToIPv4();
+        return allow.Any(n => n.Contains(addr));
+    }
+
+    public static List<IPNetwork> ParseList(string? raw)
+    {
+        var list = new List<IPNetwork>();
+        foreach (var part in (raw ?? "").Split(new[] { ',', '\n', ' ', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var s = part.Contains('/') ? part : part + (part.Contains(':') ? "/128" : "/32");
+            if (IPNetwork.TryParse(s, out var n)) list.Add(n);
+        }
+        return list;
+    }
+
+    private async Task<Entry> ReadAsync(string slug, CancellationToken ct)
     {
         if (Cache.TryGetValue(slug, out var hit) && DateTime.UtcNow - hit.At < Ttl)
-            return hit.Suspended;
+            return hit;
         try
         {
             await using var conn = new NpgsqlConnection(ConnectionString);
             await conn.OpenAsync(ct);
             await using var cmd = new NpgsqlCommand(
-                "SELECT \"Status\" FROM platform_tenants WHERE \"Slug\" = @s LIMIT 1", conn);
+                "SELECT \"Status\", \"IpAllowlist\" FROM platform_tenants WHERE \"Slug\" = @s LIMIT 1", conn);
             cmd.Parameters.AddWithValue("s", slug);
-            var status = await cmd.ExecuteScalarAsync(ct) as string;
-            var suspended = string.Equals(status, "Suspended", StringComparison.OrdinalIgnoreCase);
-            Cache[slug] = (suspended, DateTime.UtcNow);
-            return suspended;
+            await using var r = await cmd.ExecuteReaderAsync(ct);
+            string? status = null, allow = null;
+            if (await r.ReadAsync(ct))
+            {
+                status = r.IsDBNull(0) ? null : r.GetString(0);
+                allow = r.IsDBNull(1) ? null : r.GetString(1);
+            }
+            var e = new Entry(string.Equals(status, "Suspended", StringComparison.OrdinalIgnoreCase), ParseList(allow), DateTime.UtcNow);
+            Cache[slug] = e;
+            return e;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogWarning(ex, "Kiraci durumu okunamadi ({Slug}); istek geciriliyor", slug);
-            return hit.At != default && hit.Suspended;
+            return hit ?? new Entry(false, Array.Empty<IPNetwork>(), default);
         }
     }
 }

@@ -68,3 +68,39 @@ public class SettlementTests
         Assert.True(r.SeveranceEligible);
     }
 }
+
+public class FieldPolicyTests
+{
+    [Theory]
+    [InlineData("everyone", "other", true)]
+    [InlineData("manager", "other", false)]
+    [InlineData("manager", "manager", true)]
+    [InlineData("hr", "manager", false)]
+    [InlineData("hr", "hr", true)]
+    [InlineData("self", "hr", false)]
+    [InlineData("self", "self", true)]
+    public void Alan_gorunurlugu(string level, string viewer, bool expected) =>
+        Assert.Equal(expected, EngagementService.Infrastructure.FieldPolicies.CanSee(level, viewer));
+
+    [Fact]
+    public void Tckn_ve_iban_varsayilan_yalniz_ik()
+    {
+        Assert.Equal("hr", EngagementService.Infrastructure.FieldPolicies.Defaults["iban"]);
+        Assert.Equal("hr", EngagementService.Infrastructure.FieldPolicies.Defaults["nationalId"]);
+    }
+}
+
+public class IpAllowlistTests
+{
+    [Fact]
+    public void Cidr_ve_tek_adres()
+    {
+        var list = EngagementService.Tenancy.TenantStatusGate.ParseList("203.0.113.0/24, 198.51.100.7\nbozuk");
+        Assert.Equal(2, list.Count);
+        Assert.True(EngagementService.Tenancy.TenantStatusGate.Allowed(list, "203.0.113.200"));
+        Assert.True(EngagementService.Tenancy.TenantStatusGate.Allowed(list, "198.51.100.7"));
+        Assert.False(EngagementService.Tenancy.TenantStatusGate.Allowed(list, "198.51.100.8"));
+        Assert.True(EngagementService.Tenancy.TenantStatusGate.Allowed(list, "::ffff:203.0.113.5"));
+        Assert.False(EngagementService.Tenancy.TenantStatusGate.Allowed(list, "bozuk"));
+    }
+}

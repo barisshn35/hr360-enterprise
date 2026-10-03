@@ -101,7 +101,7 @@ export interface ConsentState {
 }
 export interface ConsentSummary {
   population: number
-  types: Array<{ type: string; title: string; required: boolean; version: string; granted: number; denied: number; pending: number }>
+  types: Array<{ type: string; title: string; required: boolean; version: string; granted: number; denied: number; pending: number; outdated?: number }>
   missingRequired: Array<{ employeeId: string; name: string; department: string | null }>
 }
 export type DataRequestKind = 'Access' | 'Rectification' | 'Erasure' | 'Objection'
@@ -121,6 +121,12 @@ export interface DataRequest {
   completedAt: string | null
   overdue: boolean
   daysLeft: number
+  channel?: 'Panel' | 'Email' | 'Kep' | 'Mail' | 'InPerson'
+  contact?: string | null
+  identityVerified?: boolean
+  verificationMethod?: string | null
+  verifiedBy?: string | null
+  verifiedAt?: string | null
 }
 export interface RetentionPolicy {
   id: string
