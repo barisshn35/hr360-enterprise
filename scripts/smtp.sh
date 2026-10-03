@@ -14,6 +14,9 @@
 #                       --password 'parola' --from noreply@sirket.com [--name "HR360"]
 #       Soru sormadan uygular. Port 465 = SSL, diger portlar = STARTTLS.
 #       Kullanici verilmezse kimlik dogrulamasiz (ic ag relay) gonderilir.
+#   scripts/smtp.sh set --from ik@sirket.com --password 'parola'
+#       Sunucu, port ve kullanici adi gonderen adresten bulunur (Gmail/Google Workspace,
+#       Microsoft 365, Outlook, Yandex, Zoho...; ozel alan adinda MX kaydindan).
 #   scripts/smtp.sh mailpit
 #       Paketteki test kutusuna (Mailpit) doner; e-postalar gercekten gonderilmez.
 #   scripts/smtp.sh status
@@ -25,6 +28,8 @@
 # sunucusunu uygulamadaki Ayarlar sayfasindan ayrica tanimlayabilir.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# shellcheck source=lib/net.sh
+. scripts/lib/net.sh
 unset SMTP_HOST SMTP_PORT SMTP_USER SMTP_PASSWORD SMTP_FROM_ADDRESS SMTP_FROM_NAME
 
 ENV_FILE=.env
@@ -124,12 +129,24 @@ case "$cmd" in
         *) die "bilinmeyen secenek: $1" ;;
       esac
     done
-    if [ -z "$host" ]; then
-      read -r -p "SMTP sunucusu (orn. smtp.sirket.com): " host || true
-      read -r -p "Port (587 = STARTTLS, 465 = SSL) [587]: " port || true
-      read -r -p "Kullanici adi (kimlik dogrulama yoksa bos): " user || true
-      if [ -n "$user" ]; then read -r -s -p "Parola: " pass || true; echo ""; have_pass=1; fi
-      read -r -p "Gonderen adres (orn. noreply@sirket.com): " from || true
+    if [ -z "$host" ] && [ -n "$from" ]; then
+      # Gonderen adresten sunucu/port/kullanici: --from ik@sirket.com --password ...
+      read -r host gport _ <<< "$(smtp_guess "$from")"
+      port="${port:-$gport}"; user="${user:-$from}"
+      echo "Sunucu gonderen adresten bulundu: $host:$port"
+    elif [ -z "$host" ]; then
+      read -r -p "Gonderen adres (orn. ik@sirket.com): " from || true
+      is_email "$from" || die "gecerli bir gonderen adres girin"
+      read -r ghost gport gkind <<< "$(smtp_guess "$from")"
+      read -r -p "SMTP sunucusu [$ghost]: " host || true; host="${host:-$ghost}"
+      [ "$host" = "$ghost" ] || gport=587
+      read -r -p "Port (587 = STARTTLS, 465 = SSL) [$gport]: " port || true; port="${port:-$gport}"
+      read -r -p "Kullanici adi [$from] ('-' = kimlik dogrulamasi yok): " user || true
+      user="${user:-$from}"; [ "$user" = "-" ] && user=""
+      if [ -n "$user" ]; then
+        hint="$(smtp_hint "$gkind")"; [ -n "$hint" ] && echo "Not: $hint"
+        read -r -s -p "Parola: " pass || true; echo ""; have_pass=1
+      fi
       read -r -p "Gonderen adi [HR360]: " name || true
     fi
     port="${port:-587}"; name="${name:-HR360}"

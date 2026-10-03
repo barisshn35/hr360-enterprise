@@ -20,11 +20,36 @@ public class MyTenantController : ControllerBase
     private readonly TenantDbContext _db;
     private readonly SmtpCredentialProtector _protector;
     private readonly LogoStorageService _logos;
-    public MyTenantController(TenantDbContext db, SmtpCredentialProtector protector, LogoStorageService logos)
+    private readonly KeycloakAdminClient _keycloak;
+    public MyTenantController(TenantDbContext db, SmtpCredentialProtector protector, LogoStorageService logos, KeycloakAdminClient keycloak)
     {
         _db = db;
         _protector = protector;
         _logos = logos;
+        _keycloak = keycloak;
+    }
+
+    public record LocaleInput(string Language);
+
+    /// <summary>
+    /// Oturumdaki kullanıcının dilini Keycloak'ta saklar (giriş ekranı ve Keycloak
+    /// e-postaları: davet, parola sıfırlama). Kiracı bağımsızdır; her kullanıcı kendi
+    /// dilini değiştirebilir.
+    /// </summary>
+    [HttpPut("me/locale")]
+    public async Task<IActionResult> SetMyLocale(LocaleInput body, CancellationToken ct)
+    {
+        if (body.Language is not ("tr" or "en")) return BadRequest(new { message = "Dil 'tr' ya da 'en' olmalı." });
+        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? User.FindFirst("sub")?.Value;
+        if (string.IsNullOrWhiteSpace(userId)) return BadRequest(new { message = "Kullanıcı kimliği jetonda yok." });
+        try
+        {
+            return await _keycloak.SetUserLocaleAsync(userId, body.Language, ct) ? NoContent() : NotFound();
+        }
+        catch (InvalidOperationException)
+        {
+            return StatusCode(502, new { message = "Keycloak'a ulaşılamadı; dil tercihi kaydedilemedi." });
+        }
     }
 
     [HttpGet]

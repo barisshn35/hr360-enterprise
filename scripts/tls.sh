@@ -27,12 +27,31 @@
 #       gateway HTTP kalir, ama uygulama adresi ve Keycloak ayarlari https://<host>
 #       olarak guncellenir. Dengeleyici X-Forwarded-Proto: https gondermelidir.
 #
+#   scripts/tls.sh auto --host hr.sirket.com [--email it@sirket.com]
+#       Kurulumun kullandigi yol: Let's Encrypt'i dener (once DNS kaydini denetler,
+#       yerel guvenlik duvarinda 80/443'u acar). Olmazsa gecici olarak kendinden imzali
+#       sertifikayla HTTPS acar ve Let's Encrypt'i saatte bir kendiliginden yeniden dener
+#       (systemd zamanlayici ya da cron). DNS duzeldiginde gercek sertifikaya kendisi gecer.
+#
+#   scripts/tls.sh retry
+#       Bekleyen Let's Encrypt denemesini simdi calistirir (zamanlayicinin cagirdigi komut).
+#
+#   scripts/tls.sh check [--host hr.sirket.com]
+#       On kosullari denetler: DNS kaydi bu sunucuyu gosteriyor mu, 80/443 baska bir
+#       surecte mi.
+#
+#   scripts/tls.sh verify
+#       Gateway'e baglanip HTTPS'i, sertifikayi, HTTP->HTTPS yonlendirmesini ve giris
+#       (Keycloak) adresini dogrular.
+#
 #   scripts/tls.sh status
 #
 # NOT: Gateway'in onunde TLS'i zaten sonlandiran bir yuk dengeleyici varsa "enable"
 # KULLANMAYIN (HTTP->HTTPS yonlendirmesi donguye girer); "external" kullanin.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# shellcheck source=lib/net.sh
+. scripts/lib/net.sh
 # Docker Compose kabuktaki degiskenleri .env'e tercih eder; kabukta eski degerler
 # (orn. "set -a; . ./.env") kalmissa yeni ayar uygulanmaz. Yonetilen degiskenler temizlenir.
 unset PUBLIC_URL PUBLIC_ORIGIN GATEWAY_TLS_BIND GATEWAY_TLS_PORT GATEWAY_PORT KEYCLOAK_ADMIN_MODE KEYCLOAK_ADMIN_ALLOWED_IPS KEYCLOAK_ADMIN_BIND KEYCLOAK_ADMIN_PORT KEYCLOAK_ADMIN_URL COMPOSE_PROFILES TLS_MODE
@@ -169,6 +188,19 @@ letsencrypt_issue() {
     die "Let's Encrypt dogrulamasi 80. porttan yapilir; GATEWAY_PORT=$gport. .env'de GATEWAY_PORT=80 yapin."
   fi
 
+  # 80 (dogrulama) ve 443 (HTTPS) yerel guvenlik duvari aciksa izinli hale getirilir.
+  open_firewall_ports 80 443
+  # DNS bu sunucuyu gostermiyorsa certbot hic calistirilmaz: her basarisiz deneme Let's
+  # Encrypt'in saatlik limitinden (alan adi basina 5) duser.
+  if [ "${TLS_SKIP_DNS_CHECK:-0}" != 1 ]; then
+    local rc=0; dns_points_here "$host" || rc=$?
+    case "$rc" in
+      0) echo "DNS: $DNS_CHECK_MSG" ;;
+      1) die "DNS: $DNS_CHECK_MSG (DNS'i bolunmus ufukla yonetiyorsaniz TLS_SKIP_DNS_CHECK=1 ile atlayin)" ;;
+      *) echo "UYARI: DNS denetlenemedi ($DNS_CHECK_MSG); yine de deneniyor." >&2 ;;
+    esac
+  fi
+
   echo "Gateway dogrulama yolu hazirlaniyor..."
   docker compose up -d gateway >/dev/null 2>&1
   docker compose exec -T gateway nginx -s reload >/dev/null 2>&1 || true
@@ -197,6 +229,54 @@ letsencrypt_issue() {
   fi
   [ -f "$LE_DIR/live/$host/fullchain.pem" ] || die "sertifika dosyasi bulunamadi: $LE_DIR/live/$host/"
 }
+
+# --- Let's Encrypt'i sonra yeniden deneme (auto) ---------------------------------
+RETRY_UNIT=hr360-tls-retry
+SYSTEMD_DIR="${HR360_SYSTEMD_DIR:-/etc/systemd/system}"
+schedule_retry() {
+  local root; root="$(pwd)"
+  if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1 && as_root true; then
+    printf '%s\n' "[Unit]" "Description=HR360: Let's Encrypt sertifikasini yeniden dene" \
+      "After=docker.service network-online.target" "Wants=network-online.target" "" \
+      "[Service]" "Type=oneshot" "WorkingDirectory=$root" "ExecStart=$root/scripts/tls.sh retry" \
+      | as_root tee "$SYSTEMD_DIR/$RETRY_UNIT.service" >/dev/null
+    printf '%s\n' "[Unit]" "Description=HR360: Let's Encrypt sertifikasini saatte bir yeniden dene" "" \
+      "[Timer]" "OnBootSec=10min" "OnUnitActiveSec=1h" "RandomizedDelaySec=5min" "" \
+      "[Install]" "WantedBy=timers.target" \
+      | as_root tee "$SYSTEMD_DIR/$RETRY_UNIT.timer" >/dev/null
+    if as_root systemctl daemon-reload && as_root systemctl enable --now "$RETRY_UNIT.timer" >/dev/null 2>&1; then
+      echo "Yeniden deneme: systemd zamanlayici ($RETRY_UNIT.timer, saatte bir; gunluk: journalctl -u $RETRY_UNIT)"
+      return 0
+    fi
+  fi
+  if command -v crontab >/dev/null 2>&1; then
+    if { crontab -l 2>/dev/null | grep -v "# $RETRY_UNIT\$" || true
+         echo "$((RANDOM % 60)) * * * * cd '$root' && scripts/tls.sh retry >> $LE_DIR/retry.log 2>&1 # $RETRY_UNIT"
+       } | crontab -; then
+      echo "Yeniden deneme: cron (saatte bir; gunluk: $LE_DIR/retry.log)"
+      return 0
+    fi
+  fi
+  echo "UYARI: zamanlayici kurulamadi (systemd/cron yok); DNS duzeldiginde elle calistirin: scripts/tls.sh retry" >&2
+  return 1
+}
+unschedule_retry() {
+  if [ -f "$SYSTEMD_DIR/$RETRY_UNIT.timer" ]; then
+    as_root systemctl disable --now "$RETRY_UNIT.timer" >/dev/null 2>&1 || true
+    as_root rm -f "$SYSTEMD_DIR/$RETRY_UNIT.timer" "$SYSTEMD_DIR/$RETRY_UNIT.service" || true
+    as_root systemctl daemon-reload >/dev/null 2>&1 || true
+  fi
+  if command -v crontab >/dev/null 2>&1 && crontab -l 2>/dev/null | grep -q "# $RETRY_UNIT\$"; then
+    crontab -l 2>/dev/null | grep -v "# $RETRY_UNIT\$" | crontab - || true
+  fi
+  return 0
+}
+# Elle yapilan her TLS degisikligi bekleyen otomatik denemeyi iptal eder.
+clear_pending() {
+  if [ -n "$(get_env TLS_LE_PENDING)" ]; then set_env TLS_LE_PENDING ""; set_env TLS_LE_EMAIL ""; fi
+  unschedule_retry
+}
+host_of() { printf '%s' "$1" | sed -E 's#^https?://([^/:]+).*#\1#'; }
 
 cmd="${1:-status}"; shift || true
 case "$cmd" in
@@ -280,6 +360,7 @@ EOF
     configure_keycloak "$origin" external
     end_change
     refresh_admin_access
+    [ "${TLS_KEEP_PENDING:-0}" = 1 ] || clear_pending
     echo "HTTPS acik: $origin"
     ;;
   external)
@@ -307,6 +388,7 @@ EOF
     configure_keycloak "$origin" external
     end_change
     refresh_admin_access
+    clear_pending
     echo "Adres $origin olarak ayarlandi (TLS dengeleyicide sonlaniyor; gateway HTTP)."
     ;;
   disable)
@@ -325,7 +407,100 @@ EOF
     # ag adresleri "external" ile de calisir. Uretimde HTTPS kullanin.
     configure_keycloak "$origin" none
     refresh_admin_access
+    clear_pending
     echo "HTTPS kapali: $origin"
+    ;;
+  auto)
+    host=""; email=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --host) host="$2"; shift 2 ;;
+        --email) email="$2"; shift 2 ;;
+        *) die "bilinmeyen secenek: $1" ;;
+      esac
+    done
+    [ -n "$host" ] || die "--host zorunlu"
+    le_args=(--letsencrypt --host "$host"); [ -n "$email" ] && le_args+=(--email "$email")
+    if "$0" enable "${le_args[@]}"; then exit 0; fi
+    echo ""
+    echo "Let's Encrypt sertifikasi su an alinamadi. Gecici olarak kendinden imzali sertifikayla"
+    echo "HTTPS aciliyor (tarayici uyari verir); Let's Encrypt saatte bir kendiliginden yeniden denenecek."
+    TLS_KEEP_PENDING=1 "$0" enable --self-signed --host "$host" || die "kendinden imzali sertifikayla da HTTPS acilamadi"
+    set_env TLS_LE_PENDING "$host"
+    set_env TLS_LE_EMAIL "$email"
+    schedule_retry || true
+    # 3 = HTTPS acik ama gecici sertifikayla (cagiran betik bunu ayirt edebilsin).
+    exit 3
+    ;;
+  retry)
+    host="$(get_env TLS_LE_PENDING)"; email="$(get_env TLS_LE_EMAIL)"
+    if [ -z "$host" ]; then unschedule_retry; echo "Bekleyen Let's Encrypt denemesi yok."; exit 0; fi
+    echo "[$(date '+%F %T')] Let's Encrypt yeniden deneniyor: $host"
+    rc=0; dns_points_here "$host" || rc=$?
+    if [ "$rc" = 1 ]; then echo "Henuz degil: $DNS_CHECK_MSG"; exit 0; fi
+    le_args=(--letsencrypt --host "$host"); [ -n "$email" ] && le_args+=(--email "$email")
+    if "$0" enable "${le_args[@]}"; then
+      echo "Let's Encrypt sertifikasi alindi; otomatik deneme kapatildi."
+    else
+      # Basarisiz "enable" onceki (kendinden imzali) ayari geri yukler; bekleyen kayit kalir.
+      echo "Basarisiz; bir sonraki denemede tekrar denenecek."
+    fi
+    ;;
+  check)
+    host=""
+    while [ $# -gt 0 ]; do
+      case "$1" in --host) host="$2"; shift 2 ;; *) die "bilinmeyen secenek: $1" ;; esac
+    done
+    [ -n "$host" ] || host="$(host_of "$(get_env PUBLIC_URL)")"
+    ok=1
+    rc=0; dns_points_here "$host" || rc=$?
+    case "$rc" in
+      0) echo "DNS:      tamam - $DNS_CHECK_MSG" ;;
+      1) echo "DNS:      SORUN - $DNS_CHECK_MSG"; ok=0 ;;
+      *) echo "DNS:      denetlenemedi - $DNS_CHECK_MSG" ;;
+    esac
+    for p in 80 443; do
+      if owner="$(port_owner "$p")"; then echo "Port $p:  SORUN - '$owner' bu portu kullaniyor"; ok=0
+      else echo "Port $p:  tamam"; fi
+    done
+    [ "$ok" = 1 ]
+    ;;
+  verify)
+    origin="$(get_env PUBLIC_ORIGIN)"; mode="$(get_env TLS_MODE)"; host="$(host_of "$origin")"
+    gport="$(get_env GATEWAY_PORT)"; gport="${gport:-80}"
+    ok=1
+    if [ -f "$DIR/listen.conf" ]; then
+      tport="$(get_env GATEWAY_TLS_PORT)"; tport="${tport:-443}"
+      k=(); [ "$mode" = self-signed ] && k=(-k)
+      code="$(curl -sS "${k[@]}" --max-time 15 --resolve "$host:$tport:127.0.0.1" -o /dev/null \
+                -w '%{http_code}' "https://$host:$tport/" 2>&1 || true)"
+      if [[ "$code" =~ ^[234][0-9][0-9]$ ]]; then
+        if [ "$mode" = self-signed ]; then echo "HTTPS:    calisiyor (kendinden imzali sertifika; tarayici uyari verir)"
+        else echo "HTTPS:    calisiyor, sertifika gecerli"; fi
+      else
+        echo "HTTPS:    SORUN - $code"; ok=0
+      fi
+      end="$(openssl s_client -connect "127.0.0.1:$tport" -servername "$host" </dev/null 2>/dev/null \
+               | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2 || true)"
+      [ -z "$end" ] || echo "          sertifika bitis: $end"
+      redir="$(curl -s --max-time 10 -o /dev/null -w '%{http_code} %{redirect_url}' -H "Host: $host" "http://127.0.0.1:$gport/" || true)"
+      case "$redir" in
+        "301 https://"*) echo "HTTP:     HTTPS'e yonlendiriyor" ;;
+        *) echo "HTTP:     SORUN - HTTPS'e yonlendirmiyor ($redir)"; ok=0 ;;
+      esac
+      base="https://$host:$tport"; cx=("${k[@]}" --resolve "$host:$tport:127.0.0.1")
+    else
+      base="http://127.0.0.1:$gport"; cx=(-H "Host: $host")
+      if [ "$mode" = external ]; then echo "HTTPS:    dengeleyicide sonlaniyor (gateway HTTP)"; else echo "HTTPS:    kapali"; fi
+    fi
+    issuer="$(curl -s "${cx[@]}" --max-time 15 "$base/auth/realms/hr360/.well-known/openid-configuration" \
+                | grep -o '"issuer":"[^"]*"' | cut -d'"' -f4 || true)"
+    if [ "$issuer" = "$origin/auth/realms/hr360" ]; then echo "Giris:    tamam ($issuer)"
+    else echo "Giris:    SORUN - beklenen $origin/auth/realms/hr360, gelen '${issuer:-yanit yok}'"; ok=0; fi
+    if [ -n "$(get_env TLS_LE_PENDING)" ]; then
+      echo "Not:      Let's Encrypt bekliyor ($(get_env TLS_LE_PENDING)); saatte bir yeniden deneniyor. Durum: scripts/tls.sh check"
+    fi
+    [ "$ok" = 1 ]
     ;;
   status)
     if [ "$(get_env TLS_MODE)" = external ]; then
@@ -347,5 +522,5 @@ EOF
       echo "HTTPS: kapali ($(get_env PUBLIC_ORIGIN))"
     fi
     ;;
-  *) die "kullanim: $0 enable|external|disable|status" ;;
+  *) die "kullanim: $0 enable|auto|retry|check|verify|external|disable|status" ;;
 esac

@@ -260,6 +260,11 @@ public abstract class AppController : ControllerBase
     protected PeopleDirectory People => HttpContext.RequestServices.GetRequiredService<PeopleDirectory>();
     protected Sql Db => HttpContext.RequestServices.GetRequiredService<Sql>();
 
+    /// <summary>Arayüz dili (X-HR360-Lang: tr | en). Yanıt metinleri bu dile göre üretilir.</summary>
+    protected string Lang => Request.Headers["X-HR360-Lang"].ToString().StartsWith("en", StringComparison.OrdinalIgnoreCase) ? "en" : "tr";
+    protected bool En => Lang == "en";
+    protected string L(string tr, string en) => En ? en : tr;
+
     /// <summary>Oturumdaki kullanıcının çalışan kaydı (yoksa null — ör. platform yöneticisi).</summary>
     protected async Task<Person?> MyPersonAsync(CancellationToken ct)
         => await People.FindByUserAsync(Tenant, Me.UserId, ct);

@@ -160,8 +160,10 @@ jobs:
         run: python3 -m json.tool deploy/monitoring/grafana/dashboards/hr360-overview.json > /dev/null
       - name: Kabuk betikleri (bash -n + shellcheck)
         run: |
-          for f in install.sh scripts/*.sh; do bash -n "$f"; done
-          shellcheck -S error install.sh scripts/*.sh
+          for f in install.sh scripts/*.sh scripts/lib/*.sh tests/install/*.sh; do bash -n "$f"; done
+          shellcheck -x -S error install.sh scripts/*.sh scripts/lib/*.sh tests/install/*.sh
+      - name: Kurulum otomasyonu (HTTPS, DNS, SMTP; sahte docker/curl ile)
+        run: tests/install/test_install.sh
       - name: SQL semasi (bos Postgres'e uygulanir)
         run: |
           docker run -d --name pg -e POSTGRES_PASSWORD=ci -e POSTGRES_USER=hr360admin -e POSTGRES_DB=hr360_operational postgres:18-alpine

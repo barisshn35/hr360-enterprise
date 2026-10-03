@@ -1,14 +1,21 @@
 import { Languages } from 'lucide-react'
-import { lang, setLanguage, tx } from '@/lib/i18n'
+import { useState } from 'react'
+import { lang, tx } from '@/lib/i18n'
+import { changeLanguage } from '@/lib/languageSync'
 import { cn } from '@/lib/utils'
 
 /** Türkçe ↔ İngilizce. Seçim tarayıcıda saklanır; sayfa yeniden yüklenir. */
 export function LanguageToggle({ className }: { className?: string }) {
   const next = lang === 'tr' ? 'en' : 'tr'
+  const [busy, setBusy] = useState(false)
   return (
     <button
       type="button"
-      onClick={() => setLanguage(next)}
+      disabled={busy}
+      onClick={() => {
+        setBusy(true)
+        void changeLanguage(next)
+      }}
       aria-label={next === 'en' ? tx('Switch to English') : tx('Türkçeye geç')}
       title={tx('Dil')}
       className={cn(

@@ -512,6 +512,21 @@ public class KeycloakAdminClient
         return (hasOtp, pending, user["username"]?.GetValue<string>());
     }
 
+    /// <summary>
+    /// Kullanıcının Keycloak dilini (locale özniteliği) ayarlar: giriş ekranı, parola
+    /// sıfırlama ve davet e-postaları bu dilde gelir.
+    /// </summary>
+    public async Task<bool> SetUserLocaleAsync(string userId, string locale, CancellationToken ct)
+    {
+        var user = await GetUserRepresentationAsync(userId, ct);
+        if (user is null) return false;
+        var attrs = user["attributes"] as System.Text.Json.Nodes.JsonObject ?? new System.Text.Json.Nodes.JsonObject();
+        attrs["locale"] = new System.Text.Json.Nodes.JsonArray(locale);
+        user["attributes"] = attrs.DeepClone();
+        await PutUserAsync(userId, user, ct);
+        return true;
+    }
+
     /// <summary>Bir sonraki girişte doğrulayıcı uygulama kurulumunu zorunlu kılar.</summary>
     public async Task RequireOtpSetupAsync(string userId, CancellationToken ct)
     {

@@ -10,6 +10,7 @@ import { TopNav } from './TopNav'
 import { AppDock } from './AppDock'
 import { CommandPalette } from './CommandPalette'
 import { tx } from '@/lib/i18n'
+import { useServerLanguage } from '@/lib/languageSync'
 
 /**
  * Panelin dış kabuğu ("Zümrüt Yörünge" düzeni).
@@ -45,6 +46,8 @@ export function AppShell() {
   const unread = useUnreadCount(canSeeNotifications ? myEmployeeId : undefined)
   // Çalışan dizini açılışta bir kez çekilir; tüm ekranlar kimlikten adı buradan çözer.
   useDirectory()
+  // Bu tarayıcıda dil seçilmediyse kullanıcının sunucudaki dil tercihini uygula.
+  useServerLanguage(status === 'authenticated')
 
   /**
    * `organization` claim'i gelmediyse backend hiçbir kaydı döndürmez ama HATA

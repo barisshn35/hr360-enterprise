@@ -24,6 +24,7 @@ public class NotificationDbContext : DbContext, ITenantAwareContext
     public DbSet<NotificationTemplate> Templates => Set<NotificationTemplate>();
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<ProcessedEvent> ProcessedEvents => Set<ProcessedEvent>();
+    public DbSet<NotificationPreference> Preferences => Set<NotificationPreference>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -45,6 +46,10 @@ public class NotificationDbContext : DbContext, ITenantAwareContext
         // TenantSlug yok, tenant filtrelerine dahil edilmemeli.
         modelBuilder.Entity<ProcessedEvent>().ToTable("messaging_processed_events");
         modelBuilder.Entity<ProcessedEvent>().HasKey(p => new { p.EventId, p.Consumer });
+
+        modelBuilder.Entity<NotificationPreference>().ConfigureTenantColumn();
+        modelBuilder.Entity<NotificationPreference>().ToTable("notification_preferences");
+        modelBuilder.Entity<NotificationPreference>().HasKey(p => new { p.TenantSlug, p.EmployeeId });
 
         modelBuilder.ApplyTenantFilters(this);
     }

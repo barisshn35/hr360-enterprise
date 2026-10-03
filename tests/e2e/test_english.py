@@ -50,3 +50,44 @@ def test_ingilizce_arayuz(session):
     # Türkçeye dönüş
     page.goto(BASE_URL + "/panel?lang=tr", wait_until="networkidle")
     assert page.evaluate("document.documentElement.lang") == "tr"
+
+
+def test_dil_tercihi_sunucuda_saklanir(browser):
+    """Düğmeyle seçilen dil sunucuya yazılır; başka bir tarayıcıda (boş localStorage) aynı dil açılır."""
+    import time
+
+    import hr360_login
+
+    def wait_lang(page, want, timeout=15):
+        # wait_for_function dize değerlendirir; uygulamanın CSP'si (unsafe-eval yok) buna izin vermez.
+        end = time.time() + timeout
+        while time.time() < end:
+            try:
+                if page.evaluate("document.documentElement.lang") == want:
+                    return
+            except Exception:  # noqa: BLE001 — sayfa yeniden yüklenirken
+                pass
+            time.sleep(0.3)
+        raise AssertionError(f"dil {want} olmadı")
+
+    def fresh():
+        ctx = browser.new_context(viewport={"width": 1440, "height": 900}, locale="tr-TR")
+        page = ctx.new_page()
+        hr360_login.login_page(page, "ayse")
+        page.wait_for_load_state("networkidle")
+        return ctx, page
+
+    ctx, page = fresh()
+    page.evaluate("localStorage.setItem('hr360.lang', 'tr')")
+    page.goto(BASE_URL + "/panel", wait_until="networkidle")
+    page.get_by_role("button", name="Switch to English").click()
+    wait_lang(page, "en")
+    ctx.close()
+
+    # Yeni tarayıcı: dil seçimi yok, sunucudaki tercih (en) uygulanır.
+    ctx, page = fresh()
+    wait_lang(page, "en")
+    # Geri al
+    page.get_by_role("button", name="Türkçeye geç").click()
+    wait_lang(page, "tr")
+    ctx.close()

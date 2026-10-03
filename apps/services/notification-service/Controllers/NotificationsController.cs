@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using NotificationService.Data;
+using NotificationService.Messaging;
 using NotificationService.Models;
 using NotificationService.Services;
 
@@ -120,6 +121,11 @@ public partial class NotificationsController : ControllerBase
         // Failed'e dusurup onceki (guvenli) davranisi korur.
         if (request.Channel == NotificationChannel.Email)
             notification.RecipientEmail = await _employees.GetEmailAsync(request.RecipientEmployeeId, HttpContext.RequestAborted);
+
+        // E-posta cercevesi (dugme, alt bilgi) alicinin dil tercihine gore; metni cagiran verir.
+        notification.Language = NotificationTexts.Normalize(await _db.Preferences.AsNoTracking()
+            .Where(p => p.EmployeeId == request.RecipientEmployeeId)
+            .Select(p => p.Language).FirstOrDefaultAsync(HttpContext.RequestAborted));
 
         _db.Notifications.Add(notification);
         await _db.SaveChangesAsync();

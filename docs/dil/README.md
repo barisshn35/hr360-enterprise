@@ -39,11 +39,41 @@ Keycloak giriş ekranı da seçili dilde açılır.
 Tarayıcı testi `tests/e2e/test_english.py` tüm ekranları İngilizce açar. Hata
 olmamasını ve sözlükteki bir Türkçe metnin çevrilmeden görünmemesini denetler.
 
+## Rapor asistanı ve İK asistanı
+
+İstekler `X-HR360-Lang: tr|en` başlığıyla gider (`apiFetch` ekler). Governance servisi
+yanıtı bu dilde üretir:
+
+- **Rapor asistanı** soruları Türkçe ya da İngilizce anlar ("Leave days by department in
+  the last 6 months", "Son 6 ayda departmanlara göre izin günleri"). Yorum, sütun başlıkları,
+  dönem adları ve örnek sorular arayüz dilindedir. İngilizce arayüzde Türkçe soru da anlaşılır,
+  yanıt İngilizce gelir.
+- **İK asistanı** (izin bakiyesi, bekleyen onaylar, tatiller, kim izinde, masraflar, bordro,
+  yöneticinin analitik soruları) aynı şekilde iki dilde yanıt verir.
+
+Test: `tests/integration/test_report_lang.py`.
+
+## E-postalar
+
+Her kullanıcının dil tercihi sunucuda saklanır. Üst çubuktaki **EN / TR** düğmesi seçimi
+hem tarayıcıya hem sunucuya yazar:
+
+- `PUT /api/notification/notifications/preferences/me` (`notification_preferences` tablosu,
+  kiracı + çalışan anahtarlı). Bildirim servisi e-postanın konusunu, gövdesini ve çerçevesini
+  (`<html lang>`, düğme, alt bilgi) **alıcının** diline göre üretir. Tarih biçimi de dile göre
+  değişir. Kayıtlı bildirimler (`notification_messages."Language"`) üretildikleri dili saklar.
+- `PUT /api/tenant/my-tenant/me/locale` Keycloak kullanıcısının `locale` özniteliğini yazar;
+  giriş ekranı ve parola sıfırlama e-postaları da bu dilde gelir.
+- Başka bir tarayıcıda (dil seçimi yokken) giriş yapılınca sunucudaki tercih uygulanır.
+
+Tercih kaydı olmayan kullanıcıya e-posta Türkçe gider. Testler:
+`tests/integration/test_email_lang.py` (Mailpit'te İngilizce ve Türkçe e-posta),
+`tests/e2e/test_english.py::test_dil_tercihi_sunucuda_saklanir`.
+
 ## Bilinen sınırlar
 
-- **Rapor asistanı** soruları yalnızca Türkçe anlar. Örnek sorular bu yüzden Türkçe
-  gösterilir.
 - **Sohbet botu** komutları (`onaylarım`, `bakiye`, `izindekiler`, `kimnerede`) Türkçedir.
-- **E-postalar ve kayıtlı bildirimler** gönderildikleri anda Türkçe üretilir. Panelde
-  bilinen kalıplar çevrilir; e-posta kutusuna Türkçe gider.
+- **API ile doğrudan gönderilen bildirimlerde** (`POST /api/notifications`) metni çağıran
+  verir; yalnızca e-posta çerçevesi alıcının dilindedir.
+- **Sistem uyarıları** (Alertmanager) Türkçedir.
 - **Yapay zekâ çıktıları** (ilan taslağı, özet) Türkçe istenir.

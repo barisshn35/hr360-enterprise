@@ -7,7 +7,11 @@ Tek komutla açılır, adres ve Keycloak ayarları betik tarafından güncelleni
 aşağıdaki komutlar kurulumdan sonra değiştirmek için.
 
 ```bash
-# Let's Encrypt: ücretsiz sertifika + otomatik yenileme (önerilen)
+# Let's Encrypt: ücretsiz sertifika + otomatik yenileme (önerilen). Olmazsa geçici
+# sertifikayla açar ve Let's Encrypt'i saatte bir kendiliğinden yeniden dener.
+scripts/tls.sh auto --host hr.sirket.com --email it@sirket.com
+
+# Yalnızca Let's Encrypt (başarısızsa hiçbir şey değişmez)
 scripts/tls.sh enable --letsencrypt --host hr.sirket.com --email it@sirket.com
 
 # Kendi sertifikanız (kurumsal CA, satın alınmış sertifika)
@@ -17,6 +21,8 @@ scripts/tls.sh enable --cert /yol/fullchain.pem --key /yol/privkey.pem --host hr
 scripts/tls.sh enable --self-signed --host hr.sirket.local
 
 scripts/tls.sh status
+scripts/tls.sh check     # DNS bu sunucuyu gösteriyor mu, 80/443 boş mu
+scripts/tls.sh verify    # HTTPS, sertifika, HTTP->HTTPS yönlendirmesi, giriş adresi
 scripts/tls.sh disable
 ```
 
@@ -53,8 +59,27 @@ Denetim:
   tarayıcı sertifikaya güvenmez ama istek sınırlarına takılmazsınız. Sonra `--staging`
   olmadan tekrar çalıştırın.
 
-Kurulumda Let's Encrypt başarısız olursa (DNS henüz yayılmadı, port kapalı) kurulum durmaz.
-Uygulama HTTP ile açılır ve ekrana tekrar deneme komutu basılır.
+Ön denetimler (`enable --letsencrypt` ve `auto`):
+- Yerel güvenlik duvarı (ufw ya da firewalld) açıksa 80 ve 443/tcp'ye izin verilir.
+  Kapalı güvenlik duvarı açılmaz. Bulut güvenlik grubu betikten yönetilemez.
+- Alan adının A kaydı, sunucunun genel IPv4 adresiyle karşılaştırılır. Sorgu
+  DNS-over-HTTPS ile yapılır (Cloudflare, Google), yani Let's Encrypt'in gördüğü genel DNS
+  denetlenir; yerel `/etc/hosts` yanıltmaz. Kayıt yanlışsa certbot hiç çalıştırılmaz:
+  Let's Encrypt alan adı başına saatte 5 başarısız doğrulamaya izin verir.
+- Genel IP belirlenemezse (internet çıkışı yok) uyarı verilir ve yine de denenir. Çıkış
+  trafiği farklı bir IP'den gidiyorsa `HR360_PUBLIC_IP=203.0.113.10` ile verin. DNS'i
+  bölünmüş ufukla yönetiyorsanız denetimi `TLS_SKIP_DNS_CHECK=1` ile atlayın.
+
+Kurulumda (ve `tls.sh auto` ile) Let's Encrypt başarısız olursa kurulum durmaz:
+1. HTTPS geçici, kendinden imzalı bir sertifikayla açılır. Tarayıcı uyarı verir; HSTS
+   bu sertifikada açılmaz.
+2. `.env`'e `TLS_LE_PENDING=<alan adı>` yazılır ve saatlik bir zamanlayıcı kurulur:
+   systemd varsa `hr360-tls-retry.timer` (günlük: `journalctl -u hr360-tls-retry`), yoksa
+   cron (günlük: `deploy/letsencrypt/retry.log`).
+3. Zamanlayıcı her saat `scripts/tls.sh retry` çalıştırır. DNS hâlâ yanlışsa certbot'a
+   gitmeden çıkar. Sertifika alınınca Let's Encrypt'e geçilir, geçici sertifika silinir,
+   zamanlayıcı kaldırılır.
+4. Elle yapılan her TLS değişikliği (`enable`, `disable`, `external`) bekleyen denemeyi iptal eder.
 
 ## Kendi sertifikanız
 

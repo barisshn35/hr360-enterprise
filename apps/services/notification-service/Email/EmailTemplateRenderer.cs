@@ -19,8 +19,9 @@ public static class EmailTemplateRenderer
 
     public static string Render(
         string subject, string bodyPlainText, string? actionUrl = null, string? actionLabel = null,
-        string? logoUrl = null, string? companyName = null)
+        string? logoUrl = null, string? companyName = null, string lang = "tr")
     {
+        var en = lang == "en";
         var bodyHtml = System.Net.WebUtility.HtmlEncode(bodyPlainText)
             .Replace("\n", "<br/>");
 
@@ -73,7 +74,7 @@ public static class EmailTemplateRenderer
                 <a href="{actionUrl}" style="background-color:{Emerald};color:#ffffff;text-decoration:none;
                    font-family:Segoe UI,Arial,sans-serif;font-size:15px;font-weight:600;
                    padding:12px 28px;border-radius:8px;display:inline-block;">
-                  {System.Net.WebUtility.HtmlEncode(actionLabel ?? "Görüntüle")}
+                  {System.Net.WebUtility.HtmlEncode(actionLabel ?? (en ? "View" : "Görüntüle"))}
                 </a>
               </td>
             </tr>
@@ -81,7 +82,7 @@ public static class EmailTemplateRenderer
 
         return $"""
         <!DOCTYPE html>
-        <html lang="tr">
+        <html lang="{(en ? "en" : "tr")}">
         <head>
           <meta charset="utf-8"/>
           <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
@@ -121,8 +122,9 @@ public static class EmailTemplateRenderer
                   <tr>
                     <td style="padding:20px 32px 28px 32px;">
                       <p style="margin:0;font-size:12px;line-height:1.6;color:{TextMuted};">
-                        Bu e-posta {System.Net.WebUtility.HtmlEncode(brandName)} tarafından otomatik olarak
-                        gönderilmiştir. Bir işlem yapmanız gerekmiyorsa herhangi bir şey yapmanıza gerek yoktur.
+                        {(en
+                            ? $"This email was sent automatically by {System.Net.WebUtility.HtmlEncode(brandName)}. If no action is required, you don't need to do anything."
+                            : $"Bu e-posta {System.Net.WebUtility.HtmlEncode(brandName)} tarafından otomatik olarak gönderilmiştir. Bir işlem yapmanız gerekmiyorsa herhangi bir şey yapmanıza gerek yoktur.")}
                       </p>
                     </td>
                   </tr>

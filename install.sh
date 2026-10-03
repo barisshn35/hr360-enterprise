@@ -17,9 +17,26 @@
 # GUNCELLEMEDIR: sirlar korunur, veritabani gocleri uygulanir, imajlar yeniden
 # build edilir.
 #
-# Kullanim: ./install.sh
+# Alan adiyla kurulumda zorunlu iki adim kendiliginden yapilir:
+#   - HTTPS: guvenlik duvarinda 80/443 acilir, DNS kaydinin bu sunucuyu gosterdigi
+#     denetlenir, Let's Encrypt sertifikasi alinir. Alinamazsa (DNS henuz yayilmadi vb.)
+#     gecici bir sertifikayla HTTPS acilir ve Let's Encrypt saatte bir kendiliginden
+#     yeniden denenir; DNS duzeldiginde gercek sertifikaya gecilir.
+#   - E-posta: gonderen adresten SMTP sunucusu ve portu bulunur (Gmail/Google Workspace,
+#     Microsoft 365, Outlook, Yandex, Zoho... ozel alan adlarinda MX kaydindan), bir deneme
+#     e-postasi gonderilerek dogrulanir. Yonetici e-postasi sistem uyarilarinin alicisi olur.
+#
+# Kullanim:
+#   ./install.sh                      Sorularla kurulum
+#   ./install.sh --domain hr.sirket.com --email it@sirket.com \
+#                --smtp-from ik@sirket.com --smtp-password '...' --yes
+#                                     Soru sormadan kurulum (parola HR360_SMTP_PASSWORD
+#                                     ortam degiskeniyle de verilebilir)
+#   ./install.sh --help               Tum secenekler
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
+# shellcheck source=scripts/lib/net.sh
+. scripts/lib/net.sh
 
 BOLD=$(tput bold 2>/dev/null || echo "")
 RESET=$(tput sgr0 2>/dev/null || echo "")
@@ -30,6 +47,89 @@ info()  { echo "${BOLD}==>${RESET} $*"; }
 # GNU sed (Linux) ve BSD sed (macOS) icin ortak "yerinde degistir".
 sed_i() { if sed --version >/dev/null 2>&1; then sed -i "$@"; else sed -i '' "$@"; fi; }
 warn()  { echo "${YELLOW}${BOLD}!!${RESET} $*"; }
+
+# --- Komut satiri secenekleri ----------------------------------------------
+usage() {
+  cat <<'EOF'
+Kullanim: ./install.sh [secenekler]
+
+  --domain ALAN_ADI       Uygulamanin alan adi (orn. hr.sirket.com). Adres https://ALAN_ADI,
+                          HTTP portu 80 ve HTTPS Let's Encrypt ile otomatik olur.
+  --url ADRES             Alan adi yerine adres (orn. http://10.0.0.5); HTTPS sorulmaz/kapali.
+  --http-port PORT        Gateway HTTP portu (varsayilan 80).
+  --email ADRES           Yonetici e-postasi: sertifika bildirimleri, sistem uyarilari
+                          (Alertmanager) ve SMTP deneme e-postasi bu adrese gider.
+  --tls KIP               letsencrypt | self-signed | none | cert (cert icin --cert ve --key).
+  --cert DOSYA --key DOSYA
+                          Kendi sertifikaniz (fullchain + ozel anahtar).
+  --smtp-from ADRES       Gonderen e-posta adresi. Sunucu ve port bu adresten bulunur.
+  --smtp-host SUNUCU      Bulunan sunucu yerine bu kullanilir ("mailpit" = test kutusu).
+  --smtp-port PORT        587 (STARTTLS) ya da 465 (SSL).
+  --smtp-user KULLANICI   Varsayilan: gonderen adres. "-" = kimlik dogrulamasi yok.
+  --smtp-password PAROLA  (ya da HR360_SMTP_PASSWORD ortam degiskeni)
+  --smtp-name AD          Gonderen adi (varsayilan HR360).
+  --no-smtp-test          Deneme e-postasi gonderme.
+  --keycloak-admin KIP    open | ip:CIDR,CIDR | port  (yonetim paneli erisimi)
+  -y, --yes               Hicbir soru sorma; verilmeyenler icin varsayilanlar kullanilir,
+                          sirlar rastgele uretilir. Mevcut kurulumda guncelleme yapilir.
+  -h, --help              Bu yardim.
+EOF
+}
+
+ASSUME_YES=0
+OPT_URL=""; OPT_DOMAIN=""; OPT_HTTP_PORT=""; OPT_EMAIL=""; OPT_TLS=""; OPT_CERT=""; OPT_KEY=""
+OPT_SMTP_FROM=""; OPT_SMTP_HOST=""; OPT_SMTP_PORT=""; OPT_SMTP_USER=""; OPT_SMTP_NAME=""
+OPT_SMTP_PASSWORD="${HR360_SMTP_PASSWORD:-}"; OPT_SMTP_TEST=1; OPT_KC_ADMIN=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --domain) OPT_DOMAIN="${2:-}"; shift 2 ;;
+    --url) OPT_URL="${2:-}"; shift 2 ;;
+    --http-port) OPT_HTTP_PORT="${2:-}"; shift 2 ;;
+    --email) OPT_EMAIL="${2:-}"; shift 2 ;;
+    --tls) OPT_TLS="${2:-}"; shift 2 ;;
+    --cert) OPT_CERT="${2:-}"; shift 2 ;;
+    --key) OPT_KEY="${2:-}"; shift 2 ;;
+    --smtp-from) OPT_SMTP_FROM="${2:-}"; shift 2 ;;
+    --smtp-host) OPT_SMTP_HOST="${2:-}"; shift 2 ;;
+    --smtp-port) OPT_SMTP_PORT="${2:-}"; shift 2 ;;
+    --smtp-user) OPT_SMTP_USER="${2:-}"; shift 2 ;;
+    --smtp-password) OPT_SMTP_PASSWORD="${2:-}"; shift 2 ;;
+    --smtp-name) OPT_SMTP_NAME="${2:-}"; shift 2 ;;
+    --no-smtp-test) OPT_SMTP_TEST=0; shift ;;
+    --keycloak-admin) OPT_KC_ADMIN="${2:-}"; shift 2 ;;
+    -y|--yes) ASSUME_YES=1; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "Bilinmeyen secenek: $1 (yardim: ./install.sh --help)"; exit 2 ;;
+  esac
+done
+if [ -n "$OPT_DOMAIN" ]; then
+  OPT_DOMAIN="${OPT_DOMAIN#http://}"; OPT_DOMAIN="${OPT_DOMAIN#https://}"; OPT_DOMAIN="${OPT_DOMAIN%/}"
+  [[ "$OPT_DOMAIN" =~ ^[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]] || { echo "Gecersiz alan adi: $OPT_DOMAIN"; exit 2; }
+  [ -z "$OPT_URL" ] || { echo "--domain ve --url birlikte verilemez."; exit 2; }
+  OPT_URL="https://${OPT_DOMAIN}"
+  if [ -n "$OPT_HTTP_PORT" ] && [ "$OPT_HTTP_PORT" != 80 ]; then
+    echo "--domain ile HTTP portu 80 olmali (Let's Encrypt dogrulamasi 80'den yapilir)."; exit 2
+  fi
+  OPT_HTTP_PORT=80
+fi
+case "$OPT_TLS" in ""|letsencrypt|self-signed|none|cert) ;; *) echo "Gecersiz --tls: $OPT_TLS"; exit 2 ;; esac
+if [ -n "$OPT_EMAIL" ] && ! [[ "$OPT_EMAIL" =~ ^[^@[:space:]]+@[^@[:space:]]+[.][^@[:space:]]+$ ]]; then
+  echo "Gecersiz e-posta: $OPT_EMAIL"; exit 2
+fi
+# --yes ile e-posta yapilandirmasi istendiyse parola eksikligi en basta yakalanir.
+if [ "$ASSUME_YES" = 1 ] && [ -n "$OPT_SMTP_FROM" ] && [ "$OPT_SMTP_HOST" != mailpit ] \
+   && [ "$OPT_SMTP_USER" != "-" ] && [ -z "$OPT_SMTP_PASSWORD" ]; then
+  echo "--smtp-from verildi ama parola yok: --smtp-password ya da HR360_SMTP_PASSWORD (kimlik dogrulamasiz icin --smtp-user -)."
+  exit 2
+fi
+
+# ask DEGISKEN "soru": girdiyi degiskene yazar. --yes ile soru sorulmaz, bos (varsayilan) kabul edilir.
+ask() {
+  local __in=""
+  if [ "$ASSUME_YES" = 1 ]; then echo "$2(otomatik: varsayilan)"
+  else read -r -p "$2" __in || true; fi
+  printf -v "$1" '%s' "$__in"
+}
 
 random_secret() {
   # URL-safe, 24 karakter
@@ -63,7 +163,7 @@ ask_secret_aes_key() {
   local input=""
   while :; do
     input=""
-    read -r -p "$prompt [bos birakin, otomatik guclu bir deger uretilsin]: " input || true
+    ask input "$prompt [bos birakin, otomatik guclu bir deger uretilsin]: "
     if [ -z "$input" ]; then
       input="$(random_aes_key)"
       echo "   -> otomatik uretildi: $input"
@@ -84,7 +184,7 @@ ask_secret() {
   local input=""
   while :; do
     input=""
-    read -r -p "$prompt [bos birakin, otomatik guclu bir deger uretilsin]: " input || true
+    ask input "$prompt [bos birakin, otomatik guclu bir deger uretilsin]: "
     if [ -z "$input" ]; then
       input="$(random_secret)"
       echo "   -> otomatik uretildi: $input"
@@ -220,7 +320,7 @@ install_docker() {
   warn "Docker Engine bulunamadi."
   echo "Docker Engine ve Compose eklentisini ${OS_ID} ${OS_VERSION} icin resmi depodan, 'sudo'"
   echo "yetkisiyle kurmami ister misiniz? Mevcut kullanici (${USER:-$(whoami)}) 'docker' grubuna eklenir."
-  read -r -p "Devam edilsin mi? [e/H]: " reply || true
+  if [ "$ASSUME_YES" = 1 ]; then reply=e; else read -r -p "Devam edilsin mi? [e/H]: " reply || true; fi
   if [[ ! "$reply" =~ ^[eEyY]$ ]]; then
     echo "Kurulum iptal edildi. Docker'i elle kurup scripti tekrar calistirabilirsiniz: https://docs.docker.com/engine/install/"
     exit 1
@@ -363,7 +463,7 @@ fi
 
 if [ -f .env ]; then
   warn ".env dosyasi zaten var."
-  read -r -p "Uzerine yazip sirlari yeniden mi uretelim? [e/H]: " overwrite || true
+  overwrite=""; ask overwrite "Uzerine yazip sirlari yeniden mi uretelim? [e/H]: "
   if [[ "$overwrite" =~ ^[eEyY]$ ]]; then
     # Mevcut veriler (volume'ler) eski sirlarla olusturuldu: Postgres eski parolayi,
     # Keycloak eski realm ve yonetici parolasini, kiracilarin sifreli SMTP parolalari
@@ -411,6 +511,16 @@ if [ -f .env ]; then
       info "INTERNAL_SERVICE_TOKEN .env'e eklendi."
     fi
 
+    # Yonetici e-postasi verildiyse sistem uyarilarinin alicisi yapilir (bossa).
+    if [ -n "$OPT_EMAIL" ] && [ -z "${ALERT_EMAIL_TO:-}" ]; then
+      printf 'HR360_ADMIN_EMAIL=%s\nALERT_EMAIL_TO=%s\n' "$OPT_EMAIL" "$OPT_EMAIL" >> .env
+      info "ALERT_EMAIL_TO=${OPT_EMAIL} .env'e eklendi."
+    fi
+    if [ -n "$OPT_SMTP_FROM" ] || [ -n "$OPT_DOMAIN" ]; then
+      warn "Guncellemede adres/e-posta degistirilmez. E-posta: scripts/smtp.sh set --from ...,"
+      warn "alan adi/HTTPS: scripts/tls.sh auto --host ... ile ayarlayin."
+    fi
+
     # Redis (Valkey) onbellek parolasi; eski .env'lerde yok.
     if [ -z "${REDIS_PASSWORD:-}" ]; then
       REDIS_PASSWORD="$(random_secret)$(random_secret)"
@@ -456,89 +566,149 @@ if [ -f .env ]; then
   fi
 fi
 
-# --- 2) Sirlari sor ------------------------------------------------------
+# --- 2) Adres, HTTPS ve e-posta --------------------------------------------
 echo ""
 echo "Asagidaki sirlar icin Enter'a basarsaniz guclu, rastgele degerler"
 echo "otomatik uretilir — cogu kullanim icin bu yeterli ve onerilir."
 echo ""
 
-while :; do
-  PUBLIC_URL=""
-  read -r -p "Public URL (gatewayin disaridan erisilecegi adres) [http://localhost]: " PUBLIC_URL || true
-  PUBLIC_URL=${PUBLIC_URL:-http://localhost}
-  PUBLIC_URL="${PUBLIC_URL%/}"
-  # Sema yazilmadiysa http varsayilir (Keycloak adresi ve jeton ureticisi sema ister).
+if [ -n "$OPT_URL" ]; then
+  PUBLIC_URL="${OPT_URL%/}"
   [[ "$PUBLIC_URL" =~ ^https?:// ]] || PUBLIC_URL="http://${PUBLIC_URL}"
-  [[ "$PUBLIC_URL" =~ ^https?://[A-Za-z0-9.-]+(:[0-9]+)?$ ]] && break
-  warn "Gecersiz adres: ${PUBLIC_URL} (ornek: https://hr.sirket.com ya da http://10.0.0.5 - yol icermemeli)"
-done
+  [[ "$PUBLIC_URL" =~ ^https?://[A-Za-z0-9.-]+(:[0-9]+)?$ ]] || { echo "Gecersiz adres: ${PUBLIC_URL}"; exit 2; }
+  echo "Adres: ${PUBLIC_URL}"
+else
+  echo "Uygulamanin adresi. Alan adi girerseniz (orn. hr.sirket.com) HTTPS sertifikasi otomatik alinir."
+  while :; do
+    PUBLIC_URL=""
+    ask PUBLIC_URL "Alan adi ya da adres [http://localhost]: "
+    PUBLIC_URL=${PUBLIC_URL:-http://localhost}
+    PUBLIC_URL="${PUBLIC_URL%/}"
+    # Sema yazilmadiysa http varsayilir (Keycloak adresi ve jeton ureticisi sema ister).
+    [[ "$PUBLIC_URL" =~ ^https?:// ]] || PUBLIC_URL="http://${PUBLIC_URL}"
+    [[ "$PUBLIC_URL" =~ ^https?://[A-Za-z0-9.-]+(:[0-9]+)?$ ]] && break
+    warn "Gecersiz adres: ${PUBLIC_URL} (ornek: hr.sirket.com ya da http://10.0.0.5 - yol icermemeli)"
+  done
+fi
+PUBLIC_HOST="$(printf '%s' "${PUBLIC_URL}" | sed -E 's#^[a-zA-Z]+://([^/:]+).*#\1#')"
+IS_DOMAIN=0
+if [[ "$PUBLIC_HOST" =~ [A-Za-z] ]] && [[ "$PUBLIC_HOST" == *.* ]] && [ "$PUBLIC_HOST" != localhost ]; then
+  IS_DOMAIN=1
+fi
 
-echo ""
-echo "HTTP portu: uygulama bu porttan yayinlanir. Alan adiyla kurulumda 80 kalmali;"
-echo "HTTPS (443) ayri ayarlanir ve birkac adim sonra sorulur."
-while :; do
-  GATEWAY_PORT=""
-  read -r -p "Gateway'in disariya acacagi HTTP portu [80]: " GATEWAY_PORT || true
-  GATEWAY_PORT=${GATEWAY_PORT:-80}
-  if ! [[ "$GATEWAY_PORT" =~ ^[0-9]+$ ]] || [ "$GATEWAY_PORT" -lt 1 ] || [ "$GATEWAY_PORT" -gt 65535 ]; then
-    warn "Gecersiz port: ${GATEWAY_PORT}"
-  elif [ "$GATEWAY_PORT" = 443 ]; then
+valid_gateway_port() {
+  if ! [[ "$1" =~ ^[0-9]+$ ]] || [ "$1" -lt 1 ] || [ "$1" -gt 65535 ]; then
+    warn "Gecersiz port: $1"
+  elif [ "$1" = 443 ]; then
     # 443 HTTPS icin ayrilmis: tls.sh gateway'in 443'unu ayrica yayinlar; buraya
     # 443 verilirse iki eslesme cakisir ("port is already allocated").
-    warn "443 HTTPS icindir ve sonraki adimda otomatik acilir. Buraya HTTP portunu (genelde 80) girin."
-  elif [ "$GATEWAY_PORT" = 8090 ]; then
+    warn "443 HTTPS icindir ve otomatik acilir. HTTP portunu (genelde 80) girin."
+  elif [ "$1" = 8090 ]; then
     warn "8090 Keycloak yonetim paneline ayrilmis; baska bir port girin."
   else
-    break
+    return 0
   fi
-done
+  return 1
+}
+if [ -n "$OPT_HTTP_PORT" ]; then
+  GATEWAY_PORT="$OPT_HTTP_PORT"
+  valid_gateway_port "$GATEWAY_PORT" || exit 2
+elif [ "$IS_DOMAIN" = 1 ]; then
+  # Alan adiyla kurulumda Let's Encrypt dogrulamasi 80'den yapilir; soru sorulmaz.
+  GATEWAY_PORT=80
+else
+  echo ""
+  echo "HTTP portu: uygulama bu porttan yayinlanir. HTTPS (443) ayri ayarlanir."
+  while :; do
+    GATEWAY_PORT=""
+    ask GATEWAY_PORT "Gateway'in disariya acacagi HTTP portu [80]: "
+    GATEWAY_PORT=${GATEWAY_PORT:-80}
+    valid_gateway_port "$GATEWAY_PORT" && break
+  done
+fi
 
-echo ""
-echo "Keycloak yonetim paneline erisim:"
-echo "  1) Herkese acik (varsayilan)"
-echo "  2) Yalnizca belirli IP/CIDR'ler (nginx ile)"
-echo "  3) Ayri port (8090) - erisimi firewall ile siz kisitlarsiniz"
-read -r -p "Seciminiz [1]: " KC_ADMIN_CHOICE || true
 KEYCLOAK_ADMIN_ALLOWED_IPS=""
+if [ -n "$OPT_KC_ADMIN" ]; then
+  KC_ADMIN_CHOICE=1
+  case "$OPT_KC_ADMIN" in
+    open) KC_ADMIN_CHOICE=1 ;;
+    ip:*) KC_ADMIN_CHOICE=2; KEYCLOAK_ADMIN_ALLOWED_IPS="${OPT_KC_ADMIN#ip:}" ;;
+    port) KC_ADMIN_CHOICE=3 ;;
+    port:*) KC_ADMIN_CHOICE=3; KEYCLOAK_ADMIN_ALLOWED_IPS="${OPT_KC_ADMIN#port:}" ;;
+    *) echo "Gecersiz --keycloak-admin: $OPT_KC_ADMIN (open | ip:CIDR,... | port)"; exit 2 ;;
+  esac
+else
+  echo ""
+  echo "Keycloak yonetim paneline erisim:"
+  echo "  1) Herkese acik (varsayilan)"
+  echo "  2) Yalnizca belirli IP/CIDR'ler (nginx ile)"
+  echo "  3) Ayri port (8090) - erisimi firewall ile siz kisitlarsiniz"
+  ask KC_ADMIN_CHOICE "Seciminiz [1]: "
+  case "${KC_ADMIN_CHOICE:-1}" in
+    2) ask KEYCLOAK_ADMIN_ALLOWED_IPS "Izinli IP/CIDR'ler (virgulle, orn. 203.0.113.10,10.0.0.0/8): " ;;
+    3) ask KEYCLOAK_ADMIN_ALLOWED_IPS "Ek olarak nginx'te izinli IP/CIDR'ler (bos = yalnizca firewall): " ;;
+  esac
+fi
 case "${KC_ADMIN_CHOICE:-1}" in
   2) KEYCLOAK_ADMIN_MODE=ip
-     read -r -p "Izinli IP/CIDR'ler (virgulle, orn. 203.0.113.10,10.0.0.0/8): " KEYCLOAK_ADMIN_ALLOWED_IPS || true
      [ -n "$KEYCLOAK_ADMIN_ALLOWED_IPS" ] || { warn "IP verilmedi; panel herkese acik birakiliyor."; KEYCLOAK_ADMIN_MODE=open; } ;;
-  3) KEYCLOAK_ADMIN_MODE=port
-     read -r -p "Ek olarak nginx'te izinli IP/CIDR'ler (bos = yalnizca firewall): " KEYCLOAK_ADMIN_ALLOWED_IPS || true ;;
+  3) KEYCLOAK_ADMIN_MODE=port ;;
   *) KEYCLOAK_ADMIN_MODE=open ;;
 esac
 
+# Yonetici e-postasi: Let's Encrypt bildirimleri, sistem uyarilari (Alertmanager) ve
+# SMTP deneme e-postasi. Ayni adres birkac kez sorulmasin diye bir kez alinir.
+ADMIN_EMAIL="$OPT_EMAIL"
+if [ -z "$ADMIN_EMAIL" ]; then
+  echo ""
+  while :; do
+    ask ADMIN_EMAIL "Yonetici e-postasi (sertifika bildirimleri ve sistem uyarilari; bos gecilebilir): "
+    { [ -z "$ADMIN_EMAIL" ] || is_email "$ADMIN_EMAIL"; } && break
+    warn "Gecerli bir e-posta adresi girin (ya da bos birakin)."
+  done
+fi
+
 # HTTPS kurulumun sonunda scripts/tls.sh ile otomatik acilir.
-PUBLIC_HOST="$(printf '%s' "${PUBLIC_URL}" | sed -E 's#^[a-zA-Z]+://([^/:]+).*#\1#')"
-if [[ "$PUBLIC_HOST" =~ [A-Za-z] ]] && [[ "$PUBLIC_HOST" == *.* ]] && [ "$PUBLIC_HOST" != localhost ]; then
+if [ "$IS_DOMAIN" = 1 ]; then
   TLS_DEFAULT=1   # gercek alan adi -> Let's Encrypt
 else
   TLS_DEFAULT=4   # localhost / IP -> HTTPS yok
 fi
-echo ""
-echo "HTTPS (adres: ${PUBLIC_HOST}):"
-echo "  1) Let's Encrypt ile otomatik, ucretsiz sertifika + otomatik yenileme"
-echo "     (alan adinin DNS kaydi bu sunucuyu gostermeli, 80 ve 443 internete acik olmali)"
-echo "  2) Kendi sertifikam var (fullchain + private key dosya yollari)"
-echo "  3) Kendinden imzali sertifika (yalnizca test - tarayici uyari verir)"
-echo "  4) HTTPS yok (yalnizca HTTP; yerel/deneme kurulumu)"
-read -r -p "Seciminiz [${TLS_DEFAULT}]: " TLS_CHOICE || true
-TLS_CHOICE=${TLS_CHOICE:-$TLS_DEFAULT}
-TLS_MODE=none; TLS_EMAIL=""; TLS_CERT=""; TLS_KEY=""
+case "$OPT_TLS" in
+  letsencrypt) TLS_CHOICE=1 ;;
+  cert) TLS_CHOICE=2 ;;
+  self-signed) TLS_CHOICE=3 ;;
+  none) TLS_CHOICE=4 ;;
+  *)
+    if [ -n "$OPT_CERT" ]; then TLS_CHOICE=2
+    elif [ -n "$OPT_URL" ] || [ "$ASSUME_YES" = 1 ]; then TLS_CHOICE=$TLS_DEFAULT
+    else
+      echo ""
+      echo "HTTPS (adres: ${PUBLIC_HOST}):"
+      echo "  1) Let's Encrypt ile otomatik, ucretsiz sertifika + otomatik yenileme"
+      echo "     (DNS kaydi ve guvenlik duvari otomatik denetlenir; hazir degilse gecici sertifikayla"
+      echo "      acilir ve hazir oldugunda kendiliginden gercek sertifikaya gecilir)"
+      echo "  2) Kendi sertifikam var (fullchain + private key dosya yollari)"
+      echo "  3) Kendinden imzali sertifika (yalnizca test - tarayici uyari verir)"
+      echo "  4) HTTPS yok (yalnizca HTTP; yerel/deneme kurulumu)"
+      ask TLS_CHOICE "Seciminiz [${TLS_DEFAULT}]: "
+      TLS_CHOICE=${TLS_CHOICE:-$TLS_DEFAULT}
+    fi ;;
+esac
+TLS_MODE=none; TLS_CERT=""; TLS_KEY=""
 case "$TLS_CHOICE" in
   1)
-    if [ "$TLS_DEFAULT" != 1 ]; then
+    if [ "$IS_DOMAIN" != 1 ]; then
       warn "Let's Encrypt gercek bir alan adi ister (${PUBLIC_HOST} olmaz); HTTPS kapali birakiliyor."
     elif [ "${GATEWAY_PORT}" != 80 ]; then
       warn "Let's Encrypt dogrulamasi 80. porttan yapilir (gateway portu: ${GATEWAY_PORT}); HTTPS kapali birakiliyor."
     else
       TLS_MODE=letsencrypt
-      read -r -p "Sertifika bildirimleri icin e-posta (bos birakilabilir): " TLS_EMAIL || true
     fi ;;
   2)
-    read -r -p "Sertifika zinciri dosyasi (fullchain.pem) yolu: " TLS_CERT || true
-    read -r -p "Ozel anahtar dosyasi (privkey.pem) yolu: " TLS_KEY || true
+    TLS_CERT="$OPT_CERT"; TLS_KEY="$OPT_KEY"
+    [ -n "$TLS_CERT" ] || ask TLS_CERT "Sertifika zinciri dosyasi (fullchain.pem) yolu: "
+    [ -n "$TLS_KEY" ] || ask TLS_KEY "Ozel anahtar dosyasi (privkey.pem) yolu: "
     if [ -f "$TLS_CERT" ] && [ -f "$TLS_KEY" ]; then
       TLS_MODE=certificate; TLS_CERT="$(cd "$(dirname "$TLS_CERT")" && pwd)/$(basename "$TLS_CERT")"
       TLS_KEY="$(cd "$(dirname "$TLS_KEY")" && pwd)/$(basename "$TLS_KEY")"
@@ -554,40 +724,134 @@ if [ "$TLS_MODE" = none ] && [[ "${PUBLIC_URL}" == https://* ]]; then
   warn "HTTPS acilmayacagi icin adres ${PUBLIC_URL} olarak kullanilacak."
 fi
 
-echo ""
-echo "E-posta (SMTP) sunucusu: davet, parola belirleme ve bildirim e-postalari bununla gider."
-echo "Bos birakirsaniz paketteki Mailpit kullanilir - e-postalar GERCEKTEN GONDERILMEZ, yalnizca"
-echo "sunucudaki test kutusunda (http://localhost:8025) gorunur. Gercek kullanim icin sunucu girin."
-read -r -p "SMTP sunucusu [mailpit]: " SMTP_HOST || true
-if [ -z "${SMTP_HOST}" ] || [ "${SMTP_HOST}" = "mailpit" ]; then
-  SMTP_HOST=mailpit; SMTP_PORT=1025; SMTP_USER=hr360; SMTP_PASSWORD=hr360
-  SMTP_FROM_ADDRESS=noreply@hr360.local; SMTP_FROM_NAME=HR360
-  SMTP_AUTH=false; SMTP_SSL=false; SMTP_STARTTLS=false
-  warn "Mailpit secildi: kullanicilara e-posta ulasmayacak (test modu)."
-  warn "Gercek SMTP sunucusunu sonradan eklemek icin: scripts/smtp.sh set"
-else
-  read -r -p "SMTP portu (587 = STARTTLS, 465 = SSL) [587]: " SMTP_PORT || true
-  SMTP_PORT=${SMTP_PORT:-587}
-  read -r -p "SMTP kullanici adi (kimlik dogrulama yoksa bos): " SMTP_USER || true
-  SMTP_PASSWORD=""
-  if [ -n "${SMTP_USER}" ]; then
-    read -r -s -p "SMTP parolasi: " SMTP_PASSWORD || true; echo ""
-  fi
-  while :; do
-    SMTP_FROM_ADDRESS=""
-    read -r -p "Gonderen adres (orn. noreply@sirket.com): " SMTP_FROM_ADDRESS || true
-    [[ "$SMTP_FROM_ADDRESS" =~ ^[^@[:space:]]+@[^@[:space:]]+[.][^@[:space:]]+$ ]] && break
-    warn "Gecerli bir e-posta adresi girin (ornek: noreply@sirket.com)."
-  done
-  read -r -p "Gonderen adi [HR360]: " SMTP_FROM_NAME || true
-  SMTP_FROM_NAME=${SMTP_FROM_NAME:-HR360}
-  SMTP_AUTH=$([ -n "${SMTP_USER}" ] && echo true || echo false)
-  if [ "${SMTP_PORT}" = "465" ]; then SMTP_SSL=true; SMTP_STARTTLS=false; else SMTP_SSL=false; SMTP_STARTTLS=true; fi
-  for v in "${SMTP_HOST}" "${SMTP_USER}" "${SMTP_PASSWORD}" "${SMTP_FROM_ADDRESS}" "${SMTP_FROM_NAME}"; do
-    case "$v" in *"'"*|*'$'*|*$'\n'*) echo "SMTP bilgilerinde tek tirnak ('), \$ ve satir sonu kullanilamaz."; exit 1 ;; esac
+# Disariya acik kurulumda yerel guvenlik duvari (ufw/firewalld; yalnizca zaten aciksa)
+# HTTP/HTTPS portlarina izin verir ve portlari baska bir web sunucusunun tutmadigi denetlenir.
+if [ "$OS_KERNEL" = Linux ] && [ "$IS_WSL" = 0 ] && [ "$PUBLIC_HOST" != localhost ] && [[ ! "$PUBLIC_HOST" =~ ^127\. ]]; then
+  fw_ports=("$GATEWAY_PORT"); [ "$TLS_MODE" != none ] && fw_ports+=(443)
+  open_firewall_ports "${fw_ports[@]}"
+  for p in "${fw_ports[@]}"; do
+    if owner="$(port_owner "$p")"; then
+      warn "Port $p su anda '$owner' tarafindan kullaniliyor; HR360 bu portu acamaz."
+      warn "Durdurun (orn. sudo systemctl disable --now $owner) ve kurulumu surdurun."
+    fi
   done
 fi
 
+# Let's Encrypt on kontrolu: DNS kaydi bu sunucuyu gosteriyor mu? Sertifika kurulumun
+# sonunda istenir (build birkac dakika surer); kayit o zamana kadar duzelmezse gecici
+# sertifikayla acilir ve saatte bir yeniden denenir.
+if [ "$TLS_MODE" = letsencrypt ]; then
+  dns_rc=0; dns_points_here "$PUBLIC_HOST" || dns_rc=$?
+  case "$dns_rc" in
+    0) info "DNS: ${DNS_CHECK_MSG}" ;;
+    1) warn "DNS: ${DNS_CHECK_MSG}"
+       warn "Kurulum surerken kaydi ekleyebilirsiniz; sonunda yeniden denetlenir. Hazir degilse gecici"
+       warn "sertifikayla HTTPS acilir ve Let's Encrypt saatte bir kendiliginden yeniden denenir." ;;
+    *) warn "DNS denetlenemedi (${DNS_CHECK_MSG}); sertifika kurulum sonunda yine de denenecek." ;;
+  esac
+  warn "Bulut sunucularda (AWS, Azure, GCP...) guvenlik grubunda da 80 ve 443/tcp gelen trafige acik olmali."
+fi
+
+# E-posta (SMTP) -------------------------------------------------------------
+use_mailpit() {
+  SMTP_HOST=mailpit; SMTP_PORT=1025; SMTP_USER=hr360; SMTP_PASSWORD=hr360
+  SMTP_FROM_ADDRESS=noreply@hr360.local; SMTP_FROM_NAME=HR360
+  SMTP_AUTH=false; SMTP_SSL=false; SMTP_STARTTLS=false; SMTP_STATUS="Mailpit (test kutusu; gercek gonderim yok)"
+  warn "Mailpit secildi: kullanicilara e-posta ulasmayacak (test modu)."
+  warn "Gercek SMTP sunucusunu sonradan eklemek icin: scripts/smtp.sh set"
+}
+
+# Gonderen adresten sunucu/port bulunur, eksikler sorulur, deneme e-postasiyla dogrulanir.
+configure_smtp() {
+  local g_host g_port g_kind hint to choice
+  read -r g_host g_port g_kind <<< "$(smtp_guess "$SMTP_FROM_ADDRESS")"
+  while :; do
+    SMTP_HOST="$OPT_SMTP_HOST"
+    if [ -z "$SMTP_HOST" ]; then
+      if [ "$g_kind" != bilinmiyor ]; then info "E-posta sunucusu bulundu: ${g_host}:${g_port} (${g_kind})"
+      else info "E-posta saglayicisi taninamadi; tahmin: ${g_host}"; fi
+      ask SMTP_HOST "SMTP sunucusu [${g_host}]: "
+      SMTP_HOST="${SMTP_HOST:-$g_host}"
+    fi
+    SMTP_PORT="$OPT_SMTP_PORT"
+    if [ -z "$SMTP_PORT" ]; then
+      local def_port=587; [ "$SMTP_HOST" = "$g_host" ] && def_port="$g_port"
+      ask SMTP_PORT "SMTP portu (587 = STARTTLS, 465 = SSL) [${def_port}]: "
+      SMTP_PORT="${SMTP_PORT:-$def_port}"
+    fi
+    [[ "$SMTP_PORT" =~ ^[0-9]+$ ]] || { warn "Gecersiz port: $SMTP_PORT"; SMTP_PORT=587; }
+    SMTP_USER="$OPT_SMTP_USER"
+    [ -n "$SMTP_USER" ] || ask SMTP_USER "Kullanici adi [${SMTP_FROM_ADDRESS}] ('-' = kimlik dogrulamasi yok): "
+    SMTP_USER="${SMTP_USER:-$SMTP_FROM_ADDRESS}"; [ "$SMTP_USER" = "-" ] && SMTP_USER=""
+    SMTP_PASSWORD="$OPT_SMTP_PASSWORD"
+    if [ -n "$SMTP_USER" ] && [ -z "$SMTP_PASSWORD" ]; then
+      hint="$(smtp_hint "$g_kind")"; [ "$SMTP_HOST" = "$g_host" ] && [ -n "$hint" ] && echo "   Not: $hint"
+      read -r -s -p "SMTP parolasi: " SMTP_PASSWORD || true; echo ""
+    fi
+    SMTP_FROM_NAME="$OPT_SMTP_NAME"
+    [ -n "$SMTP_FROM_NAME" ] || ask SMTP_FROM_NAME "Gonderen adi [HR360]: "
+    SMTP_FROM_NAME=${SMTP_FROM_NAME:-HR360}
+    SMTP_AUTH=$([ -n "${SMTP_USER}" ] && echo true || echo false)
+    if [ "${SMTP_PORT}" = "465" ]; then SMTP_SSL=true; SMTP_STARTTLS=false; else SMTP_SSL=false; SMTP_STARTTLS=true; fi
+    local v bad=0
+    for v in "${SMTP_HOST}" "${SMTP_USER}" "${SMTP_PASSWORD}" "${SMTP_FROM_ADDRESS}" "${SMTP_FROM_NAME}"; do
+      case "$v" in *"'"*|*'$'*|*$'\n'*) bad=1 ;; esac
+    done
+    if [ "$bad" = 1 ]; then
+      warn "SMTP bilgilerinde tek tirnak ('), \$ ve satir sonu kullanilamaz."
+      [ "$ASSUME_YES" = 1 ] && exit 2
+      OPT_SMTP_PASSWORD=""; continue
+    fi
+    SMTP_STATUS="${SMTP_HOST}:${SMTP_PORT} (dogrulanmadi)"
+    [ "$OPT_SMTP_TEST" = 1 ] || return 0
+
+    to="${ADMIN_EMAIL:-$SMTP_FROM_ADDRESS}"
+    info "Deneme e-postasi gonderiliyor: ${to}"
+    if smtp_send_test "$SMTP_HOST" "$SMTP_PORT" "$SMTP_USER" "$SMTP_PASSWORD" "$SMTP_FROM_ADDRESS" "$SMTP_FROM_NAME" \
+         "$to" "HR360 kurulumu: e-posta ayari calisiyor" \
+         "Bu e-posta HR360 kurulumu sirasinda SMTP ayarini dogrulamak icin gonderildi. This is an HR360 setup test email."; then
+      info "SMTP calisiyor: deneme e-postasi ${to} adresine gonderildi."
+      SMTP_STATUS="${SMTP_HOST}:${SMTP_PORT} (deneme e-postasi gonderildi: ${to})"
+      return 0
+    fi
+    warn "SMTP denemesi basarisiz: ${SMTP_TEST_ERR}"
+    if [ "$ASSUME_YES" = 1 ]; then
+      warn "Ayar yine de kaydediliyor; duzeltmek icin: scripts/smtp.sh set, denemek icin: scripts/smtp.sh test ${to}"
+      SMTP_STATUS="${SMTP_HOST}:${SMTP_PORT} (DENEME BASARISIZ: ${SMTP_TEST_ERR})"
+      return 0
+    fi
+    echo "  1) Bilgileri yeniden gir (varsayilan)"
+    echo "  2) Bu ayarla devam et (sonra: scripts/smtp.sh test ${to})"
+    echo "  3) Simdilik Mailpit (test kutusu) kullan"
+    read -r -p "Seciminiz [1]: " choice || true
+    case "${choice:-1}" in
+      2) SMTP_STATUS="${SMTP_HOST}:${SMTP_PORT} (DENEME BASARISIZ: ${SMTP_TEST_ERR})"; return 0 ;;
+      3) use_mailpit; return 0 ;;
+      *) OPT_SMTP_HOST=""; OPT_SMTP_PORT=""; OPT_SMTP_USER=""; OPT_SMTP_PASSWORD="" ;;
+    esac
+  done
+}
+
+echo ""
+echo "E-posta: davet, parola belirleme ve bildirim e-postalari bu adresten gonderilir."
+echo "Sunucu ve port adresten otomatik bulunur. Bos birakirsaniz paketteki Mailpit kullanilir:"
+echo "e-postalar GERCEKTEN GONDERILMEZ, yalnizca sunucudaki test kutusunda (http://localhost:8025) gorunur."
+SMTP_FROM_ADDRESS="$OPT_SMTP_FROM"
+if [ -z "$SMTP_FROM_ADDRESS" ] && [ "$OPT_SMTP_HOST" != mailpit ]; then
+  while :; do
+    ask SMTP_FROM_ADDRESS "Gonderen e-posta adresi (orn. ik@sirket.com) [mailpit]: "
+    { [ -z "$SMTP_FROM_ADDRESS" ] || [ "$SMTP_FROM_ADDRESS" = mailpit ] || is_email "$SMTP_FROM_ADDRESS"; } && break
+    warn "Gecerli bir e-posta adresi girin (ornek: ik@sirket.com) ya da bos birakin."
+  done
+fi
+if [ -z "$SMTP_FROM_ADDRESS" ] || [ "$SMTP_FROM_ADDRESS" = mailpit ] || [ "$OPT_SMTP_HOST" = mailpit ]; then
+  use_mailpit
+else
+  is_email "$SMTP_FROM_ADDRESS" || { echo "Gecersiz gonderen adres: $SMTP_FROM_ADDRESS"; exit 2; }
+  configure_smtp
+fi
+
+# --- Sirlar -------------------------------------------------------------
 ask_secret HR360_DB_PASSWORD          "PostgreSQL (hr360admin) parolasi"
 ask_secret KEYCLOAK_ADMIN_PASSWORD    "Keycloak master admin parolasi"
 ask_secret_aes_key TENANT_SECRET_KEY  "tenant-service imza anahtari"
@@ -641,6 +905,11 @@ SMTP_USER='${SMTP_USER}'
 SMTP_PASSWORD='${SMTP_PASSWORD}'
 SMTP_FROM_ADDRESS='${SMTP_FROM_ADDRESS}'
 SMTP_FROM_NAME='${SMTP_FROM_NAME}'
+
+# Yonetici e-postasi; sistem uyarilari (scripts/monitoring.sh enable ile acilan
+# Alertmanager) bu adrese gider. Degistirmek: scripts/monitoring.sh alerts email ...
+HR360_ADMIN_EMAIL=${ADMIN_EMAIL}
+ALERT_EMAIL_TO=${ADMIN_EMAIL}
 EOF
 info ".env yazildi."
 
@@ -737,19 +1006,25 @@ scripts/keycloak-theme.sh >/dev/null 2>&1 \
 
 if [ "$TLS_MODE" != none ]; then
   info "HTTPS aciliyor (${TLS_MODE})..."
+  tls_cmd=enable
   case "$TLS_MODE" in
     letsencrypt)
-      tls_args=(--letsencrypt --host "$PUBLIC_HOST")
-      [ -n "$TLS_EMAIL" ] && tls_args+=(--email "$TLS_EMAIL") ;;
+      # "auto": Let's Encrypt olmazsa gecici sertifika + saatlik otomatik yeniden deneme.
+      tls_cmd=auto; tls_args=(--host "$PUBLIC_HOST")
+      [ -n "$ADMIN_EMAIL" ] && tls_args+=(--email "$ADMIN_EMAIL") ;;
     certificate) tls_args=(--cert "$TLS_CERT" --key "$TLS_KEY" --host "$PUBLIC_HOST") ;;
     self-signed) tls_args=(--self-signed --host "$PUBLIC_HOST") ;;
   esac
-  if ! scripts/tls.sh enable "${tls_args[@]}"; then
+  tls_rc=0; scripts/tls.sh "$tls_cmd" "${tls_args[@]}" || tls_rc=$?
+  if [ "$tls_rc" = 3 ]; then
+    warn "HTTPS gecici (kendinden imzali) sertifikayla acildi; Let's Encrypt saatte bir yeniden denenecek."
+    warn "Sorunu gormek icin: scripts/tls.sh check   -   hemen denemek icin: scripts/tls.sh retry"
+  elif [ "$tls_rc" != 0 ]; then
     warn "HTTPS acilamadi; uygulama HTTP ile calisacak sekilde ayarlaniyor."
     # tls.sh kendi degisikliklerini geri alir; yine de durum tutarli olsun diye
     # adres ve Keycloak ayarlari acikca HTTP'ye cekilir.
     scripts/tls.sh disable >/dev/null 2>&1 || warn "HTTP'ye donus de basarisiz; 'scripts/tls.sh status' ile kontrol edin."
-    warn "Sorunu giderdikten sonra tekrar deneyin: scripts/tls.sh enable ${tls_args[*]}"
+    warn "Sorunu giderdikten sonra tekrar deneyin: scripts/tls.sh ${tls_cmd} ${tls_args[*]}"
   fi
 else
   # HTTPS yok: onceki bir kurulumdan kalmis TLS ayarlari temizlenir ve Keycloak'in
@@ -760,6 +1035,9 @@ else
 fi
 PUBLIC_ORIGIN="$(grep '^PUBLIC_ORIGIN=' .env | tail -1 | cut -d= -f2-)"
 
+info "Kurulum dogrulaniyor..."
+verify_out="$(scripts/tls.sh verify 2>&1)" && verify_ok=1 || verify_ok=0
+
 echo ""
 echo "${GREEN}${BOLD}Kurulum tamamlandi.${RESET}"
 echo "----------------------------------------------"
@@ -768,8 +1046,14 @@ echo "Keycloak admin:   $(scripts/keycloak-admin-access.sh status | grep 'Konsol
 echo "                  Erisimi degistirmek icin: scripts/keycloak-admin-access.sh open|ip|port"
 echo "HTTPS:            $(scripts/tls.sh status | head -1 | sed "s/^HTTPS: //")"
 echo "MinIO konsolu:    http://localhost:9001   (yalnizca sunucunun kendisinden / SSH tuneliyle)"
-echo "Mailpit (e-posta):http://localhost:8025   (yalnizca sunucunun kendisinden / SSH tuneliyle)"
+echo "E-posta (SMTP):   ${SMTP_STATUS}"
+[ -n "$ADMIN_EMAIL" ] && echo "Sistem uyarilari: ${ADMIN_EMAIL}  (izleme acildiginda: scripts/monitoring.sh enable)"
+[ "$SMTP_HOST" = mailpit ] && echo "Mailpit (e-posta):http://localhost:8025   (yalnizca sunucunun kendisinden / SSH tuneliyle)"
 echo "MLflow:           http://localhost:5000   (yalnizca sunucunun kendisinden / SSH tuneliyle)"
+echo ""
+echo "Dogrulama:"
+printf '%s\n' "$verify_out" | sed 's/^/  /'
+[ "$verify_ok" = 1 ] || warn "Dogrulamada sorun var; ayrinti: scripts/tls.sh verify, docker compose ps"
 echo ""
 echo "Demo giris:       demo.admin / (yukarida belirlediginiz/uretilen DEMO_ADMIN_PASSWORD)  - yalnizca demo sirketinin yoneticisi"
 echo "Platform yonetimi: platform.admin / (.env icindeki PLATFORM_ADMIN_PASSWORD)  - tum kiracilar; paylasmayin"

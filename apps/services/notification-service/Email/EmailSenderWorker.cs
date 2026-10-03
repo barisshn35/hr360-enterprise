@@ -310,13 +310,14 @@ public class EmailSenderWorker : BackgroundService
         var message = new MimeMessage();
         message.From.Add(new MailboxAddress(plan.FromName, plan.FromAddress));
         message.To.Add(MailboxAddress.Parse(notification.RecipientEmail!));
-        message.Subject = notification.Subject ?? "HR360 Enterprise Bildirimi";
+        message.Subject = notification.Subject ?? (notification.Language == "en" ? "HR360 Enterprise notification" : "HR360 Enterprise Bildirimi");
 
         var html = EmailTemplateRenderer.Render(
             subject: message.Subject,
             bodyPlainText: notification.Body,
             logoUrl: plan.LogoUrl,
-            companyName: plan.CompanyName);
+            companyName: plan.CompanyName,
+            lang: notification.Language);
 
         message.Body = new BodyBuilder
         {

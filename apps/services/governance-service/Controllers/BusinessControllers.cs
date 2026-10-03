@@ -153,7 +153,7 @@ public class BillingController : AppController
         var inv = await (IsPlatform ? _db.Invoices.IgnoreQueryFilters() : _db.Invoices).AsNoTracking().FirstOrDefaultAsync(i => i.Id == id, ct);
         if (inv is null) return NotFound();
         var name = await Db.ScalarAsync("SELECT \"Name\" FROM platform_tenants WHERE \"Slug\" = $1", ct, inv.TenantSlug) as string ?? inv.TenantSlug;
-        var tr = new CultureInfo("tr-TR");
+        var tr = new CultureInfo(En ? "en-GB" : "tr-TR");
         string M(decimal v) => v.ToString("N2", tr) + " ₺";
         var html = $"""
             <div style="font-family:Inter,Arial,sans-serif;max-width:720px;margin:0 auto;color:#111">
@@ -304,46 +304,50 @@ public class InsightsController : AppController
     public record AskInput(string Question);
 
     [HttpGet("examples")]
-    public IActionResult ExampleQuestions() => Ok(NlReport.Examples);
+    public IActionResult ExampleQuestions() => Ok(NlReport.ExamplesFor(Lang));
 
     [HttpPost("report")]
     [Authorize(Policy = "RequireManagerOrAbove")]
     [RequiresPlan("Enterprise")]
     public async Task<IActionResult> Report(AskInput body, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(body.Question) || body.Question.Length > 300) return BadRequest(new { message = "Soru 1–300 karakter olmalı." });
-        return Ok(await NlReport.RunAsync(Db, Tenant, body.Question, Me.IsHr, ct));
+        if (string.IsNullOrWhiteSpace(body.Question) || body.Question.Length > 300) return BadRequest(new { message = L("Soru 1–300 karakter olmalı.", "The question must be 1–300 characters.") });
+        return Ok(await NlReport.RunAsync(Db, Tenant, body.Question, Me.IsHr, ct, Lang));
     }
 
     [HttpPost("assistant")]
     public async Task<IActionResult> Assistant(AskInput body, CancellationToken ct)
     {
         var raw = body.Question?.Trim() ?? "";
-        if (raw.Length is 0 or > 500) return BadRequest(new { message = "Mesaj 1–500 karakter olmalı." });
-        var q = NlReport.Norm(raw);
+        if (raw.Length is 0 or > 500) return BadRequest(new { message = L("Mesaj 1–500 karakter olmalı.", "The message must be 1–500 characters.") });
+        var q = " " + NlReport.Norm(raw) + " ";
         var me = await MyPersonAsync(ct);
         var today = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(3));
         var tr = new CultureInfo("tr-TR");
 
-        if (Has(q, "merhaba", "selam", "yardim", "neler yapabilirsin", "ne yapabilirsin"))
-            return Reply("Merhaba! Şunları sorabilirsiniz: **izin bakiyem**, **bekleyen taleplerim**, **sonraki resmî tatil**, **bugün kim izinde**, **masraflarım**" +
-                (Me.IsManager ? ", ya da *\"son 6 ayda departmanlara göre izin günleri\"* gibi rapor soruları." : ". Şirket politikalarını da sorabilirsiniz (ör. *uzaktan çalışma*)."), "help");
+        if (Has(q, "merhaba", "selam", "yardim", "neler yapabilirsin", "ne yapabilirsin", " hello", " hi ", " hey ", " help", "what can you do"))
+            return Reply(L("Merhaba! Şunları sorabilirsiniz: **izin bakiyem**, **bekleyen taleplerim**, **sonraki resmî tatil**, **bugün kim izinde**, **masraflarım**",
+                    "Hello! You can ask: **my leave balance**, **my pending requests**, **next public holiday**, **who is on leave today**, **my expenses**") +
+                (Me.IsManager ? L(", ya da *\"son 6 ayda departmanlara göre izin günleri\"* gibi rapor soruları.", ", or report questions like *\"leave days by department in the last 6 months\"*.")
+                              : L(". Şirket politikalarını da sorabilirsiniz (ör. *uzaktan çalışma*).", ". You can also ask about company policies (e.g. *remote work*).")), "help");
 
-        if (Has(q, "izin") && Has(q, "bakiye", "kac gun", "kalan", "hakkim", "ne kadar"))
+        if ((Has(q, "izin") && Has(q, "bakiye", "kac gun", "kalan", "hakkim", "ne kadar")) || (Has(q, " leave", "time off", "vacation") && Has(q, "balance", "how many days", " left", "remaining")))
         {
-            if (me is null) return Reply("Hesabınız bir çalışan kaydına bağlı olmadığı için izin bakiyesi yok.", "data");
+            if (me is null) return Reply(L("Hesabınız bir çalışan kaydına bağlı olmadığı için izin bakiyesi yok.", "Your account is not linked to an employee record, so there is no leave balance."), "data");
             var rows = await Db.QueryAsync("""
                 SELECT "Type", "EntitledDays", "UsedDays", "PendingDays" FROM leave_balances
                 WHERE "TenantSlug" = $1 AND "EmployeeId" = $2 AND "Year" = $3 ORDER BY 1
                 """, r => (T: r.GetString(0), E: r.GetDecimal(1), U: r.GetDecimal(2), P: r.GetDecimal(3)), ct, Tenant, me.Id, today.Year);
-            if (rows.Count == 0) return Reply($"{today.Year} için tanımlı izin bakiyeniz yok. İK ile görüşebilirsiniz.", "data", ("İzin ekranı", "/panel/izin"));
-            var lines = rows.Select(r => $"• **{LeaveLabel(r.T)}**: {r.E - r.U - r.P:0.#} gün kullanılabilir ({r.U:0.#} kullanıldı, {r.P:0.#} onay bekliyor, toplam {r.E:0.#})");
-            return Reply($"{today.Year} izin durumunuz:\n" + string.Join("\n", lines), "data", ("İzin talebi oluştur", "/panel/izin"));
+            if (rows.Count == 0) return Reply(L($"{today.Year} için tanımlı izin bakiyeniz yok. İK ile görüşebilirsiniz.", $"You have no leave balance defined for {today.Year}. Please contact HR."), "data", (L("İzin ekranı", "Leave"), "/panel/izin"));
+            var lines = rows.Select(r => En
+                ? $"• **{LeaveLabel(r.T, true)}**: {r.E - r.U - r.P:0.#} days available ({r.U:0.#} used, {r.P:0.#} pending, {r.E:0.#} total)"
+                : $"• **{LeaveLabel(r.T)}**: {r.E - r.U - r.P:0.#} gün kullanılabilir ({r.U:0.#} kullanıldı, {r.P:0.#} onay bekliyor, toplam {r.E:0.#})");
+            return Reply(L($"{today.Year} izin durumunuz:\n", $"Your leave for {today.Year}:\n") + string.Join("\n", lines), "data", (L("İzin talebi oluştur", "Request leave"), "/panel/izin"));
         }
 
-        if (Has(q, "bekleyen", "onay bekleyen", "taleplerim", "talebim"))
+        if (Has(q, "bekleyen", "onay bekleyen", "taleplerim", "talebim", "pending", "my request", "awaiting"))
         {
-            if (me is null) return Reply("Hesabınız bir çalışan kaydına bağlı değil.", "data");
+            if (me is null) return Reply(L("Hesabınız bir çalışan kaydına bağlı değil.", "Your account is not linked to an employee record."), "data");
             var mine = await Db.QueryAsync("""
                 SELECT "Subject", "CreatedAt" FROM workflow_requests WHERE "TenantSlug" = $1 AND "RequesterEmployeeId" = $2 AND "Status" = 'Pending' ORDER BY 2 DESC LIMIT 10
                 """, r => (S: r.GetString(0), At: r.GetFieldValue<DateTime>(1)), ct, Tenant, me.Id);
@@ -351,50 +355,56 @@ public class InsightsController : AppController
                 SELECT count(DISTINCT s."WorkflowRequestId") FROM workflow_approval_steps s JOIN workflow_requests w ON w."Id" = s."WorkflowRequestId"
                 WHERE s."TenantSlug" = $1 AND w."Status" = 'Pending' AND s."Decision" = 'Pending' AND coalesce(s."DelegatedToEmployeeId", s."ApproverEmployeeId") = $2
                 """, ct, Tenant, me.Id));
-            var text = mine.Count == 0 ? "Onay bekleyen talebiniz yok." : $"Onay bekleyen **{mine.Count}** talebiniz var:\n" + string.Join("\n", mine.Select(m => $"• {m.S} ({m.At.AddHours(3):dd.MM})"));
-            if (waiting > 0) text += $"\n\nAyrıca **sizin kararınızı bekleyen {waiting} talep** var.";
-            return Reply(text, "data", ("Onay kutusu", "/panel/onaylar"));
+            var text = mine.Count == 0 ? L("Onay bekleyen talebiniz yok.", "You have no requests awaiting approval.")
+                : L($"Onay bekleyen **{mine.Count}** talebiniz var:\n", $"You have **{mine.Count}** request(s) awaiting approval:\n") + string.Join("\n", mine.Select(m => $"• {m.S} ({m.At.AddHours(3):dd.MM})"));
+            if (waiting > 0) text += L($"\n\nAyrıca **sizin kararınızı bekleyen {waiting} talep** var.", $"\n\nThere are also **{waiting} request(s) awaiting your decision**.");
+            return Reply(text, "data", (L("Onay kutusu", "Approvals"), "/panel/onaylar"));
         }
 
-        if (Has(q, "tatil", "bayram"))
+        if (Has(q, "tatil", "bayram", "holiday"))
         {
             var next = await Db.QueryAsync("SELECT \"Date\", \"Name\" FROM leave_public_holidays WHERE \"TenantSlug\" = $1 AND \"Date\" >= $2 ORDER BY 1 LIMIT 5",
                 r => (D: r.GetFieldValue<DateOnly>(0), N: r.GetString(1)), ct, Tenant, today);
-            return Reply(next.Count == 0 ? "Tanımlı yaklaşan resmî tatil yok." :
-                "Yaklaşan resmî tatiller:\n" + string.Join("\n", next.Select(n => $"• **{n.N}** — {n.D.ToString("d MMMM yyyy, dddd", tr)} ({n.D.DayNumber - today.DayNumber} gün sonra)")), "data");
+            return Reply(next.Count == 0 ? L("Tanımlı yaklaşan resmî tatil yok.", "No upcoming public holidays are defined.") :
+                L("Yaklaşan resmî tatiller:\n", "Upcoming public holidays:\n") + string.Join("\n", next.Select(n => En
+                    ? $"• **{n.N}** — {n.D.ToString("dddd, d MMMM yyyy", tr)} (in {n.D.DayNumber - today.DayNumber} days)"
+                    : $"• **{n.N}** — {n.D.ToString("d MMMM yyyy, dddd", tr)} ({n.D.DayNumber - today.DayNumber} gün sonra)")), "data");
         }
 
-        if (Has(q, "kim izinde", "izindekiler", "izinde kim", "bugun izinde"))
+        if (Has(q, "kim izinde", "izindekiler", "izinde kim", "bugun izinde", "who is on leave", "who's on leave", "who is off", "on leave today"))
         {
             var rows = await Db.QueryAsync("""
                 SELECT e."FirstName" || ' ' || e."LastName", l."EndDate" FROM leave_requests l JOIN employee_employees e ON e."Id" = l."EmployeeId"
                 WHERE l."TenantSlug" = $1 AND l."Status" = 'Approved' AND l."StartDate" <= $2 AND l."EndDate" >= $2 ORDER BY 1
                 """, r => (N: r.GetString(0), E: r.GetFieldValue<DateOnly>(1)), ct, Tenant, today);
-            return Reply(rows.Count == 0 ? "Bugün izinde olan kimse yok." : "Bugün izinde olanlar:\n" + string.Join("\n", rows.Select(r => $"• {r.N} — {r.E:dd.MM}'e kadar")),
-                "data", ("Kim nerede", "/panel/ofis"));
+            return Reply(rows.Count == 0 ? L("Bugün izinde olan kimse yok.", "Nobody is on leave today.")
+                    : L("Bugün izinde olanlar:\n", "On leave today:\n") + string.Join("\n", rows.Select(r => En ? $"• {r.N} — until {r.E:dd.MM}" : $"• {r.N} — {r.E:dd.MM}'e kadar")),
+                "data", (L("Kim nerede", "Who's where"), "/panel/ofis"));
         }
 
-        if (Has(q, "masraf"))
+        if (Has(q, "masraf", "expense"))
         {
-            if (me is null) return Reply("Hesabınız bir çalışan kaydına bağlı değil.", "data");
+            if (me is null) return Reply(L("Hesabınız bir çalışan kaydına bağlı değil.", "Your account is not linked to an employee record."), "data");
             var rows = await Db.QueryAsync("""
                 SELECT "Title", "TotalAmount", "Currency", "Status" FROM expense_claims WHERE "TenantSlug" = $1 AND "EmployeeId" = $2 ORDER BY "CreatedAt" DESC LIMIT 5
                 """, r => (T: r.GetString(0), A: r.GetDecimal(1), C: r.GetString(2), S: r.GetString(3)), ct, Tenant, me.Id);
-            if (rows.Count > 0 || !Has(q, "politika", "limit", "kural", "nasil"))
-                return Reply(rows.Count == 0 ? "Henüz masraf beyanınız yok." :
-                    "Son masraflarınız:\n" + string.Join("\n", rows.Select(r => $"• {r.T}: {r.A.ToString("N2", tr)} {r.C} — {ExpenseLabel(r.S)}")), "data", ("Masraf ekranı", "/panel/masraf"));
+            if (rows.Count > 0 || !Has(q, "politika", "limit", "kural", "nasil", "policy", "rule", " how "))
+                return Reply(rows.Count == 0 ? L("Henüz masraf beyanınız yok.", "You have no expense claims yet.") :
+                    L("Son masraflarınız:\n", "Your recent expenses:\n") + string.Join("\n", rows.Select(r => $"• {r.T}: {r.A.ToString("N2", tr)} {r.C} — {ExpenseLabel(r.S, En)}")), "data", (L("Masraf ekranı", "Expenses"), "/panel/masraf"));
         }
 
-        if (Has(q, "maas", "bordro", "net ucret", "brut"))
-            return Reply("Brütten nete hesap için **Bordro simülasyonu** ekranını kullanabilirsiniz (2026 SGK, gelir vergisi dilimleri ve asgari ücret istisnası dahil).",
-                "help", ("Bordro simülasyonu", "/panel/bordro-simulasyonu"));
+        if (Has(q, "maas", "bordro", "net ucret", "brut", "salary", "payroll", "gross", "net pay"))
+            return Reply(L("Brütten nete hesap için **Bordro simülasyonu** ekranını kullanabilirsiniz (2026 SGK, gelir vergisi dilimleri ve asgari ücret istisnası dahil).",
+                    "Use the **Payroll simulation** screen for gross-to-net calculations (2026 SGK, income tax brackets and minimum wage exemption included)."),
+                "help", (L("Bordro simülasyonu", "Payroll simulation"), "/panel/bordro-simulasyonu"));
 
         // Yönetici analitik sorusu → rapor motoru
-        if (Me.IsManager && Has(q, "kac", "sayisi", "toplam", "ortalama", "dagilim", "gore", "aylik", "en cok", "trend"))
+        if (Me.IsManager && Has(q, "kac", "sayisi", "toplam", "ortalama", "dagilim", "gore", "aylik", "en cok", "trend",
+                "how many", "number of", "total", "average", " by ", "monthly", " most ", "count", "headcount"))
         {
-            var report = await NlReport.RunAsync(Db, Tenant, raw, Me.IsHr, ct);
+            var report = await NlReport.RunAsync(Db, Tenant, raw, Me.IsHr, ct, Lang);
             if (report.Understood)
-                return Ok(new { reply = report.Interpretation + ":", source = "report", report, links = new[] { new { label = "Doğal dilde rapor", path = "/panel/rapor-asistani" } } });
+                return Ok(new { reply = report.Interpretation + ":", source = "report", report, links = new[] { new { label = L("Doğal dilde rapor", "Report assistant"), path = "/panel/rapor-asistani" } } });
         }
 
         // Yapay zekâ açıksa: bilgi bankası bağlamıyla model yanıtı (kişisel veri gönderilmez).
@@ -420,8 +430,9 @@ public class InsightsController : AppController
             return Ok(new { reply = $"**{best[0].a.Title}**\n\n{best[0].a.Body}", source = "kb",
                 related = best.Skip(1).Select(x => x.a.Title), links = Array.Empty<object>() });
 
-        return Reply("Bunu yanıtlayacak bir bilgiye sahip değilim. Sorunuzu İK'ya bir **İK vakası** olarak iletebilirsiniz; ilgili kişi size dönecektir.",
-            "fallback", ("İK vakası aç", "/panel/ik-vakalari"));
+        return Reply(L("Bunu yanıtlayacak bir bilgiye sahip değilim. Sorunuzu İK'ya bir **İK vakası** olarak iletebilirsiniz; ilgili kişi size dönecektir.",
+                "I don't have information to answer that. You can send your question to HR as an **HR case**; the right person will get back to you."),
+            "fallback", (L("İK vakası aç", "Open an HR case"), "/panel/ik-vakalari"));
     }
 
     private IActionResult Reply(string text, string source, params (string Label, string Path)[] links) =>
@@ -429,13 +440,20 @@ public class InsightsController : AppController
 
     private static bool Has(string q, params string[] words) => words.Any(q.Contains);
 
-    private static string LeaveLabel(string t) => t switch
+    private static string LeaveLabel(string t, bool en = false) => en ? t switch
+    {
+        "Annual" => "Annual leave", "Sick" => "Sick leave", "Unpaid" => "Unpaid leave", "Maternity" => "Maternity leave", "Paternity" => "Paternity leave",
+        "Marriage" => "Marriage leave", "Bereavement" => "Bereavement leave", _ => t,
+    } : t switch
     {
         "Annual" => "Yıllık izin", "Sick" => "Hastalık izni", "Unpaid" => "Ücretsiz izin", "Maternity" => "Doğum izni", "Paternity" => "Babalık izni",
         "Marriage" => "Evlilik izni", "Bereavement" => "Vefat izni", _ => t,
     };
 
-    private static string ExpenseLabel(string s) => s switch
+    private static string ExpenseLabel(string s, bool en = false) => en ? s switch
+    {
+        "Draft" => "draft", "Submitted" => "in approval", "Approved" => "approved", "Rejected" => "rejected", "Paid" => "paid", _ => s,
+    } : s switch
     {
         "Draft" => "taslak", "Submitted" => "onayda", "Approved" => "onaylandı", "Rejected" => "reddedildi", "Paid" => "ödendi", _ => s,
     };

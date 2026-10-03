@@ -1,6 +1,6 @@
 import { getValidToken, keycloak } from '@/auth/keycloak'
 import { env } from '@/lib/env'
-import { translateServerData, tx } from '@/lib/i18n'
+import { lang, translateServerData, tx } from '@/lib/i18n'
 
 /**
  * `?optional=true` ile çağrılan `/me` uçları, hesaba bağlı çalışan kaydı yoksa
@@ -92,7 +92,8 @@ interface RequestOptions {
 export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = 'GET', body, signal, anonymous = false } = options
 
-  const headers: Record<string, string> = { Accept: 'application/json' }
+  // Sunucu yanıt metinlerini (rapor asistanı, hata iletileri…) arayüz dilinde üretsin.
+  const headers: Record<string, string> = { Accept: 'application/json', 'X-HR360-Lang': lang }
 
   if (!anonymous) {
     const token = await getValidToken()
@@ -173,7 +174,7 @@ export async function apiUploadFile<T>(
 
   const res = await fetch(`${env.apiBase}${path}`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+    headers: { Authorization: `Bearer ${token}`, Accept: 'application/json', 'X-HR360-Lang': lang },
     body: formData,
   })
 

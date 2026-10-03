@@ -19,6 +19,8 @@ public class Notification : ITenantOwned
     public string? TemplateCode { get; set; }
     public string? Subject { get; set; }
     public required string Body { get; set; }
+    /// <summary>Metnin dili (tr | en); e-posta çerçevesi de bu dilde üretilir.</summary>
+    public string Language { get; set; } = "tr";
     public NotificationStatus Status { get; set; } = NotificationStatus.Pending;
     public string? FailureReason { get; set; }
     public int AttemptCount { get; set; }

@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
 using NotificationService.Data;
 using NotificationService.Models;
@@ -20,7 +21,13 @@ public class HrEventConsumer : KafkaConsumerBase
 
     protected override string ConsumerName => "notification-service";
 
-    protected override Task HandleAsync(
+    /// <summary>Alıcının bildirim dili; tercih yoksa Türkçe.</summary>
+    private static async Task<string> LangOfAsync(NotificationDbContext db, string tenant, Guid employeeId, CancellationToken ct) =>
+        NotificationTexts.Normalize(await db.Preferences.AsNoTracking()
+            .Where(p => p.TenantSlug == tenant && p.EmployeeId == employeeId)
+            .Select(p => p.Language).FirstOrDefaultAsync(ct));
+
+    protected override async Task HandleAsync(
         string eventType, string payload, NotificationDbContext db, CancellationToken ct)
     {
         switch (eventType)
@@ -29,22 +36,20 @@ public class HrEventConsumer : KafkaConsumerBase
             {
                 var e = JsonSerializer.Deserialize<HiredPayload>(payload, JsonOpts);
                 if (e is null) break;
+                var lang = await LangOfAsync(db, e.TenantSlug, e.EmployeeId, ct);
+                var (subject, body) = NotificationTexts.Hired(lang, e.FirstName, e.LastName, e.HireDate);
                 db.Notifications.Add(new Notification
                 {
                     // Arka plan tuketicisinde TenantContext doldurulmadigi icin
-                    // StampTenant() bu alani asla yazamiyor - olayin kendi tasidigi
-                    // TenantSlug'i elle atiyoruz (aksi halde bildirim gercek kiracı
-                    // kullanicilarina HICBIR ZAMAN gorunmuyordu; bkz. ayni bugun
-                    // timeshift-service/LeaveEventConsumer'da canli dogrulanmis hali).
+                    // StampTenant() bu alani yazamiyor; olayin kendi TenantSlug'i atanir.
                     TenantSlug = e.TenantSlug,
                     RecipientEmployeeId = e.EmployeeId,
                     RecipientEmail = e.Email,
                     Channel = NotificationChannel.Email,
                     TemplateCode = "employee.hired",
-                    Subject = "HR360'a hoş geldiniz",
-                    Body = $"Merhaba {e.FirstName} {e.LastName}, " +
-                           $"{e.HireDate:dd.MM.yyyy} tarihli işe başlangıcınız sisteme kaydedildi. " +
-                           "İşe uyum görevleriniz Onboarding modülünde sizi bekliyor.",
+                    Subject = subject,
+                    Body = body,
+                    Language = lang,
                 });
                 break;
             }
@@ -53,6 +58,8 @@ public class HrEventConsumer : KafkaConsumerBase
             {
                 var e = JsonSerializer.Deserialize<AssignedPayload>(payload, JsonOpts);
                 if (e is null) break;
+                var lang = await LangOfAsync(db, e.TenantSlug, e.EmployeeId, ct);
+                var (subject, body) = NotificationTexts.Assigned(lang, e.FirstName, e.EffectiveFrom, e.PositionTitle);
                 db.Notifications.Add(new Notification
                 {
                     TenantSlug = e.TenantSlug,
@@ -60,9 +67,9 @@ public class HrEventConsumer : KafkaConsumerBase
                     RecipientEmail = e.Email,
                     Channel = NotificationChannel.Email,
                     TemplateCode = "employee.assigned",
-                    Subject = "Departman atamanız güncellendi",
-                    Body = $"Merhaba {e.FirstName}, {e.EffectiveFrom:dd.MM.yyyy} tarihinden geçerli " +
-                           $"olmak üzere yeni pozisyonunuz: {e.PositionTitle ?? "(belirtilmemiş)"}.",
+                    Subject = subject,
+                    Body = body,
+                    Language = lang,
                 });
                 break;
             }
@@ -71,8 +78,8 @@ public class HrEventConsumer : KafkaConsumerBase
             {
                 var e = JsonSerializer.Deserialize<SubmittedPayload>(payload, JsonOpts);
                 if (e is null) break;
-                var requesterText = string.IsNullOrWhiteSpace(e.RequesterName) ? "Bir çalışan" : e.RequesterName;
-                var slaText = e.SlaDueAt is null ? "" : $" Son karar tarihi: {e.SlaDueAt:dd.MM.yyyy HH:mm}.";
+                var lang = await LangOfAsync(db, e.TenantSlug, e.ApproverEmployeeId, ct);
+                var (subject, body) = NotificationTexts.Submitted(lang, e.ApproverFirstName, e.RequesterName, e.Subject ?? e.WorkflowType, e.SlaDueAt);
                 db.Notifications.Add(new Notification
                 {
                     TenantSlug = e.TenantSlug,
@@ -80,9 +87,9 @@ public class HrEventConsumer : KafkaConsumerBase
                     RecipientEmail = e.ApproverEmail,
                     Channel = NotificationChannel.Email,
                     TemplateCode = "workflow.submitted",
-                    Subject = "Onayınızı bekleyen bir talep var",
-                    Body = $"Merhaba {e.ApproverFirstName}, {requesterText} tarafından " +
-                           $"\"{e.Subject ?? e.WorkflowType}\" konulu bir talep onayınızı bekliyor.{slaText}",
+                    Subject = subject,
+                    Body = body,
+                    Language = lang,
                 });
                 break;
             }
@@ -92,24 +99,21 @@ public class HrEventConsumer : KafkaConsumerBase
             {
                 var e = JsonSerializer.Deserialize<WorkflowPayload>(payload, JsonOpts);
                 if (e is null) break;
-                var verdict = e.Approved ? "onaylandı" : "reddedildi";
+                var lang = await LangOfAsync(db, e.TenantSlug, e.RequesterEmployeeId, ct);
+                var (subject, body) = NotificationTexts.Decided(lang, e.Approved, e.Subject ?? e.WorkflowType, e.Comment);
                 db.Notifications.Add(new Notification
                 {
                     TenantSlug = e.TenantSlug,
                     RecipientEmployeeId = e.RequesterEmployeeId,
                     Channel = NotificationChannel.InApp,
                     TemplateCode = eventType,
-                    Subject = $"Talebiniz {verdict}",
-                    Body = $"\"{e.Subject ?? e.WorkflowType}\" talebiniz {verdict}." +
-                           (string.IsNullOrWhiteSpace(e.Comment)
-                                ? ""
-                                : $" Gerekçe: {e.Comment}"),
+                    Subject = subject,
+                    Body = body,
+                    Language = lang,
                 });
                 break;
             }
         }
-
-        return Task.CompletedTask;
     }
 
     // NOT: bu 4 kayit onceden TenantSlug alanini HIC bildirmiyordu - ilgili

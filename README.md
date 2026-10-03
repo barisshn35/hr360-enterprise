@@ -60,22 +60,54 @@ Kurulumun sorduğu sorular:
 
 | Soru | Gerçek sunucu için cevap |
 |---|---|
-| Public URL | `https://hr.sirket.com` (tarayıcıda kullanılacak adres, birebir) |
-| Gateway portu | `80` (varsayılan; Let's Encrypt bunu gerektirir) |
+| Alan adı ya da adres | `hr.sirket.com`. Alan adı girilince adres `https://hr.sirket.com`, port 80 ve HTTPS Let's Encrypt olur; port ve HTTPS ayrıca sorulmaz. |
 | Keycloak yönetim paneli | Yönetim IP'niz sabitse `2` ve o IP; değilse `3` (ayrı port 8090'ı firewall'da kısıtlarsınız). Ayrıntı: [docs/runbooks/keycloak-yonetim-paneli-erisimi.md](docs/runbooks/keycloak-yonetim-paneli-erisimi.md) |
-| HTTPS | `1`: Let's Encrypt, ücretsiz sertifika ve otomatik yenileme. Kendi sertifikanız varsa `2`. Ayrıntı: [docs/runbooks/https.md](docs/runbooks/https.md) |
-| SMTP sunucusu | Gerçek e-posta sağlayıcınız (host, port, kullanıcı, parola, gönderen adres). Boş bırakılırsa Mailpit kullanılır ve **e-postalar kimseye ulaşmaz**. |
+| Yönetici e-postası | Sertifika bildirimleri ve sistem uyarıları (Alertmanager) bu adrese gider; SMTP deneme e-postası da buraya gönderilir. |
+| Gönderen e-posta adresi | `ik@sirket.com`. Sunucu ve port adresten bulunur (aşağıya bakın); kullanıcı adı varsayılan olarak bu adrestir, yalnızca parola sorulur. Boş bırakılırsa Mailpit kullanılır ve **e-postalar kimseye ulaşmaz**. |
 | Parolalar ve anahtarlar | Boş bırakın; güçlü değerler otomatik üretilir. |
 
-Let's Encrypt başarısız olursa (DNS henüz yayılmadı, port kapalı) kurulum durmaz.
-Uygulama HTTP ile açılır ve tekrar deneme komutu ekrana basılır.
+Alan adıyla kurulumda zorunlu iki adım kendiliğinden yapılır:
+
+- **HTTPS.** Yerel güvenlik duvarı (ufw/firewalld) açıksa 80 ve 443'e izin verilir.
+  Kapalı bir güvenlik duvarı açılmaz. Alan adının DNS kaydının bu sunucunun genel IP'sini
+  gösterip göstermediği denetlenir; göstermiyorsa eklenecek kayıt (`hr.sirket.com A 203.0.113.10`)
+  ekrana basılır. Kayıt build sürerken eklenebilir. Sertifika kurulumun sonunda istenir.
+  DNS o zamana kadar yayılmadıysa ya da 80 dışarıdan kapalıysa kurulum durmaz: HTTPS
+  geçici, kendinden imzalı bir sertifikayla açılır ve Let's Encrypt saatte bir kendiliğinden
+  yeniden denenir (systemd zamanlayıcı, yoksa cron). Sertifika alınınca gerçek sertifikaya
+  geçilir ve zamanlayıcı kaldırılır. DNS denetlenmeden certbot çalıştırılmaz; böylece
+  Let's Encrypt'in saatlik deneme sınırı harcanmaz.
+- **E-posta.** Sunucu gönderen adresten bulunur: Gmail ve Google Workspace, Microsoft 365,
+  Outlook/Hotmail, Yandex, Yahoo, iCloud, Zoho. Kendi alan adınızda (`ik@sirket.com`)
+  sağlayıcı MX kaydından tanınır. Gmail ve Microsoft 365 için uygulama şifresi / SMTP AUTH
+  notu gösterilir. Ayar, yönetici e-postasına bir deneme e-postası gönderilerek
+  doğrulanır. Gönderilemezse hata nedeni (parola, kapalı port, sunucu adı) gösterilir ve
+  bilgileri yeniden girme, yine de devam etme ya da Mailpit seçenekleri sunulur.
+
+Kurulumun sonunda HTTPS, sertifika, HTTP→HTTPS yönlendirmesi ve giriş (Keycloak) adresi
+denetlenip özette gösterilir (`scripts/tls.sh verify`).
+
+Soru sormadan kurulum (otomasyon, bulut başlangıç betiği):
+
+```bash
+HR360_SMTP_PASSWORD='uygulama-sifresi' ./install.sh --yes \
+  --domain hr.sirket.com --email it@sirket.com --smtp-from ik@sirket.com
+```
+
+Tüm seçenekler: `./install.sh --help` (`--url`, `--tls`, `--cert/--key`, `--smtp-host`,
+`--smtp-port`, `--smtp-user`, `--no-smtp-test`, `--keycloak-admin` ...). Verilmeyen her şey
+için varsayılan kullanılır, sırlar rastgele üretilir. Mevcut kurulumda `--yes` güncelleme yapar.
+
+Bulut sunucularda (AWS, Azure, GCP...) güvenlik grubunu betik değiştiremez; 80 ve 443/tcp
+gelen trafiğe orada açılmalıdır.
 
 ### 3. Kontrol edin
 
 - `https://hr.sirket.com` açılıyor ve `demo.admin` ile giriş yapılabiliyor mu?
 - Kendinize bir çalışan kaydı açıp davet gönderin; e-posta geliyor mu?
 - `scripts/tls.sh status` sertifikanın bitiş tarihini ve
-  "Otomatik yenileme: calisiyor" satırını gösteriyor mu?
+  "Otomatik yenileme: calisiyor" satırını gösteriyor mu? Geçici sertifikayla açıldıysa
+  `scripts/tls.sh check` neyin eksik olduğunu (DNS, port) söyler.
 - `.env` dosyasını güvenli bir yere yedekleyin. Bütün parolalar bu dosyada ve git'e girmiyor.
 
 Kurulum yalnızca örnek bir **demo** şirketiyle gelir. Gerçek şirketler uygulamadaki
@@ -86,9 +118,10 @@ kayıt ekranından açılır. Demo şirketini `platform.admin` hesabıyla askıy
 | İş | Komut |
 |---|---|
 | HTTPS'i aç/kapat, sertifika değiştir | `scripts/tls.sh enable ... / disable / status` |
+| Let's Encrypt (olmazsa geçici sertifika + saatlik yeniden deneme) | `scripts/tls.sh auto --host hr.sirket.com --email it@sirket.com`; ön koşullar `scripts/tls.sh check`, hemen dene `scripts/tls.sh retry`, uçtan uca denetim `scripts/tls.sh verify` |
 | TLS'i öndeki bir yük dengeleyici sonlandırıyorsa | `scripts/tls.sh external --host hr.sirket.com` |
 | Keycloak paneli erişimi | `scripts/keycloak-admin-access.sh open / ip <IP,...> / port [IP,...] / status` |
-| E-posta (SMTP) sunucusu | `scripts/smtp.sh set` (soru sorar), `scripts/smtp.sh test adres@sirket.com`, `scripts/smtp.sh status`, `scripts/smtp.sh mailpit` |
+| E-posta (SMTP) sunucusu | `scripts/smtp.sh set --from ik@sirket.com --password '…'` (sunucu adresten bulunur), `scripts/smtp.sh set` (soru sorar), `scripts/smtp.sh test adres@sirket.com`, `scripts/smtp.sh status`, `scripts/smtp.sh mailpit` |
 | Keycloak giriş ekranı teması (HR360 görünümü + Türkçe) | Kurulum ve güncelleme (`./install.sh`) sırasında otomatik uygulanır. Elle: `scripts/keycloak-theme.sh`; Keycloak'ın kendi temasına dönmek için `scripts/keycloak-theme.sh default` |
 | Yeni sürüme güncelleme | `git pull && ./install.sh` ("sırları yeniden üretelim mi?" sorusuna **Hayır**; veritabanı göçleri otomatik uygulanır) |
 | İzleme (Prometheus + Grafana + Loki + Alertmanager) | `scripts/monitoring.sh enable / status / password / disable / purge` |
@@ -286,7 +319,8 @@ Ayrıntılı belge diyagramlarla [docs/mimari/README.md](docs/mimari/README.md) 
   ve analitik özet 30 sn–2 dk tutulur; açık API'nin dakikalık sınır sayacı da buradadır.
   Kalıcı veri tutmaz; erişilemezse servisler doğrudan veritabanından okur
   ([yük testi raporu](docs/performans/yuk-testi.md))
-- **E-posta:** `install.sh` kurulumda SMTP sunucusunu sorar; boş
+- **E-posta:** `install.sh` kurulumda gönderen adresi sorar, SMTP sunucusunu
+  adresten bulur ve deneme e-postasıyla doğrular; boş
   bırakılırsa Mailpit (yerel SMTP yakalayıcı, demo/dev için — e-postalar
   gerçekten gönderilmez) kullanılır. Girilen ayar hem bildirim servisine
   (`.env` → `SMTP_*`) hem Keycloak'a (davet/şifre sıfırlama e-postaları,
