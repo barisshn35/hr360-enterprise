@@ -48,6 +48,10 @@ public sealed class EventHub
     public static string Describe(string type, JsonElement? p)
     {
         string F(string name) => Field(p, name) ?? "";
+        // Olay yükündeki ISO tarih ve noktalı ondalık, kullanıcıya Türkçe biçimde gösterilir.
+        static string TrDate(string v) => DateOnly.TryParse(v.Length >= 10 ? v[..10] : v, System.Globalization.CultureInfo.InvariantCulture, out var d) ? d.ToString("dd.MM.yyyy") : v;
+        static string TrNumber(string v) => decimal.TryParse(v, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var n)
+            ? n.ToString("0.##", System.Globalization.CultureInfo.GetCultureInfo("tr-TR")) : v;
         var person = $"{F("FirstName")} {F("LastName")}".Trim();
         if (person.Length == 0) person = F("RequesterName");
         if (person.Length == 0) person = F("EmployeeName");
@@ -61,7 +65,7 @@ public sealed class EventHub
             "workflow.approved" => $"Onaylandı: {F("Subject")}".TrimEnd(':', ' '),
             "workflow.rejected" => $"Reddedildi: {F("Subject")}".TrimEnd(':', ' '),
             "workflow.step-approved" => $"Onay adımı geçti: {F("Subject")}".TrimEnd(':', ' '),
-            "leave.approved" => $"İzin onaylandı ({F("Days")} gün, {F("StartDate")})",
+            "leave.approved" => $"İzin onaylandı ({TrNumber(F("Days"))} gün, {TrDate(F("StartDate"))})",
             "leave.cancelled" => "İzin iptal edildi",
             "leave.rejected" => "İzin reddedildi",
             "document.signed" => $"Belge imzalandı (basit e-imza): {F("TemplateName")}".TrimEnd(':', ' '),
@@ -337,14 +341,15 @@ public sealed class Dispatcher
             req.Headers.Add("X-HR360-Delivery", eventId.ToString());
             req.Headers.Add("X-HR360-Signature", signature);
             // SSRF: İK ekranından açılan webhook'lar bağlantı anında iç ağ IP'sine gidemez (DNS rebinding dahil);
-            // REST hook (kiracının kendi n8n'i) ve servisin kendi test alıcısı serbest.
+            // REST hook (kiracının kendi n8n'i) kiracının iç ağına gidebilir ama yerel/meta veri adreslerine ve
+            // HR360 altyapı servislerine gidemez. Servisin kendi test alıcısı serbest.
             HttpClient client;
-            if (hook.Source == "rest-hook" || WebhookTargetGuard.IsSelfInbox(hook.Url))
+            if (WebhookTargetGuard.IsSelfInbox(hook.Url))
             {
                 client = _http.CreateClient();
                 client.Timeout = TimeSpan.FromSeconds(5);
             }
-            else client = WebhookTargetGuard.Client;
+            else client = hook.Source == "rest-hook" ? WebhookTargetGuard.RestHookClient : WebhookTargetGuard.Client;
             using var res = await client.SendAsync(req, ct);
             status = (int)res.StatusCode;
             if (!res.IsSuccessStatusCode) error = $"HTTP {status}";

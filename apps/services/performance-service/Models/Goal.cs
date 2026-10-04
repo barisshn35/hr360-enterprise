@@ -19,5 +19,7 @@ public class Goal : ITenantOwned
     public decimal? CurrentValue { get; set; }
     public string? Unit { get; set; }
     public GoalStatus Status { get; set; } = GoalStatus.Draft;
+    /// <summary>İsteğe bağlı son tarih; dönem başlangıcı ile bitişi arasında olmalı.</summary>
+    public DateOnly? DueDate { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }

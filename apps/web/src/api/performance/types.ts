@@ -282,6 +282,8 @@ export interface Goal {
   currentValue: number | null
   unit: string | null
   status: GoalStatus
+  /** İsteğe bağlı son tarih (yyyy-MM-dd); dönem başlangıcı ile bitişi arasında. */
+  dueDate: string | null
 }
 
 export interface CreateGoalInput {
@@ -292,6 +294,8 @@ export interface CreateGoalInput {
   weight: number
   targetValue?: number
   unit?: string
+  /** yyyy-MM-dd; düzenlemede null gönderilirse son tarih temizlenir. */
+  dueDate?: string | null
 }
 
 /** Hedef düzenleme — dönem ve çalışan değişmez; kapalı dönemde 409. */

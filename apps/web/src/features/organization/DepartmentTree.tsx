@@ -294,7 +294,7 @@ export function DepartmentTree({
           <DialogHeader>
             <DialogTitle>{tx('Departmanı sil')}</DialogTitle>
             <DialogDescription>
-              <strong>{pendingDelete?.name}</strong>{' '}{tx('departmanını silmek üzeresiniz. Bu işlem geri alınamaz.')}
+              <strong>{pendingDelete?.name}</strong>{' '}{tx('departmanını silmek üzeresiniz. Departmana bağlı pasif ekipler ve ekip üyelik geçmişleri de silinir; geçmiş görev atamaları kayıtlarda kalır. Bu işlem geri alınamaz.')}
             </DialogDescription>
           </DialogHeader>
 

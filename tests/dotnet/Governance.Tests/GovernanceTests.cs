@@ -83,6 +83,8 @@ public class TextTests
     }
 }
 
+// TENANT_SECRET_KEY süreç genelinde değiştirildiği için bu sınıflar paralel koşmaz (rastgele AES hatası).
+[Collection("TenantSecretKey")]
 public class SecurityTests
 {
     private static string Sign(string secret, string ts, string body) =>

@@ -500,7 +500,8 @@ def build_router(verify_token, service: ModelService) -> APIRouter:
 
     @router.post("/retrain")
     async def retrain(req: RetrainRequest, info: dict = Depends(retrain_caller)) -> dict:
-        if req.source in ("rows", "csv") and not (info.get("_internal") or "platform-admin" in roles_of(info)):
+        platform = bool(info.get("_internal") or "platform-admin" in roles_of(info))
+        if req.source in ("rows", "csv") and not platform:
             # Model tum kiracilarca paylasilir: bir kiracinin verisiyle egitim yalnizca platform
             # duzeyinde (toplu ve takma adli veriyle) yapilir; kiraci IK'si sentetik egitim calistirabilir.
             raise HTTPException(status_code=403, detail="Kiracı verisiyle eğitim yalnızca platform yöneticisine ya da "
@@ -511,6 +512,12 @@ def build_router(verify_token, service: ModelService) -> APIRouter:
             raise HTTPException(status_code=422, detail="source=csv için 'csv' zorunlu.")
         if req.source == "rows" and len(req.rows) < 200:
             raise HTTPException(status_code=422, detail="Eğitim için en az 200 satır gerekir.")
+        # Paylasilan modeli yayina alma (promote) yalnizca platform yoneticisi ya da servisler arasi cagri:
+        # kiraci IK'si yalnizca deneme egitimi yapar (aday degerlendirilir, yayimlanmaz). 403 yerine
+        # dry_run olarak calistirilir ve yanitta bildirilir.
+        dry_run_forced = not platform and not req.dry_run
+        if dry_run_forced:
+            req = req.model_copy(update={"dry_run": True})
         if service.train_lock.locked():
             raise HTTPException(status_code=409, detail="Başka bir eğitim sürüyor; birazdan yeniden deneyin.")
         async with service.train_lock:
@@ -532,6 +539,12 @@ def build_router(verify_token, service: ModelService) -> APIRouter:
                         "training_rows": result["training"]["rows"], "data_window": result["data_window"]},
             "occurred_at": result["trained_at"],
         }
+        result["dry_run"] = req.dry_run
+        result["dry_run_only"] = not platform
+        if dry_run_forced:
+            result["audit"]["changes"]["dry_run_forced"] = True
+            result["notice"] = ("Yalnızca deneme eğitimi: aday değerlendirildi, yayımlanmadı. "
+                                "Yayımlama platform yöneticisindedir.")
         return result
 
     @router.post("/drift")

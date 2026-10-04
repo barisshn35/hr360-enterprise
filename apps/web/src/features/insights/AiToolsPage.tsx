@@ -68,15 +68,14 @@ function LlmCard() {
 }
 
 /* ------------------------------------------------------------------ CV */
-// Etkin sınır gateway'deki client_max_body_size 3m (ML servisi 5 MB'a izin verse de nginx 413 döner);
-// çok parçalı gövde ek yükü için küçük bir pay bırakılır.
-const CV_MAX_BYTES = 3 * 1024 * 1024 - 32 * 1024
+// ML servisinin sınırı (5 MB); gateway bu uç için 6 MB'a izin verir (çok parçalı gövde ek yükü).
+const CV_MAX_BYTES = 5 * 1024 * 1024
 const CV_EXT = /\.(pdf|docx|txt)$/i
 
 /** Yüklemeden önce uzantı ve boyut denetimi; sorun yoksa null. */
 function cvFileProblem(f: File): string | null {
   if (!CV_EXT.test(f.name)) return tx('Desteklenen biçimler: PDF, DOCX, TXT')
-  if (f.size > CV_MAX_BYTES) return tx('Dosya çok büyük (en fazla 3 MB).')
+  if (f.size > CV_MAX_BYTES) return tx('Dosya çok büyük (en fazla 5 MB).')
   if (f.size === 0) return tx('Dosya boş.')
   return null
 }
@@ -106,7 +105,7 @@ function CvTool() {
           {busy ? <ScanSearch className="size-6" /> : <FileUp className="size-6" />}
         </motion.span>
         <p className="text-[14px] font-medium">{busy ? tx('Okunuyor…') : tx('CV dosyasını bırakın veya seçin')}</p>
-        <p className="text-[12px] text-muted-foreground">{tx('PDF, DOCX veya TXT · en fazla 3 MB')}</p>
+        <p className="text-[12px] text-muted-foreground">{tx('PDF, DOCX veya TXT · en fazla 5 MB')}</p>
         <input type="file" accept=".pdf,.docx,.txt" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void run(f) }} />
       </label>
       <Panel>

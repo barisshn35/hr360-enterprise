@@ -94,7 +94,7 @@ export function SecurityPage() {
                   <Metric label={tx('Kapalı')} value={m.without} tone={m.without ? 'bad' : 'good'} />
                 </div>
                 <div className="h-2.5 overflow-hidden rounded-full bg-muted"><motion.div initial={{ width: 0 }} animate={{ width: `${pct}%` }} className="h-full rounded-full bg-[hsl(var(--success))]" /></div>
-                <p className="text-[12.5px] text-muted-foreground">{tx('Şirket hesaplarının %{0}\'inde iki adımlı doğrulama açık.', [pct])}</p>
+                <p className="text-[12.5px] text-muted-foreground">{tx('İki adımlı doğrulama açık hesaplar: %{0}', [pct])}</p>
                 <Button disabled={m.without === 0 || enforce.isPending} onClick={async () => {
                   if (await confirm({ title: tx('İki adımlı doğrulama zorunlu kılınsın mı?'), note: tx('{0} kullanıcı bir sonraki girişinde doğrulayıcı uygulaması kurmadan devam edemez.', [m.without]), action: tx('Zorunlu kıl') })) enforce.mutate(undefined)
                 }}><Lock className="size-4" />{' '}{tx('Herkes için zorunlu kıl')}</Button>

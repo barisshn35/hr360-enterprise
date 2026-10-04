@@ -17,6 +17,7 @@ namespace TimeShiftService.Controllers;
 [Authorize]
 public class OvertimeController : ControllerBase
 {
+    private static readonly System.Globalization.CultureInfo Tr = System.Globalization.CultureInfo.GetCultureInfo("tr-TR");
     public const decimal AnnualLimitHours = 270m;
     public const decimal DailyLimitHours = 4m;
     private const int WorkflowTypeOvertime = 5;
@@ -107,7 +108,7 @@ public class OvertimeController : ControllerBase
 
         var used = await UsedHoursAsync(employeeId.Value, body.Date.Year, null, ct);
         if (used + hours > AnnualLimitHours)
-            return BadRequest(new { message = $"Yıllık fazla mesai sınırı (270 saat) aşılıyor: bu yıl {used:0.#} saat kullanıldı ya da onay bekliyor", code = "annual_limit" });
+            return BadRequest(new { message = $"Yıllık fazla mesai sınırı (270 saat) aşılıyor: bu yıl {used.ToString("0.#", Tr)} saat kullanıldı ya da onay bekliyor", code = "annual_limit" });
 
         var o = new OvertimeRequest
         {
@@ -123,7 +124,7 @@ public class OvertimeController : ControllerBase
         {
             var payload = System.Text.Json.JsonSerializer.Serialize(new { overtimeRequestId = o.Id, date = o.Date.ToString("yyyy-MM-dd"), hours = o.Hours });
             o.WorkflowRequestId = await _approvals.StartAsync(_db, o.EmployeeId, WorkflowTypeOvertime,
-                $"{o.Hours:0.#} saat fazla mesai ({o.Date:dd.MM.yyyy})", payload, ct);
+                $"{o.Hours.ToString("0.#", Tr)} saat fazla mesai ({o.Date:dd.MM.yyyy})", payload, ct);
             if (o.WorkflowRequestId is not null) await _db.SaveChangesAsync(ct);
         }
         return Ok(o);

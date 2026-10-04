@@ -147,7 +147,8 @@ export const identityDirectoryApi = {
   /** G28: giriş ekranı — doğrulanmış özel alan adıysa şirket markası, değilse null. Anonim. */
   publicBranding: async (host: string, signal?: AbortSignal): Promise<PublicBranding | null> => {
     try {
-      return await apiFetch<PublicBranding>(`/api/tenant/public/branding?host=${encodeURIComponent(host)}`, { signal, anonymous: true })
+      // Tanınmayan host: 204 (apiFetch undefined döner) → marka yok.
+      return (await apiFetch<PublicBranding | undefined>(`/api/tenant/public/branding?host=${encodeURIComponent(host)}`, { signal, anonymous: true })) ?? null
     } catch (e) {
       if (e instanceof ApiError && (e.status === 404 || e.status === 429)) return null
       throw e

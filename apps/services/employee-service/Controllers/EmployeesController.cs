@@ -6,6 +6,8 @@ using EmployeeService.Models;
 using EmployeeService.Messaging;
 using EmployeeService.Services;
 using EmployeeService.Infrastructure;
+using EmployeeService.Auditing;
+using EmployeeService.Tenancy;
 using System.Text.Json;
 
 namespace EmployeeService.Controllers;
@@ -17,11 +19,13 @@ public class EmployeesController : ControllerBase
 {
     private readonly EmployeeDbContext _db;
     private readonly OrganizationDirectoryClient _organizations;
+    private readonly ITenantContext _tenant;
 
-    public EmployeesController(EmployeeDbContext db, OrganizationDirectoryClient organizations)
+    public EmployeesController(EmployeeDbContext db, OrganizationDirectoryClient organizations, ITenantContext tenant)
     {
         _db = db;
         _organizations = organizations;
+        _tenant = tenant;
     }
 
     /// <remarks>
@@ -87,7 +91,23 @@ public class EmployeesController : ControllerBase
             _ => desc ? query.OrderByDescending(e => e.FirstName).ThenByDescending(e => e.LastName)
                       : query.OrderBy(e => e.FirstName).ThenBy(e => e.LastName),
         };
-        return await Paging.ListAsync(this, ordered.ThenBy(e => e.Id), page, pageSize, ct);
+        var result = await Paging.ListAsync(this, ordered.ThenBy(e => e.Id), page, pageSize, ct);
+        if (_tenant.IsPlatformAdmin)
+        {
+            // Platform yöneticisi erişimi: kiracı başına tek satır, yalnızca sayı (kimlik yazılmaz).
+            var rows = (result as OkObjectResult)?.Value switch
+            {
+                List<Employee> l => l,
+                PagedResult<Employee> pr => pr.Items,
+                _ => (IReadOnlyList<Employee>)Array.Empty<Employee>(),
+            };
+            var perTenant = rows
+                .Where(e => PlatformAccessAudit.ShouldLog(true, _tenant.TenantSlug, e.TenantSlug))
+                .GroupBy(e => e.TenantSlug)
+                .Select(g => (g.Key, (object)new { field = "employeeList", count = g.Count(), page, filtered = !string.IsNullOrWhiteSpace(q) || status.HasValue || !string.IsNullOrWhiteSpace(email) }));
+            await PlatformAccessAudit.WriteAsync(_db, HttpContext, "EmployeeList", "list", perTenant, ct);
+        }
+        return result;
     }
 
     /// <summary>
@@ -188,6 +208,9 @@ public class EmployeesController : ControllerBase
     {
         var employee = await _db.Employees.Include(e => e.Assignments).FirstOrDefaultAsync(e => e.Id == id);
         if (employee is null) return NotFound();
+        if (PlatformAccessAudit.ShouldLog(_tenant.IsPlatformAdmin, _tenant.TenantSlug, employee.TenantSlug))
+            await PlatformAccessAudit.WriteAsync(_db, HttpContext, "Employee", employee.Id.ToString(),
+                new[] { (employee.TenantSlug, (object)new { field = "employeeRecord" }) }, HttpContext.RequestAborted);
         if (IsManagerOrAbove || (CallerSub is { } sub && employee.KeycloakUserId == sub))
             return Ok(employee);
         return Ok(new

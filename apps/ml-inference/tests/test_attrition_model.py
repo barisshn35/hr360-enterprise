@@ -208,6 +208,26 @@ def test_retrain_returns_audit_payload(env):
         assert card["data_window"] == {"start": "2025-01-01", "end": "2025-12-31"}
 
 
+def test_tenant_hr_retrain_is_forced_to_dry_run(env, monkeypatch):
+    client, service, store = env
+    body = {"source": "synthetic", "synthetic": {"n": 3000, "seed": 7}, "dry_run": False}
+    # Kiraci IK'si yayina alamaz: istek 403 degil, deneme egitimi olarak calisir ve yanitta bildirilir.
+    r = client.post("/model/retrain", json=body, headers=h("hr"))
+    assert r.status_code == 200, r.text
+    res = r.json()
+    assert res["promoted"] is False and res["dry_run"] is True and res["dry_run_only"] is True
+    assert "deneme" in res["notice"].lower() and res["audit"]["changes"]["dry_run_forced"] is True
+    assert service.state.version == "1" and store.promoted[res["candidate_version"]] is False
+    # Platform yoneticisi ve servisler arasi cagri yayina alabilir.
+    r = client.post("/model/retrain", json=body, headers=h("platform"))
+    assert r.status_code == 200 and r.json()["promoted"] is True and r.json()["dry_run_only"] is False
+    assert "notice" not in r.json()
+    monkeypatch.setenv("INTERNAL_SERVICE_TOKEN", "s3cret")
+    r = client.post("/model/retrain", json={**body, "synthetic": {"n": 3000, "seed": 9}},
+                    headers=h("hr", **{"X-Internal-Token": "s3cret"}))
+    assert r.status_code == 200 and r.json()["dry_run"] is False
+
+
 # ------------------------------------------------------------------ dislanan nitelik korumasi
 
 def test_train_model_refuses_forbidden_feature_names():

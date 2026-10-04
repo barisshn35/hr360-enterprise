@@ -6,6 +6,8 @@ using Xunit;
 namespace Governance.Tests;
 
 /// <summary>Dalga 5c: iş günü takvimi, hedef kitle, etik takip kodu, İSG ve disiplin kuralları.</summary>
+// TENANT_SECRET_KEY süreç genelinde değiştirildiği için bu sınıflar paralel koşmaz (rastgele AES hatası).
+[Collection("TenantSecretKey")]
 public class WorkplaceComplianceTests
 {
     private static DateOnly D(string s) => DateOnly.Parse(s);

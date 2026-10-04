@@ -379,14 +379,23 @@ public class OffboardingController : AppController
     public OffboardingController(EngagementDbContext db, IHttpClientFactory http) { _db = db; _http = http; }
 
     [HttpGet]
-    public async Task<IActionResult> List(CancellationToken ct) =>
-        Ok((await _db.OffboardingCases.AsNoTracking().OrderByDescending(c => c.CreatedAt).ToListAsync(ct)).Select(c => new
+    public async Task<IActionResult> List(CancellationToken ct)
+    {
+        var cases = await _db.OffboardingCases.OrderByDescending(c => c.CreatedAt).ToListAsync(ct);
+        // Açık süreçlerin zimmet durumu listede de tazelenir: iade ayrıntı açılmadan yapılınca
+        // "n zimmet bekliyor" eski kalıyordu. Açık süreç sayısı küçüktür (ayrılmakta olanlar).
+        var changed = false;
+        foreach (var c in cases.Where(c => c.Status == "Open"))
+            changed |= await RefreshAssetsAsync(c, ct);
+        if (changed) await _db.SaveChangesAsync(ct);
+        return Ok(cases.Select(c => new
         {
             c.Id, c.EmployeeId, c.EmployeeName, c.LastWorkingDay, c.Reason, c.Status, c.CreatedAt, c.CompletedAt,
             c.RehireEligible, progress = c.Checklist.Count == 0 ? 0 : (int)Math.Round(100.0 * c.Checklist.Count(i => i.Done) / c.Checklist.Count),
             total = c.Checklist.Count, done = c.Checklist.Count(i => i.Done), hasInterview = c.ExitInterview != null,
             openAssets = c.AssetChecks.Count(a => a.Resolution == "Open"), c.AccountStatus, c.PlannedAnonymizationOn,
         }));
+    }
 
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> Get(Guid id, CancellationToken ct)

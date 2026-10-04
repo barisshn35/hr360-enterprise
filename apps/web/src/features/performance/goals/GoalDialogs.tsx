@@ -28,6 +28,7 @@ import { NumberStepper } from '../components/NumberStepper'
 import { ShareBar } from '../components/WeightShare'
 import { formatGoalValue, progressOf } from './goalMath'
 import { tx, pct } from '@/lib/i18n'
+import { formatDate } from '@/lib/format'
 
 function ErrorLine({ message }: { message: string | null }) {
   return (
@@ -81,25 +82,37 @@ export function CreateGoalDialog({
   const [numeric, setNumeric] = useState(goal ? goal.targetValue !== null : true)
   const [target, setTarget] = useState(goal?.targetValue != null ? String(goal.targetValue).replace('.', ',') : '')
   const [unit, setUnit] = useState(goal?.unit ?? '')
+  const [dueDate, setDueDate] = useState(goal?.dueDate ?? '')
   const [touched, setTouched] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const others = existing.filter((g) => g.status !== 'Cancelled' && g.id !== goal?.id)
   const total = others.reduce((a, g) => a + g.weight, 0) + weight
   const targetNum = parse(target)
+  const cycleStart = cycle.startDate?.slice(0, 10) || undefined
+  const cycleEnd = cycle.endDate?.slice(0, 10) || undefined
   const errs = {
     title: !title.trim() ? tx('Hedefe bir başlık verin.') : undefined,
     target: numeric && (targetNum === null || targetNum <= 0) ? tx('Sıfırdan büyük bir hedef değer girin.') : undefined,
+    // Sunucu da aynı kuralı uygular (GoalsController.DueDateError).
+    dueDate:
+      dueDate && cycleEnd && dueDate > cycleEnd
+        ? tx('Son tarih dönem bitişinden ({0}) sonra olamaz.', [formatDate(cycleEnd)])
+        : dueDate && cycleStart && dueDate < cycleStart
+          ? tx('Son tarih dönem başlangıcından ({0}) önce olamaz.', [formatDate(cycleStart)])
+          : undefined,
   }
 
   const submit = () => {
     setTouched(true)
-    if (errs.title || errs.target) return
+    if (errs.title || errs.target || errs.dueDate) return
     const body = {
       title: title.trim(),
       description: description.trim() || undefined,
       weight,
       ...(numeric ? { targetValue: targetNum!, unit: unit.trim() || undefined } : {}),
+      // Düzenlemede boş = temizle (null); yeni hedefte boşsa alan hiç gönderilmez.
+      dueDate: dueDate || (goal ? null : undefined),
     }
     const handlers = { onError: (e: unknown) => setError(errorText(e)) }
     if (goal) {
@@ -143,6 +156,17 @@ export function CreateGoalDialog({
       <div className="flex flex-col gap-4">
         <TextField label={tx('Başlık')} value={title} onChange={(e) => setTitle(e.target.value)} error={touched ? errs.title : undefined} placeholder={tx('ör. Ödeme servisi v2 lansmanı')} autoFocus={!goal} required />
         <TextAreaField label={tx('Açıklama')} value={description} onChange={(e) => setDescription(e.target.value)} placeholder={tx('Başarının tanımı ne?')} />
+        <div className="sm:w-56">
+          <TextField
+            label={tx('Son tarih (isteğe bağlı)')}
+            type="date"
+            value={dueDate}
+            min={cycleStart}
+            max={cycleEnd}
+            onChange={(e) => setDueDate(e.target.value)}
+            error={dueDate ? errs.dueDate : undefined}
+          />
+        </div>
 
         <div className="rounded-lg border border-border p-3">
           <div className="flex flex-wrap items-center justify-between gap-3">

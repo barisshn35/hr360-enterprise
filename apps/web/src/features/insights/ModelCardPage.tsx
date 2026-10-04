@@ -4,6 +4,7 @@ import { RefreshCw, ShieldCheck, ShieldAlert } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Panel, PanelBody, PanelHead } from '@/components/ui/Panel'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Modal } from '@/components/ui/Modal'
 import { ProgressBar } from '@/components/ui/Progress'
 import { StatusBadge, type StatusTone } from '@/components/ui/StatusBadge'
@@ -87,6 +88,10 @@ export function ModelCardPage() {
   const { roles } = useAuth()
   const [confirm, setConfirm] = useState(false)
   const [lastRun, setLastRun] = useState<RetrainResult | null>(null)
+  // Paylaşılan modeli yayımlama yalnızca platform yöneticisinde; şirket İK'sı yalnızca deneme eğitimi yapar.
+  const canPromote = roles.includes('platform-admin')
+  const [dryRun, setDryRun] = useState(false)
+  const effectiveDryRun = !canPromote || dryRun
   const card = useQuery({ queryKey: ['ml-model', 'card'], queryFn: ({ signal }) => mlModelApi.card(signal) })
   const importance = useQuery({
     queryKey: ['ml-model', 'importance', card.data?.version],
@@ -99,8 +104,10 @@ export function ModelCardPage() {
     queryFn: ({ signal }) => mlModelApi.lastDrift(signal),
     enabled: recent.isSuccess && !recent.data.available,
   })
-  const retrain = useAction(() => mlModelApi.retrainSynthetic(), {
-    success: (r) => (r.promoted ? tx('Yeni sürüm yayımlandı: v{0}', [r.candidate_version]) : tx('Aday sürüm yayımlanmadı: v{0}', [r.candidate_version])),
+  const retrain = useAction(() => mlModelApi.retrainSynthetic(effectiveDryRun), {
+    success: (r) => (r.promoted ? tx('Yeni sürüm yayımlandı: v{0}', [r.candidate_version])
+      : r.dry_run ? tx('Deneme eğitimi tamamlandı: aday v{0} yayımlanmadı', [r.candidate_version])
+      : tx('Aday sürüm yayımlanmadı: v{0}', [r.candidate_version])),
     invalidate: [['ml-model']],
     onDone: (r) => {
       setLastRun(r)
@@ -260,7 +267,9 @@ export function ModelCardPage() {
           open
           onClose={() => setConfirm(false)}
           title={tx('Modeli yeniden eğit')}
-          note={tx('Yeni tohumla sentetik veride aday model eğitilir ve mevcut modelle aynı değerlendirme kümesinde karşılaştırılır. Aday yalnızca AUC farkı -{0} eşiğinden kötü değilse yayımlanır; aksi halde kayıtta kalır.', [dec(c?.promotion_tolerance ?? 0.02)])}
+          note={canPromote
+            ? tx('Yeni tohumla sentetik veride aday model eğitilir ve mevcut modelle aynı değerlendirme kümesinde karşılaştırılır. Aday yalnızca AUC farkı -{0} eşiğinden kötü değilse yayımlanır; aksi halde kayıtta kalır.', [dec(c?.promotion_tolerance ?? 0.02)])
+            : tx('Deneme eğitimi: aday değerlendirilir, yayımlanmaz; yayımlama platform yöneticisindedir')}
           footer={
             <>
               <Button variant="outline" onClick={() => setConfirm(false)}>{tx('Vazgeç')}</Button>
@@ -270,7 +279,13 @@ export function ModelCardPage() {
             </>
           }
         >
-          <InfoNote>{tx('Model tüm şirketlerce paylaşılır. Şirket verisiyle eğitim yalnızca platform düzeyinde, toplu ve takma adlı veriyle yapılır.')}</InfoNote>
+          <div className="space-y-3">
+            <label className="flex items-center gap-2 text-[13px]">
+              <Checkbox checked={effectiveDryRun} disabled={!canPromote} onCheckedChange={(v) => setDryRun(v === true)} />
+              {tx('Yalnızca deneme eğitimi (yayımlanmaz)')}
+            </label>
+            <InfoNote>{tx('Model tüm şirketlerce paylaşılır. Şirket verisiyle eğitim yalnızca platform düzeyinde, toplu ve takma adlı veriyle yapılır.')}</InfoNote>
+          </div>
         </Modal>
       )}
     </div>

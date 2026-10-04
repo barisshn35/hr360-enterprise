@@ -347,7 +347,7 @@ try:
           and r["txtName"] == "_hr360-verify." + D and r["txtValue"].startswith("hr360-verify="), (code, r))
     DID, TXT = (r["id"], r["txtValue"]) if code == 200 else ("", "")
     check("G28 aynı alan adı ikinci kez eklenemez", api("admin", "POST", DOM, {"domain": D})[0] == 409)
-    check("G28 doğrulanmamış alan adı için marka yok (404)", http("GET", f"{T}/public/branding?host={D}")[0] == 404)
+    check("G28 doğrulanmamış alan adı için marka yok (204)", http("GET", f"{T}/public/branding?host={D}")[0] == 204)
     code, r = api("admin", "POST", f"{DOM}/{DID}/verify")
     check("G28 TXT kaydı yokken doğrulama başarısız", code == 400 and "TXT" in r.get("message", ""), (code, r))
     over = json.dumps({"_hr360-verify." + D: ["v=spf1 -all", TXT]})
@@ -358,8 +358,8 @@ try:
     check("G28 doğrulanan alan adı giriş yönlendirmelerine eklendi", f"https://{D}/*" in kc_client.stdout, kc_client.stdout[:300])
     code, b = http("GET", f"{T}/public/branding?host={D.upper()}:443")
     check("G28 herkese açık marka: slug/ad", code == 200 and b["slug"] == "demo" and b["name"] and set(b) == {"slug", "name", "logoUrl", "primaryColorHex"}, (code, b))
-    check("G28 bilinmeyen host 404", http("GET", f"{T}/public/branding?host=yok-{RUN}.example.com")[0] == 404
-          and http("GET", f"{T}/public/branding?host=localhost")[0] == 404)
+    check("G28 bilinmeyen host 204 (konsolda hata yok)", http("GET", f"{T}/public/branding?host=yok-{RUN}.example.com")[0] == 204
+          and http("GET", f"{T}/public/branding?host=localhost")[0] == 204)
 
     code, r = api("admin", "POST", DOM, {"domain": D2})
     D2ID = r["id"] if code == 200 else ""
@@ -373,7 +373,7 @@ try:
     check("G28 liste yalnızca kendi şirketinin alan adları", code == 200 and r["enterprise"] and {d["domain"] for d in r["items"]} >= {D, D2}
           and all(d["domain"] != D2 or d["status"] == "Verified" for d in r["items"]), r)
     check("G28 alan adı silinir", api("admin", "DELETE", f"{DOM}/{DID}")[0] == 200 and api("admin", "DELETE", f"{DOM}/{D2ID}")[0] == 200)
-    check("G28 silinen alan adı için marka yok", http("GET", f"{T}/public/branding?host={D}")[0] == 404)
+    check("G28 silinen alan adı için marka yok", http("GET", f"{T}/public/branding?host={D}")[0] == 204)
     kc_client = kcadm("get", "clients", "-q", "clientId=hr360-web", "--fields", "redirectUris")
     check("G28 silinen alan adı yönlendirmelerden çıkarıldı", f"https://{D}/*" not in kc_client.stdout and kc_client.returncode == 0, kc_client.stdout[:300])
 

@@ -233,6 +233,7 @@ export function toGoal(v: unknown): Goal {
     currentValue: num(r.currentValue),
     unit: str(r.unit),
     status: (str(r.status) ?? 'Draft') as Goal['status'],
+    dueDate: str(r.dueDate)?.slice(0, 10) ?? null,
   }
 }
 

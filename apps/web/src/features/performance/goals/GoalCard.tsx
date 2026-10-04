@@ -1,5 +1,5 @@
 import { motion } from 'motion/react'
-import { Ban, Flame, Pencil, Target, Trash2, TrendingUp } from 'lucide-react'
+import { Ban, CalendarClock, Flame, Pencil, Target, Trash2, TrendingUp } from 'lucide-react'
 import { formatShareOf, goalStatusLabels, goalStatusTone, shareOf, type Goal } from '@/api/performance'
 import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/ui/StatusBadge'
@@ -7,6 +7,13 @@ import { cn } from '@/lib/utils'
 import { EASE } from '@/motion/primitives'
 import { formatGoalValue, progressOf } from './goalMath'
 import { tx } from '@/lib/i18n'
+import { formatDate } from '@/lib/format'
+
+/** Yerel bugünün yyyy-MM-dd hâli (toISOString UTC'ye kaydırır). */
+function todayLocal(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 
 export function GoalCard({
   goal,
@@ -28,6 +35,8 @@ export function GoalCard({
   const p = progressOf(goal)
   const share = goal.status === 'Cancelled' ? 0 : shareOf(goal.weight, totalWeight)
   const over = p.source === 'numeric' && (p.raw ?? 0) > 100
+  // Gecikme: son tarih geçmiş ve hedef hâlâ açık (taslak/devam ediyor).
+  const overdue = !!goal.dueDate && goal.dueDate < todayLocal() && (goal.status === 'Active' || goal.status === 'Draft')
   const barColor =
     goal.status === 'Missed' ? 'hsl(var(--destructive))' : (p.pct ?? 0) >= 100 ? 'hsl(var(--success))' : (p.pct ?? 0) >= 60 ? 'hsl(var(--primary))' : 'hsl(var(--warning))'
 
@@ -50,8 +59,17 @@ export function GoalCard({
             {goal.description && <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">{goal.description}</p>}
           </div>
         </div>
-        <StatusBadge tone={goalStatusTone[goal.status]}>{goalStatusLabels[goal.status]}</StatusBadge>
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <StatusBadge tone={goalStatusTone[goal.status]}>{goalStatusLabels[goal.status]}</StatusBadge>
+          {overdue && <StatusBadge tone="danger">{tx('Gecikti')}</StatusBadge>}
+        </div>
       </div>
+      {goal.dueDate && (
+        <p className={cn('mt-2 inline-flex items-center gap-1 text-[12px]', overdue ? 'font-medium text-destructive' : 'text-muted-foreground')}>
+          <CalendarClock className="size-3.5" aria-hidden />
+          {tx('Son tarih: {0}', [formatDate(goal.dueDate)])}
+        </p>
+      )}
 
       {p.pct !== null && (
         <div className="mt-4">

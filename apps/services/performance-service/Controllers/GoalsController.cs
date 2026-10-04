@@ -39,7 +39,7 @@ public class GoalsController : ControllerBase
     /// Sayfalama (G24): <c>page</c> verilmezse eski biçim (düz dizi, en yeni önce; sayı
     /// <c>X-Total-Count</c> başlığında). <c>page</c>/<c>pageSize</c> (en fazla 200) ile
     /// <c>{ items, total, page, pageSize }</c>. Ek filtreler: <c>status</c>, <c>q</c> (hedef başlığı).
-    /// Sıralama: <c>sort</c>=createdAt|title|weight|status, <c>dir</c>=asc|desc (varsayılan createdAt desc).
+    /// Sıralama: <c>sort</c>=createdAt|title|weight|status|dueDate, <c>dir</c>=asc|desc (varsayılan createdAt desc).
     /// </remarks>
     [HttpGet]
     public async Task<IActionResult> GetAll(
@@ -78,6 +78,7 @@ public class GoalsController : ControllerBase
             "title" => desc ? query.OrderByDescending(g => g.Title) : query.OrderBy(g => g.Title),
             "weight" => desc ? query.OrderByDescending(g => g.Weight) : query.OrderBy(g => g.Weight),
             "status" => desc ? query.OrderByDescending(g => g.Status) : query.OrderBy(g => g.Status),
+            "duedate" => desc ? query.OrderByDescending(g => g.DueDate) : query.OrderBy(g => g.DueDate),
             _ => desc ? query.OrderByDescending(g => g.CreatedAt) : query.OrderBy(g => g.CreatedAt),
         };
         return await Paging.ListAsync(this, ordered.ThenBy(g => g.Id), page, pageSize, ct);
@@ -96,6 +97,7 @@ public class GoalsController : ControllerBase
         var cycle = await _db.Cycles.FirstOrDefaultAsync(c => c.Id == request.CycleId);
         if (cycle is null) return BadRequest("Değerlendirme dönemi bulunamadı");
         if (cycle.Status == CycleStatus.Closed) return BadRequest("Kapalı döneme hedef eklenemez");
+        if (DueDateError(request.DueDate, cycle) is { } dueError) return BadRequest(new { message = dueError });
 
         var goal = new Goal
         {
@@ -106,6 +108,7 @@ public class GoalsController : ControllerBase
             Weight = request.Weight,
             TargetValue = request.TargetValue,
             Unit = request.Unit,
+            DueDate = request.DueDate,
             Status = GoalStatus.Active
         };
         _db.Goals.Add(goal);
@@ -132,14 +135,31 @@ public class GoalsController : ControllerBase
             return BadRequest(new { message = "Ağırlık 1-100 arasında olmalı" });
         if (request.TargetValue is < 0)
             return BadRequest(new { message = "Hedef değer negatif olamaz" });
+        if (cycle is not null && DueDateError(request.DueDate, cycle) is { } dueError)
+            return BadRequest(new { message = dueError });
 
         goal.Title = request.Title.Trim();
         goal.Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim();
         goal.Weight = request.Weight;
         goal.TargetValue = request.TargetValue;
         goal.Unit = string.IsNullOrWhiteSpace(request.Unit) ? null : request.Unit.Trim();
+        goal.DueDate = request.DueDate;
         await _db.SaveChangesAsync(ct);
         return Ok(goal);
+    }
+
+    /// <summary>
+    /// Son tarih boş bırakılabilir; verildiyse dönem başlangıcından önce ve (tanımlıysa)
+    /// dönem bitişinden sonra olamaz. Hata yoksa null döner.
+    /// </summary>
+    public static string? DueDateError(DateOnly? dueDate, ReviewCycle cycle)
+    {
+        if (dueDate is not { } due) return null;
+        if (cycle.EndDate != default && due > cycle.EndDate)
+            return $"Son tarih dönem bitişinden ({cycle.EndDate:dd.MM.yyyy}) sonra olamaz";
+        if (cycle.StartDate != default && due < cycle.StartDate)
+            return $"Son tarih dönem başlangıcından ({cycle.StartDate:dd.MM.yyyy}) önce olamaz";
+        return null;
     }
 
     /// <summary>Hedefi siler. Kapalı dönemin hedefi (nihai puana girmiş) silinemez.</summary>
@@ -182,6 +202,7 @@ public class GoalsController : ControllerBase
 
 public record CreateGoalRequest(
     Guid CycleId, Guid EmployeeId, string Title, string? Description,
-    int Weight, decimal? TargetValue, string? Unit);
-public record UpdateGoalRequest(string Title, string? Description, int Weight, decimal? TargetValue, string? Unit);
+    int Weight, decimal? TargetValue, string? Unit, DateOnly? DueDate = null);
+/// <remarks>DueDate gönderilmezse (null) son tarih temizlenir; web istemcisi her düzenlemede mevcut değeri gönderir.</remarks>
+public record UpdateGoalRequest(string Title, string? Description, int Weight, decimal? TargetValue, string? Unit, DateOnly? DueDate = null);
 public record UpdateProgressRequest(decimal? CurrentValue, GoalStatus? Status);

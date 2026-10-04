@@ -157,7 +157,9 @@ public class CustomDomainsController : ControllerBase
 /// Anonim, herkese acik uc: GET /api/tenant/public/branding?host=ik.acme.com.tr - giris ekrani,
 /// tarayicinin bulundugu ozel alan adina gore kiracinin kisa adini (slug), adini, logosunu ve ana
 /// rengini alir; kiraciyi on-secer ve temayi uygular. Yalnizca DOGRULANMIS alan adlari ve aktif
-/// kiracilar icin yanit doner (aksi halde 404); baska hicbir kiraci bilgisi sizdirilmaz.
+/// kiracilar icin yanit doner; baska hicbir kiraci bilgisi sizdirilmaz. Taninmayan host icin
+/// 204 No Content: giris ekrani her acilista sorar, "marka yok" bir hata degildir (tarayici
+/// konsolunda her giriste kirmizi 404 cikmasin).
 /// </summary>
 [ApiController]
 [Route("api/public")]
@@ -172,12 +174,12 @@ public class PublicTenantController : ControllerBase
     public async Task<IActionResult> Resolve([FromQuery] string? host, CancellationToken ct)
     {
         var domain = DomainValidator.NormalizeHost(host);
-        if (domain is null) return NotFound(new { message = "Alan adı tanınmıyor" });
+        if (domain is null) return NoContent();
         var hit = await (from d in _db.CustomDomains
                          join t in _db.Tenants on d.TenantSlug equals t.Slug
                          where d.Domain == domain && d.Status == CustomDomainStatus.Verified && t.Status == TenantStatus.Active
                          select new { t.Slug, t.Name, t.LogoUrl, t.PrimaryColorHex, t.Plan }).FirstOrDefaultAsync(ct);
-        if (hit is null) return NotFound(new { message = "Alan adı tanınmıyor" });
+        if (hit is null) return NoContent();
         Response.Headers.CacheControl = "public, max-age=300";
         var branded = hit.Plan == TenantPlan.Enterprise;
         return Ok(new

@@ -81,6 +81,11 @@ export interface RetrainResult {
   candidate: ModelMetrics
   current: ModelMetrics | null
   serving_version: string
+  /** Deneme eğitimi miydi (yayımlanmaz)? */
+  dry_run?: boolean
+  /** Çağıran yalnızca deneme eğitimi yapabilir (platform yöneticisi değil). */
+  dry_run_only?: boolean
+  notice?: string
 }
 
 export const mlModelApi = {
@@ -90,8 +95,11 @@ export const mlModelApi = {
   recentDrift: (signal?: AbortSignal) => apiFetch<DriftReport>(`${BASE}/drift/recent`, { signal }),
   /** Son kaydedilen kayma ölçümü (toplu satır gönderimi ya da son tahminler). */
   lastDrift: (signal?: AbortSignal) => apiFetch<DriftReport>(`${BASE}/drift/last`, { signal }),
-  /** Sentetik veriyle yeni tohumla yeniden eğitim (İK). Aday, mevcut modelden kötü değilse yayımlanır. */
-  retrainSynthetic: () =>
+  /**
+   * Sentetik veriyle yeni tohumla yeniden eğitim (İK). Aday, mevcut modelden kötü değilse yayımlanır;
+   * yayımlama yalnızca platform yöneticisindedir — şirket İK'sı için sunucu her zaman deneme eğitimi yapar.
+   */
+  retrainSynthetic: (dryRun: boolean) =>
     // governance üzerinden: eğitim özeti denetim kaydına yazılır.
-    apiFetch<RetrainResult>('/api/governance/model/retrain', { method: 'POST', body: {} }),
+    apiFetch<RetrainResult>('/api/governance/model/retrain', { method: 'POST', body: { dryRun } }),
 }

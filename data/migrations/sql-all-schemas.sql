@@ -3554,3 +3554,8 @@ CREATE TRIGGER trg_governance_signatures_immutable
 -- Yeni imzalarda kanıt governance_signatures'tadır (DocumentType 'HrDocument'); talep yalnızca kimliğini tutar.
 -- OTP sütunları (OtpHash, OtpExpiresAt, ...) artık yazılmaz; eski satırlar için yerinde bırakılır.
 ALTER TABLE expense_document_signatures ADD COLUMN IF NOT EXISTS "EvidenceRef" uuid NULL;
+
+-- ===== 2026-10-12_goal_due_date
+-- Performans hedeflerine isteğe bağlı son tarih. İdempotent.
+-- Boş (NULL) bırakılabilir; doğrulama (dönem bitişinden sonra olamaz) performance-service'te.
+ALTER TABLE performance_goals ADD COLUMN IF NOT EXISTS "DueDate" date NULL;

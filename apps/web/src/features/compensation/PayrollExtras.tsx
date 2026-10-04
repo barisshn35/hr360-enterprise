@@ -146,7 +146,7 @@ export function AdvancesAdminPanel() {
           <li key={a.id} className="flex flex-wrap items-center gap-3 px-5 py-3 text-[13px]">
             <span className="min-w-0 flex-1 font-medium">{nameOf(a.employeeId)}<span className="block text-[12px] font-normal text-muted-foreground">
               {a.kind === 'Loan' ? tx('Borç') : tx('Avans')} {formatMoney(a.amount)} · {tx('{0} taksit, {1}/{2} başlangıç', [a.installments, a.startMonth, a.startYear])}{a.reason ? ` · ${a.reason}` : ''}</span></span>
-            {a.installmentShare !== null && a.installmentShare > 0.25 && <StatusBadge tone="warning">{tx('Taksit brüt ücretin %{0}\'i', [Math.round(a.installmentShare * 100)])}</StatusBadge>}
+            {a.installmentShare !== null && a.installmentShare > 0.25 && <StatusBadge tone="warning">{tx('Taksit / brüt ücret: %{0}', [Math.round(a.installmentShare * 100)])}</StatusBadge>}
             <StatusBadge tone={advStatus[a.status].tone}>{advStatus[a.status].label}</StatusBadge>
             {a.status === 'Pending' && <><Button size="sm" onClick={() => approve.mutate(a.id)}><Check className="size-4" />{' '}{tx('Onayla')}</Button><Button size="sm" variant="outline" onClick={() => { setRej(a); setNote('') }}><X className="size-4" />{' '}{tx('Reddet')}</Button></>}
           </li>

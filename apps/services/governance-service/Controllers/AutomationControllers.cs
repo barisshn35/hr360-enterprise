@@ -406,6 +406,9 @@ public class PublicApiController : ControllerBase
         var url = body.Target?.Trim();
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https"))
             return BadRequest(new { message = "target_url geçerli bir http(s) adresi olmalı.", code = "invalid_target" });
+        // SSRF: kiracının kendi iç ağı serbest; yerel makine, bulut meta veri ve HR360 altyapısı değil.
+        if (WebhookTargetGuard.ValidateRestHook(url) is { } invalid)
+            return BadRequest(new { message = invalid, code = "invalid_target" });
         var events = (body.Events ?? new()).Concat(body.Event is null ? Array.Empty<string>() : new[] { body.Event }).Select(e => e.Trim()).Where(e => e.Length > 0).Distinct().ToList();
         if (events.Count == 0 || events.Any(e => EventCatalog.Types.All(t => t.Type != e)))
             return BadRequest(new { message = "Geçerli bir olay (event) gerekli.", code = "invalid_event", events = EventCatalog.Types.Select(t => t.Type) });

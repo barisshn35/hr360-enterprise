@@ -71,7 +71,8 @@ export function fullName(p: { firstName?: string; lastName?: string }): string {
 /** Türkçe karakter duyarlı arama normalizasyonu. */
 export function normalizeSearch(value: string): string {
   return value
-    .toLocaleLowerCase(appLocale)
+    // Dil seçiminden bağımsız Türkçe küçültme: "en" ile "İ" → "i̇" (birleşik nokta) kalıyordu.
+    .toLocaleLowerCase('tr')
     .replace(/ı/g, 'i')
     .replace(/ş/g, 's')
     .replace(/ğ/g, 'g')

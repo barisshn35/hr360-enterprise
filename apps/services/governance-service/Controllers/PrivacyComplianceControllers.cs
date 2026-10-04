@@ -143,7 +143,7 @@ public class PrivacyComplianceController : AppController
 
     /* ------------------------------------------------------------------ hassas veri erişim kaydı (K6) */
 
-    private static readonly string[] AccessActions = { "Revealed", "SensitiveViewed", "Exported", "AutomatedAnalysis" };
+    private static readonly string[] AccessActions = { "Revealed", "SensitiveViewed", "Exported", "AutomatedAnalysis", "PlatformAccess" };
 
     private async Task<List<object>> AccessRowsAsync(Guid? employeeId, int days, CancellationToken ct)
     {
