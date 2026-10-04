@@ -42,6 +42,7 @@ import type {
   FeedbackInput,
   GoalFilters,
   GoalProgressInput,
+  UpdateGoalInput,
   MetricFilters,
   MetricInput,
   MetricTemplate,
@@ -301,6 +302,11 @@ function useGoalMutation<TArgs, TResult>(fn: (args: TArgs) => Promise<TResult>) 
 }
 
 export const useCreateGoal = () => useGoalMutation((input: CreateGoalInput) => goalsApi.create(input))
+
+export const useUpdateGoal = () =>
+  useGoalMutation(({ id, input }: { id: string; input: UpdateGoalInput }) => goalsApi.update(id, input))
+
+export const useDeleteGoal = () => useGoalMutation((id: string) => goalsApi.remove(id))
 
 export const useUpdateGoalProgress = () =>
   useGoalMutation(({ id, input }: { id: string; input: GoalProgressInput }) => goalsApi.progress(id, input))

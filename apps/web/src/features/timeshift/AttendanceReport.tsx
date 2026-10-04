@@ -17,7 +17,8 @@ import { isHr } from '@/auth/roles'
 import { useMyEmployeeId } from '@/api/queries'
 import { overtimeApi } from '@/api/timeclock'
 import { opsApi, type AttendanceRow } from '@/api/opsPlus'
-import { formatDate } from '@/lib/format'
+import { formatDate, parseDecimal } from '@/lib/format'
+import { overtimeHoursError } from './OvertimePanel'
 import { isoDate, useAction } from '@/features/shared/kit'
 import { tx } from '@/lib/i18n'
 
@@ -35,15 +36,16 @@ const statusView: Record<AttendanceRow['status'], { label: string; tone: 'neutra
 function OvertimeDraftModal({ row, self, onClose }: { row: AttendanceRow; self: boolean; onClose: () => void }) {
   const [hours, setHours] = useState(String(row.suggestedOvertimeHours ?? 0))
   const [reason, setReason] = useState(tx('Puantajdan tespit edilen fazla mesai ({0})', [hm(row.overtimeMinutes)]))
-  const create = useAction(() => overtimeApi.create({ employeeId: self ? undefined : row.employeeId, date: row.date, hours: Number(hours.replace(',', '.')), reason: reason.trim() || undefined }),
+  const hoursErr = overtimeHoursError(hours)
+  const create = useAction(() => overtimeApi.create({ employeeId: self ? undefined : row.employeeId, date: row.date, hours: parseDecimal(hours) ?? 0, reason: reason.trim() || undefined }),
     { success: self ? tx('Fazla mesai talebi onaya gönderildi') : tx('Fazla mesai kaydedildi'), invalidate: [['attendance'], ['overtime']], onDone: onClose })
   return (
     <Modal open onClose={onClose} title={tx('Fazla mesai talebi — {0}', [formatDate(row.date)])}
       note={self ? tx('Talep, mevcut fazla mesai onay akışına girer (yılda en çok 270 saat, günde en çok 4 saat).') : tx('Yönetici/İK olarak çalışan adına girilen fazla mesai doğrudan onaylı sayılır.')}
-      footer={<><Button variant="outline" onClick={onClose}>{tx('Vazgeç')}</Button><Button onClick={() => create.mutate(undefined)} disabled={create.isPending || !(Number(hours.replace(',', '.')) > 0)}>{tx('Oluştur')}</Button></>}>
+      footer={<><Button variant="outline" onClick={onClose}>{tx('Vazgeç')}</Button><Button onClick={() => create.mutate(undefined)} disabled={create.isPending || !!hoursErr}>{tx('Oluştur')}</Button></>}>
       <div className="space-y-3">
         <p className="text-[13px]">{row.name} · {tx('tespit: {0}', [hm(row.overtimeMinutes)])}</p>
-        <TextField label={tx('Saat (0,5 adım)')} type="number" min={0.5} max={4} step={0.5} value={hours} onChange={(e) => setHours(e.target.value)} />
+        <TextField label={tx('Saat (0,5 adım)')} inputMode="decimal" value={hours} error={hoursErr} onChange={(e) => setHours(e.target.value)} />
         <TextAreaField label={tx('Gerekçe')} rows={2} maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} />
       </div>
     </Modal>

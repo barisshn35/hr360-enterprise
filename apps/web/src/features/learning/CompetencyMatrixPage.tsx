@@ -21,6 +21,7 @@ import { errMsg, useAction } from '@/features/shared/kit'
 import { formatDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { tx } from '@/lib/i18n'
+import { useConfirm } from '@/components/ui/Confirm'
 
 type TabKey = 'benim' | 'ekip' | 'tanimlar'
 
@@ -205,6 +206,13 @@ function Definitions() {
   }), { success: tx('Rol profili kaydedildi'), invalidate: [['learning', 'role-profiles'], ['learning', 'gaps'], ['learning', 'team']] })
   const delRp = useAction((id: string) => learningContentApi.deleteRoleProfile(id), { success: tx('Kaldırıldı'), invalidate: [['learning', 'role-profiles']] })
   const compName = useMemo(() => new Map((comps.data ?? []).map((c) => [c.id, c.name])), [comps.data])
+  const confirm = useConfirm()
+  const askDel = async (id: string, name: string) => {
+    if (await confirm({ title: tx('“{0}” yetkinliği kaldırılsın mı?', [name]), note: tx('Değerlendirmesi olan yetkinlik pasifleştirilir; değerlendirmesi yoksa kalıcı olarak silinir.'), action: tx('Kaldır') })) del.mutate(id)
+  }
+  const askDelRp = async (id: string, name: string) => {
+    if (await confirm({ title: tx('Rol profili kaldırılsın mı?'), note: tx('“{0}” için beklenen seviye tanımı silinir; açık analizleri buna göre güncellenir.', [name]), action: tx('Kaldır') })) delRp.mutate(id)
+  }
   const deptName = useMemo(() => new Map((org.data?.departments ?? []).map((d) => [d.id, d.name])), [org.data])
 
   return (
@@ -222,7 +230,7 @@ function Definitions() {
             {(comps.data ?? []).map((c) => (
               <li key={c.id} className="flex items-center gap-3 px-4 py-2.5 text-[13.5px]">
                 <span className="min-w-0 flex-1">{c.name}<span className="block text-[12px] text-muted-foreground">{c.category ?? '—'}{c.description ? ` · ${c.description}` : ''}</span></span>
-                <Button size="sm" variant="ghost" aria-label={tx('Kaldır')} onClick={() => del.mutate(c.id)}><Trash2 className="size-4" /></Button>
+                <Button size="sm" variant="ghost" aria-label={tx('Kaldır')} onClick={() => askDel(c.id, c.name)}><Trash2 className="size-4" /></Button>
               </li>
             ))}
           </ul>
@@ -251,7 +259,7 @@ function Definitions() {
                 <span className="min-w-0 flex-1">{compName.get(p.competencyId) ?? '—'}<span className="block text-[12px] text-muted-foreground">
                   {p.positionTitle ? tx('Pozisyon: {0}', [p.positionTitle]) : tx('Departman: {0}', [deptName.get(p.departmentId ?? '') ?? '—'])}</span></span>
                 <StatusBadge tone="info">{competencyLevelLabels[p.requiredLevel]}</StatusBadge>
-                <Button size="sm" variant="ghost" aria-label={tx('Kaldır')} onClick={() => delRp.mutate(p.id)}><Trash2 className="size-4" /></Button>
+                <Button size="sm" variant="ghost" aria-label={tx('Kaldır')} onClick={() => askDelRp(p.id, compName.get(p.competencyId) ?? '—')}><Trash2 className="size-4" /></Button>
               </li>
             ))}
           </ul>

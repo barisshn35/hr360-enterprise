@@ -47,6 +47,16 @@ integration() {
   # Test katmani (sahte saglayicilar, kisa is araliklari) tum ilgili servislere ve OpenLDAP test sunucusuna uygulanir.
   docker compose -f docker-compose.yml -f deploy/testing/chat-mock.yml --profile ldaptest up -d >/dev/null
   for _ in $(seq 1 60); do docker logs chatmock 2>&1 | grep -q "chatmock :8000" && break; sleep 2; done
+  # Yeniden olusturulan servisler ve gateway'in yeni adresleri cozmesi (resolver valid=10s) beklenir:
+  # sabit bekleme yetmeyince ilk testler eski IP'ye giden istekte 404 aliyordu. Governance'a ozgu
+  # anonim uc art arda 3 kez 200 donene kadar (en fazla ~2 dk) beklenir.
+  base="${HR360_BASE_URL:-http://localhost}"; ok=0
+  for _ in $(seq 1 60); do
+    if [ "$(curl -sk -o /dev/null -w '%{http_code}' "$base/api/governance/ethics/public/demo")" = 200 ]; then
+      ok=$((ok + 1)); [ "$ok" -ge 3 ] && break
+    else ok=0; fi
+    sleep 2
+  done
   sleep 10
   for t in test_chat test_calendar test_ai_llm test_cache test_report_lang test_email_lang test_kvkk \
            test_payroll_time test_push test_workflow_docs test_kvkk_ops test_payroll_eco test_hr_compliance test_recruitment_plus test_learning_perf test_ops_plus \

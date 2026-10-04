@@ -10,10 +10,12 @@ import { ErrorState, RowsSkeleton } from '@/components/ui/States'
 import { governanceApi } from '@/api/governance'
 import { Initials, Metric, PlanGate, isoDate } from '@/features/shared/kit'
 import { tx, appLocale } from '@/lib/i18n'
+import { auditEntityLabels } from '@/features/governance/auditLabels'
+import { formatDate } from '@/lib/format'
 
 const LONG = new Intl.DateTimeFormat(appLocale, { day: 'numeric', month: 'long', year: 'numeric' })
 const SHORT = new Intl.DateTimeFormat(appLocale, { month: 'short', year: '2-digit' })
-const ACTION: Record<string, string> = { Created: tx('oluşturuldu'), Updated: tx('güncellendi'), Deleted: 'silindi' }
+const ACTION: Record<string, string> = { Created: tx('oluşturuldu'), Updated: tx('güncellendi'), Deleted: tx('silindi') }
 
 export function TimeMachinePage() {
   const tl = useQuery({ queryKey: ['time-machine', 'timeline'], queryFn: ({ signal }) => governanceApi.timeline(36, signal) })
@@ -36,6 +38,16 @@ export function TimeMachinePage() {
 
   const chart = useMemo(() => months.map((p) => ({ ...p, label: SHORT.format(new Date(p.month)) })), [months])
   const s = snap.data
+  // Teknik varlık adları (ChatIdentity, AiUsage…) Türkçe etiketle gösterilir; etiketi olmayanlar "Diğer kayıtlar"da toplanır.
+  const changes = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const c of s?.changesSince ?? []) {
+      const entity = auditEntityLabels[c.entityType] ?? tx('Diğer kayıtlar')
+      const key = `${entity} ${ACTION[c.action] ?? c.action}`
+      m.set(key, (m.get(key) ?? 0) + c.count)
+    }
+    return [...m.entries()].map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count)
+  }, [s])
   return (
     <PlanGate feature="time-machine">
       <PageHeader title={tx('Zaman makinesi')} description={tx('Organizasyon geçmişteki bir tarihte nasıldı? Kaydırın ya da oynatın; kadro, departmanlar ve yöneticiler o güne göre yeniden kurulur.')} />
@@ -85,7 +97,7 @@ export function TimeMachinePage() {
                             <AnimatePresence mode="popLayout">
                               {d.people.map((p) => (
                                 <motion.div key={p.employeeId} layout layoutId={`tm-${p.employeeId}`} initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.5 }} transition={{ type: 'spring', stiffness: 300, damping: 26 }}
-                                  className="flex items-center gap-2 rounded-full border border-border bg-background/60 py-1 pr-3 pl-1" title={tx('{0} · işe giriş {1}', [p.position ?? '', p.hireDate])}>
+                                  className="flex items-center gap-2 rounded-full border border-border bg-background/60 py-1 pr-3 pl-1" title={[p.position, tx('işe giriş {0}', [formatDate(p.hireDate)])].filter(Boolean).join(' · ')}>
                                   <Initials name={p.name} size={24} />
                                   <span className="text-[12px]">{p.name}</span>
                                   {p.isHead && <Crown className="size-3.5 text-amber-400" />}
@@ -101,8 +113,8 @@ export function TimeMachinePage() {
                 <Panel>
                   <PanelHead title={tx('O günden bu yana değişenler')} note={tx('Denetim kaydından')} />
                   <PanelBody className="space-y-1.5">
-                    {s.changesSince.length === 0 ? <p className="text-[13px] text-muted-foreground">{tx('Kayıtlı değişiklik yok.')}</p> : s.changesSince.map((c) => (
-                      <div key={`${c.entityType}-${c.action}`} className="flex justify-between text-[13px]"><span>{c.entityType} {ACTION[c.action] ?? c.action}</span><span className="tabular text-muted-foreground">{c.count}</span></div>
+                    {changes.length === 0 ? <p className="text-[13px] text-muted-foreground">{tx('Kayıtlı değişiklik yok.')}</p> : changes.map((c) => (
+                      <div key={c.label} className="flex justify-between text-[13px]"><span>{c.label}</span><span className="tabular text-muted-foreground">{c.count}</span></div>
                     ))}
                   </PanelBody>
                 </Panel>

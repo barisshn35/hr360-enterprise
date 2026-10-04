@@ -63,7 +63,7 @@ public class ShiftTeamsController : ControllerBase
         return Created($"/api/shift-teams/{team.Id}", team);
     }
 
-    public record UpdateTeamRequest(string? Name, DateOnly? AnchorDate, Guid? DepartmentId, bool DepartmentIdSet = false);
+    public record UpdateTeamRequest(string? Name, DateOnly? AnchorDate, Guid? DepartmentId, bool DepartmentIdSet = false, Guid? ShiftPatternId = null);
 
     /// <summary>
     /// Ekip adi/donguyu baslatma tarihi/departman kisiti duzeltilir.
@@ -82,6 +82,14 @@ public class ShiftTeamsController : ControllerBase
         if (!string.IsNullOrWhiteSpace(request.Name)) team.Name = request.Name.Trim();
         if (request.AnchorDate.HasValue) team.AnchorDate = request.AnchorDate.Value;
         if (request.DepartmentIdSet) team.DepartmentId = request.DepartmentId;
+        // Ekibi başka desene taşımak: kullanımdaki desen silinmeden önce ekipler buradan taşınır.
+        // Takvim hesaplanır (saklanmaz); yeni desen döngü başlangıcından itibaren uygulanır.
+        if (request.ShiftPatternId is { } pid && pid != team.ShiftPatternId)
+        {
+            if (!await _db.ShiftPatterns.AnyAsync(p => p.Id == pid && p.IsActive))
+                return BadRequest(new { message = "Vardiya deseni bulunamadı ya da pasif" });
+            team.ShiftPatternId = pid;
+        }
 
         await _db.SaveChangesAsync();
         return Ok(team);

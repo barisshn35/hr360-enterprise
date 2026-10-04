@@ -75,6 +75,82 @@ public class CompensationController : ControllerBase
         return Created($"/api/compensation/bands/{band.Id}", band);
     }
 
+    /// <summary>Bant değişikliği denetim kaydına yazılır (ücret yapısı hassas iş verisidir).</summary>
+    private async Task AuditBandAsync(SalaryBand band, string action)
+    {
+        try
+        {
+            var user = HttpContext.User;
+            var changes = System.Text.Json.JsonSerializer.Serialize(new { band.Grade, band.Year, band.MinAmount, band.MidAmount, band.MaxAmount, band.Currency });
+            await _db.Database.ExecuteSqlRawAsync(
+                "INSERT INTO audit_log (\"TenantSlug\",\"Service\",\"EntityType\",\"EntityId\",\"Action\",\"Changes\",\"UserId\",\"UserName\",\"CorrelationId\",\"IpAddress\",\"OccurredAt\") " +
+                "VALUES ({0},'compensation-service','SalaryBand',{1},{2},{3}::jsonb,{4},{5},{6},{7},now())",
+                (object?)_tenant.TenantSlug ?? DBNull.Value, band.Id.ToString(), action, changes,
+                user.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? user.FindFirst("sub")?.Value ?? "unknown",
+                (object?)(user.FindFirst("name")?.Value ?? user.FindFirst("preferred_username")?.Value) ?? DBNull.Value,
+                (object?)(Request.Headers["X-Correlation-Id"].FirstOrDefault() ?? HttpContext.TraceIdentifier) ?? DBNull.Value,
+                (object?)Request.Headers["X-Real-IP"].FirstOrDefault() ?? DBNull.Value);
+        }
+        catch (Exception) { /* denetim yazılamazsa iş akışı bozulmaz */ }
+    }
+
+    /// <summary>
+    /// Bant kullanımda mı: kademesi bu bant olan geçerli ücret kaydı ya da bandı okuyan
+    /// (yılı ya da bir sonraki yılı) henüz uygulanmamış zam dönemi varsa kullanımda sayılır.
+    /// </summary>
+    private async Task<string?> BandUsageAsync(SalaryBand band)
+    {
+        if (await _db.Records.AnyAsync(r => r.Grade == band.Grade && r.EffectiveTo == null))
+            return "Bu kademede geçerli ücret kaydı olan çalışanlar var";
+        if (await _db.RaiseCycles.AnyAsync(c => c.AppliedAt == null && (c.Year == band.Year || c.Year - 1 == band.Year)))
+            return "Bu bandı kullanan, henüz uygulanmamış bir zam dönemi var";
+        return null;
+    }
+
+    [HttpPut("bands/{id:guid}")]
+    [Authorize(Policy = "RequireCompensationWrite")]
+    public async Task<IActionResult> UpdateBand(Guid id, [FromBody] CreateBandRequest request)
+    {
+        var band = await _db.SalaryBands.FirstOrDefaultAsync(b => b.Id == id);
+        if (band is null) return NotFound();
+        if (string.IsNullOrWhiteSpace(request.Grade)) return BadRequest("Kademe boş olamaz");
+        if (request.MinAmount <= 0 || request.MinAmount > request.MidAmount || request.MidAmount > request.MaxAmount)
+            return BadRequest("Bant değerleri 0 < alt ≤ orta ≤ üst olmalı");
+        var grade = request.Grade.Trim();
+        if (grade != band.Grade || request.Year != band.Year)
+        {
+            // Kademe/yıl değişirse kayıtlar ve zam dönemleri bu banttan kopar: kullanımdaysa izin verilmez.
+            var usage = await BandUsageAsync(band);
+            if (usage is not null) return Conflict($"{usage}; kademe ve yıl değiştirilemez");
+            if (await _db.SalaryBands.AnyAsync(b => b.Id != id && b.Grade == grade && b.Year == request.Year))
+                return Conflict("Bu kademe ve yıl için bant zaten tanımlı");
+        }
+        band.Grade = grade;
+        band.Title = string.IsNullOrWhiteSpace(request.Title) ? null : request.Title.Trim();
+        band.MinAmount = request.MinAmount;
+        band.MidAmount = request.MidAmount;
+        band.MaxAmount = request.MaxAmount;
+        band.Currency = string.IsNullOrWhiteSpace(request.Currency) ? band.Currency : request.Currency;
+        band.Year = request.Year;
+        await _db.SaveChangesAsync();
+        await AuditBandAsync(band, "Updated");
+        return Ok(band);
+    }
+
+    [HttpDelete("bands/{id:guid}")]
+    [Authorize(Policy = "RequireCompensationWrite")]
+    public async Task<IActionResult> DeleteBand(Guid id)
+    {
+        var band = await _db.SalaryBands.FirstOrDefaultAsync(b => b.Id == id);
+        if (band is null) return NotFound();
+        var usage = await BandUsageAsync(band);
+        if (usage is not null) return Conflict($"{usage}; bant silinemez");
+        _db.SalaryBands.Remove(band);
+        await _db.SaveChangesAsync();
+        await AuditBandAsync(band, "Deleted");
+        return NoContent();
+    }
+
     // ---- Ucret kayitlari ----
 
     [HttpGet("records")]
@@ -148,7 +224,8 @@ public class CompensationController : ControllerBase
                 : r.BaseSalary + (request.FlatIncrease ?? 0);
 
             var band = bands.FirstOrDefault(b => b.Grade == r.Grade);
-            var withinBand = band is null || (proposed >= band.MinAmount && proposed <= band.MaxAmount);
+            // Bant atanmamışsa (kademe yok ya da o yıl için bant tanımsız) uyum bilinmez: null.
+            bool? withinBand = band is null ? null : proposed >= band.MinAmount && proposed <= band.MaxAmount;
 
             return new
             {
@@ -171,7 +248,8 @@ public class CompensationController : ControllerBase
             currentTotal = lines.Sum(l => l.currentSalary),
             proposedTotal = lines.Sum(l => l.proposedSalary),
             budgetImpact = lines.Sum(l => l.increaseAmount),
-            outOfBandCount = lines.Count(l => !l.withinBand),
+            outOfBandCount = lines.Count(l => l.withinBand == false),
+            noBandCount = lines.Count(l => l.withinBand == null),
             lines
         });
     }

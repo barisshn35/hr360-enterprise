@@ -14,6 +14,7 @@ import { platformGovApi, type NlReportPlus, type ReportFilters, type ReportSched
 import { formatDateTime } from '@/lib/format'
 import { useAction } from '@/features/shared/kit'
 import { appLocale, tx } from '@/lib/i18n'
+import { useConfirm } from '@/components/ui/Confirm'
 import { cn } from '@/lib/utils'
 
 const SCHEDULE_LABELS: Record<ReportSchedule, string> = {
@@ -98,6 +99,7 @@ export function SavedReportsPanel({ onRun }: { onRun: (id: string) => void }) {
   const [editing, setEditing] = useState<SavedReport | null>(null)
   const pin = useAction((r: SavedReport) => platformGovApi.updateSavedReport(r.id, { pinned: !r.pinned }), { invalidate: [['saved-reports']] })
   const del = useAction((id: string) => platformGovApi.deleteSavedReport(id), { success: tx('Kayıtlı rapor silindi'), invalidate: [['saved-reports']] })
+  const confirm = useConfirm()
   if (list.isPending) return <Panel><PanelBody><RowsSkeleton rows={2} /></PanelBody></Panel>
   if (!list.data?.length) return null
   return (
@@ -119,7 +121,7 @@ export function SavedReportsPanel({ onRun }: { onRun: (id: string) => void }) {
               </Button>
               <Button size="sm" variant="outline" aria-label={tx('Zamanlanmış teslim')} disabled={!r.schedulable} onClick={() => setEditing(r)}><CalendarClock className="size-4" /></Button>
               <Button size="sm" variant="outline" aria-label={tx('Sil')} disabled={del.isPending}
-                onClick={() => { if (window.confirm(tx('Kayıtlı rapor silinsin mi?'))) del.mutate(r.id) }}><Trash2 className="size-4" /></Button>
+                onClick={async () => { if (await confirm({ title: tx('“{0}” silinsin mi?', [r.name]), note: tx('Kayıtlı rapor ve zamanlanmış teslimi kalıcı olarak silinir.'), action: tx('Sil') })) del.mutate(r.id) }}><Trash2 className="size-4" /></Button>
             </li>
           ))}
         </ul>

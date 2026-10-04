@@ -37,6 +37,7 @@ import type {
   AnalyticsPeriod,
   CreateCycleInput,
   CreateGoalInput,
+  UpdateGoalInput,
   CreateReviewInput,
   CycleFilters,
   CycleStatus,
@@ -162,6 +163,11 @@ export const goalsApi = {
 
   create: async (input: CreateGoalInput) =>
     toGoal(await apiFetch<unknown>(`${PERF}/goals`, { method: 'POST', body: input })),
+
+  update: async (id: string, input: UpdateGoalInput) =>
+    toGoal(await apiFetch<unknown>(`${PERF}/goals/${id}`, { method: 'PUT', body: input })),
+
+  remove: (id: string) => apiFetch<void>(`${PERF}/goals/${id}`, { method: 'DELETE' }),
 
   progress: async (id: string, input: GoalProgressInput) =>
     toGoal(await apiFetch<unknown>(`${PERF}/goals/${id}/progress`, { method: 'POST', body: input })),

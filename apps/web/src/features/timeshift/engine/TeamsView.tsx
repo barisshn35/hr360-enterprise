@@ -8,15 +8,18 @@
  */
 
 import { useMemo, useState } from 'react'
-import { CalendarRange, LoaderCircle, Plus, TriangleAlert, UserMinus, UserPlus, UsersRound } from 'lucide-react'
+import { CalendarRange, LoaderCircle, Pencil, Plus, Trash2, TriangleAlert, UserMinus, UserPlus, UsersRound } from 'lucide-react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   useAddShiftTeamMember,
   useCreateShiftTeam,
   useRemoveShiftTeamMember,
   useShiftPatterns,
   useShiftTeams,
+  qke,
 } from '@/api/queries-shift-engine'
-import type { ShiftTeam, ShiftTeamMember } from '@/api/timeshift'
+import { timeshiftApi, type ShiftTeam, type ShiftTeamMember } from '@/api/timeshift'
+import { useConfirm } from '@/components/ui/Confirm'
 import { useAuth } from '@/auth/useAuth'
 import { Modal } from '@/components/ui/Modal'
 import { Panel, PanelBody, PanelHead } from '@/components/ui/Panel'
@@ -32,6 +35,7 @@ import { useDepartments, usePeople, type DeptNode } from '@/features/performance
 import {
   DAY_STYLE,
   DayBlock,
+  LaborWarnings,
   PatternStrip,
   addDays,
   dateRange,
@@ -221,6 +225,8 @@ function CreateTeamDialog({
             ]}
             hint={tx('Seçerseniz üye eklerken yalnızca bu departmanın (ve alt departmanlarının) çalışanları listelenir.')}
           />
+
+          {pattern && <LaborWarnings days={days} />}
 
           {pattern && (
             <div className="rounded-lg border border-border bg-muted/30 p-3">
@@ -506,6 +512,106 @@ function RemoveMemberDialog({
   )
 }
 
+/* ---------------------------------- Ekip düzenle ---------------------------------- */
+
+/**
+ * Ad, desen, döngü başlangıcı ve departman kısıtı düzeltilir. Takvim saklanmaz, hesaplanır:
+ * desen ya da döngü başlangıcı değişirse geçmiş ve gelecek takvim yeni değerle yeniden çizilir.
+ */
+function EditTeamDialog({ team, teams, onClose }: { team: ShiftTeam; teams: ShiftTeam[]; onClose: () => void }) {
+  const toast = useToast()
+  const qc = useQueryClient()
+  const patterns = useShiftPatterns()
+  const depts = useDepartments()
+  const [name, setName] = useState(team.name)
+  const [patternId, setPatternId] = useState(team.shiftPatternId)
+  const [anchorDate, setAnchorDate] = useState(team.anchorDate.slice(0, 10))
+  const [departmentId, setDepartmentId] = useState(team.departmentId ?? NO_DEPT)
+  const options = (patterns.data ?? []).filter((p) => p.isActive || p.id === team.shiftPatternId)
+  const pattern = options.find((p) => p.id === patternId) ?? null
+  const days = pattern ? sortedDays(pattern) : []
+  const errors = {
+    name: !name.trim()
+      ? tx('Ekibe bir ad verin.')
+      : teams.some((t) => t.id !== team.id && t.name.toLocaleLowerCase(appLocale) === name.trim().toLocaleLowerCase(appLocale))
+        ? tx('Bu adla bir ekip zaten var.')
+        : undefined,
+    anchor: !anchorDate ? tx('Döngü başlangıcı gerekli.') : undefined,
+  }
+  const save = useMutation({
+    mutationFn: () =>
+      timeshiftApi.updateTeam(team.id, {
+        name: name.trim(),
+        anchorDate,
+        departmentId: departmentId === NO_DEPT ? null : departmentId,
+        departmentIdSet: true,
+        ...(patternId !== team.shiftPatternId ? { shiftPatternId: patternId } : {}),
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: qke.root })
+      toast.ok(tx('"{0}" güncellendi.', [name.trim()]))
+      onClose()
+    },
+  })
+  const changesCalendar = patternId !== team.shiftPatternId || anchorDate !== team.anchorDate.slice(0, 10)
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      size="lg"
+      title={tx('{0} · düzenle', [team.name])}
+      footer={
+        <>
+          <Button variant="outline" onClick={onClose}>
+            {tx('Vazgeç')}
+          </Button>
+          <Button onClick={() => save.mutate()} disabled={save.isPending || Boolean(errors.name || errors.anchor)}>
+            {save.isPending && <LoaderCircle className="size-4 animate-spin" />}
+            {tx('Kaydet')}
+          </Button>
+        </>
+      }
+    >
+      {save.isError && <ErrorLine>{errorText(save.error, tx('Ekip güncellenemedi.'))}</ErrorLine>}
+      <div className="space-y-4">
+        <TextField label={tx('Ekip adı')} required value={name} onChange={(e) => setName(e.target.value)} error={errors.name} maxLength={80} />
+        <SelectField
+          label={tx('Desen')}
+          value={patternId}
+          onChange={setPatternId}
+          options={options.map((p) => ({ value: p.id, label: p.isActive ? p.name : tx('{0} (pasif)', [p.name]) }))}
+          disabled={patterns.isPending}
+          hint={pattern ? tx('{0} günlük döngü · {1}', [days.length, describeDays(days)]) : undefined}
+        />
+        <TextField
+          label={tx('Döngü başlangıcı (desenin 1. günü)')}
+          type="date"
+          value={anchorDate}
+          onChange={(e) => setAnchorDate(e.target.value)}
+          error={errors.anchor}
+          className="sm:w-56"
+        />
+        <SelectField
+          label={tx('Departman')}
+          value={departmentId}
+          onChange={setDepartmentId}
+          disabled={depts.isPending}
+          options={[
+            { value: NO_DEPT, label: tx('Kısıt yok — tüm çalışanlar eklenebilir') },
+            ...depts.list.map((d) => ({ value: d.id, label: d.path })),
+          ]}
+        />
+        {pattern && <LaborWarnings days={days} />}
+        {changesCalendar && (
+          <p className="rounded-lg border border-[hsl(var(--warning))]/30 bg-[hsl(var(--warning))]/8 px-3 py-2 text-[12px]">
+            {tx('Desen ya da döngü başlangıcı değişirse ekibin takvimi (geçmiş günler dahil) yeni değerle yeniden hesaplanır.')}
+          </p>
+        )}
+      </div>
+    </Modal>
+  )
+}
+
 /* ---------------------------------- Ekip ayrıntısı --------------------------------- */
 
 function TeamDetail({
@@ -522,10 +628,24 @@ function TeamDetail({
   const people = usePeople()
   const depts = useDepartments()
   const [adding, setAdding] = useState(false)
+  const [editing, setEditing] = useState(false)
   const [removing, setRemoving] = useState<ShiftTeamMember | null>(null)
+  const confirm = useConfirm()
+  const toast = useToast()
+  const qc = useQueryClient()
+  // Aktif üyesi olan ekip sunucuda 409 ile reddedilir; ileti aynen gösterilir.
+  const del = useMutation({
+    mutationFn: () => timeshiftApi.deleteTeam(team.id),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: qke.root })
+      toast.ok(tx('"{0}" silindi.', [team.name]))
+    },
+    onError: (e) => toast.stop(errorText(e, tx('Ekip silinemedi.'))),
+  })
 
   const days = team.shiftPattern ? sortedDays(team.shiftPattern) : []
   const today = todayIso()
+  const notStarted = today < team.anchorDate.slice(0, 10)
   const todayIndex = days.length ? patternIndexAt(team.anchorDate, today, days.length) : 0
   const todayDay = days[todayIndex]
   const members = [...(team.members ?? [])].sort(byRank)
@@ -537,15 +657,50 @@ function TeamDetail({
           title={team.name}
           note={`${team.shiftPattern?.name ?? tx('Desen bulunamadı')} · ${team.departmentId ? depts.pathOf(team.departmentId) : tx('Departman kısıtı yok')}`}
           action={
-            <Button size="sm" variant="outline" onClick={() => onOpenRoster(team.id)}>
-              <CalendarRange className="size-4" />{' '}{tx('Takvimi aç')}
-            </Button>
+            <span className="flex flex-wrap gap-1">
+              <Button size="sm" variant="outline" onClick={() => onOpenRoster(team.id)}>
+                <CalendarRange className="size-4" />{' '}{tx('Takvimi aç')}
+              </Button>
+              {manage && (
+                <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>
+                  <Pencil className="size-4" />{' '}{tx('Düzenle')}
+                </Button>
+              )}
+              {manage && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-destructive hover:text-destructive"
+                  disabled={del.isPending}
+                  aria-label={tx('{0} ekibini sil', [team.name])}
+                  onClick={async () => {
+                    if (
+                      await confirm({
+                        title: tx('"{0}" ekibi silinsin mi?', [team.name]),
+                        note: members.length
+                          ? tx('Ekipte {0} aktif üye var; silmeden önce üyeleri çıkarın ya da başka ekibe taşıyın.', [members.length])
+                          : tx('Ekip ve takvimi kalıcı olarak silinir.'),
+                        action: tx('Sil'),
+                      })
+                    )
+                      del.mutate()
+                  }}
+                >
+                  <Trash2 className="size-4" />
+                </Button>
+              )}
+            </span>
           }
         />
         <PanelBody className="space-y-3">
           {days.length > 0 ? (
             <>
-              <PatternStrip days={days} size="sm" highlightIndex={todayIndex} />
+              <PatternStrip days={days} size="sm" highlightIndex={notStarted ? undefined : todayIndex} />
+              {notStarted ? (
+                <p className="text-[13px] text-muted-foreground">
+                  {tx('Döngü henüz başlamadı; başlangıç tarihi: {0}.', [formatDate(team.anchorDate)])}
+                </p>
+              ) : (
               <p className="text-[13px] text-muted-foreground">
                 {tx('Bugün desenin')}{' '}<strong className="text-foreground">{tx('{0}. gününde', [todayIndex + 1])}</strong>
                 {todayDay && (
@@ -557,6 +712,8 @@ function TeamDetail({
                 )}
                 {tx('. Döngü başlangıcı:')}{' '}{formatDate(team.anchorDate)}.
               </p>
+              )}
+              <LaborWarnings days={days} />
             </>
           ) : (
             <p className="text-[13px] text-muted-foreground">{tx('Bu ekibin deseni yüklenemedi.')}</p>
@@ -628,6 +785,7 @@ function TeamDetail({
       </Panel>
 
       {adding && <AddMemberDialog team={team} teams={teams} onClose={() => setAdding(false)} />}
+      {editing && <EditTeamDialog team={team} teams={teams} onClose={() => setEditing(false)} />}
       {removing && (
         <RemoveMemberDialog
           team={team}

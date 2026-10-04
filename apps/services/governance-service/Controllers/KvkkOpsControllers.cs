@@ -169,8 +169,8 @@ public class KvkkOpsController : AppController
         var b = new DataBreach { CreatedBy = Me.Name };
         Apply(b, body);
         _db.DataBreaches.Add(b);
+        // "Created" denetim satırını EF AuditInterceptor yazar (tüm alanlarla); burada ayrıca yazılırsa çift satır oluşur.
         await _db.SaveChangesAsync(ct);
-        await AuditAsync("DataBreach", b.Id.ToString(), "Created", new { b.Severity }, ct);
         return Ok(View(b));
     }
 
@@ -183,8 +183,8 @@ public class KvkkOpsController : AppController
         if (b.Status == "Closed") return Conflict(new { message = L("Kapatılmış kayıt değiştirilemez.", "A closed record cannot be changed.") });
         if (Validate(body) is { } bad) return bad;
         Apply(b, body);
+        // Alan değişiklikleri AuditInterceptor ile "Updated" olarak yazılır; ayrıca AuditAsync çift satır üretiyordu.
         await _db.SaveChangesAsync(ct);
-        await AuditAsync("DataBreach", b.Id.ToString(), "Updated", new { b.Severity }, ct);
         return Ok(View(b));
     }
 

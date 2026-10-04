@@ -30,6 +30,13 @@ export class ApiError extends Error {
   }
 }
 
+/** ASP.NET Core'un durum koduna göre ürettiği ProblemDetails başlıkları (küçük harf). */
+const ASPNET_DEFAULT_TITLES = new Set([
+  'not found', 'bad request', 'unauthorized', 'forbidden', 'conflict', 'internal server error',
+  'service unavailable', 'bad gateway', 'payload too large', 'request entity too large', 'method not allowed',
+  'an error occurred while processing your request.',
+])
+
 /** Backend hata gövdesinden okunabilir bir Türkçe mesaj çıkarır. */
 async function toApiError(res: Response): Promise<ApiError> {
   let detail: unknown
@@ -70,6 +77,11 @@ async function toApiError(res: Response): Promise<ApiError> {
   } catch {
     /* gövde okunamadı */
   }
+
+  // ASP.NET'in varsayılan İngilizce iletileri (NotFound()/ProblemDetails title, model doğrulama)
+  // kullanıcıya ham gösterilmez: doğrulama özel iletiyle, diğerleri durum koduna göre Türkçeleşir.
+  if (/^One or more validation errors occurred\.?$/i.test(message.trim())) message = tx('Gönderilen bilgiler geçersiz.')
+  else if (ASPNET_DEFAULT_TITLES.has(message.trim().toLowerCase())) message = ''
 
   if (!message) {
     const byStatus: Record<number, string> = {

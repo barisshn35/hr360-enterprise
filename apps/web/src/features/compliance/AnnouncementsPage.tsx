@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { BarChart3, CheckCircle2, Megaphone, Plus, Trash2, TimerOff } from 'lucide-react'
+import { BarChart3, CheckCircle2, Megaphone, Pencil, Plus, Trash2, TimerOff } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Panel, PanelBody, PanelHead } from '@/components/ui/Panel'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Modal } from '@/components/ui/Modal'
+import { useConfirm } from '@/components/ui/Confirm'
 import { SelectField, TextAreaField, TextField } from '@/components/ui/Field'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { Tabs, useTabParam } from '@/components/ui/Tabs'
@@ -18,18 +19,36 @@ import { useAction } from '@/features/shared/kit'
 import { tx } from '@/lib/i18n'
 import { AckStatsView, DepartmentChecklist, RichText } from './shared'
 
-function NewAnnouncementModal({ onClose }: { onClose: () => void }) {
-  const [f, setF] = useState({ title: '', body: '', audience: 'All' as 'All' | 'Departments', departmentIds: [] as string[], publishAt: '', expireAt: '', requiresAck: false })
+/** ISO zamanını datetime-local alanının beklediği yerel "YYYY-MM-DDTHH:mm" biçimine çevirir. */
+function toLocalInput(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+function NewAnnouncementModal({ onClose, editing }: { onClose: () => void; editing?: ManagedAnnouncement }) {
+  const [f, setF] = useState(() => editing
+    ? { title: editing.title, body: editing.body, audience: editing.audience, departmentIds: editing.departmentIds, publishAt: toLocalInput(editing.publishAt), expireAt: toLocalInput(editing.expireAt), requiresAck: editing.requiresAck }
+    : { title: '', body: '', audience: 'All' as 'All' | 'Departments', departmentIds: [] as string[], publishAt: '', expireAt: '', requiresAck: false })
   const save = useAction(
-    () => complianceApi.createAnnouncement({
-      title: f.title, body: f.body, audience: f.audience, departmentIds: f.departmentIds, requiresAck: f.requiresAck,
-      publishAt: f.publishAt ? new Date(f.publishAt).toISOString() : null, expireAt: f.expireAt ? new Date(f.expireAt).toISOString() : null,
-    }),
-    { success: (r) => (r.notified > 0 ? tx('Duyuru yayımlandı; {0} kişiye bildirim gitti', [r.notified]) : tx('Duyuru kaydedildi')), invalidate: [['announcements']], onDone: onClose },
+    () => {
+      const input = {
+        title: f.title, body: f.body, audience: f.audience, departmentIds: f.departmentIds, requiresAck: f.requiresAck,
+        publishAt: f.publishAt ? new Date(f.publishAt).toISOString() : null, expireAt: f.expireAt ? new Date(f.expireAt).toISOString() : null,
+      }
+      return editing ? complianceApi.updateAnnouncement(editing.id, input) : complianceApi.createAnnouncement(input)
+    },
+    {
+      success: (r) => (r.notified > 0 ? tx('Duyuru yayımlandı; {0} kişiye bildirim gitti', [r.notified]) : editing ? tx('Duyuru güncellendi') : tx('Duyuru kaydedildi')),
+      invalidate: [['announcements']], onDone: onClose,
+    },
   )
   return (
-    <Modal open size="lg" onClose={onClose} title={tx('Yeni duyuru')} note={tx('Bildirimde yalnızca başlık gönderilir; metne kişisel veri yazmayın.')}
-      footer={<><Button variant="outline" onClick={onClose}>{tx('Vazgeç')}</Button><Button onClick={() => save.mutate(undefined)} disabled={save.isPending || f.title.trim().length < 3 || !f.body.trim() || (f.audience === 'Departments' && !f.departmentIds.length)}>{tx('Yayımla')}</Button></>}>
+    <Modal open size="lg" onClose={onClose} title={editing ? tx('Duyuruyu düzenle') : tx('Yeni duyuru')}
+      note={editing ? tx('Okuma kayıtları korunur. Bildirimde yalnızca başlık gönderilir; metne kişisel veri yazmayın.') : tx('Bildirimde yalnızca başlık gönderilir; metne kişisel veri yazmayın.')}
+      footer={<><Button variant="outline" onClick={onClose}>{tx('Vazgeç')}</Button><Button onClick={() => save.mutate(undefined)} disabled={save.isPending || f.title.trim().length < 3 || !f.body.trim() || (f.audience === 'Departments' && !f.departmentIds.length)}>{editing ? tx('Kaydet') : tx('Yayımla')}</Button></>}>
       <div className="space-y-3">
         <TextField label={tx('Başlık')} value={f.title} maxLength={200} onChange={(e) => setF({ ...f, title: e.target.value })} />
         <TextAreaField label={tx('Metin')} rows={7} value={f.body} onChange={(e) => setF({ ...f, body: e.target.value })} hint={tx('Paragraflar için boş satır, kalın için **metin** kullanın.')} />
@@ -62,6 +81,8 @@ function ManageTab() {
   const q = useQuery({ queryKey: ['announcements', 'manage'], queryFn: ({ signal }) => complianceApi.manageAnnouncements(signal) })
   const [creating, setCreating] = useState(false)
   const [stats, setStats] = useState<ManagedAnnouncement | null>(null)
+  const [editing, setEditing] = useState<ManagedAnnouncement | null>(null)
+  const confirm = useConfirm()
   const expire = useAction((id: string) => complianceApi.expireAnnouncement(id), { success: tx('Duyuru yayından kaldırıldı'), invalidate: [['announcements']] })
   const remove = useAction((id: string) => complianceApi.deleteAnnouncement(id), { success: tx('Duyuru silindi'), invalidate: [['announcements']] })
   const stateView = { Scheduled: { label: tx('Planlandı'), tone: 'info' as const }, Published: { label: tx('Yayında'), tone: 'success' as const }, Expired: { label: tx('Süresi doldu'), tone: 'neutral' as const } }
@@ -84,13 +105,15 @@ function ManageTab() {
                 <StatusBadge tone={stateView[a.state].tone}>{stateView[a.state].label}</StatusBadge>
                 <Button size="sm" variant="ghost" onClick={() => setStats(a)}><BarChart3 className="size-4" />{' '}{tx('Okuma')}</Button>
                 {a.state !== 'Expired' && <Button size="sm" variant="ghost" onClick={() => expire.mutate(a.id)} aria-label={tx('Yayından kaldır')}><TimerOff className="size-4" /></Button>}
-                <Button size="sm" variant="ghost" onClick={() => { if (confirm(tx('Duyuru ve okuma kayıtları silinsin mi?'))) remove.mutate(a.id) }} aria-label={tx('Sil')}><Trash2 className="size-4" /></Button>
+                {a.state !== 'Expired' && <Button size="sm" variant="ghost" onClick={() => setEditing(a)} aria-label={tx('Düzenle')}><Pencil className="size-4" /></Button>}
+                <Button size="sm" variant="ghost" onClick={async () => { if (await confirm({ title: tx('Duyuru ve okuma kayıtları silinsin mi?'), note: a.title, action: tx('Sil') })) remove.mutate(a.id) }} aria-label={tx('Sil')}><Trash2 className="size-4" /></Button>
               </li>
             ))}
           </ul>
         )}
       </PanelBody>
       {creating && <NewAnnouncementModal onClose={() => setCreating(false)} />}
+      {editing && <NewAnnouncementModal editing={editing} onClose={() => setEditing(null)} />}
       {stats && <StatsModal a={stats} onClose={() => setStats(null)} />}
     </Panel>
   )

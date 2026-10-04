@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { AnimatePresence, motion } from 'motion/react'
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis } from 'recharts'
@@ -18,10 +18,10 @@ import { formatDateTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { PlanGate, errMsg } from '@/features/shared/kit'
 import { tx } from '@/lib/i18n'
+import { auditActionLabels as actionLabel, auditEntityLabel } from './auditLabels'
 
 const ALL = '__all__'
-const actionTone = { Created: 'success', Updated: 'info', Deleted: 'danger' } as const
-const actionLabel: Record<string, string> = { Created: tx('Oluşturma'), Updated: tx('Güncelleme'), Deleted: tx('Silme'), Revealed: tx('Görüntüleme'), Exported: tx('Dışa aktarma'), Anonymized: tx('Anonimleştirme') }
+const actionTone = { Created: 'success', Updated: 'info', Deleted: 'danger', SensitiveViewed: 'warning', Revealed: 'warning' } as const
 
 function fmt(v: unknown): string {
   if (v === null || v === undefined) return '∅'
@@ -64,6 +64,18 @@ export function AuditPage() {
   const chain = useQuery({ queryKey: ['audit', 'corr', corr], enabled: !!corr, queryFn: ({ signal }) => governanceApi.auditCorrelation(corr!, signal) })
   const set = (patch: Partial<AuditFilter>) => setF((x) => ({ ...x, ...patch, page: 1 }))
   const pages = list.data ? Math.max(1, Math.ceil(list.data.total / list.data.pageSize)) : 1
+  const rangeError = f.from && f.to && f.from > f.to ? tx('Bitiş tarihi başlangıçtan önce olamaz.') : undefined
+  // Aynı adı taşıyan farklı kullanıcılar (ör. her kanal için "Sohbet (Slack)" bot kullanıcısı) kimliğin kısa
+  // ön ekiyle ayırt edilir; aksi hâlde filtrede aynı etiket defalarca görünür.
+  const userOptions = useMemo(() => {
+    const users = (facets.data?.users ?? []).filter((u) => u.id)
+    const seen = new Map<string, number>()
+    users.forEach((u) => { const n = u.name ?? u.id!; seen.set(n, (seen.get(n) ?? 0) + 1) })
+    return users.map((u) => {
+      const n = u.name ?? u.id!
+      return { value: u.id!, label: (seen.get(n) ?? 0) > 1 ? `${n} · ${u.id!.slice(0, 8)} (${u.count})` : `${n} (${u.count})` }
+    })
+  }, [facets.data])
   return (
     <PlanGate feature="audit">
       <PageHeader title={tx('Denetim kaydı')} description={tx('Kim, neyi, ne zaman, hangi istekle değiştirdi? Tüm servislerdeki ekleme/güncelleme/silme işlemleri eski → yeni değerleriyle.')} actions={<Button variant="outline" onClick={() => governanceApi.auditExport(f).catch((e) => toast.stop(errMsg(e)))}><Download className="size-4" />{' '}{tx('CSV')}</Button>} />
@@ -78,12 +90,12 @@ export function AuditPage() {
                 <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={tx('Değer, kişi veya kimlik ara')} className="pl-9" />
               </form>
               <SelectField label={tx('Servis')} value={f.service ?? ALL} onChange={(v) => set({ service: v === ALL ? undefined : v })} options={[{ value: ALL, label: tx('Tümü') }, ...(facets.data?.services ?? []).map((s) => ({ value: s.name, label: `${s.name} (${s.count})` }))]} />
-              <SelectField label={tx('Varlık')} value={f.entityType ?? ALL} onChange={(v) => set({ entityType: v === ALL ? undefined : v })} options={[{ value: ALL, label: tx('Tümü') }, ...(facets.data?.entityTypes ?? []).map((s) => ({ value: s.name, label: `${s.name} (${s.count})` }))]} />
-              <SelectField label={tx('Kullanıcı')} value={f.userId ?? ALL} onChange={(v) => set({ userId: v === ALL ? undefined : v })} options={[{ value: ALL, label: tx('Tümü') }, ...(facets.data?.users ?? []).filter((u) => u.id).map((u) => ({ value: u.id!, label: `${u.name ?? u.id} (${u.count})` }))]} />
+              <SelectField label={tx('Varlık')} value={f.entityType ?? ALL} onChange={(v) => set({ entityType: v === ALL ? undefined : v })} options={[{ value: ALL, label: tx('Tümü') }, ...(facets.data?.entityTypes ?? []).map((s) => ({ value: s.name, label: `${auditEntityLabel(s.name)} (${s.count})` }))]} />
+              <SelectField label={tx('Kullanıcı')} value={f.userId ?? ALL} onChange={(v) => set({ userId: v === ALL ? undefined : v })} options={[{ value: ALL, label: tx('Tümü') }, ...userOptions]} />
               <SelectField label={tx('İşlem')} value={f.action ?? ALL} onChange={(v) => set({ action: v === ALL ? undefined : v })} options={[{ value: ALL, label: tx('Tümü') }, ...Object.entries(actionLabel).map(([k, v]) => ({ value: k, label: v }))]} />
               <div className="grid grid-cols-2 gap-2">
                 <TextField label={tx('Başlangıç')} type="date" value={f.from ?? ''} onChange={(e) => set({ from: e.target.value || undefined })} />
-                <TextField label={tx('Bitiş')} type="date" value={f.to ?? ''} onChange={(e) => set({ to: e.target.value || undefined })} />
+                <TextField label={tx('Bitiş')} type="date" value={f.to ?? ''} min={f.from} onChange={(e) => set({ to: e.target.value || undefined })} error={rangeError} />
               </div>
               <Button variant="ghost" size="sm" onClick={() => { setQ(''); setF({ page: 1, pageSize: 50 }) }}>{tx('Temizle')}</Button>
             </PanelBody>
@@ -111,7 +123,7 @@ export function AuditPage() {
                     <button onClick={() => setOpen(open === e.id ? null : e.id)} className="flex w-full cursor-pointer flex-wrap items-center gap-3 px-5 py-2.5 text-left text-[13px] hover:bg-accent/30">
                       <span className="tabular w-36 shrink-0 text-[12px] text-muted-foreground">{formatDateTime(e.occurredAt)}</span>
                       <StatusBadge tone={actionTone[e.action as keyof typeof actionTone] ?? 'neutral'}>{actionLabel[e.action] ?? e.action}</StatusBadge>
-                      <span className="font-medium">{e.entityType}</span>
+                      <span className="font-medium" title={e.entityType}>{auditEntityLabel(e.entityType)}</span>
                       <span className="truncate font-mono text-[11.5px] text-muted-foreground">{e.entityId?.slice(0, 8)}</span>
                       <span className="ml-auto text-[12.5px]">{e.userName ?? e.userId}</span>
                       <span className="hidden text-[11.5px] text-muted-foreground md:inline">{e.service}</span>
@@ -149,7 +161,7 @@ export function AuditPage() {
           {chain.isPending ? <RowsSkeleton rows={3} /> : (
             <ol className="relative space-y-4 border-l border-border pl-5">
               {chain.data?.map((e) => (
-                <li key={e.id}><span className="absolute -left-1.5 mt-1 size-3 rounded-full bg-primary" /><p className="text-[13px]"><b>{e.service}</b> · {e.entityType} {actionLabel[e.action] ?? e.action}</p><Changes e={e} /></li>
+                <li key={e.id}><span className="absolute -left-1.5 mt-1 size-3 rounded-full bg-primary" /><p className="text-[13px]"><b>{e.service}</b> · {auditEntityLabel(e.entityType)} {actionLabel[e.action] ?? e.action}</p><Changes e={e} /></li>
               ))}
             </ol>
           )}

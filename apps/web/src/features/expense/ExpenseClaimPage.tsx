@@ -1,7 +1,8 @@
-import { Link, useParams } from 'react-router-dom'
+import { useState } from 'react'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion, useReducedMotion } from 'motion/react'
-import { ArrowLeft, LoaderCircle } from 'lucide-react'
+import { ArrowLeft, LoaderCircle, Pencil, Trash2 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { DataField, Panel, PanelBody, PanelHead } from '@/components/ui/Panel'
 import { Button } from '@/components/ui/button'
@@ -9,14 +10,16 @@ import { StatusBadge } from '@/components/ui/StatusBadge'
 import { ClaimStatusBadge } from '@/components/ui/ModuleBadges'
 import { CenteredSpinner, EmptyState, ErrorState, InfoNote } from '@/components/ui/States'
 import { useToast } from '@/components/ui/Toast'
+import { useConfirm } from '@/components/ui/Confirm'
 import { useAuth } from '@/auth/useAuth'
 import { isHr } from '@/auth/roles'
 import { expenseApi } from '@/api/expense'
-import { useExpenseClaim, useMyEmployeeId } from '@/api/queries'
+import { useExpenseClaim, useMyEmployeeId, useWorkflow } from '@/api/queries'
 import { expenseCategoryLabels } from '@/api/types'
 import { formatDate, formatDateTime, formatMoney, formatNumber } from '@/lib/format'
 import { useEmployeeName } from '@/lib/useEmployeeName'
 import { tx } from '@/lib/i18n'
+import { NewClaimModal } from './NewClaimModal'
 
 export function ExpenseClaimPage() {
   const { claimId } = useParams<{ claimId: string }>()
@@ -28,6 +31,23 @@ export function ExpenseClaimPage() {
 
   const claim = useExpenseClaim(claimId)
   const nameOf = useEmployeeName()
+  const confirm = useConfirm()
+  const navigate = useNavigate()
+  const [editOpen, setEditOpen] = useState(false)
+  // Karar yorumu (ret gerekçesi) onay akışının adımlarında tutulur; talep sahibi kendi akışını okuyabilir.
+  const decided = claim.data?.status === 'Rejected' || claim.data?.status === 'Approved' || claim.data?.status === 'Paid'
+  const workflow = useWorkflow(decided ? (claim.data?.workflowRequestId ?? undefined) : undefined)
+  const rejectStep = workflow.data?.steps?.find((s) => s.decision === 'Rejected')
+
+  const remove = useMutation({
+    mutationFn: () => expenseApi.deleteClaim(claimId!),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['expense'] })
+      toast.ok(tx('Taslak silindi'))
+      navigate('/panel/masraf')
+    },
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Taslak silinemedi.')),
+  })
 
   const submit = useMutation({
     mutationFn: () => expenseApi.submitClaim(claimId!),
@@ -71,6 +91,7 @@ export function ExpenseClaimPage() {
 
   const c = claim.data
   const items = c.items ?? []
+  const canEditDraft = c.status === 'Draft' && can('expense:create') && (isHr(roles) || c.employeeId === myEmployeeId)
 
   return (
     <div className="space-y-5">
@@ -88,11 +109,38 @@ export function ExpenseClaimPage() {
           <>
             <ClaimStatusBadge status={c.status} />
             {/* Onaya gönderme backend'de yalnızca beyan sahibine ve İK'ya açık. */}
-            {c.status === 'Draft' && can('expense:create') && (isHr(roles) || c.employeeId === myEmployeeId) && (
+            {canEditDraft && (
+              <>
+                <Button variant="outline" className="cursor-pointer" onClick={() => setEditOpen(true)}>
+                  <Pencil className="size-4" />
+                  {tx('Düzenle')}
+                </Button>
+                <Button
+                  variant="outline"
+                  className="cursor-pointer"
+                  disabled={remove.isPending}
+                  onClick={async () => {
+                    if (await confirm({ title: tx('Taslak silinsin mi?'), note: tx('Taslak ve tüm kalemleri kalıcı olarak silinir.'), action: tx('Sil') }))
+                      remove.mutate()
+                  }}
+                >
+                  {remove.isPending ? <LoaderCircle className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+                  {tx('Sil')}
+                </Button>
+              </>
+            )}
+            {canEditDraft && (
               <Button
                 className="cursor-pointer"
                 disabled={submit.isPending}
-                onClick={() => submit.mutate()}
+                onClick={async () => {
+                  if (await confirm({
+                    title: tx('Talep onaya gönderilsin mi?'),
+                    note: tx('Gönderildikten sonra talep düzenlenemez ve silinemez.'),
+                    action: tx('Onaya gönder'),
+                    destructive: false,
+                  })) submit.mutate()
+                }}
               >
                 {submit.isPending && <LoaderCircle className="size-4 animate-spin" />}
                 {tx('Onaya gönder')}
@@ -169,13 +217,30 @@ export function ExpenseClaimPage() {
             <DataField label={tx('Talep sahibi')}>{nameOf(c.employeeId)}</DataField>
             <DataField label={tx('Oluşturulma')}>{formatDateTime(c.createdAt)}</DataField>
             <DataField label={tx('Onay akışı')}>
-              {c.workflowRequestId ? (
-                <StatusBadge tone="info">{tx('Onay kutusuna düştü')}</StatusBadge>
+              {c.status === 'Rejected' ? (
+                <StatusBadge tone="danger">{tx('Reddedildi')}</StatusBadge>
+              ) : c.status === 'Approved' ? (
+                <StatusBadge tone="success">{tx('Onaylandı')}</StatusBadge>
+              ) : c.status === 'Paid' ? (
+                <StatusBadge tone="success">{tx('Onaylandı, ödendi')}</StatusBadge>
+              ) : c.status === 'Submitted' ? (
+                <StatusBadge tone="info">{tx('Onay kutusunda bekliyor')}</StatusBadge>
               ) : (
                 <span className="text-muted-foreground">{tx('Henüz gönderilmedi')}</span>
               )}
             </DataField>
           </dl>
+          {c.status === 'Rejected' && (
+            <InfoNote>
+              {rejectStep?.comment
+                ? tx('Ret gerekçesi: {0}', [rejectStep.comment])
+                : workflow.isPending && c.workflowRequestId
+                  ? tx('Ret gerekçesi yükleniyor…')
+                  : workflow.isError
+                    ? tx('Ret gerekçesi görüntülenemiyor.')
+                    : tx('Ret gerekçesi belirtilmemiş.')}
+            </InfoNote>
+          )}
           {c.status === 'Submitted' && (
             <InfoNote>
               {tx('Talep onay kutusunda bekliyor. Onay verildiğinde durum arka planda kendiliğinden güncellenir; burada ayrıca bir işlem yapmanız gerekmez.')}
@@ -183,6 +248,7 @@ export function ExpenseClaimPage() {
           )}
         </PanelBody>
       </Panel>
+      {canEditDraft && <NewClaimModal open={editOpen} onClose={() => setEditOpen(false)} claim={c} />}
     </div>
   )
 }

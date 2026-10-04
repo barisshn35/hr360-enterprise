@@ -11,7 +11,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge'
 import { EmptyState, InfoNote, RowsSkeleton } from '@/components/ui/States'
 import { useAuth } from '@/auth/useAuth'
 import { isHr } from '@/auth/roles'
-import { complianceApi, type DocAudience, type LibraryDoc } from '@/api/compliance'
+import { complianceApi, type DocAudience, type LibraryDoc, type LibraryVersion } from '@/api/compliance'
 import { formatDate, formatDateTime } from '@/lib/format'
 import { useAction } from '@/features/shared/kit'
 import { tx } from '@/lib/i18n'
@@ -21,9 +21,10 @@ const audienceLabels: Record<DocAudience, string> = {
   All: tx('Tüm çalışanlar'), Managers: tx('Yöneticiler'), Hr: tx('Yalnızca İK'), Departments: tx('Seçili departmanlar'),
 }
 
-function DocEditor({ docId, onClose }: { docId?: string; onClose: () => void }) {
+/** Yeni sürümde önceki sürümün metni ve dosya bağlantısı hazır gelir; yalnızca değişen kısım düzenlenir. */
+function DocEditor({ docId, current, onClose }: { docId?: string; current?: LibraryVersion | null; onClose: () => void }) {
   const meta = useQuery({ queryKey: ['library', 'meta'], queryFn: ({ signal }) => complianceApi.libraryMeta(signal) })
-  const [f, setF] = useState({ title: '', category: 'Policy', audience: 'All' as DocAudience, departmentIds: [] as string[], requiresAck: false, body: '', externalUrl: '', storageKey: '', changeNote: '' })
+  const [f, setF] = useState({ title: '', category: 'Policy', audience: 'All' as DocAudience, departmentIds: [] as string[], requiresAck: false, body: current?.body ?? '', externalUrl: current?.externalUrl ?? '', storageKey: current?.storageKey ?? '', changeNote: '' })
   const isNew = !docId
   const save = useAction(
     () => isNew
@@ -106,7 +107,7 @@ function DocViewer({ id, hr, onClose }: { id: string; hr: boolean; onClose: () =
           )}
         </div>
       )}
-      {editing && <DocEditor docId={id} onClose={() => setEditing(false)} />}
+      {editing && <DocEditor docId={id} current={d?.current} onClose={() => setEditing(false)} />}
     </Modal>
   )
 }

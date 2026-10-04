@@ -54,6 +54,7 @@ def cleanup():
              UPDATE compensation_records SET "EffectiveTo" = NULL WHERE "EffectiveTo" = '{YEAR}-05-31';
              DELETE FROM compensation_raise_proposals WHERE "CycleId" IN (SELECT "Id" FROM compensation_raise_cycles WHERE "Name" LIKE 'TEST%');
              DELETE FROM compensation_raise_cycles WHERE "Name" LIKE 'TEST%';
+             DELETE FROM compensation_salary_bands WHERE "Grade" LIKE 'TEST%';
              DELETE FROM workflow_approval_steps WHERE "WorkflowRequestId" IN (SELECT "Id" FROM workflow_requests WHERE "Subject" LIKE 'TEST%' OR "Subject" LIKE 'Seyahat: TEST%');
              DELETE FROM workflow_requests WHERE "Subject" LIKE 'TEST%' OR "Subject" LIKE 'Seyahat: TEST%';
              DELETE FROM expense_items WHERE "ClaimId" IN (SELECT "Id" FROM expense_claims WHERE "Title" LIKE 'TEST%' OR "Title" LIKE 'Harcırah: TEST%');
@@ -164,8 +165,26 @@ code, st = api("ayse", "GET", f"{C}/benefits/{YEAR}")
 check("Çalışan özet göremez, kendi seçimini görür", st["summary"] is None and set(st["election"]["optionIds"]) == {ids["TEST Yemek kartı"], ids["TEST Özel sağlık B"]}, st)
 
 # ====================================================================== Y21 zam dönemi
-code, cyc = api("admin", "POST", f"{C}/raise-cycles", {"name": f"TEST zam {YEAR}", "year": YEAR, "budgetPercent": 10, "effectiveDate": f"{YEAR}-06-01"})
+# Dönem yılı makul aralıkta olmalı (bu yıl-1 .. bu yıl+2); yürürlük tarihi test yılında kalır.
+CYCLE_YEAR = dt.date.today().year + 1
+code, _ = api("admin", "POST", f"{C}/raise-cycles", {"name": "TEST zam 1900", "year": 1900, "budgetPercent": 10, "effectiveDate": "1900-06-01"})
+check("Zam dönemi: makul olmayan yıl reddedilir", code == 400, code)
+code, tmp = api("admin", "POST", f"{C}/raise-cycles", {"name": "TEST zam silinecek", "year": CYCLE_YEAR, "budgetPercent": 5, "effectiveDate": f"{YEAR}-06-01"})
+code, _ = api("admin", "DELETE", f"{C}/raise-cycles/{tmp['id']}")
+check("Öneri girilmemiş taslak dönem silinir", code == 204, code)
+code, cyc = api("admin", "POST", f"{C}/raise-cycles", {"name": f"TEST zam {YEAR}", "year": CYCLE_YEAR, "budgetPercent": 10, "effectiveDate": f"{YEAR}-06-01"})
 cid = cyc["id"]
+# Ücret bandı düzenleme/silme: açık zam dönemi bandın yılını okuyorsa silinemez (409).
+code, band = api("admin", "POST", f"{C}/bands", {"grade": "TEST-Z", "title": "TEST", "minAmount": 10000, "midAmount": 15000, "maxAmount": 20000, "currency": "TRY", "year": CYCLE_YEAR})
+code, _ = api("admin", "PUT", f"{C}/bands/{band['id']}", {"grade": "TEST-Z", "title": "TEST", "minAmount": 16000, "midAmount": 15000, "maxAmount": 20000, "currency": "TRY", "year": CYCLE_YEAR})
+check("Bant düzenleme: alt ≤ orta ≤ üst doğrulanır", code == 400, code)
+code, b2 = api("admin", "PUT", f"{C}/bands/{band['id']}", {"grade": "TEST-Z", "title": "TEST 2", "minAmount": 11000, "midAmount": 15000, "maxAmount": 21000, "currency": "TRY", "year": CYCLE_YEAR})
+check("Bant düzenlenir", code == 200 and b2["maxAmount"] == 21000, (code, b2))
+code, _ = api("admin", "DELETE", f"{C}/bands/{band['id']}")
+check("Uygulanmamış zam döneminin okuduğu bant silinemez", code == 409, code)
+code, b3 = api("admin", "POST", f"{C}/bands", {"grade": "TEST-Y", "minAmount": 1, "midAmount": 2, "maxAmount": 3, "currency": "TRY", "year": YEAR + 5})
+code, _ = api("admin", "DELETE", f"{C}/bands/{b3['id']}")
+check("Kullanılmayan bant silinir", code == 204, code)
 code, _ = api("mehmet", "GET", f"{C}/raise-cycles/{cid}/worksheet")
 check("Taslak dönem yöneticiye kapalı", code == 404, code)
 api("admin", "POST", f"{C}/raise-cycles/{cid}/status", {"status": "Open"})
@@ -194,6 +213,8 @@ newsal = psql(f"""SELECT "BaseSalary" FROM compensation_records WHERE "EmployeeI
 check("Yeni ücret kaydı yürürlük tarihiyle", newsal and abs(float(newsal) - row["currentSalary"] * 1.125) < 0.02, (newsal, row["currentSalary"]))
 code, _ = api("admin", "POST", f"{C}/raise-cycles/{cid}/apply")
 check("Zam dönemi iki kez uygulanamaz", code == 409, code)
+code, _ = api("admin", "DELETE", f"{C}/raise-cycles/{cid}")
+check("Uygulanmış zam dönemi silinemez", code == 409, code)
 
 # ====================================================================== G9 masraf politikası ve kur
 code, _ = api("ayse", "PUT", f"{E}/expense-policy", {"limits": {}, "kmRate": 1, "perDiemDomestic": 1, "perDiemAbroad": 1, "perDiemAbroadCurrency": "EUR"})

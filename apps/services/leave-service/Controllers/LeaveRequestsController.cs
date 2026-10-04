@@ -138,7 +138,9 @@ public class LeaveRequestsController : ControllerBase
                 return StatusCode(StatusCodes.Status403Forbidden,
                     new { message = "Yalnızca kendi adınıza izin talebi oluşturabilirsiniz" });
         }
-        var (error, leave) = await CreateCoreAsync(request, internalCall: false, ct);
+        // IK baskasi adina talep giriyorsa iletiler "bakiyeniz" yerine calisana gore yazilir.
+        var onBehalf = IsHr && await _approvals.FindMyEmployeeIdAsync(ct) != request.EmployeeId;
+        var (error, leave) = await CreateCoreAsync(request, internalCall: false, ct, onBehalf);
         return error ?? CreatedAtAction(nameof(GetById), new { id = leave!.Id }, leave);
     }
 
@@ -166,7 +168,7 @@ public class LeaveRequestsController : ControllerBase
         return error ?? Ok(new { leave!.Id, leave.Days, leave.WorkflowRequestId, status = leave.Status.ToString() });
     }
 
-    private async Task<(IActionResult? Error, LeaveRequest? Leave)> CreateCoreAsync(CreateLeaveRequest request, bool internalCall, CancellationToken ct)
+    private async Task<(IActionResult? Error, LeaveRequest? Leave)> CreateCoreAsync(CreateLeaveRequest request, bool internalCall, CancellationToken ct, bool onBehalf = false)
     {
         IActionResult Bad(string m) => BadRequest(new { message = m });
         if (request.EndDate < request.StartDate)
@@ -207,7 +209,7 @@ public class LeaveRequestsController : ControllerBase
             (r.Status == LeaveRequestStatus.Submitted || r.Status == LeaveRequestStatus.Approved) &&
             r.StartDate <= request.EndDate && r.EndDate >= request.StartDate, ct);
         if (overlaps)
-            return (Conflict(new { message = "Bu tarihlerle çakışan bekleyen ya da onaylı bir izniniz var" }), null);
+            return (Conflict(new { message = onBehalf ? "Çalışanın bu tarihlerle çakışan bekleyen ya da onaylı bir izni var" : "Bu tarihlerle çakışan bekleyen ya da onaylı bir izniniz var" }), null);
 
         var balance = await _db.LeaveBalances.FirstOrDefaultAsync(b =>
             b.EmployeeId == request.EmployeeId &&
@@ -220,7 +222,9 @@ public class LeaveRequestsController : ControllerBase
         // tamamen atlaniyor, sinirsiz yillik izin alinabiliyordu). Diger turler
         // (hastalik, ucretsiz vb.) bakiyesiz olabilir.
         if (balance is null && request.Type == LeaveType.Annual)
-            return (Bad($"{request.StartDate.Year} yılı için yıllık izin bakiyeniz tanımlı değil. İK ile iletişime geçin."), null);
+            return (Bad(onBehalf
+                ? $"Çalışanın {request.StartDate.Year} yılı için yıllık izin bakiyesi tanımlı değil. Önce bakiye tanımlayın."
+                : $"{request.StartDate.Year} yılı için yıllık izin bakiyeniz tanımlı değil. İK ile iletişime geçin."), null);
 
         var leave = new LeaveRequest
         {
@@ -251,7 +255,7 @@ public class LeaveRequestsController : ControllerBase
         }
         catch (DbUpdateConcurrencyException)
         {
-            return (Conflict(new { message = "Bakiyeniz aynı anda başka bir işlemle güncellendi; lütfen tekrar deneyin." }), null);
+            return (Conflict(new { message = onBehalf ? "Çalışanın bakiyesi aynı anda başka bir işlemle güncellendi; lütfen tekrar deneyin." : "Bakiyeniz aynı anda başka bir işlemle güncellendi; lütfen tekrar deneyin." }), null);
         }
 
         // Departman basina onay workflow'u ac - bulunamazsa (bas atanmamis,

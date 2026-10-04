@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useEffect, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'motion/react'
 import { Calculator, Check, ClipboardCheck, LogOut, Plus } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -72,6 +72,12 @@ function Settlement({ id }: { id: string }) {
 function CaseModal({ id, onClose }: { id: string; onClose: () => void }) {
   const { roles } = useAuth()
   const q = useQuery({ queryKey: ['offboarding', id], queryFn: ({ signal }) => engagementApi.offboarding(id, signal) })
+  // Ayrıntı ucu zimmetleri onboarding kayıtlarından yeniler (iade edilen "Returned" olur);
+  // listedeki "n zimmet bekliyor" rozeti de güncellensin diye liste sorgusu tazelenir.
+  const qc = useQueryClient()
+  useEffect(() => {
+    if (q.dataUpdatedAt) void qc.invalidateQueries({ queryKey: ['offboarding'], exact: true })
+  }, [q.dataUpdatedAt, qc])
   const toggle = useAction(({ key, done }: { key: string; done: boolean }) => engagementApi.toggleChecklist(id, key, done), { invalidate: [['offboarding']] })
   const [iv, setIv] = useState<ExitInterview>({})
   const [rehire, setRehire] = useState<boolean | null>(null)
@@ -93,10 +99,11 @@ function CaseModal({ id, onClose }: { id: string; onClose: () => void }) {
             <ul className="space-y-1.5">
               {c.checklist.map((it) => (
                 <li key={it.key} className="flex items-start gap-2.5 rounded-xl border border-border p-2.5">
-                  <Checkbox checked={it.done} disabled={c.status !== 'Open' || it.key === 'exit-interview'} onCheckedChange={(v) => toggle.mutate({ key: it.key, done: v === true })} className="mt-0.5" />
+                  {/* Kutu metne bağlı: erişilebilir adı başlıktır ve metne tıklamak da işaretler. */}
+                  <Checkbox id={`ofb-${c.id}-${it.key}`} aria-describedby={`ofb-${c.id}-${it.key}-d`} checked={it.done} disabled={c.status !== 'Open' || it.key === 'exit-interview'} onCheckedChange={(v) => toggle.mutate({ key: it.key, done: v === true })} className="mt-0.5" />
                   <div className="min-w-0 flex-1">
-                    <p className={cn('text-[13px]', it.done && 'text-muted-foreground line-through')}>{it.title}</p>
-                    <p className="text-[11.5px] text-muted-foreground">{it.owner}{it.doneBy ? ` · ${it.doneBy}, ${formatDate(it.doneAt)}` : ''}{it.hint ? ` · ${it.hint}` : ''}</p>
+                    <label htmlFor={`ofb-${c.id}-${it.key}`} className={cn('block text-[13px]', c.status === 'Open' && it.key !== 'exit-interview' && 'cursor-pointer', it.done && 'text-muted-foreground line-through')}>{it.title}</label>
+                    <p id={`ofb-${c.id}-${it.key}-d`} className="text-[11.5px] text-muted-foreground">{it.owner}{it.doneBy ? ` · ${it.doneBy}, ${formatDate(it.doneAt)}` : ''}{it.hint ? ` · ${it.hint}` : ''}</p>
                   </div>
                 </li>
               ))}
@@ -141,7 +148,8 @@ function CaseModal({ id, onClose }: { id: string; onClose: () => void }) {
 }
 
 export function OffboardingPage() {
-  const q = useQuery({ queryKey: ['offboarding'], queryFn: ({ signal }) => engagementApi.offboardings(signal) })
+  // Zimmet iadesi başka ekrandan yapılır; sayfaya dönüşte liste her zaman tazelenir.
+  const q = useQuery({ queryKey: ['offboarding'], queryFn: ({ signal }) => engagementApi.offboardings(signal), refetchOnMount: 'always' })
   const [starting, setStarting] = useState(false)
   const [open, setOpen] = useState<string | null>(null)
   return (

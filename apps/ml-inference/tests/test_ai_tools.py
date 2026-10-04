@@ -136,3 +136,45 @@ def test_cv_parse_txt_upload():
     r = client.post("/ai/cv/parse", files={"file": ("cv.txt", CV.encode(), "text/plain")})
     assert r.status_code == 200
     assert r.json()["email"] == "ayse.kaya@example.com"
+
+
+def _high(text: str) -> list[dict]:
+    r = client.post("/ai/jobs/bias-check", json={"text": text})
+    assert r.status_code == 200, r.text
+    return [f for f in r.json()["findings"] if f["severity"] == "high"]
+
+
+def test_bias_check_catches_inflected_forms():
+    cases = {
+        "Erkek adaylar tercih edilir.": "Cinsiyet",
+        "Bay/Bayan satış danışmanı aranıyor.": "Cinsiyet",
+        "Kadın çalışanlarımız için ilan.": "Cinsiyet",
+        "Herhangi bir sağlık sorunu olmayan adaylar başvurabilir.": "Engellilik / sağlık",
+        "Engelli olmayanlar başvursun.": "Engellilik / sağlık",
+        "Bekâr olması tercih sebebidir.": "Medeni hâl / aile",
+        "Evli adaylar başvurmasın.": "Medeni hâl / aile",
+        "Hamile olmayan adaylar.": "Medeni hâl / aile",
+        "Askerlik hizmetini tamamlamış olmak.": "Cinsiyet",
+    }
+    for text, cat in cases.items():
+        hits = _high(text)
+        assert any(f["category"] == cat for f in hits), (text, hits)
+        # bulunan ifade özgün metinden kesilir (konumlar kaymamalı)
+        for f in hits:
+            assert text[f["start"]:f["end"]] == f["phrase"]
+
+
+def test_bias_check_no_false_positive_on_neutral_words():
+    assert not _high("Bayram dönemlerinde esnek çalışma; kadro genişliyor, evrak süreçleri dijital.")
+
+
+def test_cv_parse_short_skills_languages_and_university():
+    text = CV + "\nAraçlar: Figma, Jira. Guide hazırlama, quick wins.\n"
+    d = client.post("/ai/cv/parse-text", json={"text": text}).json()
+    skills = {s.lower() for s in d["skills"]}
+    assert "ui" not in skills and "go" not in skills and "qa" not in skills
+    assert not {"ingilizce", "almanca"} & skills  # diller beceri değil
+    assert {"İngilizce", "Almanca"} <= set(d["languages"])
+    assert d["universities"] == ["Orta Doğu Teknik Üniversitesi"]
+    d2 = client.post("/ai/cv/parse-text", json={"text": CV + "\nUI/UX tasarımı, Go ile servis geliştirme.\n"}).json()
+    assert {"ui", "ux", "go"} <= {s.lower() for s in d2["skills"]}

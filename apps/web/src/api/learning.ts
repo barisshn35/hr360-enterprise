@@ -83,6 +83,7 @@ export interface CreateCourseInput {
   durationHours: number
   category: CourseCategory
   isMandatory: boolean
+  certificateValidityMonths?: number | null
 }
 
 export interface CreateCertificationInput {
@@ -107,6 +108,16 @@ export const learningApi = {
 
   createCourse: (input: CreateCourseInput) =>
     apiFetch<Course>(`${BASE}/courses`, { method: 'POST', body: input }),
+
+  updateCourse: (id: string, input: CreateCourseInput) =>
+    apiFetch<Course>(`${BASE}/courses/${id}`, { method: 'PUT', body: input }),
+
+  /** Kaydı olan eğitimde 409 (code: has_enrollments) döner; o durumda arşivlenir. */
+  deleteCourse: (id: string) =>
+    apiFetch<void>(`${BASE}/courses/${id}`, { method: 'DELETE' }),
+
+  archiveCourse: (id: string) =>
+    apiFetch<Course>(`${BASE}/courses/${id}/archive`, { method: 'POST' }),
 
   enroll: (courseId: string, employeeId: string) =>
     apiFetch<Enrollment>(`${BASE}/courses/${courseId}/enroll`, {

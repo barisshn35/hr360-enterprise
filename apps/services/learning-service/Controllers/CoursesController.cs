@@ -85,6 +85,62 @@ public class CoursesController : ControllerBase
         return CreatedAtAction(nameof(GetById), new { id = course.Id }, course);
     }
 
+    /// <summary>Eğitimi düzenler; doğrulamalar oluşturmayla aynıdır. Kayıtlar korunur.</summary>
+    [HttpPut("{id}")]
+    [Authorize(Policy = "RequireHrAdmin")]
+    public async Task<IActionResult> Update(Guid id, [FromBody] CreateCourseRequest request, CancellationToken ct)
+    {
+        var course = await _db.Courses.FirstOrDefaultAsync(c => c.Id == id, ct);
+        if (course is null) return NotFound();
+        if (string.IsNullOrWhiteSpace(request.Title) || request.Title.Trim().Length > 200)
+            return BadRequest(new { message = "Eğitim adı zorunlu ve en fazla 200 karakter olabilir" });
+        if (request.DurationHours is <= 0 or > 1000)
+            return BadRequest(new { message = "Eğitim süresi 0'dan büyük ve en fazla 1000 saat olmalı" });
+        course.Title = request.Title.Trim();
+        course.Description = request.Description;
+        course.Provider = request.Provider;
+        course.DurationHours = request.DurationHours;
+        course.Category = request.Category;
+        course.IsMandatory = request.IsMandatory;
+        course.CertificateValidityMonths = request.CertificateValidityMonths is > 0 and <= 120 ? request.CertificateValidityMonths : null;
+        await _db.SaveChangesAsync(ct);
+        return Ok(course);
+    }
+
+    /// <summary>
+    /// Eğitimi siler. Kaydı ya da bu eğitimden üretilmiş sertifikası olan eğitim silinmez
+    /// (eğitim geçmişi ve uyum kanıtı kaybolur) — 409 döner; bunun yerine arşivlenir.
+    /// Modüller ve yetkinlik eşleşmeleri veritabanında eğitimle birlikte silinir (ON DELETE CASCADE).
+    /// </summary>
+    [HttpDelete("{id}")]
+    [Authorize(Policy = "RequireHrAdmin")]
+    public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
+    {
+        var course = await _db.Courses.FirstOrDefaultAsync(c => c.Id == id, ct);
+        if (course is null) return NotFound();
+        if (await _db.Enrollments.AnyAsync(e => e.CourseId == id, ct)
+            || await _db.Certifications.AnyAsync(c => c.CourseId == id, ct))
+            return Conflict(new { message = "Kursa kayıtlı çalışan var; önce arşivleyin", code = "has_enrollments" });
+        _db.Courses.Remove(course);
+        await _db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+
+    /// <summary>
+    /// Eğitimi arşivler (pasife alır): katalogdan ve uyum raporundan çıkar, yeni kayıt
+    /// alınmaz; mevcut kayıtlar ve sertifikalar korunur.
+    /// </summary>
+    [HttpPost("{id}/archive")]
+    [Authorize(Policy = "RequireHrAdmin")]
+    public async Task<IActionResult> Archive(Guid id, CancellationToken ct)
+    {
+        var course = await _db.Courses.FirstOrDefaultAsync(c => c.Id == id, ct);
+        if (course is null) return NotFound();
+        course.IsActive = false;
+        await _db.SaveChangesAsync(ct);
+        return Ok(course);
+    }
+
     [HttpPost("{id}/enroll")]
     public async Task<IActionResult> Enroll(Guid id, [FromBody] EnrollRequest request, CancellationToken ct)
     {

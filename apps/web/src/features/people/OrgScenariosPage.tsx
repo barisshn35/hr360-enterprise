@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AnimatePresence, motion } from 'motion/react'
 import { Bar, BarChart, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { GripVertical, Plus, Save, Trash2, UserMinus, UserPlus, Workflow } from 'lucide-react'
@@ -10,10 +10,11 @@ import { Modal } from '@/components/ui/Modal'
 import { SelectField, TextField } from '@/components/ui/Field'
 import { EmptyState, ErrorState, InfoNote, RowsSkeleton } from '@/components/ui/States'
 import { engagementApi, type OrgMove, type OrgScenario } from '@/api/engagement'
-import { formatMoney } from '@/lib/format'
+import { formatMoney, parseDecimal } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { Metric, PlanGate, useAction } from '@/features/shared/kit'
 import { tx } from '@/lib/i18n'
+import { useConfirm } from '@/components/ui/Confirm'
 
 const NONE = '__none__'
 
@@ -28,6 +29,8 @@ function Editor({ scenario }: { scenario: OrgScenario }) {
   const [hire, setHire] = useState<string | null>(null)
   const [hireName, setHireName] = useState(tx('Yeni pozisyon'))
   const [hireSalary, setHireSalary] = useState('60000')
+  const salary = hireSalary.trim() ? parseDecimal(hireSalary) : null
+  const salaryError = hireSalary.trim() && (salary === null || salary < 0) ? tx('Maaş sıfır ya da pozitif bir tutar olmalı.') : undefined
 
   const columns = useMemo(() => {
     if (!base.data) return []
@@ -128,7 +131,7 @@ function Editor({ scenario }: { scenario: OrgScenario }) {
                     <Tooltip contentStyle={{ background: 'hsl(var(--popover))', border: '1px solid hsl(var(--border))', borderRadius: 12 }} />
                     <Legend wrapperStyle={{ fontSize: 12 }} />
                     <Bar dataKey="before" name={tx('Önce')} fill="hsl(var(--muted-foreground))" radius={[6, 6, 0, 0]} />
-                    <Bar dataKey="after" name="Sonra" fill="hsl(var(--primary))" radius={[6, 6, 0, 0]} />
+                    <Bar dataKey="after" name={tx('Sonra')} fill="hsl(var(--primary))" radius={[6, 6, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -137,8 +140,8 @@ function Editor({ scenario }: { scenario: OrgScenario }) {
         </PanelBody>
       </Panel>
       {hire && (
-        <Modal open onClose={() => setHire(null)} title={tx('Yeni kadro ekle')} footer={<><Button variant="outline" onClick={() => setHire(null)}>{tx('Vazgeç')}</Button><Button onClick={() => { setMoves((ms) => [...ms, { employeeId: '00000000-0000-0000-0000-000000000000', name: hireName, toDepartmentId: hire, kind: 'Hire', plannedSalary: Number(hireSalary) || null }]); setHire(null) }}>{tx('Ekle')}</Button></>}>
-          <div className="grid gap-4 sm:grid-cols-2"><TextField label={tx('Pozisyon adı')} value={hireName} onChange={(e) => setHireName(e.target.value)} /><TextField label={tx('Planlanan brüt maaş')} type="number" value={hireSalary} onChange={(e) => setHireSalary(e.target.value)} /></div>
+        <Modal open onClose={() => setHire(null)} title={tx('Yeni kadro ekle')} footer={<><Button variant="outline" onClick={() => setHire(null)}>{tx('Vazgeç')}</Button><Button disabled={!!salaryError || !hireName.trim()} onClick={() => { setMoves((ms) => [...ms, { employeeId: '00000000-0000-0000-0000-000000000000', name: hireName.trim(), toDepartmentId: hire, kind: 'Hire', plannedSalary: salary || null }]); setHire(null) }}>{tx('Ekle')}</Button></>}>
+          <div className="grid gap-4 sm:grid-cols-2"><TextField label={tx('Pozisyon adı')} value={hireName} onChange={(e) => setHireName(e.target.value)} /><TextField label={tx('Planlanan brüt maaş')} inputMode="decimal" value={hireSalary} onChange={(e) => setHireSalary(e.target.value)} error={salaryError} /></div>
         </Modal>
       )}
     </div>
@@ -151,7 +154,19 @@ export function OrgScenariosPage() {
   const [creating, setCreating] = useState(false)
   const [name, setName] = useState('')
   const create = useAction(() => engagementApi.createScenario({ name }), { success: tx('Senaryo oluşturuldu'), invalidate: [['org-scenarios']], onDone: (s) => { setSel(s.id); setCreating(false); setName('') } })
-  const del = useAction((id: string) => engagementApi.deleteScenario(id), { success: tx('Silindi'), invalidate: [['org-scenarios']], onDone: () => setSel(null) })
+  const qc = useQueryClient()
+  const confirm = useConfirm()
+  // Silinen senaryonun etki sorgusu yeniden çekilmesin (404): önce listeden çıkarılır, sorguları atılır,
+  // sonra yalnızca liste tazelenir.
+  const del = useAction(async (id: string) => {
+    await engagementApi.deleteScenario(id)
+    qc.setQueryData<OrgScenario[]>(['org-scenarios'], (old) => old?.filter((s) => s.id !== id))
+    await qc.cancelQueries({ queryKey: ['org-scenarios', id] })
+    qc.removeQueries({ queryKey: ['org-scenarios', id] })
+  }, { success: tx('Silindi'), onDone: () => { setSel(null); void qc.invalidateQueries({ queryKey: ['org-scenarios'], exact: true }) } })
+  const askDelete = async (s: OrgScenario) => {
+    if (await confirm({ title: tx('“{0}” senaryosu silinsin mi?', [s.name]), note: tx('Senaryo ve {0} hamlesi kalıcı olarak silinir. Gerçek organizasyon etkilenmez.', [s.moves.length]), action: tx('Sil') })) del.mutate(s.id)
+  }
   const current = list.data?.find((s) => s.id === sel) ?? list.data?.[0]
   return (
     <PlanGate feature="org-scenarios">
@@ -162,7 +177,7 @@ export function OrgScenariosPage() {
         <>
           <div className="mb-5 flex flex-wrap items-end gap-3">
             <div className="w-72"><SelectField label={tx('Senaryo')} value={current?.id ?? ''} onChange={setSel} options={list.data!.map((s) => ({ value: s.id, label: tx('{0} ({1} hamle)', [s.name, s.moves.length]) }))} /></div>
-            {current && <Button variant="ghost" onClick={() => del.mutate(current.id)}><Trash2 className="size-4" />{' '}{tx('Sil')}</Button>}
+            {current && <Button variant="ghost" onClick={() => askDelete(current)} disabled={del.isPending}><Trash2 className="size-4" />{' '}{tx('Sil')}</Button>}
           </div>
           {current && <Editor scenario={current} />}
         </>

@@ -13,6 +13,7 @@ import {
 } from './metric-chart';
 import { PeriodSelect, ViewToggle, type PeriodOption } from './metric-controls';
 import { tx } from '@/lib/i18n'
+import { formatPercent } from '@/lib/format'
 
 // Ré-export des types pour que les consommateurs n'importent que ce fichier.
 export type { SeriesPoint, MetricSeries, MetricAccent, ChartView, PeriodOption };
@@ -139,6 +140,8 @@ export default function ProgressMetricCard({
       sum,
       net,
       pct: first ? (net / first) * 100 : 0,
+      // Başlangıç 0 iken yüzde tanımsızdır ("0.0%" ve düz ok yanıltıcıydı).
+      fromZero: first === 0 && net !== 0,
       step: last - prev,
       peak: vals.length ? Math.max(...vals) : 0,
       low: vals.length ? Math.min(...vals) : 0,
@@ -148,7 +151,7 @@ export default function ProgressMetricCard({
 
   // La couleur dépend du sens (dernier vs premier point), avec une zone neutre.
   const resolvedTrend: 'up' | 'down' | 'flat' =
-    trend ?? (Math.abs(stats.pct) < NEUTRAL_PCT ? 'flat' : stats.net >= 0 ? 'up' : 'down');
+    trend ?? (stats.fromZero ? (stats.net > 0 ? 'up' : 'down') : Math.abs(stats.pct) < NEUTRAL_PCT ? 'flat' : stats.net >= 0 ? 'up' : 'down');
   const resolvedAccent: MetricAccent =
     accent ?? (resolvedTrend === 'up' ? 'emerald' : resolvedTrend === 'down' ? 'rose' : 'neutral');
   const color = ACCENTS[resolvedAccent];
@@ -162,7 +165,7 @@ export default function ProgressMetricCard({
 
   const displayTotal = total ?? fmtCompact(stats.sum);
   const displayDelta = delta ?? sign(stats.step);
-  const displayPercent = percent ?? `${Math.abs(stats.pct).toFixed(1)}%`;
+  const displayPercent = percent ?? (stats.fromZero ? tx('yeni') : formatPercent(Math.abs(stats.pct) / 100, 1));
 
   // Couleur de chaque série : accent défini → palette → couleur du titre.
   const chartSeries: ChartSeries[] = visibleSeries.map((s, i) => ({

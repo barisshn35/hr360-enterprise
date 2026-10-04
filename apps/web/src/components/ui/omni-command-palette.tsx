@@ -90,7 +90,7 @@ export type OmniCommandPaletteProps = {
 
 const DEFAULT_OPEN_KEYS = [{ key: "k", meta: true }, { key: "k", ctrl: true }];
 
-const DEFAULT_PLACEHOLDER = tx('Search commands, pages, people…');
+const DEFAULT_PLACEHOLDER = tx('Komut, sayfa ya da kişi ara…');
 const DEFAULT_STORAGE_KEY = "omni:recents";
 const DEFAULT_DEBOUNCE = 120;
 const DEFAULT_MAX_RECENTS = 8;
@@ -328,7 +328,7 @@ export function OmniCommandPalette({
     if (!debouncedQuery && showPinnedFirst && pinned.length) {
       finalGroups.push({
         id: "__pinned",
-        label: tx('Pinned'),
+        label: tx('Sabitlenenler'),
         items: pinned.map(p => ({ ...p, _score: 0, _indices: [] })),
       });
     }
@@ -337,11 +337,11 @@ export function OmniCommandPalette({
     if (!debouncedQuery && showRecents && recents.length) {
       finalGroups.push({
         id: "__recents",
-        label: tx('Recent'),
+        label: tx('Son kullanılanlar'),
         items: recents.map(r => ({
           id: r.id,
           label: r.label,
-          subtitle: tx('Recently used'),
+          subtitle: tx('Yakın zamanda kullanıldı'),
           groupId: r.groupId,
           href: r.href,
           shortcut: r.shortcut,
@@ -364,6 +364,11 @@ export function OmniCommandPalette({
     if (!activeId) return -1;
     return flatItems.findIndex(i => i.id === activeId);
   }, [activeId, flatItems]);
+
+  // Sonuçlar değişince etkin öğe sıfırlanır; ilk sonuç etkin yapılır ki tek sonuçlu aramada Enter çalışsın.
+  React.useEffect(() => {
+    if (activeIndex === -1 && flatItems.length > 0) setActiveId(flatItems[0].id);
+  }, [activeIndex, flatItems]);
 
   function moveActive(delta: number) {
     if (!flatItems.length) return;
@@ -418,7 +423,7 @@ export function OmniCommandPalette({
           className="fixed inset-0 z-[100] bg-black/50 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0"
         />
         <Dialog.Content
-          aria-label={tx('Command palette')}
+          aria-label={tx('Komut paleti')}
           className={cn(
             "fixed z-[101] inset-x-2 top-16 mx-auto w-[min(720px,100%-16px)] rounded-xl border bg-[hsl(var(--popover))] text-[hsl(var(--foreground))] shadow-lg backdrop-blur supports-[backdrop-filter]:bg-[color-mix(in_oklab,hsl(var(--popover))_85%,transparent)]",
             "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95 data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0",
@@ -454,7 +459,8 @@ export function OmniCommandPalette({
                       moveActive(-1);
                     } else if (e.key === "Enter") {
                       e.preventDefault();
-                      if (activeIndex >= 0) execute(flatItems[activeIndex]);
+                      const target = activeIndex >= 0 ? flatItems[activeIndex] : flatItems[0];
+                      if (target) execute(target);
                     }
                   }}
                   className="flex-1 bg-transparent outline-none placeholder:text-[hsl(var(--muted-foreground))] text-sm"
@@ -464,7 +470,7 @@ export function OmniCommandPalette({
                 </kbd>
                 <Dialog.Close asChild>
                   <button
-                    aria-label={tx('Close')}
+                    aria-label={tx('Kapat')}
                     className="ml-2 rounded p-1 text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))]"
                   >
                     <X className="size-4" aria-hidden />
@@ -478,7 +484,7 @@ export function OmniCommandPalette({
           <div
             id="omni-listbox"
             role="listbox"
-            aria-label={tx('Command results')}
+            aria-label={tx('Arama sonuçları')}
             className={cn("max-h-[60vh] overflow-auto p-1", className)}
             ref={listRef}
           >
@@ -486,7 +492,7 @@ export function OmniCommandPalette({
             {loadingIds.size > 0 && (
               <div className="flex items-center gap-2 px-3 py-2 text-[hsl(var(--muted-foreground))] text-xs">
                 <Loader2 className="size-3 animate-spin" aria-hidden />
-                {tx('Fetching results…')}
+                {tx('Sonuçlar getiriliyor…')}
               </div>
             )}
 
@@ -545,7 +551,7 @@ export function OmniCommandPalette({
                             {/* Shortcut / affordances */}
                             {item.pinned && (
                               <span
-                                title={tx('Pinned')}
+                                title={tx('Sabitlendi')}
                                 className="text-[hsl(var(--muted-foreground))]"
                                 aria-hidden
                               >
@@ -575,7 +581,7 @@ export function OmniCommandPalette({
                 </div>
                 {/* Empty hint per group */}
                 {g.items.length === 0 && debouncedQuery && (
-                  <div className="px-3 py-2 text-xs text-[hsl(var(--muted-foreground))]">{tx('No matches in {0}.', [g.label])}</div>
+                  <div className="px-3 py-2 text-xs text-[hsl(var(--muted-foreground))]">{tx('{0} içinde sonuç yok.', [g.label])}</div>
                 )}
               </div>
             ))}
@@ -586,7 +592,7 @@ export function OmniCommandPalette({
                 <div className="mx-auto mb-2 flex size-8 items-center justify-center rounded-full bg-[hsl(var(--muted))]">
                   <History className="size-4" aria-hidden />
                 </div>
-                {tx('Try a different query, like “settings” or “invite”.')}
+                {tx('Sonuç bulunamadı. Farklı bir arama deneyin, örneğin “izin” ya da “bordro”.')}
               </div>
             )}
           </div>
@@ -599,14 +605,14 @@ export function OmniCommandPalette({
               <div className="flex items-center justify-between px-3 py-2 text-xs text-[hsl(var(--muted-foreground))]">
                 <div className="flex items-center gap-4">
                   <span className="flex items-center gap-1">
-                    <CornerDownLeft className="size-3" />{' '}{tx('to select')}
+                    <CornerDownLeft className="size-3" />{' '}{tx('seç')}
                   </span>
                   <span className="flex items-center gap-1">
                     <ArrowUp className="size-3" />
-                    <ArrowDown className="size-3" />{' '}{tx('to navigate')}
+                    <ArrowDown className="size-3" />{' '}{tx('gezin')}
                   </span>
                   <span className="hidden items-center gap-1 sm:flex">
-                    <X className="size-3" />{' '}{tx('to close')}
+                    <X className="size-3" />{' '}{tx('kapat')}
                   </span>
                 </div>
                 <ThemeIndicator />
@@ -703,7 +709,7 @@ function ThemeIndicator() {
   return (
     <div className="inline-flex items-center gap-1 rounded px-2 py-1 text-[hsl(var(--muted-foreground))]">
       {dark ? <Moon className="size-3.5" /> : <Sun className="size-3.5" />}
-      <span>{dark ? tx('Dark') : tx('Light')}</span>
+      <span>{dark ? tx('Koyu') : tx('Açık')}</span>
     </div>
   );
 }

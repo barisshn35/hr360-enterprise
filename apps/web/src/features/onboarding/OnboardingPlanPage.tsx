@@ -25,7 +25,7 @@ import { formatDate, formatNumber, fullName } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { tx } from '@/lib/i18n'
 import { localISODate as isoLocal } from '@/lib/dates'
-import { BuddyPanel } from './OnboardingOps'
+import { BuddyPanel, displayPlanStatus } from './OnboardingOps'
 
 const CATEGORY_ORDER: TaskCategory[] = ['IT', 'HR', 'Facility', 'Training', 'Legal', 'Other']
 
@@ -313,7 +313,7 @@ export function OnboardingPlanPage() {
         description={tx('{0} tarihinde başlıyor. {1}/{2} görev tamam.', [formatDate(data.startDate), formatNumber(done), formatNumber(tasks.length)])}
         actions={
           <>
-            <PlanStatusBadge status={data.status} />
+            <PlanStatusBadge status={displayPlanStatus(data)} />
             {canEdit && (
               <Button className="cursor-pointer" onClick={() => setTaskModal(true)}>
                 <Plus className="size-4" />

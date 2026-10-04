@@ -21,7 +21,7 @@ import { formatDate, fullName } from '@/lib/format'
 import { tx } from '@/lib/i18n'
 import { localISODate } from '@/lib/dates'
 import { PersonSelect } from '@/features/shared/kit'
-import { TemplatesPanel, WelcomeSettingsPanel } from './OnboardingOps'
+import { TemplatesPanel, WelcomeSettingsPanel, displayPlanStatus } from './OnboardingOps'
 
 type TabKey = PlanStatus | 'all'
 
@@ -265,9 +265,9 @@ export function OnboardingPage() {
       id: 'status',
       header: tx('Durum'),
       align: 'right',
-      sortValue: (p) => planStatusLabels[p.status] ?? '',
-      exportText: (p) => planStatusLabels[p.status] ?? '',
-      cell: (p) => <PlanStatusBadge status={p.status} />,
+      sortValue: (p) => planStatusLabels[displayPlanStatus(p)] ?? '',
+      exportText: (p) => planStatusLabels[displayPlanStatus(p)] ?? '',
+      cell: (p) => <PlanStatusBadge status={displayPlanStatus(p)} />,
     },
   ]
 

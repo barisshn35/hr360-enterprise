@@ -13,6 +13,7 @@ import { complianceApi, type ExamResult, type IncidentInput, type OshExam, type 
 import { formatDate } from '@/lib/format'
 import { errMsg, isoDate, PersonSelect, useAction } from '@/features/shared/kit'
 import { tx } from '@/lib/i18n'
+import { useConfirm } from '@/components/ui/Confirm'
 import { KvkkNote, PeopleChecklist } from './shared'
 
 const resultView: Record<ExamResult, { label: string; tone: 'success' | 'danger' | 'warning' }> = {
@@ -68,6 +69,7 @@ function IncidentsTab() {
   const q = useQuery({ queryKey: ['osh', 'incidents'], queryFn: ({ signal }) => complianceApi.incidents(signal) })
   const [edit, setEdit] = useState<OshIncident | 'new' | null>(null)
   const remove = useAction((id: string) => complianceApi.deleteIncident(id), { success: tx('Silindi'), invalidate: [['osh']] })
+  const confirm = useConfirm()
   const overdue = (q.data ?? []).filter((i) => i.sgkOverdue).length
   return (
     <Panel>
@@ -88,7 +90,7 @@ function IncidentsTab() {
                     ? <StatusBadge tone="danger">{tx('SGK bildirimi gecikti ({0})', [formatDate(i.sgkDeadline)])}</StatusBadge>
                     : <StatusBadge tone="warning">{tx('SGK son gün: {0}', [formatDate(i.sgkDeadline)])}</StatusBadge>)}
                 <StatusBadge tone={i.status === 'Open' ? 'info' : 'neutral'}>{i.status === 'Open' ? tx('Açık') : tx('Kapalı')}</StatusBadge>
-                <Button size="sm" variant="ghost" aria-label={tx('Sil')} onClick={() => { if (confirm(tx('Kayıt silinsin mi?'))) remove.mutate(i.id) }}><Trash2 className="size-4" /></Button>
+                <Button size="sm" variant="ghost" aria-label={tx('Sil')} onClick={async () => { if (await confirm({ title: tx('İSG olay kaydı silinsin mi?'), note: tx('Kayıt kalıcı olarak silinir.'), action: tx('Sil') })) remove.mutate(i.id) }}><Trash2 className="size-4" /></Button>
               </li>
             ))}
           </ul>
@@ -147,6 +149,7 @@ function ExamsTab({ canManage, physician }: { canManage: boolean; physician: boo
   const [creating, setCreating] = useState(false)
   const [notes, setNotes] = useState<OshExam | null>(null)
   const remove = useAction((id: string) => complianceApi.deleteExam(id), { success: tx('Silindi'), invalidate: [['osh']] })
+  const confirm = useConfirm()
   return (
     <Panel>
       <PanelHead title={tx('Sağlık muayeneleri')} note={physician ? tx('İşyeri hekimi olarak sağlık notlarını görebilirsiniz; her açılış kaydedilir.') : tx('Yalnızca sonuç ve tarihler gösterilir.')}
@@ -164,7 +167,7 @@ function ExamsTab({ canManage, physician }: { canManage: boolean; physician: boo
                 {(e.dueState === 'Overdue' || e.dueState === 'DueSoon') && <StatusBadge tone={dueView[e.dueState].tone}>{dueView[e.dueState].label}</StatusBadge>}
                 <StatusBadge tone={resultView[e.result].tone}>{resultView[e.result].label}</StatusBadge>
                 {physician && <Button size="sm" variant="ghost" onClick={() => setNotes(e)}><Lock className="size-4" />{' '}{e.hasNotes ? tx('Not') : tx('Not ekle')}</Button>}
-                {canManage && <Button size="sm" variant="ghost" aria-label={tx('Sil')} onClick={() => { if (confirm(tx('Muayene kaydı silinsin mi?'))) remove.mutate(e.id) }}><Trash2 className="size-4" /></Button>}
+                {canManage && <Button size="sm" variant="ghost" aria-label={tx('Sil')} onClick={async () => { if (await confirm({ title: tx('Muayene kaydı silinsin mi?'), note: tx('Kayıt kalıcı olarak silinir.'), action: tx('Sil') })) remove.mutate(e.id) }}><Trash2 className="size-4" /></Button>}
               </li>
             ))}
           </ul>
@@ -203,6 +206,7 @@ function TrainingsTab({ canManage }: { canManage: boolean }) {
   const q = useQuery({ queryKey: ['osh', 'trainings'], queryFn: ({ signal }) => complianceApi.trainings(signal) })
   const [creating, setCreating] = useState(false)
   const remove = useAction((id: string) => complianceApi.deleteTraining(id), { success: tx('Silindi'), invalidate: [['osh']] })
+  const confirm = useConfirm()
   const today = isoDate()
   return (
     <Panel>
@@ -215,7 +219,7 @@ function TrainingsTab({ canManage }: { canManage: boolean }) {
                 <span className="min-w-0 flex-1"><span className="font-medium">{t.topic}</span>
                   <span className="block text-[12px] text-muted-foreground">{formatDate(t.trainingDate)} · {tx('{0} saat', [t.durationHours])}{canManage ? ` · ${tx('{0} katılımcı', [t.participantCount])}` : ''}{t.trainer ? ` · ${t.trainer}` : ''}</span></span>
                 {t.expiresOn && <StatusBadge tone={t.expiresOn < today ? 'danger' : 'neutral'}>{tx('Geçerlilik: {0}', [formatDate(t.expiresOn)])}</StatusBadge>}
-                {canManage && <Button size="sm" variant="ghost" aria-label={tx('Sil')} onClick={() => { if (confirm(tx('Eğitim kaydı silinsin mi?'))) remove.mutate(t.id) }}><Trash2 className="size-4" /></Button>}
+                {canManage && <Button size="sm" variant="ghost" aria-label={tx('Sil')} onClick={async () => { if (await confirm({ title: tx('Eğitim kaydı silinsin mi?'), note: tx('Kayıt kalıcı olarak silinir.'), action: tx('Sil') })) remove.mutate(t.id) }}><Trash2 className="size-4" /></Button>}
               </li>
             ))}
           </ul>

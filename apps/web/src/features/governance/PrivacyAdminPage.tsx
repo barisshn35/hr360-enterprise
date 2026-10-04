@@ -140,10 +140,13 @@ function Retention() {
   )
 }
 
-type PrivacyTab = 'uyum' | 'envanter' | 'aktarim' | 'metinler' | 'riza' | 'basvuru' | 'ihlal' | 'pia' | 'alan' | 'itiraz' | 'erisim' | 'saklama'
+const PRIVACY_TABS = ['uyum', 'envanter', 'aktarim', 'metinler', 'riza', 'basvuru', 'ihlal', 'pia', 'alan', 'itiraz', 'erisim', 'saklama'] as const
+type PrivacyTab = (typeof PRIVACY_TABS)[number]
 
 export function PrivacyAdminPage() {
-  const [tab, setTab] = useTabParam<PrivacyTab>('sekme', 'uyum')
+  const [rawTab, setTab] = useTabParam<PrivacyTab>('sekme', 'uyum')
+  // Geçersiz ?sekme= değeri boş sayfa yerine varsayılan sekmeye düşer.
+  const tab: PrivacyTab = (PRIVACY_TABS as readonly string[]).includes(rawTab) ? rawTab : 'uyum'
   return (
     <PlanGate feature="privacy">
       <PageHeader title={tx('KVKK')} description={tx('Uyum durumu, işleme envanteri, yurt dışı aktarım, aydınlatma ve rıza metinleri, ilgili kişi başvuruları, veri ihlalleri, etki değerlendirmesi, alan yetkileri, itirazlar, erişim kayıtları, saklama ve imha.')} />

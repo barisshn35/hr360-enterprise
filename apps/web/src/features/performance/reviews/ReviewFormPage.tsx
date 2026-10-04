@@ -307,7 +307,11 @@ export function ReviewFormPage() {
       <div className="mx-auto w-full max-w-5xl">
         <BackLink />
         <Panel>
-          <ErrorState title={tx('Değerlendirme açılamadı')} message={errorText(review.error)} onRetry={() => void review.refetch()} />
+          {review.error instanceof ApiError && (review.error.status === 404 || review.error.status === 400) ? (
+            <ErrorState title={tx('Değerlendirme bulunamadı')} message={tx('Bağlantı hatalı olabilir ya da kayıt silinmiş.')} />
+          ) : (
+            <ErrorState title={tx('Değerlendirme açılamadı')} message={errorText(review.error)} onRetry={() => void review.refetch()} />
+          )}
         </Panel>
       </div>
     )

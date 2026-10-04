@@ -12,6 +12,7 @@ import { complianceApi, type CaseStatus, type MyCase } from '@/api/compliance'
 import { formatDate, formatDateTime } from '@/lib/format'
 import { isoDate, PersonSelect, useAction } from '@/features/shared/kit'
 import { tx } from '@/lib/i18n'
+import { useConfirm } from '@/components/ui/Confirm'
 import { KvkkNote, Warnings } from './shared'
 
 const statusView: Record<CaseStatus, { label: string; tone: 'neutral' | 'warning' | 'success' | 'danger' | 'info' }> = {
@@ -174,12 +175,13 @@ function DefenceForm({ c }: { c: MyCase }) {
   const [text, setText] = useState('')
   const [warnings, setWarnings] = useState<string[]>([])
   const submit = useAction(() => complianceApi.submitDefence(c.id, text), { success: tx('Savunmanız iletildi'), invalidate: [['disciplinary']], onDone: (r) => setWarnings(r.warnings) })
+  const confirm = useConfirm()
   return (
     <div className="space-y-2">
       <Warnings items={warnings} />
       <KvkkNote>{tx('Savunmanızda sağlık bilgisi, adli sicil kaydı gibi özel nitelikli verilerinizi paylaşmanız gerekmez.')}</KvkkNote>
       <TextAreaField label={tx('Yazılı savunmanız')} rows={6} value={text} onChange={(e) => setText(e.target.value)} />
-      <Button onClick={() => { if (confirm(tx('Savunmanız gönderildikten sonra değiştirilemez. Gönderilsin mi?'))) submit.mutate(undefined) }} disabled={text.trim().length < 10 || submit.isPending}>{tx('Savunmayı gönder')}</Button>
+      <Button onClick={async () => { if (await confirm({ title: tx('Savunma gönderilsin mi?'), note: tx('Savunmanız gönderildikten sonra değiştirilemez.'), action: tx('Gönder'), destructive: false })) submit.mutate(undefined) }} disabled={text.trim().length < 10 || submit.isPending}>{tx('Savunmayı gönder')}</Button>
     </div>
   )
 }

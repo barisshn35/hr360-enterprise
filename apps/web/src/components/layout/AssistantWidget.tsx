@@ -70,7 +70,8 @@ export function AssistantWidget() {
             initial={{ opacity: 0, y: 20, scale: 0.96, filter: 'blur(6px)' }}
             animate={{ opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }}
             exit={{ opacity: 0, y: 16, scale: 0.97 }}
-            transition={{ type: 'spring', stiffness: 320, damping: 28 }}
+            // Yay (spring) hedefi aşabildiğinden blur negatife düşüp tarayıcı uyarısı veriyordu: filtre ease ile gider.
+            transition={{ type: 'spring', stiffness: 320, damping: 28, filter: { type: 'tween', ease: 'easeOut', duration: 0.2 } }}
             className="fixed right-5 bottom-40 z-40 flex h-[min(560px,70dvh)] w-[min(400px,calc(100vw-2.5rem))] flex-col overflow-hidden rounded-3xl border border-border bg-popover shadow-2xl md:bottom-22"
           >
             <div className="flex items-center gap-2.5 border-b border-border bg-gradient-to-r from-primary/15 to-transparent px-4 py-3">

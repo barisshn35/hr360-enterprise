@@ -1,5 +1,5 @@
 /**
- * Hedef oluştur ve ilerleme güncelle.
+ * Hedef oluştur/düzenle ve ilerleme güncelle.
  * İkisi de canlı önizleme gösterir: pay (ağırlık → yüzde) ve ilerleme çubuğu.
  */
 
@@ -12,6 +12,7 @@ import {
   goalStatusLabels,
   shareOf,
   useCreateGoal,
+  useUpdateGoal,
   useUpdateGoalProgress,
   type Goal,
   type GoalStatus,
@@ -59,26 +60,31 @@ export function CreateGoalDialog({
   employeeName,
   cycle,
   existing,
+  goal,
   onClose,
 }: {
   employeeId: string
   employeeName: string
   cycle: ReviewCycle
   existing: Goal[]
+  /** Verilirse düzenleme kipinde açılır (dönem ve çalışan değişmez). */
+  goal?: Goal
   onClose: () => void
 }) {
   const toast = useToast()
-  const create = useCreateGoal()
-  const [title, setTitle] = useState('')
-  const [description, setDescription] = useState('')
-  const [weight, setWeight] = useState(existing.length ? 20 : 100)
-  const [numeric, setNumeric] = useState(true)
-  const [target, setTarget] = useState('')
-  const [unit, setUnit] = useState('')
+  const createGoal = useCreateGoal()
+  const updateGoal = useUpdateGoal()
+  const create = goal ? updateGoal : createGoal
+  const [title, setTitle] = useState(goal?.title ?? '')
+  const [description, setDescription] = useState(goal?.description ?? '')
+  const [weight, setWeight] = useState(goal ? goal.weight : existing.length ? 20 : 100)
+  const [numeric, setNumeric] = useState(goal ? goal.targetValue !== null : true)
+  const [target, setTarget] = useState(goal?.targetValue != null ? String(goal.targetValue).replace('.', ',') : '')
+  const [unit, setUnit] = useState(goal?.unit ?? '')
   const [touched, setTouched] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const others = existing.filter((g) => g.status !== 'Cancelled')
+  const others = existing.filter((g) => g.status !== 'Cancelled' && g.id !== goal?.id)
   const total = others.reduce((a, g) => a + g.weight, 0) + weight
   const targetNum = parse(target)
   const errs = {
@@ -89,23 +95,30 @@ export function CreateGoalDialog({
   const submit = () => {
     setTouched(true)
     if (errs.title || errs.target) return
-    create.mutate(
-      {
-        cycleId: cycle.id,
-        employeeId,
-        title: title.trim(),
-        description: description.trim() || undefined,
-        weight,
-        ...(numeric ? { targetValue: targetNum!, unit: unit.trim() || undefined } : {}),
-      },
-      {
+    const body = {
+      title: title.trim(),
+      description: description.trim() || undefined,
+      weight,
+      ...(numeric ? { targetValue: targetNum!, unit: unit.trim() || undefined } : {}),
+    }
+    const handlers = { onError: (e: unknown) => setError(errorText(e)) }
+    if (goal) {
+      updateGoal.mutate({ id: goal.id, input: body }, {
+        ...handlers,
         onSuccess: () => {
-          toast.ok(tx('«{0}» hedefi {1} için eklendi.', [title.trim(), employeeName]))
+          toast.ok(tx('«{0}» güncellendi.', [title.trim()]))
           onClose()
         },
-        onError: (e) => setError(errorText(e)),
+      })
+      return
+    }
+    createGoal.mutate({ cycleId: cycle.id, employeeId, ...body }, {
+      ...handlers,
+      onSuccess: () => {
+        toast.ok(tx('«{0}» hedefi {1} için eklendi.', [title.trim(), employeeName]))
+        onClose()
       },
-    )
+    })
   }
 
   return (
@@ -113,7 +126,7 @@ export function CreateGoalDialog({
       open
       onClose={onClose}
       size="lg"
-      title={tx('Yeni hedef')}
+      title={goal ? tx('Hedefi düzenle') : tx('Yeni hedef')}
       note={`${employeeName} · ${cycle.name}`}
       footer={
         <>
@@ -121,14 +134,14 @@ export function CreateGoalDialog({
             {tx('Vazgeç')}
           </Button>
           <Button onClick={submit} disabled={create.isPending}>
-            {create.isPending ? tx('Ekleniyor…') : tx('Hedefi ekle')}
+            {goal ? (create.isPending ? tx('Kaydediliyor…') : tx('Kaydet')) : create.isPending ? tx('Ekleniyor…') : tx('Hedefi ekle')}
           </Button>
         </>
       }
     >
       <ErrorLine message={error} />
       <div className="flex flex-col gap-4">
-        <TextField label={tx('Başlık')} value={title} onChange={(e) => setTitle(e.target.value)} error={touched ? errs.title : undefined} placeholder={tx('ör. Ödeme servisi v2 lansmanı')} autoFocus required />
+        <TextField label={tx('Başlık')} value={title} onChange={(e) => setTitle(e.target.value)} error={touched ? errs.title : undefined} placeholder={tx('ör. Ödeme servisi v2 lansmanı')} autoFocus={!goal} required />
         <TextAreaField label={tx('Açıklama')} value={description} onChange={(e) => setDescription(e.target.value)} placeholder={tx('Başarının tanımı ne?')} />
 
         <div className="rounded-lg border border-border p-3">
@@ -141,7 +154,7 @@ export function CreateGoalDialog({
           </div>
           <ShareBar
             className="mt-3"
-            items={[...others.map((g) => ({ id: g.id, label: g.title, weight: g.weight })), { id: '__new__', label: title.trim() || tx('Yeni hedef'), weight, color: 'hsl(var(--primary))' }]}
+            items={[...others.map((g) => ({ id: g.id, label: g.title, weight: g.weight })), { id: '__new__', label: title.trim() || (goal ? goal.title : tx('Yeni hedef')), weight, color: 'hsl(var(--primary))' }]}
             color="hsl(var(--muted-foreground))"
             highlightId="__new__"
             height={10}

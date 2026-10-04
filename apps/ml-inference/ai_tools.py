@@ -84,10 +84,28 @@ EDU = [("doktora", "Doktora"), ("phd", "Doktora"), ("yuksek lisans", "Yüksek li
        ("on lisans", "Ön lisans"), ("meslek yuksekokulu", "Ön lisans"), ("lise", "Lise")]
 
 
-def find_skills(text: str) -> list[str]:
+# Kısa (2 harfli) beceriler normalize metinde sık yanlış pozitif verir ("ui", "go", "qa"):
+# yalnızca özgün metinde bu yazımlarla, kelime olarak geçtiklerinde sayılır.
+SHORT_SKILLS = {
+    "ui": r"(?<![\w])UI(?![\w])",
+    "ux": r"(?<![\w])UX(?![\w])",
+    "qa": r"(?<![\w])QA(?![\w])",
+    "go": r"(?<![\w])(?:Go|GO)(?![\w'’])",
+}
+
+
+def find_skills(text: str, include_languages: bool = True) -> list[str]:
     n = " " + norm(text) + " "
     found = []
     for s in SKILLS:
+        if not include_languages and s in LANGUAGES:
+            continue  # diller CV'de ayrı "Diller" alanında gösterilir
+        if s in SHORT_SKILLS:
+            if re.search(SHORT_SKILLS[s], text or ""):
+                found.append(s)
+            continue
+        if len(s) < 2:
+            continue
         pattern = r"(?<![a-z0-9])" + re.escape(s) + r"(?![a-z0-9])"
         if re.search(pattern, n):
             found.append(s)
@@ -140,6 +158,22 @@ class CvResult(BaseModel):
     warnings: list[str]
 
 
+# Bölüm başlıkları üniversite adına karışmasın ("Eğitim\nOrta Doğu Teknik Üniversitesi")
+_SECTION_HEADS = {"egitim", "education", "egitim bilgileri", "ogrenim", "ogrenim bilgileri", "okul", "mezuniyet"}
+_UNI_RE = re.compile(r"([A-ZÇĞİÖŞÜ][\wçğıöşü]+(?:[ \t][A-ZÇĞİÖŞÜ][\wçğıöşü]+){0,4}[ \t](?:Üniversitesi|University))")
+
+
+def _universities(lines: list[str]) -> list[str]:
+    out: set[str] = set()
+    for line in lines:  # satır satır: başlık satırı bir sonraki satırla birleşmez
+        for m in _UNI_RE.findall(line):
+            words = m.split()
+            while len(words) > 2 and norm(words[0]).rstrip(":") in _SECTION_HEADS:
+                words = words[1:]
+            out.add(" ".join(words))
+    return sorted(out)[:4]
+
+
 def parse_cv_text(text: str) -> CvResult:
     warnings: list[str] = []
     clean = re.sub(r"[ \t]+", " ", text)
@@ -167,7 +201,7 @@ def parse_cv_text(text: str) -> CvResult:
 
     n = norm(clean)
     edu = next((label for key, label in EDU if key in n), None)
-    unis = sorted(set(m.strip() for m in re.findall(r"([A-ZÇĞİÖŞÜ][\wçğıöşü]+(?:\s[A-ZÇĞİÖŞÜ][\wçğıöşü]+){0,3}\s(?:Üniversitesi|University|Teknik Üniversitesi))", clean)))[:4]
+    unis = _universities(lines)
     langs = sorted({label for key, label in LANGUAGES.items() if key in n})
 
     # deneyim: "8 yıl deneyim" veya tarih aralıkları (2017 - 2021, 2019 – Halen)
@@ -185,7 +219,7 @@ def parse_cv_text(text: str) -> CvResult:
                 total += end - int(a)
         if total > 0:
             years, basis = min(total, 45.0), "tarih aralıklarının toplamı (çakışmalar dahil olabilir)"
-    skills = find_skills(clean)
+    skills = find_skills(clean, include_languages=False)
     if not skills:
         warnings.append("Sözlükte eşleşen beceri bulunamadı; metin okunamamış olabilir.")
     if len(clean) < 200:
@@ -227,12 +261,15 @@ BIAS_RULES: list[tuple[str, str, str, str]] = [
     # (desen [normalize edilmiş metin üstünde], kategori, açıklama, öneri)
     (r"\b(genc|dinamik genc|genc ve dinamik)\b", "Yaş", "Yaşa dayalı ayrımcılık (İş K. m.5 eşit davranma).", "\"enerjik\", \"öğrenmeye açık\" gibi davranış odaklı ifadeler"),
     (r"\b(\d{2}\s*[-–]\s*\d{2}\s*yas|\d{2}\s*yas(?:ini)?\s*(?:gecmemis|altinda|ustunde)|yas siniri|en fazla \d{2} yas|maksimum \d{2} yas)", "Yaş", "Yaş sınırı adayları yaş temelinde eler.", "Gerekli deneyimi yıl aralığı olarak değil yetkinlik olarak yazın"),
-    (r"\b(bayan|bay eleman|erkek eleman|kadin eleman|erkek aday|kadin aday|bayan aday|hanim|beyefendi)\b", "Cinsiyet", "Cinsiyet belirten ifade (İş K. m.5, KVKK özel nitelikli veri).", "\"aday\", \"çalışma arkadaşı\" gibi cinsiyetsiz ifadeler"),
-    (r"\b(askerligini (?:yapmis|tamamlamis|bitirmis)|askerlik (?:yapmis|tecilli|muaf)|askerlikle ilisigi)", "Cinsiyet", "Askerlik şartı dolaylı olarak cinsiyete dayalı eleme yaratır.", "Yalnızca yasal zorunluluk varsa ve iş için gerekliyse yazın"),
-    (r"\b(bekar|evli olmayan|evli|cocuksuz|cocugu olmayan|hamile olmayan)\b", "Medeni hâl / aile", "Medeni hâl ve aile durumu iş gereği değildir.", "Bu ifadeyi çıkarın; esnek çalışma beklentisini açıkça yazın"),
+    # Çekim ekleri (\w*) dahil: "erkek adaylar", "bayanlar", "bekâr olması", "evlilerin" ...
+    (r"\b(?:(?:erkek|kadin|bayan)\w*(?:\s(?:aday|eleman|personel|calisan|isci|tercih)\w*)?|bay\s?/\s?bayan\w*|bay(?:\s(?:aday|eleman|personel)\w*)?\b|hanim(?:efendi)?\w*|beyefendi\w*)",
+     "Cinsiyet", "Cinsiyet belirten ifade (İş K. m.5, KVKK özel nitelikli veri).", "\"aday\", \"çalışma arkadaşı\" gibi cinsiyetsiz ifadeler"),
+    (r"\b(askerligini (?:yapmis|tamamlamis|bitirmis)\w*|askerlik (?:hizmetini (?:yapmis|tamamlamis|bitirmis)|yapmis|tecilli|muaf|durumu|sarti|engeli)\w*|askerlikle ilis\w*)", "Cinsiyet", "Askerlik şartı dolaylı olarak cinsiyete dayalı eleme yaratır.", "Yalnızca yasal zorunluluk varsa ve iş için gerekliyse yazın"),
+    (r"\b(bekar\w*|evli\b|evli(?:ler|lik|ligi)\w*|evli olmayan\w*|evlenmemis\w*|cocuksuz\w*|cocugu (?:olmayan|bulunmayan)\w*|cocuk sahibi olmayan\w*|(?:hamile|gebe) (?:olmayan|olmamak|olmamasi)\w*|hamilelik plani olmayan\w*)",
+     "Medeni hâl / aile", "Medeni hâl ve aile durumu iş gereği değildir.", "Bu ifadeyi çıkarın; esnek çalışma beklentisini açıkça yazın"),
     (r"\b(guzel gorunumlu|hos gorunumlu|yakisikli|alimli|fizigi duzgun|fiziksel gorunumu|boy(?:u)? \d{3}|kilo(?:su)? \d{2})", "Dış görünüş", "Dış görünüşe dayalı şart ayrımcılık yaratır.", "\"profesyonel iletişim becerisi\" gibi işe dönük ifadeler"),
     (r"\b(anadili turkce olan|turk asilli|yerli aday|musluman|sunni|alevi|hristiyan)\b", "Köken / din", "Etnik köken veya din temelinde ayrımcılık (Anayasa m.10).", "Gerekli dil düzeyini (ör. \"ileri düzey Türkçe\") yazın"),
-    (r"\b(saglikli|engeli olmayan|engelli olmayan|herhangi bir sagl?ik sorunu olmayan)\b", "Engellilik / sağlık", "Engelli adayları dışlar (4857 m.30 kotası ile çelişir).", "İşin fiziksel gereklerini nesnel olarak tarif edin"),
+    (r"\b(saglikli\b|(?:engeli|engelli|engellilik durumu) (?:olmayan|bulunmayan)\w*|(?:herhangi bir )?(?:saglik|sagl?ik) (?:sorunu|problemi|engeli) (?:olmayan|bulunmayan)\w*|kronik (?:hastaligi|rahatsizligi) (?:olmayan|bulunmayan)\w*)", "Engellilik / sağlık", "Engelli adayları dışlar (4857 m.30 kotası ile çelişir).", "İşin fiziksel gereklerini nesnel olarak tarif edin"),
     (r"\b(sigara icmeyen)\b", "Kişisel yaşam", "Kişisel alışkanlık iş gereği değildir.", "Çalışma alanı kurallarını belirtin"),
 ]
 SOFT_RULES: list[tuple[str, str, str]] = [

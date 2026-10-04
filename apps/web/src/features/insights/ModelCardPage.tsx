@@ -13,7 +13,12 @@ import { isHr } from '@/auth/roles'
 import { mlModelApi, type DriftLevel, type DriftReport, type RetrainResult } from '@/api/mlModel'
 import { formatDate, formatDateTime, formatNumber, formatPercent } from '@/lib/format'
 import { errMsg, useAction } from '@/features/shared/kit'
-import { tx } from '@/lib/i18n'
+import { appLocale, tx } from '@/lib/i18n'
+
+/** AUC/PSI gibi 0–1 arası metrikler yerel ondalık ayırıcıyla, 3 basamak. */
+const DEC3 = new Intl.NumberFormat(appLocale, { minimumFractionDigits: 3, maximumFractionDigits: 3 })
+const dec3 = (n: number) => DEC3.format(n)
+const dec = (n: number) => new Intl.NumberFormat(appLocale, { maximumFractionDigits: 3 }).format(n)
 
 /**
  * Devir riski modelinin kartı (G5): ne için kullanılır, hangi özellikleri kullanır ve BİLEREK
@@ -46,7 +51,7 @@ function DriftTable({ report }: { report: DriftReport }) {
       <div className="flex flex-wrap items-center gap-2 text-[13px]">
         <StatusBadge tone={driftView[report.status ?? 'stable'].tone}>{driftView[report.status ?? 'stable'].label}</StatusBadge>
         <span className="text-muted-foreground">
-          {tx('{0} kayıt · en yüksek PSI {1} · {2}', [formatNumber(report.rows ?? 0), (report.max_psi ?? 0).toFixed(3), formatDateTime(report.computed_at)])}
+          {tx('{0} kayıt · en yüksek PSI {1} · {2}', [formatNumber(report.rows ?? 0), dec3(report.max_psi ?? 0), formatDateTime(report.computed_at)])}
         </span>
       </div>
       <div className="overflow-x-auto">
@@ -64,7 +69,7 @@ function DriftTable({ report }: { report: DriftReport }) {
             {report.features.map((f) => (
               <tr key={f.feature} className="border-t border-border">
                 <td className="py-2 pr-3">{tx(f.label)}</td>
-                <td className="tabular py-2 pr-3 text-right">{f.psi.toFixed(3)}</td>
+                <td className="tabular py-2 pr-3 text-right">{dec3(f.psi)}</td>
                 <td className="tabular py-2 pr-3 text-right">{f.reference_mean ?? '—'}</td>
                 <td className="tabular py-2 pr-3 text-right">{f.batch_mean ?? '—'}</td>
                 <td className="py-2"><StatusBadge tone={driftView[f.level].tone}>{driftView[f.level].label}</StatusBadge></td>
@@ -139,8 +144,8 @@ export function ModelCardPage() {
               {tx('Son eğitim: aday v{0} - {1} (aday AUC {2}, mevcut AUC {3}).', [
                 lastRun.candidate_version,
                 tx(lastRun.decision.reason),
-                lastRun.candidate.auc.toFixed(3),
-                lastRun.current ? lastRun.current.auc.toFixed(3) : '—',
+                dec3(lastRun.candidate.auc),
+                lastRun.current ? dec3(lastRun.current.auc) : '—',
               ])}
             </InfoNote>
           )}
@@ -155,7 +160,7 @@ export function ModelCardPage() {
                   {c.data_window ? `${formatDate(c.data_window.start)} – ${formatDate(c.data_window.end)}` : tx(c.data_window_note ?? '—')}
                 </Row>
                 <Row label={tx('Değerlendirme')}>{formatNumber(c.evaluation_rows)} {tx('satır (eğitimde kullanılmadı)')}</Row>
-                <Row label="AUC">{c.metrics ? c.metrics.auc.toFixed(3) : '—'}</Row>
+                <Row label="AUC">{c.metrics ? dec3(c.metrics.auc) : '—'}</Row>
                 <Row label={tx('Doğruluk')}>{c.metrics ? formatPercent(c.metrics.accuracy, 1) : '—'}</Row>
                 <Row label={tx('Algoritma')}>{String(c.algorithm.name ?? '—')}</Row>
                 {c.promotion && <Row label={tx('Yayın kararı')}>{tx(c.promotion.reason)}</Row>}
@@ -222,7 +227,7 @@ export function ModelCardPage() {
           <Panel>
             <PanelHead
               title={tx('Veri kayması (PSI)')}
-              note={tx('Güncel girdilerin dağılımı eğitim verisiyle karşılaştırılır. PSI {0} üstü orta, {1} üstü belirgin kaymadır. Yalnızca toplu kova sayıları tutulur.', [c.drift_thresholds.moderate, c.drift_thresholds.significant])}
+              note={tx('Güncel girdilerin dağılımı eğitim verisiyle karşılaştırılır. PSI {0} üstü orta, {1} üstü belirgin kaymadır. Yalnızca toplu kova sayıları tutulur.', [dec(c.drift_thresholds.moderate), dec(c.drift_thresholds.significant)])}
             />
             <PanelBody>
               {recent.isPending ? (
@@ -255,7 +260,7 @@ export function ModelCardPage() {
           open
           onClose={() => setConfirm(false)}
           title={tx('Modeli yeniden eğit')}
-          note={tx('Yeni tohumla sentetik veride aday model eğitilir ve mevcut modelle aynı değerlendirme kümesinde karşılaştırılır. Aday yalnızca AUC farkı -{0} eşiğinden kötü değilse yayımlanır; aksi halde kayıtta kalır.', [c?.promotion_tolerance ?? 0.02])}
+          note={tx('Yeni tohumla sentetik veride aday model eğitilir ve mevcut modelle aynı değerlendirme kümesinde karşılaştırılır. Aday yalnızca AUC farkı -{0} eşiğinden kötü değilse yayımlanır; aksi halde kayıtta kalır.', [dec(c?.promotion_tolerance ?? 0.02)])}
           footer={
             <>
               <Button variant="outline" onClick={() => setConfirm(false)}>{tx('Vazgeç')}</Button>

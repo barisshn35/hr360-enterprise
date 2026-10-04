@@ -12,6 +12,7 @@ import { SelectField, TextField } from '@/components/ui/Field'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { InfoNote, RowsSkeleton } from '@/components/ui/States'
 import { useToast } from '@/components/ui/Toast'
+import { useConfirm } from '@/components/ui/Confirm'
 import { useDirectory } from '@/api/directory'
 import { currentPosition, timeClockApi, type ClockPunch, type ClockSite, type SiteInput } from '@/api/timeclock'
 import { formatDateTime } from '@/lib/format'
@@ -98,6 +99,8 @@ export function TimeClockPage() {
           </PanelBody>
         </Panel>
         <div className="space-y-5">
+          {/* Çalışan kaydı olmayan hesapta PIN ucu 403 döner: panel gösterilmez (üstteki not durumu açıklar). */}
+          {m?.linked !== false && (
           <Panel>
             <PanelHead title={<span className="flex items-center gap-2"><KeyRound className="size-4 text-primary" />{' '}{tx('Terminal PIN')}</span>}
               note={m?.badgeCode ? tx('Sicil kodunuz: {0}', [m.badgeCode]) : tx('Sicil kodunuzu İK atar.')} />
@@ -109,6 +112,7 @@ export function TimeClockPage() {
               </div>
             </PanelBody>
           </Panel>
+          )}
           <Panel>
             <PanelHead title={tx('Son hareketler')} />
             <PanelBody className="p-0">
@@ -225,6 +229,7 @@ function CredentialsPanel() {
     success: tx('Kaydedildi'), invalidate: [['timeclock', 'credentials']], onDone: () => { setCard(''); setBadge('') },
   })
   const clear = useAction((id: string) => timeClockApi.setCredential(id, { badgeCode: '', clearCard: true }), { success: tx('Kart ve sicil kodu kaldırıldı'), invalidate: [['timeclock', 'credentials']] })
+  const confirm = useConfirm()
   return (
     <Panel>
       <PanelHead title={tx('Kart ve sicil kodları')} note={tx('Kart numarası yalnızca özet (hash) olarak saklanır, geri okunamaz. PIN\'i çalışan kendisi belirler.')} />
@@ -244,7 +249,9 @@ function CredentialsPanel() {
                 {c.hasCard && <StatusBadge tone="info">{tx('Kart')}</StatusBadge>}
                 {c.hasPin && <StatusBadge>{tx('PIN')}</StatusBadge>}
                 {c.locked && <StatusBadge tone="danger">{tx('Kilitli')}</StatusBadge>}
-                <Button size="icon" variant="ghost" aria-label={tx('Kaldır')} onClick={() => clear.mutate(c.employeeId)}><Trash2 className="size-4" /></Button>
+                <Button size="icon" variant="ghost" aria-label={tx('Kaldır')} onClick={async () => {
+                  if (await confirm({ title: tx('{0} için kart ve sicil kodu kaldırılsın mı?', [nameOf(c.employeeId)]), note: tx('Çalışan, yeni kart/sicil kodu tanımlanana kadar terminali kullanamaz.'), action: tx('Kaldır') })) clear.mutate(c.employeeId)
+                }}><Trash2 className="size-4" /></Button>
               </li>
             ))}
           </ul>
@@ -262,6 +269,7 @@ export function TimeClockAdminPage() {
   const [key, setKey] = useState<string | null>(null)
   const del = useAction((id: string) => timeClockApi.deleteSite(id), { success: tx('Nokta silindi'), invalidate: [['timeclock']] })
   const genKey = useAction((id: string) => timeClockApi.deviceKey(id), { invalidate: [['timeclock']], onDone: (r) => setKey(r.deviceKey) })
+  const confirm = useConfirm()
   return (
     <>
       <PageHeader title={tx('Giriş-çıkış yönetimi')} description={tx('Giriş-çıkış noktaları, kiosk QR ekranı, kart okuyucu terminalleri ve çalışan kartları.')}
@@ -280,9 +288,22 @@ export function TimeClockAdminPage() {
                     {s.checkLocation && <StatusBadge tone="warning">{tx('Konum denetimi')}</StatusBadge>}
                     {!s.isActive && <StatusBadge tone="danger">{tx('Pasif')}</StatusBadge>}
                     {s.allowQr && s.isActive && <Button size="sm" variant="outline" onClick={() => setKiosk(s)}><QrCode className="size-4" /> {tx('Kiosk')}</Button>}
-                    {s.allowTerminal && <Button size="sm" variant="outline" onClick={() => genKey.mutate(s.id)}><KeyRound className="size-4" /> {tx('Terminal anahtarı')}</Button>}
+                    {s.allowTerminal && <Button size="sm" variant="outline" disabled={genKey.isPending} onClick={async () => {
+                      // Anahtar varsa yenileme bağlı terminali hemen devre dışı bırakır: onay istenir.
+                      if (!s.hasDeviceKey || await confirm({
+                        title: tx('Terminal anahtarı yenilensin mi?'),
+                        note: tx('"{0}" noktasındaki terminalin mevcut anahtarı hemen geçersiz olur; yeni anahtar terminale girilene kadar kart/PIN ile giriş-çıkış yapılamaz.', [s.name]),
+                        action: tx('Yenile'),
+                      })) genKey.mutate(s.id)
+                    }}><KeyRound className="size-4" /> {tx('Terminal anahtarı')}</Button>}
                     <Button size="sm" variant="ghost" onClick={() => setEditing(s)}>{tx('Düzenle')}</Button>
-                    <Button size="icon" variant="ghost" aria-label={tx('Sil')} onClick={() => del.mutate(s.id)}><Trash2 className="size-4" /></Button>
+                    <Button size="icon" variant="ghost" aria-label={tx('Sil')} disabled={del.isPending} onClick={async () => {
+                      if (await confirm({
+                        title: tx('"{0}" noktası silinsin mi?', [s.name]),
+                        note: tx('Noktanın QR kiosku ve terminal anahtarı çalışmaz hâle gelir. Geçmiş giriş-çıkış kayıtları silinmez.'),
+                        action: tx('Sil'),
+                      })) del.mutate(s.id)
+                    }}><Trash2 className="size-4" /></Button>
                   </li>
                 ))}
               </ul>

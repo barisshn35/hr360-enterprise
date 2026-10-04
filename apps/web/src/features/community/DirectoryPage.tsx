@@ -8,13 +8,15 @@ import { EmptyState, ErrorState, RowsSkeleton } from '@/components/ui/States'
 import { engagementApi } from '@/api/engagement'
 import { Initials, PlanGate } from '@/features/shared/kit'
 import { cn } from '@/lib/utils'
-import { tx, appLocale } from '@/lib/i18n'
+import { tx } from '@/lib/i18n'
+import { normalizeSearch } from '@/lib/format'
 
 export function DirectoryPage() {
   const [q, setQ] = useState('')
   const term = useDeferredValue(q)
   const res = useQuery({ queryKey: ['directory-skills', term], queryFn: ({ signal }) => engagementApi.directory(term, signal), placeholderData: (p) => p })
-  const hl = (s: string) => term && s.toLocaleLowerCase(appLocale).includes(term.toLocaleLowerCase(appLocale))
+  // Sunucudaki katlamayla aynı: "AYSE" araması "Ayşe" becerisini/adını da vurgular.
+  const hl = (s: string) => term && normalizeSearch(s).includes(normalizeSearch(term))
   return (
     <PlanGate feature="profile">
       <PageHeader title={tx('Yetenek dizini')} description={tx('“Kubernetes bilen kim?”, “Almanca konuşan var mı?” — beceri ve ilgi alanına göre çalışma arkadaşı bulun.')} />

@@ -14,7 +14,9 @@ import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { AnimatePresence, motion } from 'motion/react'
 import { Crosshair, Lock, Plus, Search, Target } from 'lucide-react'
-import { formatScore, useGoals, useMyEmployeeId, useTeam, type Goal } from '@/api/performance'
+import { formatScore, useDeleteGoal, useGoals, useMyEmployeeId, useTeam, type Goal } from '@/api/performance'
+import { useConfirm } from '@/components/ui/Confirm'
+import { useToast } from '@/components/ui/Toast'
 import { useAuth } from '@/auth/useAuth'
 import { Button } from '@/components/ui/button'
 import { Panel } from '@/components/ui/Panel'
@@ -48,6 +50,17 @@ export function GoalsPage() {
   const selected = manager ? params.get('calisan') : (me.employeeId ?? null)
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState<Goal | null>(null)
+  const [editingGoal, setEditingGoal] = useState<Goal | null>(null)
+  const confirm = useConfirm()
+  const toast = useToast()
+  const deleteGoal = useDeleteGoal()
+  const removeGoal = async (g: Goal) => {
+    if (!(await confirm({ title: tx('Hedef silinsin mi?'), note: tx('«{0}» hedefi ve ilerlemesi kalıcı olarak silinir; hedef ayağı puanı yeniden hesaplanır.', [g.title]), action: tx('Sil') }))) return
+    deleteGoal.mutate(g.id, {
+      onSuccess: () => toast.ok(tx('«{0}» silindi.', [g.title])),
+      onError: (e) => toast.stop(errorText(e)),
+    })
+  }
 
   const setParam = (k: string, v: string | null) => {
     const p = new URLSearchParams(params)
@@ -273,7 +286,7 @@ export function GoalsPage() {
                   <div className="grid gap-3 md:grid-cols-2">
                     <AnimatePresence initial={false}>
                       {goals.map((g, i) => (
-                        <GoalCard key={g.id} goal={g} totalWeight={totalWeight} index={i} canEdit={editable} onUpdate={() => setEditing(g)} />
+                        <GoalCard key={g.id} goal={g} totalWeight={totalWeight} index={i} canEdit={editable} onUpdate={() => setEditing(g)} onEdit={() => setEditingGoal(g)} onDelete={() => void removeGoal(g)} />
                       ))}
                     </AnimatePresence>
                   </div>
@@ -290,6 +303,7 @@ export function GoalsPage() {
       )}
 
       {creating && selected && cycle && <CreateGoalDialog employeeId={selected} employeeName={selectedName} cycle={cycle} existing={goals} onClose={() => setCreating(false)} />}
+      {editingGoal && selected && cycle && <CreateGoalDialog employeeId={selected} employeeName={selectedName} cycle={cycle} existing={goals} goal={editingGoal} onClose={() => setEditingGoal(null)} />}
       {editing && <ProgressDialog goal={editing} onClose={() => setEditing(null)} />}
     </div>
   )

@@ -14,6 +14,7 @@ import { NewAssignmentModal } from './NewAssignmentModal'
 import { AttritionRiskPanel } from './AttritionRiskCard'
 import { ExtraInfoPanel } from '@/features/governance/CustomFields'
 import { tx } from '@/lib/i18n'
+import { ApiError } from '@/api/client'
 
 export function EmployeeDetailPage() {
   const { employeeId } = useParams<{ employeeId: string }>()
@@ -39,6 +40,19 @@ export function EmployeeDetailPage() {
   )
 
   if (employee.isPending) return <CenteredSpinner label={tx('Çalışan yükleniyor')} />
+
+  // Geçersiz/silinmiş kimlik: "Not Found" ve yeniden dene yerine anlamlı boş durum.
+  if (employee.error instanceof ApiError && (employee.error.status === 404 || employee.error.status === 400)) {
+    return (
+      <Panel>
+        <EmptyState
+          title={tx('Çalışan bulunamadı')}
+          detail={tx('Bağlantı hatalı olabilir ya da kayıt silinmiş.')}
+          action={<Button asChild size="sm" variant="outline"><Link to="/panel/calisanlar">{tx('Çalışanlar')}</Link></Button>}
+        />
+      </Panel>
+    )
+  }
 
   if (employee.isError || !employee.data) {
     return (

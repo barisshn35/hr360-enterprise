@@ -18,6 +18,7 @@ import { formatDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { Metric, PlanGate, useAction } from '@/features/shared/kit'
 import { tx, pct } from '@/lib/i18n'
+import { useConfirm } from '@/components/ui/Confirm'
 import { EnpsTrendPanel, SentimentSummary } from './SurveyInsights'
 
 /** Sunucudaki anket anonimlik eşiği (engagement-service HrControllers.AnonymityThreshold = 5, KVKK). */
@@ -229,6 +230,14 @@ function BuilderModal({ onClose }: { onClose: () => void }) {
   )
 }
 
+/** Anket türü sunucudan İngilizce enum olarak gelir; kullanıcıya Türkçe etiket gösterilir. */
+function surveyKindLabel(kind: string): string {
+  if (kind === 'eNPS') return 'eNPS'
+  if (kind === 'Pulse') return tx('Nabız anketi')
+  if (kind === 'Custom') return tx('Özel anket')
+  return kind
+}
+
 export function SurveysPage() {
   const { roles } = useAuth()
   const hr = isHr(roles, 'ext-engagement-manage')
@@ -240,6 +249,13 @@ export function SurveysPage() {
   const tpl = useAction((k: 'enps' | 'pulse') => engagementApi.surveyFromTemplate(k), { success: tx('Şablondan taslak oluşturuldu'), invalidate: [['surveys']] })
   const status = useAction(({ id, s }: { id: string; s: Survey['status'] }) => engagementApi.setSurveyStatus(id, s), { success: tx('Güncellendi'), invalidate: [['surveys']] })
   const del = useAction((id: string) => engagementApi.deleteSurvey(id), { success: tx('Silindi'), invalidate: [['surveys']] })
+  const confirm = useConfirm()
+  const askDelete = async (s: Survey) => {
+    const note = s.responseCount > 0
+      ? tx('Bu ankete verilmiş {0} yanıt ve sonuçları da kalıcı olarak silinir.', [s.responseCount])
+      : tx('Anket ve soruları kalıcı olarak silinir.')
+    if (await confirm({ title: tx('“{0}” silinsin mi?', [s.title]), note, action: tx('Sil') })) del.mutate(s.id)
+  }
 
   const open = (list.data ?? []).filter((s) => s.status === 'Open')
   return (
@@ -258,7 +274,7 @@ export function SurveysPage() {
             {open.map((s, i) => (
               <motion.div key={s.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06 }} className="surface flex flex-col rounded-2xl border border-border p-5">
                 <div className="flex items-center gap-2">
-                  <StatusBadge tone={s.kind === 'eNPS' ? 'info' : 'neutral'}>{s.kind}</StatusBadge>
+                  <StatusBadge tone={s.kind === 'eNPS' ? 'info' : 'neutral'}>{surveyKindLabel(s.kind)}</StatusBadge>
                   {s.isAnonymous && <span className="flex items-center gap-1 text-[12px] text-muted-foreground"><ShieldCheck className="size-3.5" />{' '}{tx('anonim')}</span>}
                 </div>
                 <h3 className="mt-3 text-[15.5px] font-semibold">{s.title}</h3>
@@ -285,13 +301,13 @@ export function SurveysPage() {
                     <li key={s.id} className="flex flex-wrap items-center gap-3 px-5 py-3.5">
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-[14px] font-medium">{s.title}</p>
-                        <p className="text-[12px] text-muted-foreground">{tx('{0} · {1} soru · {2} yanıt · {3}', [s.kind, s.questions.length, s.responseCount, s.createdByName])}</p>
+                        <p className="text-[12px] text-muted-foreground">{tx('{0} · {1} soru · {2} yanıt · {3}', [surveyKindLabel(s.kind), s.questions.length, s.responseCount, s.createdByName])}</p>
                       </div>
                       <StatusBadge tone={statusTone[s.status]}>{statusLabel[s.status]}</StatusBadge>
                       {s.status !== 'Open' && <Button size="sm" variant="outline" onClick={() => status.mutate({ id: s.id, s: 'Open' })}>{tx('Yayınla')}</Button>}
                       {s.status === 'Open' && <Button size="sm" variant="outline" onClick={() => status.mutate({ id: s.id, s: 'Closed' })}>{tx('Kapat')}</Button>}
                       <Button size="sm" variant="outline" onClick={() => setResults(s)} disabled={s.responseCount === 0}><BarChart3 className="size-4" />{' '}{tx('Sonuçlar')}</Button>
-                      <Button size="icon" variant="ghost" aria-label={tx('Sil')} onClick={() => del.mutate(s.id)}><Trash2 className="size-4" /></Button>
+                      <Button size="icon" variant="ghost" aria-label={tx('Sil')} onClick={() => askDelete(s)}><Trash2 className="size-4" /></Button>
                     </li>
                   ))}
                 </ul>

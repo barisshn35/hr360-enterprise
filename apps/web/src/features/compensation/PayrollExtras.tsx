@@ -14,7 +14,7 @@ import { useToast } from '@/components/ui/Toast'
 import { useAuth } from '@/auth/useAuth'
 import { useDirectory } from '@/api/directory'
 import { payrollExtrasApi, type AdvanceStatus, type BenefitOption, type ExportKind, type RaiseCycle, type SalaryAdvance, type WorksheetRow } from '@/api/payrollExtras'
-import { formatDate, formatDateTime, formatMoney } from '@/lib/format'
+import { formatDate, formatDateTime, formatMoney, parseDecimal } from '@/lib/format'
 import { Metric, errMsg, isoDate, useAction } from '@/features/shared/kit'
 import { tx } from '@/lib/i18n'
 
@@ -267,14 +267,20 @@ export function BenefitsPage() {
 function CycleModal({ onClose }: { onClose: () => void }) {
   const y = new Date().getFullYear()
   const [f, setF] = useState({ name: tx('{0} yıllık zam', [y + 1]), year: String(y + 1), budget: '10', effective: `${y + 1}-01-01` })
-  const save = useAction(() => payrollExtrasApi.createCycle({ name: f.name, year: Number(f.year), budgetPercent: Number(f.budget), effectiveDate: f.effective }), { success: tx('Zam dönemi oluşturuldu'), invalidate: [['raise']], onDone: onClose })
+  const save = useAction(() => payrollExtrasApi.createCycle({ name: f.name, year: Number(f.year), budgetPercent: parseDecimal(f.budget) ?? 0, effectiveDate: f.effective }), { success: tx('Zam dönemi oluşturuldu'), invalidate: [['raise']], onDone: onClose })
+  // Sunucuyla aynı aralık: geçen yıl .. iki yıl sonrası; bütçe %0–100.
+  const yearNum = Number(f.year)
+  const yearErr = !Number.isInteger(yearNum) || yearNum < y - 1 || yearNum > y + 2 ? tx('Yıl {0}–{1} aralığında olmalı.', [y - 1, y + 2]) : undefined
+  const budgetNum = parseDecimal(f.budget)
+  const budgetErr = budgetNum === null || budgetNum < 0 || budgetNum > 100 ? tx('Bütçe %0–100 arasında olmalı.') : undefined
+  const invalid = !f.name.trim() || !!yearErr || !!budgetErr || !f.effective
   return (
-    <Modal open onClose={onClose} title={tx('Yeni zam dönemi')} footer={<><Button variant="outline" onClick={onClose}>{tx('Vazgeç')}</Button><Button onClick={() => save.mutate(undefined)} disabled={save.isPending}>{tx('Oluştur')}</Button></>}>
+    <Modal open onClose={onClose} title={tx('Yeni zam dönemi')} footer={<><Button variant="outline" onClick={onClose}>{tx('Vazgeç')}</Button><Button onClick={() => save.mutate(undefined)} disabled={save.isPending || invalid}>{tx('Oluştur')}</Button></>}>
       <div className="space-y-3">
         <TextField label={tx('Ad')} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
         <div className="grid grid-cols-3 gap-3">
-          <TextField label={tx('Yıl')} type="number" value={f.year} onChange={(e) => setF({ ...f, year: e.target.value })} />
-          <TextField label={tx('Bütçe (%)')} type="number" value={f.budget} onChange={(e) => setF({ ...f, budget: e.target.value })} />
+          <TextField label={tx('Yıl')} type="number" min={y - 1} max={y + 2} value={f.year} error={yearErr} onChange={(e) => setF({ ...f, year: e.target.value })} />
+          <TextField label={tx('Bütçe (%)')} inputMode="decimal" value={f.budget} error={budgetErr} onChange={(e) => setF({ ...f, budget: e.target.value })} />
           <TextField label={tx('Yürürlük')} type="date" value={f.effective} onChange={(e) => setF({ ...f, effective: e.target.value })} />
         </div>
       </div>
@@ -311,7 +317,7 @@ function Worksheet({ cycle }: { cycle: RaiseCycle }) {
   return (
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-3">
-        <Metric label={tx('Bütçe')} value={formatMoney(d.budget)} hint={tx('aylık brüt toplamın %{0}\'i', [cycle.budgetPercent])} />
+        <Metric label={tx('Bütçe')} value={formatMoney(d.budget)} hint={tx('bütçe oranı: %{0} (aylık brüt toplam üzerinden)', [cycle.budgetPercent])} />
         <Metric label={tx('Önerilen artış')} value={formatMoney(d.used)} tone={d.used > d.budget ? 'bad' : 'good'} />
         <Metric label={tx('Kişi')} value={d.rows.length} />
       </div>
@@ -368,6 +374,9 @@ export function RaiseCyclesPage() {
   const [sel, setSel] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const current = q.data?.find((c) => c.id === sel) ?? q.data?.[0]
+  const confirm = useConfirm()
+  // Yalnızca öneri girilmemiş ve uygulanmamış dönem silinebilir; sunucu öneri varsa 409 döner.
+  const remove = useAction((id: string) => payrollExtrasApi.deleteCycle(id), { success: tx('Zam dönemi silindi'), invalidate: [['raise']], onDone: () => setSel(null) })
   if (!allowed) return <EmptyState icon={TrendingUp} title={tx('Zam dönemi')} detail={tx('Bu ekran yalnızca yöneticilere ve İK\'ya açıktır.')} />
   return (
     <>
@@ -375,7 +384,18 @@ export function RaiseCyclesPage() {
         actions={admin ? <Button onClick={() => setCreating(true)}><Plus className="size-4" />{' '}{tx('Yeni dönem')}</Button> : undefined} />
       {q.isPending ? <RowsSkeleton /> : !current ? <EmptyState icon={TrendingUp} title={tx('Zam dönemi yok')} detail={admin ? tx('Yeni bir dönem oluşturun.') : tx('İK bir zam dönemi açtığında burada görünür.')} /> : (
         <>
-          <div className="mb-4 w-80"><SelectField label={tx('Dönem')} value={current.id} onChange={setSel} options={q.data!.map((c) => ({ value: c.id, label: `${c.name} · ${{ Draft: tx('Taslak'), Open: tx('Açık'), Closed: tx('Kapandı') }[c.status]}` }))} /></div>
+          <div className="mb-4 flex flex-wrap items-end gap-3">
+            <div className="w-80"><SelectField label={tx('Dönem')} value={current.id} onChange={setSel} options={q.data!.map((c) => ({ value: c.id, label: `${c.name} · ${{ Draft: tx('Taslak'), Open: tx('Açık'), Closed: tx('Kapandı') }[c.status]}` }))} /></div>
+            {admin && !current.appliedAt && (
+              <Button variant="ghost" className="text-destructive" disabled={remove.isPending} onClick={async () => {
+                if (await confirm({
+                  title: tx('"{0}" dönemi silinsin mi?', [current.name]),
+                  note: tx('Yalnızca öneri girilmemiş dönem silinebilir. Öneri varsa dönemi silmek yerine kapatın.'),
+                  action: tx('Sil'),
+                })) remove.mutate(current.id)
+              }}>{tx('Dönemi sil')}</Button>
+            )}
+          </div>
           <Worksheet key={current.id} cycle={current} />
         </>
       )}

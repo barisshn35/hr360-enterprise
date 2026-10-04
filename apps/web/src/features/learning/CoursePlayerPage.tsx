@@ -12,6 +12,7 @@ import {
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Panel, PanelBody, PanelHead } from '@/components/ui/Panel'
 import { Button } from '@/components/ui/button'
+import { ApiError } from '@/api/client'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Modal } from '@/components/ui/Modal'
 import { SelectField, TextAreaField, TextField } from '@/components/ui/Field'
@@ -425,6 +426,8 @@ export function CoursePlayerPage() {
     ...(isHr ? [{ key: 'yonetim' as TabKey, label: tx('İçerik yönetimi') }] : []),
   ]
 
+  if (course.error instanceof ApiError && (course.error.status === 404 || course.error.status === 400))
+    return <EmptyState title={tx('Eğitim bulunamadı')} detail={tx('Bağlantı hatalı olabilir ya da eğitim kaldırılmış.')} action={<Button asChild size="sm" variant="outline"><Link to="/panel/egitim">{tx('Eğitimler')}</Link></Button>} />
   if (course.isError) return <ErrorState message={errMsg(course.error)} onRetry={() => void course.refetch()} />
   const finished = p && ['Completed', 'Failed', 'Dropped'].includes(p.status)
 

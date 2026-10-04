@@ -39,6 +39,7 @@ import { Segmented, errorText } from '@/features/performance/components/controls
 import {
   DAY_STYLE,
   DayBlock,
+  LaborWarnings,
   Legend,
   PATTERN_TYPES,
   PatternStrip,
@@ -327,6 +328,7 @@ function PatternBuilderDialog({ onClose }: { onClose: () => void }) {
               {errors.days}
             </p>
           )}
+          <LaborWarnings days={days} className="mt-2" />
         </div>
 
         {/* Seçili gün düzenleyici */}
@@ -453,7 +455,17 @@ function PatternBuilderDialog({ onClose }: { onClose: () => void }) {
 
 /* ---------------------------------- Silme onayı --------------------------------- */
 
-function DeletePatternDialog({ pattern, usedBy, onClose }: { pattern: ShiftPattern; usedBy: string[]; onClose: () => void }) {
+function DeletePatternDialog({
+  pattern,
+  usedBy,
+  onClose,
+  onOpenTeam,
+}: {
+  pattern: ShiftPattern
+  usedBy: Array<{ id: string; name: string }>
+  onClose: () => void
+  onOpenTeam?: (teamId: string) => void
+}) {
   const toast = useToast()
   const del = useDeleteShiftPattern()
   const conflict = del.error instanceof ApiError && del.error.status === 409
@@ -490,9 +502,22 @@ function DeletePatternDialog({ pattern, usedBy, onClose }: { pattern: ShiftPatte
       <div className="space-y-3 text-[13px]">
         <PatternStrip days={sortedDays(pattern)} size="sm" />
         {usedBy.length > 0 ? (
-          <p className="rounded-lg border border-[hsl(var(--warning))]/30 bg-[hsl(var(--warning))]/8 px-3 py-2.5">
-            {tx('Bu deseni kullanan ekip var:')}{' '}<strong>{usedBy.join(', ')}</strong>{tx('. Silmek için önce bu ekiplerin deseni kullanmaması gerekir.')}
-          </p>
+          <div className="space-y-2 rounded-lg border border-[hsl(var(--warning))]/30 bg-[hsl(var(--warning))]/8 px-3 py-2.5">
+            <p>{tx('Bu deseni kullanan ekip var. Silmek için önce her ekibi düzenleyip başka bir desene taşıyın (Ekipler › ekip › Düzenle › Desen) ya da üyesi kalmayan ekibi silin.')}</p>
+            <ul className="flex flex-wrap gap-2">
+              {usedBy.map((t) => (
+                <li key={t.id}>
+                  {onOpenTeam ? (
+                    <Button size="sm" variant="outline" onClick={() => { onClose(); onOpenTeam(t.id) }}>
+                      {tx('{0} ekibini aç', [t.name])}
+                    </Button>
+                  ) : (
+                    <strong>{t.name}</strong>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
         ) : (
           <p className="text-muted-foreground">{tx('Deseni kullanan ekip yok; silmek mevcut takvimleri etkilemez.')}</p>
         )}
@@ -510,7 +535,7 @@ function DeletePatternDialog({ pattern, usedBy, onClose }: { pattern: ShiftPatte
 
 /* ------------------------------------ Liste ------------------------------------ */
 
-export function PatternsView() {
+export function PatternsView({ onOpenTeam }: { onOpenTeam?: (teamId: string) => void } = {}) {
   const { can } = useAuth()
   const manage = can('timeshift:manage')
   const patterns = useShiftPatterns()
@@ -519,8 +544,8 @@ export function PatternsView() {
   const [deleting, setDeleting] = useState<ShiftPattern | null>(null)
 
   const usage = useMemo(() => {
-    const map = new Map<string, string[]>()
-    for (const t of teams.data ?? []) map.set(t.shiftPatternId, [...(map.get(t.shiftPatternId) ?? []), t.name])
+    const map = new Map<string, Array<{ id: string; name: string }>>()
+    for (const t of teams.data ?? []) map.set(t.shiftPatternId, [...(map.get(t.shiftPatternId) ?? []), { id: t.id, name: t.name }])
     return map
   }, [teams.data])
 
@@ -599,6 +624,7 @@ export function PatternsView() {
                 />
                 <PanelBody className="space-y-3">
                   <PatternStrip days={days} size="sm" />
+                  <LaborWarnings days={days} />
                   <dl className="flex flex-wrap gap-x-6 gap-y-1 text-[12px] text-muted-foreground">
                     {(['Day', 'Night'] as const).map((t) => {
                       const d = days.find((x) => x.type === t)
@@ -615,7 +641,7 @@ export function PatternsView() {
                     </div>
                     <div className="flex gap-1.5">
                       <dt>{tx('Kullanan ekip')}</dt>
-                      <dd className="text-foreground">{usedBy.length ? usedBy.join(', ') : 'yok'}</dd>
+                      <dd className="text-foreground">{usedBy.length ? usedBy.map((t) => t.name).join(', ') : tx('yok')}</dd>
                     </div>
                   </dl>
                 </PanelBody>
@@ -627,7 +653,7 @@ export function PatternsView() {
 
       {building && <PatternBuilderDialog onClose={() => setBuilding(false)} />}
       {deleting && (
-        <DeletePatternDialog pattern={deleting} usedBy={usage.get(deleting.id) ?? []} onClose={() => setDeleting(null)} />
+        <DeletePatternDialog pattern={deleting} usedBy={usage.get(deleting.id) ?? []} onClose={() => setDeleting(null)} onOpenTeam={onOpenTeam} />
       )}
     </div>
   )

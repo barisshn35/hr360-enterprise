@@ -4,10 +4,11 @@ import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Award, Printer } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/button'
-import { ErrorState, RowsSkeleton } from '@/components/ui/States'
+import { EmptyState, ErrorState, RowsSkeleton } from '@/components/ui/States'
 import { useToast } from '@/components/ui/Toast'
 import { learningContentApi, type CertificateView } from '@/api/learningContent'
 import { errMsg } from '@/features/shared/kit'
+import { ApiError } from '@/api/client'
 import { formatDate } from '@/lib/format'
 import { appLocale, tx } from '@/lib/i18n'
 
@@ -52,7 +53,9 @@ export function CertificatePage() {
           </>
         }
       />
-      {q.isPending ? <RowsSkeleton rows={4} columns={1} /> : q.isError ? <ErrorState message={errMsg(q.error)} onRetry={() => void q.refetch()} /> : (
+      {q.isPending ? <RowsSkeleton rows={4} columns={1} /> : q.error instanceof ApiError && (q.error.status === 404 || q.error.status === 400) ? (
+        <EmptyState title={tx('Sertifika bulunamadı')} detail={tx('Bağlantı hatalı olabilir ya da sertifika kaldırılmış.')} />
+      ) : q.isError ? <ErrorState message={errMsg(q.error)} onRetry={() => void q.refetch()} /> : (
         <div className="mx-auto max-w-3xl rounded-2xl border-4 border-double border-[hsl(var(--warning))]/60 bg-card px-8 py-10 text-center shadow-sm">
           <Award className="mx-auto size-10 text-[hsl(var(--warning))]" aria-hidden />
           <p className="mt-2 text-[12px] uppercase tracking-[0.3em] text-muted-foreground">{q.data.company ?? q.data.issuer}</p>

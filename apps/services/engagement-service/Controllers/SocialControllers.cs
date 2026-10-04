@@ -346,7 +346,16 @@ public class ProfileController : AppController
         var policy = await FieldPolicies.ForTenantAsync(Db, Tenant, ct);
         var dirViewer = Me.IsHr ? "hr" : "other";
         bool DirSee(string f) => FieldPolicies.CanSee(policy[f], dirViewer);
-        var term = q?.Trim().ToLowerInvariant();
+        // Çalışan listesindeki aramayla aynı katlama (Paging.Fold / SQL hr360_fold): "AYSE" = "ayşe".
+        static string Fold(string? value)
+        {
+            var s = (value ?? "").Replace('İ', 'i').Replace('I', 'i').ToLowerInvariant();
+            return string.Concat(s.Select(ch => ch switch
+            {
+                'ı' => 'i', 'ş' => 's', 'ğ' => 'g', 'ü' => 'u', 'ö' => 'o', 'ç' => 'c', 'â' => 'a', 'î' => 'i', 'û' => 'u', _ => ch,
+            }));
+        }
+        var term = Fold(q?.Trim());
         var rows = people.Select(p =>
         {
             profiles.TryGetValue(p.Id, out var pr);
@@ -358,11 +367,11 @@ public class ProfileController : AppController
             };
         });
         if (!string.IsNullOrEmpty(term))
-            rows = rows.Where(r => r.name.ToLowerInvariant().Contains(term)
-                || (r.position ?? "").ToLowerInvariant().Contains(term)
-                || (r.department ?? "").ToLowerInvariant().Contains(term)
-                || r.skills.Any(s => s.ToLowerInvariant().Contains(term))
-                || r.interests.Any(s => s.ToLowerInvariant().Contains(term)));
+            rows = rows.Where(r => Fold(r.name).Contains(term)
+                || Fold(r.position).Contains(term)
+                || Fold(r.department).Contains(term)
+                || r.skills.Any(s => Fold(s).Contains(term))
+                || r.interests.Any(s => Fold(s).Contains(term)));
         var list = rows.ToList();
         var topSkills = list.SelectMany(r => r.skills).GroupBy(s => s.ToLowerInvariant())
             .Select(g => new { skill = g.First(), count = g.Count() }).OrderByDescending(x => x.count).Take(20);

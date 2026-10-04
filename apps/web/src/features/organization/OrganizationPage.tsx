@@ -23,7 +23,9 @@ export function OrganizationPage() {
     {
       id: 'name',
       header: tx('Şirket'),
-      searchText: (c) => `${c.name} ${c.taxNumber ?? ''}`,
+      searchText: (c) => `${c.name} ${c.taxNumber ?? ''}`.trim(),
+      // CSV'de arama metni (ad + boş vergi no → sonda boşluk) değil yalnızca ad yazılır.
+      exportText: (c) => c.name.trim(),
       sortValue: (c) => c.name,
       cell: (c) => (
         <div className="flex items-center gap-3">

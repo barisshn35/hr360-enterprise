@@ -1,21 +1,59 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
-import { Briefcase, CalendarDays, Radio, Users, Workflow } from 'lucide-react'
+import { Briefcase, CalendarDays, FileSignature, Radio, Users, Workflow } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Panel, PanelBody, PanelHead } from '@/components/ui/Panel'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { InfoNote } from '@/components/ui/States'
 import { governanceApi, streamEvents, type RadarEvent } from '@/api/governance'
-import { formatRelativeToNow } from '@/lib/format'
+import { formatDateTime, formatNumber, formatRelativeToNow } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { PlanGate } from '@/features/shared/kit'
-import { tx, txServer } from '@/lib/i18n'
+import { appLocale, tx, txServer } from '@/lib/i18n'
 
 const TOPIC: Record<string, { label: string; color: string; angle: number; icon: React.ElementType }> = {
   'hr360.employee.events': { label: tx('Çalışan'), color: '#10b981', angle: 30, icon: Users },
   'hr360.leave.events': { label: tx('İzin'), color: '#38bdf8', angle: 150, icon: CalendarDays },
   'hr360.workflow.events': { label: tx('Onay akışı'), color: '#f59e0b', angle: 270, icon: Workflow },
+  'governance.internal': { label: tx('Belge imzası'), color: '#a78bfa', angle: 90, icon: FileSignature },
+}
+
+/** Olay türlerinin okunur adları (radar listesi ve akış satırı). */
+const EVENT_LABEL: Record<string, string> = {
+  'employee.hired': tx('İşe alım'),
+  'employee.assigned': tx('Görevlendirme'),
+  'employee.status-changed': tx('Çalışan durumu değişti'),
+  'workflow.submitted': tx('Onaya gönderildi'),
+  'workflow.approved': tx('Onaylandı'),
+  'workflow.rejected': tx('Reddedildi'),
+  'workflow.step-approved': tx('Onay adımı geçti'),
+  'leave.approved': tx('İzin onaylandı'),
+  'leave.rejected': tx('İzin reddedildi'),
+  'leave.cancelled': tx('İzin iptal edildi'),
+  'document.signed': tx('Belge imzalandı'),
+}
+const eventLabel = (t: string) => EVENT_LABEL[t] ?? t
+
+// Diğer servislerin özetleri (ör. "1 saat fazla mesai (01.10.2026)") gg.aa.yyyy kullanır; ISO tarihler de aynı sayısal biçime çevrilir.
+const NUMERIC_DATE = new Intl.DateTimeFormat(appLocale, { day: '2-digit', month: '2-digit', year: 'numeric' })
+const isoToLocal = (iso: string) => {
+  const [y, m, d] = iso.slice(0, 10).split('-').map(Number)
+  return NUMERIC_DATE.format(new Date(y, m - 1, d))
+}
+
+const STATUS: Record<string, string> = { Active: tx('Aktif'), OnLeave: tx('İzinde'), Terminated: tx('Ayrıldı') }
+
+/**
+ * Sunucu özetleri farklı servislerden gelir: ISO tarih (2026-10-04), noktalı ondalık ("1.5 saat") ve
+ * İngilizce durum adları (Active → Terminated) yerel biçime çevrilir.
+ */
+function localizeSummary(s: string): string {
+  return s
+    .replace(/\b(\d{4}-\d{2}-\d{2})T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})?/g, (m) => formatDateTime(m))
+    .replace(/\b\d{4}-\d{2}-\d{2}\b/g, (m) => isoToLocal(m))
+    .replace(/\b(\d+\.\d+)(?=\s*(?:saat|gün|hours?|days?)\b)/g, (m) => formatNumber(Number(m)))
+    .replace(/\b(Active|OnLeave|Terminated)\b/g, (m) => STATUS[m] ?? m)
 }
 const topicOf = (t: string) => TOPIC[t] ?? { label: t.replace('hr360.', '').replace('.events', ''), color: '#a78bfa', angle: (t.length * 47) % 360, icon: Briefcase }
 
@@ -42,7 +80,7 @@ function Radar({ blips }: { blips: Array<RadarEvent & { r: number; a: number }> 
           const y = 50 + Math.sin((b.a * Math.PI) / 180) * b.r * 0.45
           return (
             <motion.span key={b.id} initial={{ scale: 0, opacity: 0 }} animate={{ scale: [0, 1.8, 1], opacity: 1 }} exit={{ opacity: 0, scale: 0 }} transition={{ duration: 0.8 }}
-              className="absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full" style={{ left: `${x}%`, top: `${y}%`, background: t.color, boxShadow: `0 0 14px ${t.color}` }} title={txServer(b.summary)}>
+              className="absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full" style={{ left: `${x}%`, top: `${y}%`, background: t.color, boxShadow: `0 0 14px ${t.color}` }} title={localizeSummary(txServer(b.summary))}>
               <span className="absolute inset-0 animate-ping rounded-full" style={{ background: t.color, opacity: 0.4 }} />
             </motion.span>
           )
@@ -50,6 +88,17 @@ function Radar({ blips }: { blips: Array<RadarEvent & { r: number; a: number }> 
       </AnimatePresence>
       <div className="absolute inset-0 grid place-items-center"><span className="size-2 rounded-full bg-primary shadow-[0_0_20px_hsl(var(--primary))]" /></div>
     </div>
+  )
+}
+
+/** Radar noktalarının renk açıklaması. */
+function Legend() {
+  return (
+    <ul className="mt-3 flex flex-wrap justify-center gap-x-4 gap-y-1 text-[12px] text-muted-foreground" aria-label={tx('Renk açıklaması')}>
+      {Object.values(TOPIC).map((t) => (
+        <li key={t.label} className="flex items-center gap-1.5"><span className="size-2.5 rounded-full" style={{ background: t.color }} />{t.label}</li>
+      ))}
+    </ul>
   )
 }
 
@@ -87,11 +136,11 @@ export function EventRadarPage() {
       <PageHeader title={tx('Canlı olay radarı')} description={tx('Kafka\'daki iş olayları gerçek zamanlı: işe alım, görevlendirme, izin onayı, onay akışı… Bir talep oluşturun, burada belirdiğini görün.')} />
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <StatusBadge tone={state === 'live' ? 'success' : state === 'error' ? 'danger' : 'warning'}><Radio className="size-3" /> {state === 'live' ? tx('Canlı bağlantı') : state === 'error' ? tx('Bağlantı koptu — yeniden deneniyor') : tx('Bağlanıyor')}</StatusBadge>
-        {stats.data && <span className="text-[12.5px] text-muted-foreground">{tx('Son 7 gün {0} olay · {1} canlı izleyici', [stats.data.byType.reduce((a, b) => a + b.count, 0), stats.data.listeners])}</span>}
+        {stats.data && <span className="text-[12.5px] text-muted-foreground">{tx('Son 7 gün {0} olay · {1} canlı izleyici', [formatNumber(stats.data.byType.reduce((a, b) => a + b.count, 0)), stats.data.listeners])}</span>}
       </div>
       <div className="grid gap-6 xl:grid-cols-[440px_1fr]">
         <div className="space-y-5">
-          <Panel><PanelBody><Radar blips={blips} /></PanelBody></Panel>
+          <Panel><PanelBody><Radar blips={blips} /><Legend /></PanelBody></Panel>
           <Panel>
             <PanelHead title={tx('Olay türleri (7 gün)')} />
             <PanelBody className="space-y-2">
@@ -99,7 +148,7 @@ export function EventRadarPage() {
                 const max = Math.max(...(stats.data?.byType ?? []).map((x) => x.count), 1)
                 return (
                   <div key={t.type} className="text-[12.5px]">
-                    <div className="mb-0.5 flex justify-between"><span className="font-mono">{t.type}</span><span className="tabular">{t.count}</span></div>
+                    <div className="mb-0.5 flex justify-between"><span title={t.type}>{eventLabel(t.type)}</span><span className="tabular">{formatNumber(t.count)}</span></div>
                     <div className="h-1.5 overflow-hidden rounded-full bg-muted"><motion.div initial={{ width: 0 }} animate={{ width: `${(100 * t.count) / max}%` }} className="h-full rounded-full bg-primary" /></div>
                   </div>
                 )
@@ -120,8 +169,8 @@ export function EventRadarPage() {
                     className={cn('flex items-start gap-3 rounded-xl border p-3', isNew ? 'border-primary/40 bg-primary/5' : 'border-border')}>
                     <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg" style={{ background: `${t.color}22`, color: t.color }}><t.icon className="size-4" /></span>
                     <div className="min-w-0 flex-1">
-                      <p className="text-[13.5px]">{txServer(e.summary)}</p>
-                      <p className="text-[11.5px] text-muted-foreground"><span className="font-mono">{e.eventType}</span> · {formatRelativeToNow(e.occurredAt)}{e.tenantSlug ? ` · ${e.tenantSlug}` : ''}</p>
+                      <p className="text-[13.5px]">{localizeSummary(txServer(e.summary))}</p>
+                      <p className="text-[11.5px] text-muted-foreground"><span title={e.eventType}>{eventLabel(e.eventType)}</span> · <time dateTime={e.occurredAt} title={formatDateTime(e.occurredAt)}>{formatRelativeToNow(e.occurredAt)}</time>{e.tenantSlug ? ` · ${e.tenantSlug}` : ''}</p>
                     </div>
                     {isNew && <span className="rounded-full bg-primary px-1.5 py-px text-[10px] font-semibold text-primary-foreground">{tx('YENİ')}</span>}
                   </motion.div>

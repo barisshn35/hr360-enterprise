@@ -14,6 +14,7 @@ import { workflowApi, type ApproverKind, type ConditionField, type DefinitionInp
 import { PersonSelect, useAction } from '@/features/shared/kit'
 import { cn } from '@/lib/utils'
 import { tx } from '@/lib/i18n'
+import { useConfirm } from '@/components/ui/Confirm'
 import { DelegationsModal } from './DelegationsModal'
 
 const TYPES: WorkflowType[] = ['LeaveRequest', 'ExpenseClaim', 'Overtime', 'DocumentRequest', 'PositionChange', 'AssetRequest', 'Other']
@@ -154,6 +155,10 @@ export function WorkflowDesignerPage() {
   const [editing, setEditing] = useState<WorkflowDefinition | 'new' | null>(null)
   const [delegations, setDelegations] = useState(false)
   const del = useAction((id: string) => workflowApi.deleteDefinition(id), { success: tx('Akış silindi'), invalidate: [['wf-definitions']] })
+  const confirm = useConfirm()
+  const askDelete = async (name: string, id: string) => {
+    if (await confirm({ title: tx('“{0}” akışı silinsin mi?', [name]), note: tx('Yeni talepler bu akışa göre yönlendirilmez (uygun başka tanım yoksa bölüm başına gider). Süren onaylar etkilenmez. Geçici olarak durdurmak için akışı pasifleştirebilirsiniz.'), action: tx('Sil') })) del.mutate(id)
+  }
   const grouped = useMemo(() => TYPES.map((t) => ({ t, defs: (q.data ?? []).filter((d) => d.type === t) })).filter((g) => g.defs.length), [q.data])
   return (
     <>
@@ -174,7 +179,7 @@ export function WorkflowDesignerPage() {
                       <span className="text-muted-foreground">{tx('{0} adım', [d.steps.length])}</span>
                       {d.isActive ? <StatusBadge tone="success">{tx('Etkin')}</StatusBadge> : <StatusBadge>{tx('Pasif')}</StatusBadge>}
                       <Button size="sm" variant="ghost" onClick={() => setEditing(d)}>{tx('Düzenle')}</Button>
-                      <Button size="icon" variant="ghost" aria-label={tx('Sil')} onClick={() => del.mutate(d.id)}><Trash2 className="size-4" /></Button>
+                      <Button size="icon" variant="ghost" aria-label={tx('Sil')} onClick={() => askDelete(d.name, d.id)}><Trash2 className="size-4" /></Button>
                     </li>
                   ))}
                 </ul>

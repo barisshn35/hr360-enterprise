@@ -13,10 +13,12 @@ import { SelectField, TextAreaField, TextField } from '@/components/ui/Field'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { EmptyState, InfoNote, RowsSkeleton } from '@/components/ui/States'
 import { useAuth } from '@/auth/useAuth'
+import { useConfirm } from '@/components/ui/Confirm'
+import { localISODate } from '@/lib/dates'
 import { isHr } from '@/auth/roles'
 import { useCompanies } from '@/api/queries'
 import { useDirectory } from '@/api/directory'
-import { taskCategoryLabels, type OnboardingPlan, type TaskCategory } from '@/api/onboarding'
+import { taskCategoryLabels, type OnboardingPlan, type PlanStatus, type TaskCategory } from '@/api/onboarding'
 import { opsApi, ownerRoleLabels, type OwnerRole, type TaskTemplate, type TemplateInput, type TemplateItem } from '@/api/opsPlus'
 import { formatDateTime } from '@/lib/format'
 import { PersonSelect, useAction } from '@/features/shared/kit'
@@ -27,6 +29,17 @@ const NONE = '__none'
 function useDepartments() {
   const companies = useCompanies()
   return useMemo(() => (companies.data ?? []).flatMap((c) => c.departments ?? []), [companies.data])
+}
+
+/**
+ * Gösterilecek plan durumu: sunucu planı oluşturulunca "Sürüyor" sayar; başlangıç tarihi henüz
+ * gelmemiş ve hiçbir görevine dokunulmamış plan kullanıcıya "Başlamadı" olarak gösterilir.
+ * Kayıttaki durum değişmez (yalnızca gösterim).
+ */
+export function displayPlanStatus(plan: Pick<OnboardingPlan, 'status' | 'startDate' | 'tasks'>): PlanStatus {
+  if (plan.status !== 'InProgress') return plan.status
+  const touched = (plan.tasks ?? []).some((t) => t.status !== 'Pending')
+  return !touched && plan.startDate.slice(0, 10) > localISODate() ? 'NotStarted' : plan.status
 }
 
 export function useIsOnboardingHr() {
@@ -86,6 +99,10 @@ export function TemplatesPanel() {
   const hr = useIsOnboardingHr()
   const [edit, setEdit] = useState<TaskTemplate | null | 'new'>(null)
   const del = useAction((id: string) => opsApi.deleteTemplate(id), { success: tx('Şablon silindi'), invalidate: [['onboarding', 'templates']] })
+  const confirm = useConfirm()
+  const askDelete = async (t: TaskTemplate) => {
+    if (await confirm({ title: tx('“{0}” şablonu silinsin mi?', [t.name]), note: tx('Şablon yeni planlara artık eklenmez; önceden oluşturulmuş planlardaki görevler değişmez.'), action: tx('Sil') })) del.mutate(t.id)
+  }
   const deptName = (id: string | null) => (id ? departments.find((d) => d.id === id)?.name ?? '—' : tx('Tüm departmanlar'))
   return (
     <Panel>
@@ -105,7 +122,7 @@ export function TemplatesPanel() {
                 </span>
                 {!t.isActive && <StatusBadge tone="neutral">{tx('Pasif')}</StatusBadge>}
                 {hr && <Button size="icon" variant="ghost" aria-label={tx('Düzenle')} onClick={() => setEdit(t)}><Pencil className="size-4" /></Button>}
-                {hr && <Button size="icon" variant="ghost" aria-label={tx('Sil')} onClick={() => del.mutate(t.id)}><Trash2 className="size-4" /></Button>}
+                {hr && <Button size="icon" variant="ghost" aria-label={tx('Sil')} onClick={() => askDelete(t)}><Trash2 className="size-4" /></Button>}
               </li>
             ))}
           </ul>

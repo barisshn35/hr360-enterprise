@@ -294,6 +294,9 @@ export interface CreateGoalInput {
   unit?: string
 }
 
+/** Hedef düzenleme — dönem ve çalışan değişmez; kapalı dönemde 409. */
+export type UpdateGoalInput = Omit<CreateGoalInput, 'cycleId' | 'employeeId'>
+
 export interface GoalProgressInput {
   currentValue?: number
   status?: GoalStatus

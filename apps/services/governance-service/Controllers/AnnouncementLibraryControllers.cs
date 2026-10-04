@@ -190,6 +190,42 @@ public class AnnouncementsController : AppController
         return Ok(new { id, notified });
     }
 
+    /// <summary>
+    /// Planlı ya da yayımdaki duyuruyu düzenler (başlık, metin, hedef kitle, yayım/bitiş zamanı,
+    /// onay gereksinimi). Okuma kayıtları korunur. Yayım zamanı verilmezse mevcut zaman kalır;
+    /// geleceğe alınırsa bildirim o zaman yeniden gönderilir.
+    /// </summary>
+    [HttpPut("{id:guid}")]
+    [Authorize(Policy = "RequireHrAdmin")]
+    public async Task<IActionResult> Update(Guid id, [FromBody] AnnouncementInput body, CancellationToken ct)
+    {
+        var current = (await Db.QueryAsync($"SELECT {Cols} FROM governance_announcements WHERE \"TenantSlug\" = $1 AND \"Id\" = $2", Map, ct, Tenant, id)).FirstOrDefault();
+        if (current is null) return NotFound(new { message = L("Duyuru bulunamadı.", "Announcement not found.") });
+        var title = body.Title?.Trim() ?? "";
+        var text = body.Body?.Trim() ?? "";
+        var audience = body.Audience ?? Audience.All;
+        var depts = body.DepartmentIds?.Distinct().ToArray() ?? Array.Empty<Guid>();
+        if (title.Length is < 3 or > 200) return BadRequest(new { message = L("Başlık 3-200 karakter olmalı.", "Title must be 3-200 characters.") });
+        if (text.Length is < 1 or > 20000) return BadRequest(new { message = L("Duyuru metni 1-20000 karakter olmalı.", "Body must be 1-20000 characters.") });
+        if (!Audience.AnnouncementAudiences.Contains(audience)) return BadRequest(new { message = L("Geçersiz hedef kitle.", "Invalid audience.") });
+        if (audience == Audience.Departments && depts.Length == 0) return BadRequest(new { message = L("En az bir departman seçin.", "Select at least one department.") });
+        if (audience == Audience.All) depts = Array.Empty<Guid>();
+        var publishAt = body.PublishAt?.ToUniversalTime() ?? DateTime.SpecifyKind(current.PublishAt, DateTimeKind.Utc);
+        if (body.ExpireAt is { } exp && exp.ToUniversalTime() <= publishAt)
+            return BadRequest(new { message = L("Bitiş tarihi yayım tarihinden sonra olmalı.", "Expiry must be after publish date.") });
+        // Yayım geleceğe alındıysa bildirim o zaman (yeniden) gönderilsin.
+        var resetNotified = publishAt > DateTime.UtcNow;
+        await Db.ExecuteAsync("""
+            UPDATE governance_announcements SET "Title" = $3, "Body" = $4, "Audience" = $5, "DepartmentIds" = $6, "PublishAt" = $7,
+                "ExpireAt" = $8, "RequiresAck" = $9, "NotifiedAt" = CASE WHEN $10 THEN NULL ELSE "NotifiedAt" END, "UpdatedAt" = now()
+            WHERE "TenantSlug" = $1 AND "Id" = $2
+            """, ct, Tenant, id, title, text, audience, depts, publishAt, body.ExpireAt?.ToUniversalTime(), body.RequiresAck, resetNotified);
+        await ComplianceAudit.WriteAsync(Db, Tenant, "Announcement", id.ToString(), "Updated",
+            new { title, audience, publishAt, expireAt = body.ExpireAt?.ToUniversalTime(), body.RequiresAck }, Me.UserId, Me.Name, ct);
+        var notified = await PublishDueAsync(Db, People, Tenant, ct);
+        return Ok(new { id, notified });
+    }
+
     /// <summary>Duyuruyu hemen yayından kaldırır (okuma kayıtları kalır).</summary>
     [HttpPost("{id:guid}/expire")]
     [Authorize(Policy = "RequireHrAdmin")]
@@ -334,14 +370,19 @@ public class LibraryController : AppController
         var s = await ScopeAsync(ct);
         var rows = await Db.QueryAsync($"""
             WITH q AS (SELECT websearch_to_tsquery('simple', translate(lower($5), 'ı', 'i')) AS fq,
-                              websearch_to_tsquery('simple', translate(lower($5), 'ı', 'i')) || websearch_to_tsquery('simple', lower($5)) AS hq)
+                              websearch_to_tsquery('simple', translate(lower($5), 'ı', 'i')) || websearch_to_tsquery('simple', lower($5)) AS hq,
+                              -- Aksan duyarsız eşleşme (çalışan listesiyle aynı hr360_fold): "ayse"/"AYSE" → "Ayşe".
+                              websearch_to_tsquery('simple', hr360_fold($5)) AS foldq)
             SELECT d."Id", d."Title", d."Category", d."CurrentVersionNo",
                    ts_headline('simple', v."Body", q.hq, 'StartSel="⟦", StopSel="⟧", MaxWords=35, MinWords=12, MaxFragments=2, FragmentDelimiter=" … "'),
                    ts_rank(v."SearchVector", q.fq) AS rank, d."RequiresAck"
             FROM governance_library_documents d
             JOIN governance_library_versions v ON v."Id" = d."CurrentVersionId"
             CROSS JOIN q
-            WHERE d."TenantSlug" = $1 AND v."SearchVector" @@ q.fq AND {VisibleSql}
+            WHERE d."TenantSlug" = $1
+              AND (v."SearchVector" @@ q.fq
+                   OR to_tsvector('simple', hr360_fold(coalesce(v."Title", '') || ' ' || coalesce(v."Body", ''))) @@ q.foldq)
+              AND {VisibleSql}
             ORDER BY rank DESC, d."Title" LIMIT 30
             """, r => new
             {

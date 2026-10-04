@@ -196,8 +196,13 @@ function ChatIntegrations() {
   )
 }
 
+const INTEGRATION_TABS = ['webhook', 'api', 'uygulama', 'sohbet', 'takvim'] as const
+type IntegrationTab = (typeof INTEGRATION_TABS)[number]
+
 export function IntegrationsPage() {
-  const [tab, setTab] = useTabParam<'webhook' | 'api' | 'uygulama' | 'sohbet' | 'takvim'>('sekme', 'uygulama')
+  const [rawTab, setTab] = useTabParam<IntegrationTab>('sekme', 'uygulama')
+  // Geçersiz ?sekme= değeri boş sayfa yerine varsayılan sekmeye düşer.
+  const tab: IntegrationTab = (INTEGRATION_TABS as readonly string[]).includes(rawTab) ? rawTab : 'uygulama'
   return (
     <PlanGate feature="webhooks">
       <PageHeader title={tx('Entegrasyonlar')} description={tx('Slack ve Microsoft Teams\'ten onay, Google ve Microsoft 365 takvimleri, Zoom/Teams/Meet toplantıları, kanal bildirimleri, webhook\'lar ve açık API.')} />

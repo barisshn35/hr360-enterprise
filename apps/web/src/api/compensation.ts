@@ -56,7 +56,8 @@ export interface SimulationLine {
   increaseAmount: number
   increasePercent: number
   grade: string | null
-  withinBand: boolean
+  /** null: çalışana bant atanmamış (kademe yok ya da o yıl için bant tanımsız). */
+  withinBand: boolean | null
   bandMax: number | null
 }
 
@@ -66,6 +67,8 @@ export interface SimulationResult {
   proposedTotal: number
   budgetImpact: number
   outOfBandCount: number
+  /** Bant atanmamış çalışan sayısı. */
+  noBandCount?: number
   lines: SimulationLine[]
 }
 
@@ -104,6 +107,11 @@ export const compensationApi = {
 
   createBand: (input: CreateBandInput) =>
     apiFetch<CompensationBand>(`${BASE}/bands`, { method: 'POST', body: input }),
+
+  updateBand: (id: string, input: CreateBandInput) =>
+    apiFetch<CompensationBand>(`${BASE}/bands/${id}`, { method: 'PUT', body: input }),
+
+  deleteBand: (id: string) => apiFetch<void>(`${BASE}/bands/${id}`, { method: 'DELETE' }),
 
   listRecords: (employeeId?: string, signal?: AbortSignal) =>
     apiFetch<CompensationRecord[]>(`${BASE}/records${qs({ employeeId })}`, { signal }),

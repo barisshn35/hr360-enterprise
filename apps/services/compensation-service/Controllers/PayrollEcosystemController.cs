@@ -384,6 +384,10 @@ public class PayrollEcosystemController : ControllerBase
     {
         if (!IsPayrollAdmin) return Forbid();
         if (string.IsNullOrWhiteSpace(body.Name) || body.BudgetPercent is < 0 or > 100) return BadRequest(new { message = "Geçersiz zam dönemi" });
+        // Makul yıl aralığı: geçen yıl .. iki yıl sonrası (1900 gibi hatalı girişler reddedilir).
+        var thisYear = DateTime.UtcNow.AddHours(3).Year;
+        if (body.Year < thisYear - 1 || body.Year > thisYear + 2)
+            return BadRequest(new { message = $"Zam dönemi yılı {thisYear - 1}–{thisYear + 2} aralığında olmalı" });
         var c = new RaiseCycle { Name = body.Name.Trim(), Year = body.Year, BudgetPercent = body.BudgetPercent, EffectiveDate = body.EffectiveDate, CreatedBy = UserName };
         _db.RaiseCycles.Add(c);
         await _db.SaveChangesAsync(ct);
@@ -402,6 +406,25 @@ public class PayrollEcosystemController : ControllerBase
         c.Status = st;
         await _db.SaveChangesAsync(ct);
         return Ok(new { c.Id, status = c.Status.ToString() });
+    }
+
+    /// <summary>
+    /// Zam dönemini siler: yalnızca öneri girilmemiş dönem (taslak ya da boş açık dönem).
+    /// Uygulanmış dönem ücret kayıtlarına dönüştüğünden silinemez.
+    /// </summary>
+    [HttpDelete("raise-cycles/{id:guid}")]
+    public async Task<IActionResult> DeleteCycle(Guid id, CancellationToken ct)
+    {
+        if (!IsPayrollAdmin) return Forbid();
+        var c = await _db.RaiseCycles.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (c is null) return NotFound();
+        if (c.AppliedAt is not null) return Conflict(new { message = "Uygulanmış zam dönemi silinemez" });
+        if (await _db.RaiseProposals.AnyAsync(p => p.CycleId == id, ct))
+            return Conflict(new { message = "Bu dönemde zam önerisi var; dönem silinemez. Önerilere kapatmak için durumunu değiştirin." });
+        _db.RaiseCycles.Remove(c);
+        await _db.SaveChangesAsync(ct);
+        await AuditAsync("RaiseCycle", id.ToString(), "Deleted", new { c.Name, c.Year, status = c.Status.ToString() });
+        return NoContent();
     }
 
     /// <summary>
@@ -429,7 +452,8 @@ public class PayrollEcosystemController : ControllerBase
             var r = current[p.Id];
             var band = bands.Where(b => b.Grade == r.Grade).OrderByDescending(b => b.Year).FirstOrDefault();
             proposals.TryGetValue(p.Id, out var pr);
-            var proposed = pr?.ProposedSalary ?? r.BaseSalary;
+            // Reddedilen öneri artış sayılmaz: bant kontrolü ve bütçe kullanımı mevcut ücretle yapılır.
+            var proposed = pr is not null && pr.Status != RaiseProposalStatus.Rejected ? pr.ProposedSalary : r.BaseSalary;
             return new
             {
                 employeeId = p.Id, name = $"{p.FirstName} {p.LastName}", department = p.Department, grade = r.Grade, currentSalary = r.BaseSalary, r.Currency,
@@ -440,7 +464,9 @@ public class PayrollEcosystemController : ControllerBase
             };
         }).OrderBy(x => x.department).ThenBy(x => x.name).ToList();
         var budget = rows.Sum(x => x.currentSalary) * c.BudgetPercent / 100m;
-        var used = rows.Sum(x => (x.proposal?.ProposedSalary ?? x.currentSalary) - x.currentSalary);
+        // Önerilen artış: yalnızca bekleyen, onaylanan (ve uygulanan) öneriler; reddedilenler sayılmaz.
+        var used = rows.Where(x => x.proposal is not null && x.proposal.status != nameof(RaiseProposalStatus.Rejected))
+            .Sum(x => x.proposal!.ProposedSalary - x.currentSalary);
         return Ok(new { cycle = new { c.Id, c.Name, c.Year, c.BudgetPercent, c.EffectiveDate, status = c.Status.ToString() }, rows, budget = Math.Round(budget, 2), used = Math.Round(used, 2) });
     }
 

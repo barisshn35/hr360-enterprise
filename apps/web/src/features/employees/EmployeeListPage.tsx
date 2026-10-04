@@ -97,8 +97,13 @@ export function EmployeeListPage() {
     return all
   }
 
-  const currentAssignment = (e: Employee) =>
-    e.assignments?.find((a) => !a.effectiveTo) ?? e.assignments?.[0]
+  /** Açık atama varsa en yenisi; yoksa (ayrılan çalışan) en son başlayan atama — ilk kayıt değil. */
+  const currentAssignment = (e: Employee) => {
+    const list = [...(e.assignments ?? [])].sort(
+      (a, b) => new Date(b.effectiveFrom).getTime() - new Date(a.effectiveFrom).getTime(),
+    )
+    return list.find((a) => !a.effectiveTo) ?? list[0]
+  }
 
   const departmentOf = (e: Employee) => {
     const current = currentAssignment(e)

@@ -44,17 +44,17 @@ public class OnboardingPlansController : ControllerBase
         return q.Where(p => p.EmployeeId == me.Value || p.BuddyEmployeeId == me.Value || p.Tasks.Any(t => t.AssigneeEmployeeId == me.Value));
     }
 
-    /// <summary>Standart ise baslangic gorevleri - plan olusturulurken otomatik eklenir.</summary>
+    /// <summary>Standart işe başlangıç görevleri - plan oluşturulurken otomatik eklenir (mevcut planlardaki görev adları değişmez).</summary>
     private static readonly (string Title, TaskCategory Category, int Offset)[] DefaultTasks =
     {
         ("Kullanıcı hesabı ve e-posta açılması", TaskCategory.IT, 0),
-        ("Donanim zimmeti (laptop, telefon)", TaskCategory.IT, 0),
-        ("Bina giris kartinin hazirlanmasi", TaskCategory.Facility, 0),
-        ("Ozluk evraklarinin toplanmasi", TaskCategory.HR, 1),
-        ("Is sozlesmesinin imzalanmasi", TaskCategory.Legal, 1),
-        ("Ise uyum egitimi", TaskCategory.Training, 3),
-        ("Ekip tanistirma toplantisi", TaskCategory.HR, 1),
-        ("Is sagligi ve guvenligi egitimi", TaskCategory.Training, 7),
+        ("Donanım zimmeti (dizüstü bilgisayar, telefon)", TaskCategory.IT, 0),
+        ("Bina giriş kartının hazırlanması", TaskCategory.Facility, 0),
+        ("Özlük evraklarının toplanması", TaskCategory.HR, 1),
+        ("İş sözleşmesinin imzalanması", TaskCategory.Legal, 1),
+        ("İşe uyum eğitimi", TaskCategory.Training, 3),
+        ("Ekip tanıştırma toplantısı", TaskCategory.HR, 1),
+        ("İş sağlığı ve güvenliği eğitimi", TaskCategory.Training, 7),
     };
 
     [HttpGet]

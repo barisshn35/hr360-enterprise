@@ -376,6 +376,8 @@ public class PrivacyComplianceController : AppController
         try
         {
             var (status, prediction) = await Call("/predict");
+            // 4xx (ör. 422 doğrulama) istemci hatasıdır: iletisiyle 400 dönülür; yalnızca 5xx/ağ hatası 502/503.
+            if (status is >= 400 and < 500) return BadRequest(new { message = MlClientError(prediction) });
             if (status != 200) return StatusCode(status == 503 ? 503 : 502, new { message = L("Tahmin servisi yanıt vermedi.", "The prediction service did not respond.") });
             var (eStatus, explanation) = await Call("/explain");
             await Db.ExecuteAsync("""
@@ -389,5 +391,17 @@ public class PrivacyComplianceController : AppController
         {
             return StatusCode(503, new { message = L("Tahmin servisine ulaşılamadı.", "The prediction service is unreachable.") });
         }
+    }
+
+    /// <summary>FastAPI hata gövdesinden ({"detail": "..."} ya da {"detail": [{"msg": ...}]}) okunur ileti.</summary>
+    private string MlClientError(JsonElement? body)
+    {
+        var generic = L("Tahmin girdisi geçersiz.", "The prediction input is invalid.");
+        if (body is not { ValueKind: JsonValueKind.Object } b || !b.TryGetProperty("detail", out var d)) return generic;
+        if (d.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(d.GetString())) return d.GetString()!;
+        if (d.ValueKind == JsonValueKind.Array && d.GetArrayLength() > 0 && d[0].ValueKind == JsonValueKind.Object
+            && d[0].TryGetProperty("msg", out var msg) && msg.ValueKind == JsonValueKind.String)
+            return $"{generic} ({msg.GetString()})";
+        return generic;
     }
 }

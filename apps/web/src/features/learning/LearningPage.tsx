@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { LoaderCircle, Plus } from 'lucide-react'
@@ -15,6 +15,8 @@ import { SelectField, TextAreaField, TextField } from '@/components/ui/Field'
 import { EmployeePicker } from '@/components/ui/EmployeePicker'
 import { EmptyState, ErrorState, RowsSkeleton } from '@/components/ui/States'
 import { useToast } from '@/components/ui/Toast'
+import { useConfirm } from '@/components/ui/Confirm'
+import { ApiError } from '@/api/client'
 import { useAuth } from '@/auth/useAuth'
 import { learningApi } from '@/api/learning'
 import {
@@ -38,7 +40,12 @@ type TabKey = 'katalog' | 'sertifikalar' | 'suresi-dolan' | 'uyum'
 
 const ALL = '__all__'
 
-function NewCourseModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+function NewCourseModal({ open, onClose, course }: {
+  open: boolean
+  onClose: () => void
+  /** Verilirse düzenleme kipinde açılır. */
+  course?: Course | null
+}) {
   const toast = useToast()
   const queryClient = useQueryClient()
   const [title, setTitle] = useState('')
@@ -49,26 +56,44 @@ function NewCourseModal({ open, onClose }: { open: boolean; onClose: () => void 
   const [isMandatory, setMandatory] = useState(false)
   const [error, setError] = useState<string | undefined>()
   const [durationError, setDurationError] = useState<string | undefined>()
+  const editing = Boolean(course)
+
+  // Düzenleme: pencere her açıldığında formu kayıtlı eğitimden doldur.
+  useEffect(() => {
+    if (!open || !course) return
+    setTitle(course.title)
+    setDescription(course.description ?? '')
+    setProvider(course.provider ?? '')
+    setDuration(String(course.durationHours))
+    setCategory(course.category)
+    setMandatory(course.isMandatory)
+    setError(undefined)
+    setDurationError(undefined)
+  }, [open, course])
 
   const mutation = useMutation({
-    mutationFn: () =>
-      learningApi.createCourse({
+    mutationFn: () => {
+      const input = {
         title: title.trim(),
         description: description.trim() || undefined,
         provider: provider.trim() || undefined,
         durationHours: parseDecimal(durationHours) ?? 1,
         category,
         isMandatory,
-      }),
+      }
+      return course
+        ? learningApi.updateCourse(course.id, { ...input, certificateValidityMonths: course.certificateValidityMonths ?? null })
+        : learningApi.createCourse(input)
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['learning'] })
-      toast.ok(tx('Eğitim eklendi'))
+      toast.ok(editing ? tx('Eğitim güncellendi') : tx('Eğitim eklendi'))
       onClose()
       setTitle('')
       setDescription('')
       setProvider('')
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Eğitim eklenemedi.')),
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : editing ? tx('Eğitim kaydedilemedi.') : tx('Eğitim eklenemedi.')),
   })
 
   function submit(e: React.FormEvent) {
@@ -87,7 +112,7 @@ function NewCourseModal({ open, onClose }: { open: boolean; onClose: () => void 
     <Modal
       open={open}
       onClose={onClose}
-      title={tx('Yeni eğitim')}
+      title={editing ? tx('Eğitimi düzenle') : tx('Yeni eğitim')}
       note={tx('Zorunlu işaretlenen eğitimler uyum raporunda takip edilir.')}
       size="lg"
       footer={
@@ -107,7 +132,7 @@ function NewCourseModal({ open, onClose }: { open: boolean; onClose: () => void 
             disabled={mutation.isPending}
           >
             {mutation.isPending && <LoaderCircle className="size-4 animate-spin" />}
-            {tx('Eğitimi ekle')}
+            {editing ? tx('Kaydet') : tx('Eğitimi ekle')}
           </Button>
         </>
       }
@@ -410,6 +435,38 @@ export function LearningPage() {
   const [courseModal, setCourseModal] = useState(false)
   const [certModal, setCertModal] = useState(false)
   const [enrollFor, setEnrollFor] = useState<{ id: string; title: string } | null>(null)
+  const [editCourse, setEditCourse] = useState<Course | null>(null)
+  const confirm = useConfirm()
+  const toast = useToast()
+  const queryClient = useQueryClient()
+
+  // Kaydı olan eğitim silinemez (409 has_enrollments); kullanıcıya arşivleme önerilir.
+  async function removeCourse(c: Course) {
+    if (!(await confirm({ title: tx('Eğitim silinsin mi?'), note: tx('"{0}" eğitimi ve modülleri kalıcı olarak silinir.', [c.title]), action: tx('Sil') }))) return
+    try {
+      await learningApi.deleteCourse(c.id)
+      toast.ok(tx('Eğitim silindi'))
+    } catch (e) {
+      const code = e instanceof ApiError ? (e.detail as { code?: string } | undefined)?.code : undefined
+      if (!(e instanceof ApiError && e.status === 409 && code === 'has_enrollments')) {
+        toast.stop(e instanceof Error ? e.message : tx('Eğitim silinemedi.'))
+        return
+      }
+      if (!(await confirm({
+        title: tx('Eğitim arşivlensin mi?'),
+        note: tx('Kursa kayıtlı çalışan var; eğitim silinemez. Arşivlenen eğitim katalogdan kalkar, yeni kayıt alınmaz; mevcut kayıtlar ve sertifikalar korunur.'),
+        action: tx('Arşivle'),
+      }))) return
+      try {
+        await learningApi.archiveCourse(c.id)
+        toast.ok(tx('Eğitim arşivlendi'))
+      } catch (e2) {
+        toast.stop(e2 instanceof Error ? e2.message : tx('Eğitim arşivlenemedi.'))
+        return
+      }
+    }
+    void queryClient.invalidateQueries({ queryKey: ['learning'] })
+  }
 
   const canManage = can('learning:manage')
   // Süresi dolan sertifikalar listesi backend'de yöneticiye ve üstüne açık.
@@ -618,6 +675,12 @@ export function LearningPage() {
                   },
                 ]
               : []),
+            ...(canManage
+              ? [
+                  { label: tx('Düzenle'), onSelect: (c: Course) => setEditCourse(c) },
+                  { label: tx('Sil'), destructive: true, onSelect: (c: Course) => void removeCourse(c) },
+                ]
+              : []),
           ]}
         />
       )}
@@ -722,6 +785,7 @@ export function LearningPage() {
       )}
 
       <NewCourseModal open={courseModal} onClose={() => setCourseModal(false)} />
+      <NewCourseModal open={editCourse !== null} onClose={() => setEditCourse(null)} course={editCourse} />
       <NewCertificationModal open={certModal} onClose={() => setCertModal(false)} />
       <EnrollModal
         courseId={enrollFor?.id ?? null}

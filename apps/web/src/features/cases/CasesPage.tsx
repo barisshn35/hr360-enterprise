@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { LoaderCircle, Plus } from 'lucide-react'
@@ -22,7 +22,7 @@ import {
   type CaseStatus,
   type HrCase,
 } from '@/api/types'
-import { formatRelativeToNow } from '@/lib/format'
+import { formatDate, formatRelativeToNow } from '@/lib/format'
 import { useEmployeeName } from '@/lib/useEmployeeName'
 import { cn } from '@/lib/utils'
 import { tx } from '@/lib/i18n'
@@ -180,6 +180,12 @@ export function CasesPage() {
     priority: priority === ALL ? undefined : (priority as CasePriority),
   })
 
+  // Varsayılan sıra: yeni vaka en üstte (kullanıcı başlığa tıklayınca kendi sıralaması geçerli).
+  const rows = useMemo(
+    () => cases.data && [...cases.data].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
+    [cases.data],
+  )
+
   const filters: TableFilter[] = [
     {
       id: 'status',
@@ -214,14 +220,33 @@ export function CasesPage() {
       id: 'subject',
       header: tx('Konu'),
       searchText: (c) => `${c.subject} ${caseCategoryLabels[c.category]}`,
+      // CSV'de konu ve kategori ayrı sütunlarda (kategori aşağıdaki sütundan).
+      exportText: (c) => c.subject,
       sortValue: (c) => c.subject,
       cell: (c) => (
-        <div className={cn('min-w-0 border-l-2 pl-3', PRIORITY_EDGE[c.priority])}>
-          <p className="truncate font-medium text-foreground">{c.subject}</p>
+        // Boşluksuz uzun konu tabloyu taşırmasın: genişlik sınırlı, en çok iki satır, her yerden kırılır.
+        <div className={cn('min-w-0 max-w-[32rem] border-l-2 pl-3', PRIORITY_EDGE[c.priority])}>
+          <p className="line-clamp-2 font-medium text-foreground [overflow-wrap:anywhere]" title={c.subject}>{c.subject}</p>
           <p className="mt-0.5 truncate text-[12px] text-muted-foreground">
             {tx('{0}, {1} açıldı', [caseCategoryLabels[c.category], formatRelativeToNow(c.createdAt)])}</p>
         </div>
       ),
+    },
+    {
+      id: 'category',
+      header: tx('Kategori'),
+      hideBelow: 'lg',
+      sortValue: (c) => caseCategoryLabels[c.category] ?? '',
+      exportText: (c) => caseCategoryLabels[c.category] ?? '',
+      cell: (c) => <span className="text-muted-foreground">{caseCategoryLabels[c.category]}</span>,
+    },
+    {
+      id: 'createdAt',
+      header: tx('Açılış'),
+      hideBelow: 'lg',
+      sortValue: (c) => new Date(c.createdAt).getTime(),
+      exportText: (c) => formatDate(c.createdAt),
+      cell: (c) => <span className="tabular text-muted-foreground">{formatDate(c.createdAt)}</span>,
     },
     {
       id: 'employee',
@@ -279,7 +304,7 @@ export function CasesPage() {
       />
 
       <DataTable
-        rows={cases.data}
+        rows={rows}
         rowKey={(c) => c.id}
         columns={columns}
         filters={filters}

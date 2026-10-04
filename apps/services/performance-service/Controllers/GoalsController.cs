@@ -113,6 +113,50 @@ public class GoalsController : ControllerBase
         return Created($"/api/goals/{goal.Id}", goal);
     }
 
+    /// <summary>
+    /// Hedefi düzenler (başlık, açıklama, ağırlık, hedef değer, birim). Kapalı dönemin
+    /// hedefi düzenlenemez. Gerçekleşen değer ve durum /progress ucundan değişir.
+    /// </summary>
+    [HttpPut("{id}")]
+    [Authorize(Policy = "RequireManagerOrAbove")]
+    public async Task<IActionResult> Update(Guid id, [FromBody] UpdateGoalRequest request, CancellationToken ct)
+    {
+        var goal = await _db.Goals.FirstOrDefaultAsync(g => g.Id == id, ct);
+        if (goal is null) return NotFound();
+        var cycle = await _db.Cycles.AsNoTracking().FirstOrDefaultAsync(c => c.Id == goal.CycleId, ct);
+        if (cycle?.Status == CycleStatus.Closed)
+            return Conflict(new { message = "Kapanmış dönemin hedefleri düzenlenemez" });
+        if (string.IsNullOrWhiteSpace(request.Title) || request.Title.Trim().Length > 200)
+            return BadRequest(new { message = "Hedef başlığı zorunlu ve en fazla 200 karakter olabilir" });
+        if (request.Weight is < 1 or > 100)
+            return BadRequest(new { message = "Ağırlık 1-100 arasında olmalı" });
+        if (request.TargetValue is < 0)
+            return BadRequest(new { message = "Hedef değer negatif olamaz" });
+
+        goal.Title = request.Title.Trim();
+        goal.Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim();
+        goal.Weight = request.Weight;
+        goal.TargetValue = request.TargetValue;
+        goal.Unit = string.IsNullOrWhiteSpace(request.Unit) ? null : request.Unit.Trim();
+        await _db.SaveChangesAsync(ct);
+        return Ok(goal);
+    }
+
+    /// <summary>Hedefi siler. Kapalı dönemin hedefi (nihai puana girmiş) silinemez.</summary>
+    [HttpDelete("{id}")]
+    [Authorize(Policy = "RequireManagerOrAbove")]
+    public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
+    {
+        var goal = await _db.Goals.FirstOrDefaultAsync(g => g.Id == id, ct);
+        if (goal is null) return NotFound();
+        var cycle = await _db.Cycles.AsNoTracking().FirstOrDefaultAsync(c => c.Id == goal.CycleId, ct);
+        if (cycle?.Status == CycleStatus.Closed)
+            return Conflict(new { message = "Kapanmış dönemin hedefleri silinemez" });
+        _db.Goals.Remove(goal);
+        await _db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+
     [HttpPost("{id}/progress")]
     [Authorize(Policy = "RequireManagerOrAbove")]
     public async Task<IActionResult> UpdateProgress(Guid id, [FromBody] UpdateProgressRequest request)
@@ -139,4 +183,5 @@ public class GoalsController : ControllerBase
 public record CreateGoalRequest(
     Guid CycleId, Guid EmployeeId, string Title, string? Description,
     int Weight, decimal? TargetValue, string? Unit);
+public record UpdateGoalRequest(string Title, string? Description, int Weight, decimal? TargetValue, string? Unit);
 public record UpdateProgressRequest(decimal? CurrentValue, GoalStatus? Status);

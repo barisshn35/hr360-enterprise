@@ -11,19 +11,56 @@ import { formatDate, formatDateTime } from '@/lib/format'
 import { useAction } from '@/features/shared/kit'
 import { appLocale, tx } from '@/lib/i18n'
 
+/** Erişim kaydındaki teknik alan adlarının okunur karşılıkları (anahtar küçük harfle). */
+const FIELD_LABELS: Record<string, string> = {
+  iban: tx('IBAN'),
+  nationalid: tx('T.C. kimlik no'),
+  passport: tx('pasaport bilgisi'),
+  contact: tx('iletişim bilgileri'),
+  salary: tx('ücret bilgisi'),
+  salarylist: tx('ücret listesi'),
+  grosssalary: tx('brüt ücret'),
+  salarydistribution: tx('ücret dağılımı'),
+  salaryworksheet: tx('zam çalışma tablosu'),
+  payrolllist: tx('bordro listesi'),
+  payslip: tx('ücret pusulası'),
+  payslipsummary: tx('ücret pusulası özeti'),
+  bank: tx('banka ödeme dosyası'),
+  sgkaphb: tx('SGK APHB bildirgesi'),
+  profile: tx('özel profil bilgileri (adres, doğum tarihi, acil durum kişisi)'),
+  attritionrisk: tx('işten ayrılma riski'),
+  competencyheatmap: tx('ekip yetkinlik ısı haritası'),
+  competencygaps: tx('yetkinlik açıkları'),
+  courseprogress: tx('eğitim ilerlemesi'),
+  courseresults: tx('eğitim sonuçları'),
+  ninebox: tx('9 kutu değerlendirmesi'),
+  disciplinarycase: tx('disiplin dosyası'),
+  signatureevidence: tx('e-imza kanıtı'),
+  document: tx('belge'),
+  report: tx('rapor'),
+  surveycomments: tx('anket yorumları'),
+  assetholder: tx('zimmet sahibi bilgisi'),
+  healthnotes: tx('sağlık notları'),
+}
+
+/** Alan adını okunur hâle getirir; "custom:<ad>" → "Özel alan: <ad>". */
+function fieldLabel(f: string | null | undefined): string {
+  if (!f) return ''
+  const m = /^custom:(.+)$/i.exec(f)
+  if (m) return tx('Özel alan: {0}', [m[1]])
+  return FIELD_LABELS[f.toLowerCase()] ?? f
+}
+
 /** Erişim kaydı satırının okunur açıklaması (çalışan ve İK ekranları ortak kullanır). */
 export function accessLabel(r: AccessLogRow): string {
-  const field = r.field === 'iban' ? tx('IBAN') : r.field === 'nationalId' ? tx('T.C. kimlik no')
-    : r.field === 'salary' ? tx('ücret bilgisi') : r.field === 'salaryList' ? tx('ücret listesi')
-      : r.field === 'profile' ? tx('özel profil bilgileri (adres, doğum tarihi, acil durum kişisi)')
-        : r.field === 'attritionRisk' ? tx('işten ayrılma riski') : (r.field ?? '')
+  const field = fieldLabel(r.field)
   const text = (() => {
     switch (r.action) {
       case 'Revealed': return tx('{0} açıldı', [field])
       case 'SensitiveViewed': return tx('{0} görüntülendi', [field])
-      case 'Exported': return tx('Kişisel veri dökümü indirildi')
+      case 'Exported': return r.field ? tx('{0} dışa aktarıldı', [field]) : tx('Kişisel veri dökümü indirildi')
       case 'AutomatedAnalysis': return tx('Otomatik analiz yapıldı: {0}', [field])
-      default: return r.action
+      default: return field ? `${String(r.action)}: ${field}` : String(r.action)
     }
   })()
   return text.charAt(0).toLocaleUpperCase(appLocale) + text.slice(1)

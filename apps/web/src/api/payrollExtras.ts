@@ -84,6 +84,7 @@ export const payrollExtrasApi = {
 
   cycles: (signal?: AbortSignal) => apiFetch<RaiseCycle[]>(`${BASE}/raise-cycles`, { signal }),
   createCycle: (body: { name: string; year: number; budgetPercent: number; effectiveDate: string }) => apiFetch<{ id: string }>(`${BASE}/raise-cycles`, { method: 'POST', body }),
+  deleteCycle: (id: string) => apiFetch<void>(`${BASE}/raise-cycles/${id}`, { method: 'DELETE' }),
   setCycleStatus: (id: string, status: RaiseCycle['status']) => apiFetch<unknown>(`${BASE}/raise-cycles/${id}/status`, { method: 'POST', body: { status } }),
   worksheet: (id: string, signal?: AbortSignal) => apiFetch<Worksheet>(`${BASE}/raise-cycles/${id}/worksheet`, { signal }),
   propose: (id: string, body: { employeeId: string; proposedPercent: number; note?: string }) => apiFetch<unknown>(`${BASE}/raise-cycles/${id}/proposals`, { method: 'PUT', body }),

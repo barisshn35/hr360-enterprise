@@ -23,7 +23,8 @@ import {
   type CompensationChangeReason,
   type SimulationResult,
 } from '@/api/types'
-import { formatDate, formatMoney, formatNumber, fullName, normalizeSearch } from '@/lib/format'
+import { formatDate, formatMoney, formatNumber, formatPercent, fullName, normalizeSearch, parseDecimal } from '@/lib/format'
+import { useConfirm } from '@/components/ui/Confirm'
 import { useEmployeeName } from '@/lib/useEmployeeName'
 import { useAuth } from '@/auth/useAuth'
 import { isHr } from '@/auth/roles'
@@ -40,40 +41,45 @@ type TabKey = 'bantlar' | 'gecmis' | 'simulasyon'
 
 /* ------------------------------------------------------------------ bantlar */
 
+/** Yeni bant ya da (band verilirse) mevcut bandı düzenleme penceresi. */
 function NewBandModal({
   open,
   onClose,
   year,
+  band,
 }: {
   open: boolean
   onClose: () => void
   year: number
+  band?: CompensationBand
 }) {
   const toast = useToast()
   const queryClient = useQueryClient()
-  const [grade, setGrade] = useState('')
-  const [title, setTitle] = useState('')
-  const [minAmount, setMin] = useState('')
-  const [midAmount, setMid] = useState('')
-  const [maxAmount, setMax] = useState('')
+  const [grade, setGrade] = useState(band?.grade ?? '')
+  const [title, setTitle] = useState(band?.title ?? '')
+  const [minAmount, setMin] = useState(band ? String(band.minAmount) : '')
+  const [midAmount, setMid] = useState(band ? String(band.midAmount) : '')
+  const [maxAmount, setMax] = useState(band ? String(band.maxAmount) : '')
   const [error, setError] = useState<string | undefined>()
   // Tutar alanlarının hataları alan yanında gösterilir (0 < alt ≤ orta ≤ üst).
   const [amountErr, setAmountErr] = useState<{ min?: string; mid?: string; max?: string }>({})
 
   const mutation = useMutation({
-    mutationFn: () =>
-      compensationApi.createBand({
+    mutationFn: () => {
+      const input = {
         grade: grade.trim(),
         title: title.trim() || undefined,
-        minAmount: Number(minAmount),
-        midAmount: Number(midAmount),
-        maxAmount: Number(maxAmount),
-        currency: 'TRY',
-        year,
-      }),
+        minAmount: parseDecimal(minAmount) ?? NaN,
+        midAmount: parseDecimal(midAmount) ?? NaN,
+        maxAmount: parseDecimal(maxAmount) ?? NaN,
+        currency: band?.currency ?? 'TRY',
+        year: band?.year ?? year,
+      }
+      return band ? compensationApi.updateBand(band.id, input) : compensationApi.createBand(input)
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['compensation'] })
-      toast.ok(tx('Ücret bandı eklendi'))
+      toast.ok(band ? tx('Ücret bandı güncellendi') : tx('Ücret bandı eklendi'))
       onClose()
       setGrade('')
       setTitle('')
@@ -82,12 +88,12 @@ function NewBandModal({
       setMax('')
       setAmountErr({})
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Bant eklenemedi.')),
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : band ? tx('Bant güncellenemedi.') : tx('Bant eklenemedi.')),
   })
 
   function submit(e: React.FormEvent) {
     e.preventDefault()
-    const val = (s: string) => (s.trim() === '' ? null : Number(s))
+    const val = (s: string) => parseDecimal(s)
     const [lo, mid, hi] = [val(minAmount), val(midAmount), val(maxAmount)]
     const need = tx('Sıfırdan büyük bir tutar girin.')
     const bad = (n: number | null) => n === null || !Number.isFinite(n) || n <= 0
@@ -106,8 +112,8 @@ function NewBandModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={tx('Yeni ücret bandı')}
-      note={tx('{0} yılı', [year])}
+      title={band ? tx('Ücret bandını düzenle') : tx('Yeni ücret bandı')}
+      note={tx('{0} yılı', [band?.year ?? year])}
       size="lg"
       footer={
         <>
@@ -126,7 +132,7 @@ function NewBandModal({
             disabled={mutation.isPending}
           >
             {mutation.isPending && <LoaderCircle className="size-4 animate-spin" />}
-            {tx('Bandı ekle')}
+            {band ? tx('Kaydet') : tx('Bandı ekle')}
           </Button>
         </>
       }
@@ -153,8 +159,7 @@ function NewBandModal({
           <TextField
             id="band-min"
             label={tx('Alt')}
-            type="number"
-            min={0}
+            inputMode="decimal"
             required
             className="tabular"
             value={minAmount}
@@ -164,8 +169,7 @@ function NewBandModal({
           <TextField
             id="band-mid"
             label={tx('Orta')}
-            type="number"
-            min={0}
+            inputMode="decimal"
             required
             className="tabular"
             value={midAmount}
@@ -175,8 +179,7 @@ function NewBandModal({
           <TextField
             id="band-max"
             label={tx('Üst')}
-            type="number"
-            min={0}
+            inputMode="decimal"
             required
             className="tabular"
             value={maxAmount}
@@ -232,7 +235,30 @@ function BandSpan({
 function BandsTab({ year, onYearChange }: { year: number; onYearChange: (y: number) => void }) {
   const canWrite = useCanWriteCompensation()
   const [modalOpen, setModalOpen] = useState(false)
+  const [editing, setEditing] = useState<CompensationBand | null>(null)
   const bands = useCompensationBands(year)
+  const confirm = useConfirm()
+  const toast = useToast()
+  const queryClient = useQueryClient()
+  // Kullanımdaki bant (geçerli ücret kaydı ya da uygulanmamış zam dönemi) sunucuda 409 ile reddedilir.
+  const remove = useMutation({
+    mutationFn: (id: string) => compensationApi.deleteBand(id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['compensation'] })
+      toast.ok(tx('Ücret bandı silindi'))
+    },
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Bant silinemedi.')),
+  })
+  async function askDelete(b: CompensationBand) {
+    if (
+      await confirm({
+        title: tx('"{0}" bandı silinsin mi?', [b.grade]),
+        note: tx('Bu kademede geçerli ücret kaydı ya da bandı kullanan açık bir zam dönemi varsa silme reddedilir.'),
+        action: tx('Sil'),
+      })
+    )
+      remove.mutate(b.id)
+  }
 
   const { floor, ceiling } = useMemo(() => {
     const list = bands.data ?? []
@@ -292,6 +318,31 @@ function BandsTab({ year, onYearChange }: { year: number; onYearChange: (y: numb
         <span className="text-muted-foreground">{formatMoney(b.maxAmount, b.currency)}</span>
       ),
     },
+    ...(canWrite
+      ? [
+          {
+            id: 'actions',
+            header: '',
+            align: 'right' as const,
+            cell: (b: CompensationBand) => (
+              <span className="flex justify-end gap-1">
+                <Button size="sm" variant="ghost" className="cursor-pointer" onClick={() => setEditing(b)}>
+                  {tx('Düzenle')}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="cursor-pointer text-destructive"
+                  disabled={remove.isPending}
+                  onClick={() => void askDelete(b)}
+                >
+                  {tx('Sil')}
+                </Button>
+              </span>
+            ),
+          },
+        ]
+      : []),
   ]
 
   return (
@@ -337,6 +388,9 @@ function BandsTab({ year, onYearChange }: { year: number; onYearChange: (y: numb
       />
 
       <NewBandModal open={modalOpen} onClose={() => setModalOpen(false)} year={year} />
+      {editing && (
+        <NewBandModal key={editing.id} open onClose={() => setEditing(null)} year={year} band={editing} />
+      )}
     </>
   )
 }
@@ -564,7 +618,7 @@ function HistoryTab() {
                           <StatusBadge tone={delta > 0 ? 'success' : 'danger'}>
                             {delta > 0 ? '+' : '−'}
                             {formatMoney(Math.abs(delta), r.currency)}
-                            {percent !== null && ` (%${Math.abs(percent).toFixed(1)})`}
+                            {percent !== null && ` (${formatPercent(Math.abs(percent) / 100, 1)})`}
                           </StatusBadge>
                         )}
                         <StatusBadge tone="neutral">
@@ -601,6 +655,19 @@ function HistoryTab() {
 
 /* -------------------------------------------------------------- simülasyon */
 
+/** İşaretli tutar: +₺17.000 / −₺17.000 (eksi işareti tipografik, "+-" birleşmesi olmaz). */
+function signedMoney(v: number): string {
+  if (v > 0) return `+${formatMoney(v)}`
+  if (v < 0) return `−${formatMoney(-v)}`
+  return formatMoney(0)
+}
+
+/** Yerel yüzde biçimi (tr: %10,0); işaret tutarla aynı kuralla. */
+function signedPercent(v: number): string {
+  const p = formatPercent(Math.abs(v) / 100, 1)
+  return v > 0 ? `+${p}` : v < 0 ? `−${p}` : p
+}
+
 function SimulationTab({ year }: { year: number }) {
   const toast = useToast()
   const employees = useEmployees()
@@ -623,8 +690,8 @@ function SimulationTab({ year }: { year: number }) {
     mutationFn: () =>
       compensationApi.simulate({
         employeeIds: selected,
-        increasePercent: mode === 'percent' ? Number(amount) : undefined,
-        flatIncrease: mode === 'flat' ? Number(amount) : undefined,
+        increasePercent: mode === 'percent' ? (parseDecimal(amount) ?? 0) : undefined,
+        flatIncrease: mode === 'flat' ? (parseDecimal(amount) ?? 0) : undefined,
         year,
       }),
     onSuccess: (data) => setResult(data),
@@ -668,7 +735,7 @@ function SimulationTab({ year }: { year: number }) {
       sortValue: (l) => l.proposedSalary,
       exportText: (l) => formatMoney(l.proposedSalary),
       cell: (l) => (
-        <span className={cn('font-semibold', !l.withinBand && 'text-destructive')}>
+        <span className={cn('font-semibold', l.withinBand === false && 'text-destructive')}>
           {formatMoney(l.proposedSalary)}
         </span>
       ),
@@ -679,12 +746,12 @@ function SimulationTab({ year }: { year: number }) {
       align: 'right',
       hideBelow: 'md',
       sortValue: (l) => l.increaseAmount,
-      exportText: (l) => `${formatMoney(l.increaseAmount)} (%${l.increasePercent.toFixed(1)})`,
+      exportText: (l) => `${signedMoney(l.increaseAmount)} (${signedPercent(l.increasePercent)})`,
       cell: (l) => (
         <span>
-          +{formatMoney(l.increaseAmount)}
+          {signedMoney(l.increaseAmount)}
           <span className="block text-[11px] text-muted-foreground">
-            %{l.increasePercent.toFixed(1)}
+            {signedPercent(l.increasePercent)}
           </span>
         </span>
       ),
@@ -693,10 +760,12 @@ function SimulationTab({ year }: { year: number }) {
       id: 'band',
       header: tx('Bant'),
       align: 'right',
-      sortValue: (l) => (l.withinBand ? 1 : 0),
-      exportText: (l) => (l.withinBand ? tx('Bant içi') : tx('Bant dışı')),
+      sortValue: (l) => (l.withinBand === null ? 2 : l.withinBand ? 1 : 0),
+      exportText: (l) => (l.withinBand === null ? tx('Bant yok') : l.withinBand ? tx('Bant içi') : tx('Bant dışı')),
       cell: (l) =>
-        l.withinBand ? (
+        l.withinBand === null ? (
+          <StatusBadge tone="neutral">{tx('Bant yok')}</StatusBadge>
+        ) : l.withinBand ? (
           <StatusBadge tone="success">{tx('Bant içi')}</StatusBadge>
         ) : (
           <StatusBadge tone="danger">{tx('Bant dışı{0}', [l.bandMax ? tx(', üst {0}', [formatMoney(l.bandMax)]) : ''])}
@@ -746,8 +815,7 @@ function SimulationTab({ year }: { year: number }) {
             <TextField
               id="sim-amount"
               label={mode === 'percent' ? tx('Yüzde (%)') : tx('Tutar')}
-              type="number"
-              min={0}
+              inputMode="decimal"
               className="tabular"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
@@ -782,7 +850,7 @@ function SimulationTab({ year }: { year: number }) {
           <div>
             <Button
               className="cursor-pointer"
-              disabled={mutation.isPending || selected.length === 0 || !Number(amount)}
+              disabled={mutation.isPending || selected.length === 0 || !parseDecimal(amount)}
               onClick={() => mutation.mutate()}
             >
               {mutation.isPending && <LoaderCircle className="size-4 animate-spin" />}
@@ -819,7 +887,7 @@ function SimulationTab({ year }: { year: number }) {
               />
               <StatCard
                 label={tx('Bütçe etkisi')}
-                value={`+${formatMoney(result.budgetImpact)}`}
+                value={signedMoney(result.budgetImpact)}
                 trend={tx('yeni toplam {0}', [formatMoney(result.proposedTotal)])}
                 trendDirection="up"
                 trendSense="negative"
@@ -828,7 +896,11 @@ function SimulationTab({ year }: { year: number }) {
                 label={tx('Bant dışı')}
                 value={formatNumber(result.outOfBandCount)}
                 trend={
-                  result.outOfBandCount > 0 ? tx('kademe üst sınırını aşıyor') : tx('tümü bant içinde')
+                  result.outOfBandCount > 0
+                    ? tx('kademe bant sınırlarının dışında')
+                    : result.noBandCount
+                      ? tx('{0} çalışana bant atanmamış', [formatNumber(result.noBandCount)])
+                      : tx('tümü bant içinde')
                 }
                 trendDirection={result.outOfBandCount > 0 ? 'up' : 'flat'}
                 trendSense="negative"
@@ -851,7 +923,7 @@ function SimulationTab({ year }: { year: number }) {
                 searchPlaceholder={tx('Çalışan ara')}
                 exportFileName={`zam-simulasyonu-${year}`}
                 pageSize={15}
-                rowClassName={(l) => (!l.withinBand ? 'bg-destructive/5' : undefined)}
+                rowClassName={(l) => (l.withinBand === false ? 'bg-destructive/5' : undefined)}
                 emptyTitle={tx('Satır yok')}
               />
             )}

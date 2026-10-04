@@ -10,7 +10,7 @@ import { RowsSkeleton } from '@/components/ui/States'
 import { useAuth } from '@/auth/useAuth'
 import { useDirectory } from '@/api/directory'
 import { overtimeApi, type OvertimeStatus } from '@/api/timeclock'
-import { formatDate } from '@/lib/format'
+import { formatDate, parseDecimal } from '@/lib/format'
 import { isoDate, useAction } from '@/features/shared/kit'
 import { tx, appLocale } from '@/lib/i18n'
 
@@ -21,6 +21,19 @@ const STATUS: Record<OvertimeStatus, { label: string; tone: 'neutral' | 'success
   Cancelled: { label: tx('İptal'), tone: 'neutral' },
 }
 const h = (n: number) => n.toLocaleString(appLocale, { maximumFractionDigits: 1 })
+
+/** Sunucudaki OvertimeController.DailyLimitHours ile aynı (günlük çalışma 11 saati aşamaz). */
+export const OVERTIME_DAILY_MAX = 4
+
+/** Fazla mesai saati alan doğrulaması: boş/0/negatif ve günlük üst sınır alan yanında gösterilir. */
+export function overtimeHoursError(input: string): string | undefined {
+  const n = parseDecimal(input)
+  if (input.trim() === '' || n === null) return tx('Saat girin (ör. 2 ya da 1,5).')
+  if (n <= 0) return tx('Saat sıfırdan büyük olmalı.')
+  if (n > OVERTIME_DAILY_MAX) return tx('Günde en fazla {0} saat girilebilir.', [OVERTIME_DAILY_MAX])
+  if (Math.round(n * 2) !== n * 2) return tx('Yarım saat adımıyla girin (ör. 1,5).')
+  return undefined
+}
 
 /** Puantaj › Fazla mesai: talep, yıllık 270 saat sınırı ve (İK için) onay akışı olmayan talepler. */
 export function OvertimePanel() {
@@ -39,7 +52,8 @@ export function OvertimePanel() {
   const [hours, setHours] = useState('2')
   const [reason, setReason] = useState('')
   const inv = [['overtime']]
-  const create = useAction(() => overtimeApi.create({ date, hours: Number(hours.replace(',', '.')), reason: reason.trim() || undefined }), {
+  const hoursErr = overtimeHoursError(hours)
+  const create = useAction(() => overtimeApi.create({ date, hours: parseDecimal(hours) ?? 0, reason: reason.trim() || undefined }), {
     success: tx('Fazla mesai talebi gönderildi'), invalidate: inv, onDone: () => setReason(''),
   })
   const cancel = useAction((id: string) => overtimeApi.cancel(id), { success: tx('Talep iptal edildi'), invalidate: inv })
@@ -61,9 +75,9 @@ export function OvertimePanel() {
         )}
         <div className="grid gap-3 sm:grid-cols-[160px_110px_1fr_auto] sm:items-end">
           <TextField label={tx('Tarih')} type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-          <TextField label={tx('Saat')} inputMode="decimal" value={hours} onChange={(e) => setHours(e.target.value)} />
+          <TextField label={tx('Saat')} inputMode="decimal" value={hours} error={hours ? hoursErr : undefined} onChange={(e) => setHours(e.target.value)} />
           <TextField label={tx('Gerekçe')} value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500} hint={tx('İş gerekçesi yazın; sağlık bilgisi yazmayın.')} />
-          <Button disabled={create.isPending || !date || !hours} onClick={() => create.mutate(undefined)}>{tx('Talep et')}</Button>
+          <Button disabled={create.isPending || !date || !!hoursErr} onClick={() => create.mutate(undefined)}>{tx('Talep et')}</Button>
         </div>
         {mine.isPending ? <RowsSkeleton rows={2} /> : !mine.data?.length ? <p className="text-[13px] text-muted-foreground">{tx('Bu yıl fazla mesai talebiniz yok.')}</p> : (
           <ul className="divide-y divide-border text-[13px]">

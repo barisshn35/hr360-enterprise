@@ -16,6 +16,7 @@ import { useDirectory } from '@/api/directory'
 import { cn } from '@/lib/utils'
 import { PlanGate, errMsg, useAction } from '@/features/shared/kit'
 import { tx, appLocale } from '@/lib/i18n'
+import { useConfirm } from '@/components/ui/Confirm'
 
 /** Belgeleri sayfa sonlarıyla tek pencerede açar ve yazdırma diyaloğunu tetikler (PDF olarak kaydet). */
 export function printDocuments(title: string, docs: RenderedDoc[]) {
@@ -122,7 +123,28 @@ export function DocTemplatesPage() {
     setF((x) => ({ ...x, body: x.body.slice(0, s) + token + x.body.slice(e) }))
     requestAnimationFrame(() => { el.focus(); el.selectionStart = el.selectionEnd = s + token.length })
   }
-  const preview = useMemo(() => f.body.replace(/<\s*(script|iframe|object|embed|style)[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi, '').replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '').replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, k: string) => `<mark style="background:hsl(160 80% 40%/.18);color:inherit;border-radius:3px;padding:0 2px">${SAMPLE[k] ?? `{{${k}}}`}</mark>`), [f.body])
+  // Tanımsız yer tutucular ({{yok.alan}}) belgede olduğu gibi kalır; önizlemede ve kaydetmede uyarılır.
+  const unknownKeys = useMemo(() => {
+    if (!ph.data) return []
+    const known = new Set(ph.data.map((p) => p.key))
+    return [...new Set([...f.body.matchAll(/\{\{\s*([\w.]+)\s*\}\}/g)].map((m) => m[1]))].filter((k) => !known.has(k))
+  }, [f.body, ph.data])
+  const confirm = useConfirm()
+  const askSave = async () => {
+    if (unknownKeys.length > 0 && !(await confirm({
+      title: tx('Tanımsız yer tutucu var'),
+      note: tx('{0} tanımlı değil; üretilen belgelerde olduğu gibi görünür. Yine de kaydedilsin mi?', [unknownKeys.map((k) => `{{${k}}}`).join(', ')]),
+      action: tx('Yine de kaydet'),
+      destructive: false,
+    }))) return
+    save.mutate(undefined)
+  }
+  const askDelete = async () => {
+    if (sel && await confirm({ title: tx('“{0}” şablonu silinsin mi?', [sel.name]), note: tx('Şablon kalıcı olarak silinir; çalışanlar bu şablonla yeni belge talep edemez.'), action: tx('Sil') })) del.mutate(undefined)
+  }
+  const preview = useMemo(() => f.body.replace(/<\s*(script|iframe|object|embed|style)[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi, '').replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '').replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, k: string) => unknownKeys.includes(k)
+    ? `<mark style="background:hsl(0 80% 55%/.2);color:inherit;border-radius:3px;padding:0 2px;text-decoration:underline wavy hsl(0 80% 50%)">{{${k}}}</mark>`
+    : `<mark style="background:hsl(160 80% 40%/.18);color:inherit;border-radius:3px;padding:0 2px">${SAMPLE[k] ?? `{{${k}}}`}</mark>`), [f.body, unknownKeys])
   const groups = useMemo(() => [...new Set((list.data ?? []).map((t) => t.category))], [list.data])
 
   return (
@@ -148,8 +170,8 @@ export function DocTemplatesPage() {
           <Panel>
             <PanelHead title={sel ? tx('Şablonu düzenle') : tx('Yeni şablon')} action={<div className="flex gap-2">
               {sel && <Button size="sm" variant="outline" onClick={() => setBulk(sel)}><Printer className="size-4" />{' '}{tx('Toplu üret / PDF')}</Button>}
-              {sel && <Button size="icon" variant="ghost" aria-label={tx('Sil')} onClick={() => del.mutate(undefined)}><Trash2 className="size-4" /></Button>}
-              <Button size="sm" onClick={() => save.mutate(undefined)} disabled={!f.name.trim() || !f.body.trim()}><Save className="size-4" />{' '}{tx('Kaydet')}</Button>
+              {sel && <Button size="icon" variant="ghost" aria-label={tx('Sil')} onClick={askDelete}><Trash2 className="size-4" /></Button>}
+              <Button size="sm" onClick={askSave} disabled={!f.name.trim() || !f.body.trim() || save.isPending}><Save className="size-4" />{' '}{tx('Kaydet')}</Button>
             </div>} />
             <PanelBody className="space-y-4">
               <div className="grid gap-3 sm:grid-cols-[1fr_200px]"><TextField label={tx('Ad')} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /><TextField label={tx('Kategori')} value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })} /></div>
@@ -171,6 +193,11 @@ export function DocTemplatesPage() {
                   <motion.div key={f.body.length > 0 ? 'p' : 'e'} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="h-[434px] overflow-y-auto rounded-xl border border-border bg-white p-6 text-[13px] leading-relaxed text-zinc-900" dangerouslySetInnerHTML={{ __html: preview || tx('<p style="color:#888">İçerik yazdıkça burada görünür.</p>') }} />
                 </div>
               </div>
+              {unknownKeys.length > 0 && (
+                <p role="alert" className="rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-[12.5px] text-destructive">
+                  {tx('Tanımsız yer tutucu: {0}. Yukarıdaki listeden geçerli bir yer tutucu seçin.', [unknownKeys.map((k) => `{{${k}}}`).join(', ')])}
+                </p>
+              )}
               <InfoNote>{tx('Güvenlik: kaydedilirken betik, iframe ve olay öznitelikleri (onclick vb.) sunucuda temizlenir; değerler HTML olarak kaçışlanır.')}</InfoNote>
             </PanelBody>
           </Panel>

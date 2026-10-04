@@ -192,9 +192,9 @@ export function DashboardPage() {
       label: tx('Çalışan'),
       count: employees.data?.length ?? 0,
       icon: Users,
-      trend: `${formatNumber(activeCount)} aktif`,
+      trend: tx('{0} aktif', [formatNumber(activeCount)]),
       trendSense: 'neutral' as const,
-      compareLabel: 'kadroda',
+      compareLabel: tx('kadroda'),
     },
     can('organization:view') && {
       key: 'companies',
@@ -202,7 +202,7 @@ export function DashboardPage() {
       label: tx('Şirket'),
       count: companies.data?.length ?? 0,
       icon: Building2,
-      trend: `${formatNumber(departmentCount)} departman`,
+      trend: tx('{0} departman', [formatNumber(departmentCount)]),
       trendSense: 'neutral' as const,
     },
     can('recruitment:view') && {

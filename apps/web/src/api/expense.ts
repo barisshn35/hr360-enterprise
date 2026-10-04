@@ -201,6 +201,13 @@ export const expenseApi = {
   createClaim: (input: CreateClaimInput) =>
     apiFetch<ExpenseClaim>(`${BASE}/expense-claims`, { method: 'POST', body: input }),
 
+  /** Yalnızca taslak; kalemlerin tamamı yeniden yazılır. */
+  updateClaim: (id: string, input: Omit<CreateClaimInput, 'employeeId'>) =>
+    apiFetch<ExpenseClaim>(`${BASE}/expense-claims/${id}`, { method: 'PUT', body: input }),
+
+  deleteClaim: (id: string) =>
+    apiFetch<void>(`${BASE}/expense-claims/${id}`, { method: 'DELETE' }),
+
   submitClaim: (id: string, workflowRequestId?: string) =>
     apiFetch<ExpenseClaim>(`${BASE}/expense-claims/${id}/submit`, {
       method: 'POST',

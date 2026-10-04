@@ -27,7 +27,7 @@ export function AnalyticsPage() {
   const [params, setParams] = useSearchParams()
   const tab: Tab = params.get('sekme') === 'donem' ? 'donem' : 'izleme'
   const teams = useTeams()
-  const { cycles, current } = useCurrentCycle()
+  const { cycles, current, isPending: cyclesPending } = useCurrentCycle()
   const employeeId = params.get('calisan')
   const empTeams = useTeamsByEmployee(employeeId ?? undefined)
 
@@ -90,6 +90,7 @@ export function AnalyticsPage() {
           ) : (
             <CycleTab
               cycles={cycles}
+              cyclesPending={cyclesPending}
               cycleId={cycleId}
               onCycle={(id) => set({ donem: id })}
               teamId={cycleTeam}

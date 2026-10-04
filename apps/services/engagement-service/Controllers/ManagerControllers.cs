@@ -146,12 +146,15 @@ public class OneOnOnesController : AppController
         sb.Append($"UID:{o.Id}@hr360\r\nDTSTAMP:{DateTime.UtcNow:yyyyMMddTHHmmssZ}\r\n");
         sb.Append($"DTSTART:{o.ScheduledAt:yyyyMMddTHHmmssZ}\r\nDTEND:{o.ScheduledAt.AddMinutes(30):yyyyMMddTHHmmssZ}\r\n");
         sb.Append($"SUMMARY:1:1 — {Escape(o.ManagerName)} / {Escape(o.EmployeeName)}\r\n");
-        sb.Append($"DESCRIPTION:{Escape(string.Join("\\n", o.Agenda.Select(a => "• " + a.Text)))}\r\n");
+        // Her madde ayrı kaçışlanır, sonra RFC 5545 satır sonu (\n) ile birleştirilir; birleşik metin yeniden
+        // kaçışlanırsa ters bölü ikilenir ve takvimde "\n" düz metin olarak görünür.
+        sb.Append($"DESCRIPTION:{string.Join("\\n", o.Agenda.Select(a => Escape("• " + a.Text)))}\r\n");
         sb.Append("END:VEVENT\r\nEND:VCALENDAR\r\n");
         return File(Encoding.UTF8.GetBytes(sb.ToString()), "text/calendar", $"1on1-{o.ScheduledAt:yyyyMMdd}.ics");
     }
 
-    private static string Escape(string s) => s.Replace("\\", "\\\\").Replace(",", "\\,").Replace(";", "\\;");
+    private static string Escape(string s) => s.Replace("\\", "\\\\").Replace(",", "\\,").Replace(";", "\\;")
+        .Replace("\r\n", "\\n").Replace("\n", "\\n").Replace("\r", "");
 }
 
 /* ======================================================================
@@ -407,10 +410,13 @@ public class OrgScenariosController : AppController
 
     public record ScenarioInput(string Name, string? Description, List<OrgMove>? Moves, string? Status);
 
+    private static bool NegativeSalary(List<OrgMove>? moves) => moves?.Any(m => m.PlannedSalary < 0) == true;
+
     [HttpPost]
     public async Task<IActionResult> Create(ScenarioInput body, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(body.Name)) return BadRequest(new { message = "Senaryo adı zorunlu." });
+        if (NegativeSalary(body.Moves)) return BadRequest(new { message = "Planlanan maaş negatif olamaz." });
         var s = new OrgScenario { Name = body.Name.Trim(), Description = body.Description, Moves = body.Moves ?? new(), CreatedByName = Me.Name };
         _db.OrgScenarios.Add(s);
         await _db.SaveChangesAsync(ct);
@@ -422,6 +428,7 @@ public class OrgScenariosController : AppController
     {
         var s = await _db.OrgScenarios.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (s is null) return NotFound();
+        if (NegativeSalary(body.Moves)) return BadRequest(new { message = "Planlanan maaş negatif olamaz." });
         if (!string.IsNullOrWhiteSpace(body.Name)) s.Name = body.Name.Trim();
         s.Description = body.Description ?? s.Description;
         if (body.Moves is not null) { s.Moves = body.Moves; _db.Entry(s).Property(x => x.Moves).IsModified = true; }

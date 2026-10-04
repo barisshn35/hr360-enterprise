@@ -29,6 +29,7 @@ import { ApplicationFunnel } from './ApplicationFunnel'
 import { OfferModal, OffersPanel, PipelineBoard, ScheduleInterviewModal, ScorecardsModal, ScorecardTemplatePanel } from './RecruitmentPlus'
 import { MeetingPanel } from '@/features/shared/Meetings'
 import { tx } from '@/lib/i18n'
+import { useConfirm } from '@/components/ui/Confirm'
 
 /** Başvuru durumunu ilerletme — sıradaki mantıklı aşamayı önerir. */
 const NEXT_STAGE: Partial<Record<ApplicationStatus, ApplicationStatus>> = {
@@ -168,6 +169,14 @@ export function JobPostingDetailPage() {
     },
     onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('İlan kapatılamadı.')),
   })
+  const confirm = useConfirm()
+  const askClose = async () => {
+    if (await confirm({
+      title: tx('İlan kapatılsın mı?'),
+      note: tx('Kapatılan ilan yeni başvuru almaz ve yeniden yayına alınamaz; gerekirse yeni ilan açmanız gerekir. Mevcut başvurular korunur.'),
+      action: tx('İlanı kapat'),
+    })) close.mutate()
+  }
 
   if (posting.isPending) return <CenteredSpinner label={tx('İlan yükleniyor')} />
 
@@ -218,7 +227,7 @@ export function JobPostingDetailPage() {
                 variant="outline"
                 className="cursor-pointer"
                 disabled={close.isPending}
-                onClick={() => close.mutate()}
+                onClick={askClose}
               >
                 {close.isPending && <LoaderCircle className="size-4 animate-spin" />}
                 {tx('İlanı kapat')}

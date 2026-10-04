@@ -65,7 +65,10 @@ export function NewLeaveRequestModal({
   // bu yüzden seçici İK'ya gösterilir, diğerleri için çalışan sabit "siz"dir.
   const { roles } = useAuth()
   const isHr = roles.some((r) => r === 'hr-admin' || r === 'tenant-admin' || r === 'platform-admin')
-  const me = useMyEmployeeId(!isHr)
+  // İK için de çekilir: başkası adına girerken iletiler "bakiyeniz" yerine çalışana göre yazılır.
+  const me = useMyEmployeeId(open)
+  // İK'nın seçimini, kendi kimliği sonradan yüklenince sıfırlamamak için yalnızca İK dışında izlenir.
+  const selfIdForReset = isHr ? undefined : me.employeeId
 
   const [employeeId, setEmployeeId] = useState(defaultEmployeeId)
   const [type, setType] = useState<LeaveType>('Annual')
@@ -78,7 +81,7 @@ export function NewLeaveRequestModal({
 
   useEffect(() => {
     if (open) {
-      setEmployeeId(isHr ? defaultEmployeeId : (me.employeeId ?? ''))
+      setEmployeeId(isHr ? defaultEmployeeId : (selfIdForReset ?? ''))
     } else {
       setType('Annual')
       setStartDate('')
@@ -88,7 +91,7 @@ export function NewLeaveRequestModal({
       setErrors({})
       setSubmitted(false)
     }
-  }, [open, defaultEmployeeId, isHr, me.employeeId])
+  }, [open, defaultEmployeeId, isHr, selfIdForReset])
 
   const year = startDate ? new Date(startDate).getFullYear() : new Date().getFullYear()
   const balances = useLeaveBalances(employeeId || undefined, year, Boolean(employeeId))
@@ -106,6 +109,7 @@ export function NewLeaveRequestModal({
    * bakiye tanımı zorunludur (diğer türler bakiyesiz açılabilir).
    */
   const shortfall = balance ? days - balance.remainingDays : 0
+  const onBehalf = isHr && Boolean(employeeId) && employeeId !== me.employeeId
   const blockedByBalance =
     Boolean(employeeId) && !balances.isPending && ((balance && shortfall > 0) || (!balance && type === 'Annual'))
 
@@ -139,7 +143,8 @@ export function NewLeaveRequestModal({
       // Yalnızca tarihler doluyken ve aralık ters değilken anlamlı - aksi
       // halde yukarıdaki iki kural zaten aynı kök sebep (eksik/geçersiz
       // tarih) için ikinci, gereksiz bir hata satırı daha üretiyordu.
-      next.days = tx('Gün sayısı hesaplanamadı, tarihleri kontrol edin.')
+      // Tarihler geçerli ama aralıkta yalnızca hafta sonu/resmî tatil var.
+      next.days = tx('Seçilen aralıkta iş günü yok.')
     }
     return next
   }
@@ -272,7 +277,7 @@ export function NewLeaveRequestModal({
                 className="border-l-2 border-[hsl(var(--warning))] pl-3 text-[13px] leading-relaxed"
               >
                 {tx('{0} yılı için {1} bakiyesi tanımlı değil. {2}', [year, leaveTypeLabels[type].toLocaleLowerCase(appLocale), type === 'Annual'
-                  ? tx('Yıllık izin bakiye tanımı olmadan talep edilemez; İK ile iletişime geçin.')
+                  ? (onBehalf ? tx('Yıllık izin bakiye tanımı olmadan talep edilemez; önce çalışana bakiye tanımlayın.') : tx('Yıllık izin bakiye tanımı olmadan talep edilemez; İK ile iletişime geçin.'))
                   : tx('Bu izin türü bakiyesiz de talep edilebilir.')])}
               </p>
             ) : (
@@ -292,7 +297,9 @@ export function NewLeaveRequestModal({
               <p
                 role="alert"
                 className="mt-2 border-l-2 border-[hsl(var(--warning))] pl-3 text-[12px] leading-relaxed"
-              >{tx('Bakiyeniz {0} gün yetersiz; bu talep gönderilemez. Tarihleri kısaltın ya da İK ile iletişime geçin.', [shortfall])}</p>
+              >{onBehalf
+                ? tx('Çalışanın bakiyesi {0} gün yetersiz; bu talep gönderilemez. Tarihleri kısaltın ya da bakiyeyi güncelleyin.', [shortfall])
+                : tx('Bakiyeniz {0} gün yetersiz; bu talep gönderilemez. Tarihleri kısaltın ya da İK ile iletişime geçin.', [shortfall])}</p>
             )}
           </div>
         )}

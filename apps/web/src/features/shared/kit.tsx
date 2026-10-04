@@ -3,7 +3,7 @@
  * işlem kancası, etiket girişi, kişi seçici, plan kapısı, baş harf avatarı.
  */
 
-import { useMemo, useState, type ReactNode } from 'react'
+import { useId, useMemo, useState, type ReactNode } from 'react'
 import { useMutation, useQueryClient, type QueryKey } from '@tanstack/react-query'
 import { motion } from 'motion/react'
 import { X } from 'lucide-react'
@@ -76,6 +76,9 @@ export function ChipInput({
   label?: string
 }) {
   const [draft, setDraft] = useState('')
+  // id verilmezse etiket girdiye bağlanamıyordu (htmlFor={undefined}): kararlı bir kimlik üretilir.
+  const autoId = useId()
+  const inputId = id ?? autoId
   const add = (raw: string) => {
     const v = raw.trim()
     if (!v || value.some((x) => x.toLocaleLowerCase(appLocale) === v.toLocaleLowerCase(appLocale))) return
@@ -85,7 +88,7 @@ export function ChipInput({
   return (
     <div className="space-y-1.5">
       {label && (
-        <label htmlFor={id} className="text-[13px] font-medium">
+        <label htmlFor={inputId} className="text-[13px] font-medium">
           {label}
         </label>
       )}
@@ -99,7 +102,7 @@ export function ChipInput({
           </span>
         ))}
         <input
-          id={id}
+          id={inputId}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {

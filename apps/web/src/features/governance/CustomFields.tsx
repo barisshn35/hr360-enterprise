@@ -13,6 +13,7 @@ import { platformGovApi, type CustomField, type CustomFieldInput, type CustomFie
 import { formatDateTime } from '@/lib/format'
 import { errMsg, useAction } from '@/features/shared/kit'
 import { tx } from '@/lib/i18n'
+import { useConfirm } from '@/components/ui/Confirm'
 
 const TYPE_LABELS: Record<CustomFieldType, string> = {
   text: tx('Metin'), number: tx('Sayı'), date: tx('Tarih'), select: tx('Seçim listesi'), boolean: tx('Evet / hayır'),
@@ -34,6 +35,7 @@ export function CustomFieldsPage() {
   const list = useQuery({ queryKey: ['custom-fields', 'list'], queryFn: ({ signal }) => platformGovApi.fields(signal) })
   const [editing, setEditing] = useState<{ id?: string; f: CustomFieldInput } | null>(null)
   const del = useAction((id: string) => platformGovApi.deleteField(id), { success: tx('Alan ve değerleri silindi (imha tutanağına yazıldı)'), invalidate: [['custom-fields']] })
+  const confirm = useConfirm()
   return (
     <>
       <PageHeader title={tx('Özel alanlar')} eyebrow={[tx('KVKK')]}
@@ -63,7 +65,7 @@ export function CustomFieldsPage() {
                   {!f.isActive && <StatusBadge tone="neutral">{tx('Pasif')}</StatusBadge>}
                   <Button size="sm" variant="outline" onClick={() => setEditing({ id: f.id, f: toInput(f) })}><Pencil className="size-4" /> {tx('Düzenle')}</Button>
                   <Button size="sm" variant="outline" disabled={del.isPending}
-                    onClick={() => { if (window.confirm(tx('Alan ve tüm değerleri kalıcı olarak silinsin mi?'))) del.mutate(f.id) }}><Trash2 className="size-4" /></Button>
+                    onClick={async () => { if (await confirm({ title: tx('“{0}” alanı silinsin mi?', [f.label]), note: tx('Alan ve tüm çalışanlardaki değerleri kalıcı olarak silinir; silme imha tutanağına yazılır.'), action: tx('Sil') })) del.mutate(f.id) }}><Trash2 className="size-4" /></Button>
                 </li>
               ))}
             </ul>

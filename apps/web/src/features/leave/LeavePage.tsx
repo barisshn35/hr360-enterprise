@@ -12,6 +12,8 @@ import { EmployeePicker } from '@/components/ui/EmployeePicker'
 import { EmptyState, ErrorState, InfoNote, RowsSkeleton } from '@/components/ui/States'
 import type { StatusTone } from '@/components/ui/StatusBadge'
 import { useToast } from '@/components/ui/Toast'
+import { useConfirm } from '@/components/ui/Confirm'
+import { useDirectory } from '@/api/directory'
 import { useAuth } from '@/auth/useAuth'
 import { isHr } from '@/auth/roles'
 import { leaveApi, type LeaveRequestPageParams } from '@/api/leave'
@@ -102,7 +104,15 @@ export function LeavePage() {
   const { can, roles } = useAuth()
   const { employeeId: myEmployeeId } = useMyEmployeeId()
   // İptal backend'de yalnızca talep sahibine ve İK'ya açık.
-  const canCancel = (r: { employeeId: string }) => isHr(roles) || r.employeeId === myEmployeeId
+  const hr = isHr(roles)
+  const canCancel = (r: { employeeId: string }) => hr || r.employeeId === myEmployeeId
+  const confirm = useConfirm()
+  // İK listede herkesin talebini görür: kimin talebi olduğu dizin önbelleğinden (yalnızca ad) çözülür.
+  const directory = useDirectory(hr)
+  const nameOf = useMemo(() => {
+    const m = new Map((directory.data ?? []).map((d) => [d.id, d.fullName]))
+    return (id: string) => m.get(id) ?? '—'
+  }, [directory.data])
   const toast = useToast()
   const queryClient = useQueryClient()
   const [tab, setTab] = useTabParam<TabKey>('durum', 'Submitted')
@@ -168,6 +178,14 @@ export function LeavePage() {
   const rows = requests.data?.items
 
   const columns: Array<Column<LeaveRequest>> = [
+    ...(hr
+      ? [{
+          id: 'employee',
+          header: tx('Çalışan'),
+          searchText: (r: LeaveRequest) => nameOf(r.employeeId),
+          cell: (r: LeaveRequest) => <span className="font-medium text-foreground">{nameOf(r.employeeId)}</span>,
+        } satisfies Column<LeaveRequest>]
+      : []),
     {
       id: 'type',
       header: tx('İzin türü'),
@@ -197,7 +215,8 @@ export function LeavePage() {
       header: tx('Gün'),
       align: 'right',
       sortValue: (r) => r.days,
-      exportText: (r) => String(r.days),
+      // CSV'de de arayüzle aynı yerel ondalık ("0,4"; ayırıcı ";" olduğundan çakışmaz).
+      exportText: (r) => formatNumber(r.days),
       cell: (r) => formatNumber(r.days),
     },
     {
@@ -330,14 +349,22 @@ export function LeavePage() {
             destructive: true,
             hidden: (r) =>
               !(r.status === 'Submitted' || r.status === 'Draft') || cancel.isPending || !canCancel(r),
-            onSelect: (r) => cancel.mutate(r.id),
+            onSelect: async (r) => {
+              if (await confirm({
+                title: tx('İzin talebi iptal edilsin mi?'),
+                note: tx('{0} · {1} – {2}. Bekleyen onay akışı kapanır ve ayrılan gün bakiyeye geri döner.', [leaveTypeLabels[r.type], formatDate(r.startDate), formatDate(r.endDate)]),
+                action: tx('Talebi iptal et'),
+              })) cancel.mutate(r.id)
+            },
           },
         ]}
         notice={
           <InfoNote>
             <strong className="font-semibold text-foreground">
               {tx('Onay bu ekrandan verilmez.')}
-            </strong>{' '}{tx('Talep gönderilince onay zinciri', [])}{' '}<em>{tx('Onay kutusu')}</em>{' '}{tx('üzerinden ilerler; onaylandığında izin kaydı ve bakiye Kafka olayıyla kendiliğinden güncellenir. Buradan yalnızca kendi bekleyen talebinizi iptal edebilirsiniz.')}
+            </strong>{' '}{tx('Talep gönderilince onay zinciri', [])}{' '}<em>{tx('Onay kutusu')}</em>{' '}{hr
+              ? tx('üzerinden ilerler; onaylandığında izin kaydı ve bakiye kendiliğinden güncellenir. Bekleyen talepleri buradan iptal edebilirsiniz.')
+              : tx('üzerinden ilerler; onaylandığında izin kaydı ve bakiye kendiliğinden güncellenir. Buradan yalnızca kendi bekleyen talebinizi iptal edebilirsiniz.')}
           </InfoNote>
         }
       />

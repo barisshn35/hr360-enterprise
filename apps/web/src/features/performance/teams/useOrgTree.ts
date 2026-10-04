@@ -136,8 +136,19 @@ export function useOrgTree({ includeInactive = false }: { includeInactive?: bool
     })
   }, [companies.data, teams.data, people])
 
+  /**
+   * Hiçbir etkin ekipte olmayan aktif çalışan sayısı (aktif çalışanlar − etkin ekip üyeleri).
+   * Departman toplamları bunu vermez: başka departmanın ekibindeki ya da departmansız kişi kaçıyordu.
+   */
+  const unassignedCount = useMemo<number | null>(() => {
+    if (!people.hasDetails) return null
+    const members = new Set((teams.data ?? []).filter((t) => t.isActive).flatMap((t) => (t.members ?? []).filter((m) => !m.leftOn).map((m) => m.employeeId)))
+    return people.employees.filter((e) => e.status !== 2 && !members.has(e.id)).length
+  }, [teams.data, people])
+
   return {
     tree,
+    unassignedCount,
     isPending: companies.isPending || teams.isPending,
     error: companies.error ?? teams.error ?? null,
     /** Dizin alınamadıysa adlar eksik olabilir — ekranda not düşülür. */

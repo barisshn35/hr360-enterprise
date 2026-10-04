@@ -63,7 +63,7 @@ function NewDocumentModal({ open, onClose }: { open: boolean; onClose: () => voi
       open={open}
       onClose={onClose}
       title={tx('Yeni doküman kaydı')}
-      note={tx('Dosya yükleme backend\'de henüz yok; burada yalnızca kayıt tutulur.')}
+      note={tx('Bu kayıt dosyanın kendisini içermez; belgenin hangi çalışanda bulunduğunu not eder.')}
       size="lg"
       footer={
         <>
@@ -186,7 +186,7 @@ function DeleteConfirm({ doc, signed, onClose }: { doc: HrDocument | null; signe
 }
 
 export function DocumentsPage() {
-  const [employeeId, setEmployeeId] = useState('')
+  const [employeeId, setEmployeeId] = useState('all')
   const [modalOpen, setModalOpen] = useState(false)
   const [toDelete, setToDelete] = useState<HrDocument | null>(null)
   const [toSign, setToSign] = useState<HrDocument | null>(null)
@@ -194,7 +194,7 @@ export function DocumentsPage() {
   const signatures = useSignatureStatus()
   const nameOf = useEmployeeName()
 
-  const documents = useDocuments({ employeeId: employeeId || undefined })
+  const documents = useDocuments({ employeeId: employeeId && employeeId !== 'all' ? employeeId : undefined })
 
   const columns: Array<Column<HrDocument>> = [
     {
@@ -272,7 +272,7 @@ export function DocumentsPage() {
           id="doc-filter-employee"
           value={employeeId}
           onChange={setEmployeeId}
-          hint={tx('Boş bırakılırsa tüm çalışanlar listelenir.')}
+          includeAllOption
         />
       </div>
 
@@ -301,7 +301,7 @@ export function DocumentsPage() {
         ]}
         notice={
           <InfoNote>
-            {tx('Bu ekran dosyanın kendisini tutmaz — yalnızca hangi çalışanda hangi belgenin bulunduğunu kayda geçirir. Dosya yükleme ucu backend\'e eklendiğinde buraya bağlanır.')}
+            {tx('Bu ekran dosyanın kendisini tutmaz — yalnızca hangi çalışanda hangi belgenin bulunduğunu kayda geçirir. Dosyanın aslını özlük dosyasında ya da belge kütüphanesinde saklayın.')}
           </InfoNote>
         }
       />

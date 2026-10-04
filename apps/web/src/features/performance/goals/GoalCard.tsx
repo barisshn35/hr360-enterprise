@@ -1,5 +1,5 @@
 import { motion } from 'motion/react'
-import { Ban, Flame, Target, TrendingUp } from 'lucide-react'
+import { Ban, Flame, Pencil, Target, Trash2, TrendingUp } from 'lucide-react'
 import { formatShareOf, goalStatusLabels, goalStatusTone, shareOf, type Goal } from '@/api/performance'
 import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/ui/StatusBadge'
@@ -14,12 +14,16 @@ export function GoalCard({
   index,
   canEdit,
   onUpdate,
+  onEdit,
+  onDelete,
 }: {
   goal: Goal
   totalWeight: number
   index: number
   canEdit: boolean
   onUpdate: () => void
+  onEdit?: () => void
+  onDelete?: () => void
 }) {
   const p = progressOf(goal)
   const share = goal.status === 'Cancelled' ? 0 : shareOf(goal.weight, totalWeight)
@@ -97,9 +101,21 @@ export function GoalCard({
           )}
         </p>
         {canEdit && (
-          <Button size="sm" variant="outline" onClick={onUpdate}>
-            {tx('İlerlemeyi güncelle')}
-          </Button>
+          <div className="flex shrink-0 items-center gap-1">
+            {onEdit && (
+              <Button size="icon" variant="ghost" className="size-8" onClick={onEdit} aria-label={tx('Düzenle')} title={tx('Düzenle')}>
+                <Pencil className="size-4" aria-hidden />
+              </Button>
+            )}
+            {onDelete && (
+              <Button size="icon" variant="ghost" className="size-8 text-destructive hover:text-destructive" onClick={onDelete} aria-label={tx('Sil')} title={tx('Sil')}>
+                <Trash2 className="size-4" aria-hidden />
+              </Button>
+            )}
+            <Button size="sm" variant="outline" onClick={onUpdate}>
+              {tx('İlerlemeyi güncelle')}
+            </Button>
+          </div>
         )}
       </div>
     </motion.article>

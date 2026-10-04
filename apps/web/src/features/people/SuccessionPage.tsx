@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils'
 import { Initials, PersonSelect, PlanGate, useAction } from '@/features/shared/kit'
 import { useDirectory } from '@/api/directory'
 import { tx } from '@/lib/i18n'
+import { useConfirm } from '@/components/ui/Confirm'
 
 const LEVELS: Level[] = ['High', 'Medium', 'Low']
 const levelTone = { High: 'danger', Medium: 'warning', Low: 'success' } as const
@@ -28,21 +29,35 @@ function PlanModal({ plan, onClose }: { plan?: SuccessionPlan; onClose: () => vo
   })
   const [add, setAdd] = useState('')
   const sug = useQuery({ queryKey: ['succession', 'suggest', f.incumbentEmployeeId], queryFn: ({ signal }) => engagementApi.suggestSuccessors(f.incumbentEmployeeId || undefined, signal) })
+  const incumbent = f.incumbentEmployeeId || ''
+  // Seçilip "+" basılmamış aday kaydedilirken sessizce atılmaz; havuza eklenir.
+  const pendingAdd = add && add !== incumbent && !f.candidates.some((c) => c.employeeId === add) ? add : ''
+  const incumbentIsCandidate = !!incumbent && f.candidates.some((c) => c.employeeId === incumbent)
   const save = useAction(() => {
-    const body = { ...f, incumbentEmployeeId: f.incumbentEmployeeId || null }
+    const candidates = pendingAdd
+      ? [...f.candidates, { employeeId: pendingAdd, name: dir.data?.find((d) => d.id === pendingAdd)?.fullName ?? '', readiness: 'OneToTwoYears' as Readiness }]
+      : f.candidates
+    const body = { ...f, candidates, incumbentEmployeeId: f.incumbentEmployeeId || null }
     return plan ? engagementApi.updateSuccession(plan.id, body) : engagementApi.createSuccession(body)
   }, { success: tx('Ardıl planı kaydedildi'), invalidate: [['succession']], onDone: onClose })
+  // Sunucu aynı departmanı öne alır ama listeyi diğer departmanlarla tamamlar; görevdeki kişi seçiliyken
+  // yalnızca gerçekten aynı departmandakiler "aynı departman" önerisi olarak gösterilir.
+  const suggestions = (sug.data ?? [])
+    .filter((s) => (incumbent ? s.sameDepartment : true) && s.employeeId !== incumbent && !f.candidates.some((c) => c.employeeId === s.employeeId))
+    .slice(0, 6)
   const addCandidate = (id: string, name: string) => {
-    if (!id || f.candidates.some((c) => c.employeeId === id)) return
+    // Görevdeki kişi kendi ardılı olamaz.
+    if (!id || id === incumbent || f.candidates.some((c) => c.employeeId === id)) return
     setF({ ...f, candidates: [...f.candidates, { employeeId: id, name, readiness: 'OneToTwoYears' }] })
   }
   return (
     <Modal open onClose={onClose} size="xl" title={plan ? tx('Ardıl planını düzenle') : tx('Yeni kritik pozisyon')}
-      footer={<><Button variant="outline" onClick={onClose}>{tx('Vazgeç')}</Button><Button disabled={!f.positionTitle.trim() || save.isPending} onClick={() => save.mutate(undefined)}>{tx('Kaydet')}</Button></>}>
+      footer={<><Button variant="outline" onClick={onClose}>{tx('Vazgeç')}</Button><Button disabled={!f.positionTitle.trim() || incumbentIsCandidate || save.isPending} onClick={() => save.mutate(undefined)}>{pendingAdd ? tx('Adayı ekle ve kaydet') : tx('Kaydet')}</Button></>}>
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="space-y-4">
           <TextField label={tx('Pozisyon')} value={f.positionTitle} onChange={(e) => setF({ ...f, positionTitle: e.target.value })} />
-          <PersonSelect label={tx('Görevdeki kişi')} value={f.incumbentEmployeeId ?? ''} onChange={(v) => setF({ ...f, incumbentEmployeeId: v })} />
+          <PersonSelect label={tx('Görevdeki kişi')} value={f.incumbentEmployeeId ?? ''} onChange={(v) => setF({ ...f, incumbentEmployeeId: v })}
+            hint={incumbentIsCandidate ? tx('Görevdeki kişi aday havuzunda; kendi ardılı olamaz. Havuzdan çıkarın ya da başka kişi seçin.') : undefined} />
           <div className="grid grid-cols-2 gap-3">
             <SelectField label={tx('Kritiklik')} value={f.criticality} onChange={(v) => setF({ ...f, criticality: v as Level })} options={LEVELS.map((l) => ({ value: l, label: levelLabels[l] }))} />
             <SelectField label={tx('Ayrılma riski')} value={f.vacancyRisk} onChange={(v) => setF({ ...f, vacancyRisk: v as Level })} options={LEVELS.map((l) => ({ value: l, label: levelLabels[l] }))} />
@@ -61,13 +76,14 @@ function PlanModal({ plan, onClose }: { plan?: SuccessionPlan; onClose: () => vo
               </li>
             ))}
           </ul>
-          <div className="flex items-end gap-2"><div className="flex-1"><PersonSelect label={tx('Aday ekle')} value={add} onChange={setAdd} /></div>
-            <Button variant="outline" onClick={() => { addCandidate(add, dir.data?.find((d) => d.id === add)?.fullName ?? ''); setAdd('') }}><Plus className="size-4" /></Button></div>
-          {sug.data && sug.data.length > 0 && (
+          <div className="flex items-end gap-2"><div className="flex-1"><PersonSelect label={tx('Aday ekle')} value={add} onChange={setAdd} exclude={[...(incumbent ? [incumbent] : []), ...f.candidates.map((c) => c.employeeId)]}
+            hint={pendingAdd ? tx('Kaydettiğinizde bu kişi de havuza eklenir.') : undefined} /></div>
+            <Button variant="outline" aria-label={tx('Aday ekle')} disabled={!pendingAdd} onClick={() => { addCandidate(add, dir.data?.find((d) => d.id === add)?.fullName ?? ''); setAdd('') }}><Plus className="size-4" /></Button></div>
+          {suggestions.length > 0 && (
             <div>
-              <p className="mb-1.5 flex items-center gap-1.5 text-[12.5px] text-muted-foreground"><Sparkles className="size-3.5 text-primary" />{' '}{tx('Öneriler (aynı departman + son performans puanı)')}</p>
+              <p className="mb-1.5 flex items-center gap-1.5 text-[12.5px] text-muted-foreground"><Sparkles className="size-3.5 text-primary" />{' '}{incumbent ? tx('Öneriler (aynı departman + son performans puanı)') : tx('Öneriler (son performans puanı)')}</p>
               <div className="flex flex-wrap gap-1.5">
-                {sug.data.filter((s) => !f.candidates.some((c) => c.employeeId === s.employeeId)).slice(0, 6).map((s) => (
+                {suggestions.map((s) => (
                   <button key={s.employeeId} onClick={() => addCandidate(s.employeeId, s.name)} className="cursor-pointer rounded-full border border-dashed border-border px-2.5 py-1 text-[12px] hover:border-primary/50">
                     + {s.name} <span className="text-muted-foreground">{tx('{0} · {1} yıl', [s.score != null ? `· ${Math.round(s.score)}` : '', s.tenureYears])}</span>
                   </button>
@@ -85,6 +101,10 @@ export function SuccessionPage() {
   const q = useQuery({ queryKey: ['succession'], queryFn: ({ signal }) => engagementApi.succession(signal) })
   const [edit, setEdit] = useState<SuccessionPlan | null | undefined>(undefined)
   const del = useAction((id: string) => engagementApi.deleteSuccession(id), { success: tx('Silindi'), invalidate: [['succession']] })
+  const confirm = useConfirm()
+  const askDelete = async (p: SuccessionPlan) => {
+    if (await confirm({ title: tx('“{0}” ardıl planı silinsin mi?', [p.positionTitle]), note: tx('Pozisyon ve {0} kişilik aday havuzu kalıcı olarak silinir.', [p.candidates.length]), action: tx('Sil') })) del.mutate(p.id)
+  }
   const plans = q.data ?? []
   return (
     <PlanGate feature="succession">
@@ -121,7 +141,7 @@ export function SuccessionPage() {
               <motion.div key={p.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }} className="surface rounded-2xl border border-border p-5">
                 <div className="flex items-start justify-between gap-2">
                   <div><h3 className="text-[15.5px] font-semibold">{p.positionTitle}</h3><p className="text-[12.5px] text-muted-foreground">{p.departmentName ?? '—'} · {p.incumbentName ?? tx('boş')}</p></div>
-                  <div className="flex gap-1"><Button size="icon" variant="ghost" aria-label={tx('Düzenle')} onClick={() => setEdit(p)}><Pencil className="size-4" /></Button><Button size="icon" variant="ghost" aria-label={tx('Sil')} onClick={() => del.mutate(p.id)}><Trash2 className="size-4" /></Button></div>
+                  <div className="flex gap-1"><Button size="icon" variant="ghost" aria-label={tx('Düzenle')} onClick={() => setEdit(p)}><Pencil className="size-4" /></Button><Button size="icon" variant="ghost" aria-label={tx('Sil')} onClick={() => askDelete(p)}><Trash2 className="size-4" /></Button></div>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   <StatusBadge tone={levelTone[p.criticality]}>{tx('Kritiklik: {0}', [levelLabels[p.criticality]])}</StatusBadge>

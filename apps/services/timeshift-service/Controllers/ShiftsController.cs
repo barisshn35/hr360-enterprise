@@ -26,9 +26,16 @@ public class ShiftsController : ControllerBase
     [Authorize(Policy = "RequireHrAdmin")]
     public async Task<IActionResult> Create([FromBody] CreateShiftRequest request)
     {
+        if (string.IsNullOrWhiteSpace(request.Name)) return BadRequest(new { message = "Vardiya adı zorunlu" });
+        if (request.StartTime == request.EndTime) return BadRequest(new { message = "Başlangıç ve bitiş saati aynı olamaz" });
+        if (request.BreakMinutes is < 0 or > 240) return BadRequest(new { message = "Mola 0–240 dakika olmalı" });
+        var span = request.EndTime > request.StartTime
+            ? request.EndTime - request.StartTime
+            : TimeSpan.FromHours(24) - (request.StartTime - request.EndTime);
+        if (request.BreakMinutes >= span.TotalMinutes) return BadRequest(new { message = "Mola vardiya süresinden kısa olmalı" });
         var shift = new Shift
         {
-            Name = request.Name,
+            Name = request.Name.Trim(),
             StartTime = request.StartTime,
             EndTime = request.EndTime,
             BreakMinutes = request.BreakMinutes,
@@ -38,6 +45,24 @@ public class ShiftsController : ControllerBase
         _db.Shifts.Add(shift);
         await _db.SaveChangesAsync();
         return Created($"/api/shifts/{shift.Id}", shift);
+    }
+
+    /// <summary>
+    /// Vardiya tanımını siler. Atama kaydı varsa (geçmiş puantaj ve takas talepleri ona bağlı)
+    /// silinmez: ilişki veritabanında cascade olduğundan sessiz veri kaybını önlemek için 409.
+    /// </summary>
+    [HttpDelete("{id:guid}")]
+    [Authorize(Policy = "RequireHrAdmin")]
+    public async Task<IActionResult> Delete(Guid id)
+    {
+        var shift = await _db.Shifts.FirstOrDefaultAsync(s => s.Id == id);
+        if (shift is null) return NotFound();
+        var used = await _db.ShiftAssignments.CountAsync(a => a.ShiftId == id);
+        if (used > 0)
+            return Conflict(new { message = $"Bu vardiyaya {used} atama bağlı; vardiya tanımı silinemez" });
+        _db.Shifts.Remove(shift);
+        await _db.SaveChangesAsync();
+        return NoContent();
     }
 
     [HttpPost("{id}/assign")]

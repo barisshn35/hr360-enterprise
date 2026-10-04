@@ -24,6 +24,7 @@ import { formatDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { PersonSelect, isoDate, useAction } from '@/features/shared/kit'
 import { tx } from '@/lib/i18n'
+import { ShiftDefinitionsPanel } from './ShiftDefinitions'
 
 const hhmm = (t?: string | null) => (t ? t.slice(0, 5) : '—')
 const plusDays = (n: number) => isoDate(new Date(Date.now() + n * 864e5))
@@ -130,7 +131,10 @@ function SwapList({ rows, scope }: { rows: SwapRequest[]; scope: 'mine' | 'appro
   const cancel = useAction((id: string) => opsApi.cancelSwap(id), { success: tx('Talep iptal edildi'), invalidate: inv })
   const approve = useAction((id: string) => opsApi.decideSwap(id, true), { success: tx('Takas onaylandı; vardiyalar değişti'), invalidate: inv })
   const reject = useAction(() => opsApi.decideSwap(rej!.id, false, reason.trim() || undefined), { success: tx('Takas reddedildi'), invalidate: inv, onDone: () => setRej(null) })
-  if (rows.length === 0) return <EmptyState icon={ArrowLeftRight} title={scope === 'mine' ? tx('Takas talebi yok') : tx('Onay bekleyen takas yok')} detail={tx('Vardiyalarınızdan birinde “Takas iste” ile başlayın.')} />
+  // Boş metin role göre: çalışana talep başlatma yolu, onaycıya onay kuyruğunun anlamı.
+  if (rows.length === 0) return scope === 'mine'
+    ? <EmptyState icon={ArrowLeftRight} title={tx('Takas talebi yok')} detail={tx('Vardiyalarınızdan birinde “Takas iste” ile başlayın.')} />
+    : <EmptyState icon={ArrowLeftRight} title={tx('Onay bekleyen takas yok')} detail={tx('Ekip arkadaşının kabul ettiği takas talepleri onayınız için burada listelenir.')} />
   return (
     <ul className="divide-y divide-border">
       {rows.map((s) => (
@@ -177,7 +181,8 @@ function PlannerAssignPanel() {
         <div className="grid gap-3 md:grid-cols-3">
           <PersonSelect label={tx('Çalışan')} value={emp} onChange={(v) => { setEmp(v); setCheck(null) }} />
           <SelectField label={tx('Vardiya')} value={shift} onChange={(v) => { setShift(v); setCheck(null) }}
-            options={(shifts.data ?? []).map((s) => ({ value: s.id, label: `${s.name} ${hhmm(s.startTime)}–${hhmm(s.endTime)}` }))} />
+            options={(shifts.data ?? []).map((s) => ({ value: s.id, label: `${s.name} ${hhmm(s.startTime)}–${hhmm(s.endTime)}` }))}
+            hint={shifts.data && shifts.data.length === 0 ? tx('Henüz vardiya tanımı yok; aşağıdaki “Vardiya tanımları” bölümünden ekleyin.') : undefined} />
           <TextField label={tx('Tarih')} type="date" value={date} onChange={(e) => { setDate(e.target.value); setCheck(null) }} />
         </div>
         <div className="flex gap-2">
@@ -257,7 +262,7 @@ export function ShiftSwapPage() {
           <PanelBody className="p-0">{approvals.isPending ? <div className="p-5"><RowsSkeleton rows={2} /></div> : <SwapList rows={approvals.data ?? []} scope="approvals" />}</PanelBody>
         </Panel>
       )}
-      {tab === 'plan' && planner && <PlannerAssignPanel />}
+      {tab === 'plan' && planner && <><PlannerAssignPanel /><ShiftDefinitionsPanel /></>}
       {swapFor && <SwapModal mine={swapFor} onClose={() => setSwapFor(null)} />}
     </div>
   )

@@ -24,7 +24,7 @@ import { OrgDiagram, type SheetTarget } from './OrgDiagram'
 import { TeamFormDialog } from './TeamDialogs'
 import { TeamSheet } from './TeamSheet'
 import { TeamsManage } from './TeamsManage'
-import { useOrgTree, walkDepartments } from './useOrgTree'
+import { useOrgTree } from './useOrgTree'
 import { tx } from '@/lib/i18n'
 
 type View = 'diyagram' | 'yonetim'
@@ -52,8 +52,7 @@ export function TeamsPage() {
   }
 
   const company = org.tree[0]
-  const allDepts = org.tree.flatMap((c) => walkDepartments(c.departments))
-  const unassigned = allDepts.some((d) => d.unassigned === null) ? null : allDepts.reduce((a, d) => a + (d.unassigned?.length ?? 0), 0)
+  const unassigned = org.unassignedCount
   const stats = company
     ? [
         { label: tx('Departman'), value: org.tree.reduce((a, c) => a + c.departmentCount, 0) },

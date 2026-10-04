@@ -188,6 +188,10 @@ export interface UpdateShiftTeamInput {
   anchorDate?: string
   /** Kısıtı kaldırmak için `null`, dokunmamak için alanı hiç göndermeyin. */
   departmentId?: string | null
+  /** Sunucu departman alanını yalnızca bu bayrak true ise değiştirir. */
+  departmentIdSet?: boolean
+  /** Ekibi başka (etkin) desene taşır. */
+  shiftPatternId?: string
 }
 
 export interface UpdateShiftTeamMemberInput {
@@ -229,6 +233,9 @@ export const timeshiftApi = {
 
   createShift: (input: CreateShiftInput) =>
     apiFetch<Shift>(`${BASE}/shifts`, { method: 'POST', body: input }),
+
+  /** Atama kaydı bağlı vardiya silinemez (409). */
+  deleteShift: (id: string) => apiFetch<void>(`${BASE}/shifts/${id}`, { method: 'DELETE' }),
 
   assignShift: (shiftId: string, employeeId: string, date: string) =>
     apiFetch<RosterEntry>(`${BASE}/shifts/${shiftId}/assign`, {

@@ -299,6 +299,8 @@ export const complianceApi = {
   manageAnnouncements: (s?: AbortSignal) => get<ManagedAnnouncement[]>('/announcements/manage', s),
   announcementStats: (id: string, s?: AbortSignal) => get<AckStats>(`/announcements/${id}/stats`, s),
   createAnnouncement: (b: AnnouncementInput) => post<{ id: string; notified: number }>('/announcements', b),
+  /** Planlı ya da yayımdaki duyuruyu düzenler; okuma kayıtları korunur. */
+  updateAnnouncement: (id: string, b: AnnouncementInput) => put<{ id: string; notified: number }>(`/announcements/${id}`, b),
   readAnnouncement: (id: string) => post<{ read: boolean }>(`/announcements/${id}/read`),
   expireAnnouncement: (id: string) => post<{ expired: boolean }>(`/announcements/${id}/expire`),
   deleteAnnouncement: (id: string) => del(`/announcements/${id}`),

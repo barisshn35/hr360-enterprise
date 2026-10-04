@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils'
 import { Initials, PersonSelect, PlanGate, useAction } from '@/features/shared/kit'
 import { CelebrationList } from './CelebrationsPage'
 import { tx } from '@/lib/i18n'
+import { useConfirm } from '@/components/ui/Confirm'
 
 const BADGE_STYLE: Record<string, { emoji: string; ring: string }> = {
   teamwork: { emoji: '🤝', ring: 'from-sky-500/30 to-sky-500/0' },
@@ -85,6 +86,10 @@ function SendKudosModal({ open, onClose }: { open: boolean; onClose: () => void 
 function KudosCard({ k, index }: { k: Kudos; index: number }) {
   const like = useAction(() => engagementApi.likeKudos(k.id), { invalidate: [['kudos', 'wall']] })
   const del = useAction(() => engagementApi.deleteKudos(k.id), { success: tx('Silindi'), invalidate: [['kudos']] })
+  const confirm = useConfirm()
+  const askDelete = async () => {
+    if (await confirm({ title: tx('Takdir silinsin mi?'), note: tx('{0} için gönderdiğiniz takdir duvardan kaldırılır.', [k.toName]), action: tx('Sil') })) del.mutate(undefined)
+  }
   const style = BADGE_STYLE[k.badge] ?? BADGE_STYLE.thanks
   return (
     <motion.article
@@ -113,7 +118,7 @@ function KudosCard({ k, index }: { k: Kudos; index: number }) {
         <span className="rounded-full bg-muted px-2.5 py-0.5 text-[11.5px] text-muted-foreground">{k.badgeLabel}</span>
         <div className="flex items-center gap-1">
           {k.mine && (
-            <button type="button" aria-label={tx('Sil')} onClick={() => del.mutate(undefined)} className="cursor-pointer rounded-lg p-1.5 text-muted-foreground opacity-0 transition group-hover:opacity-100 hover:text-destructive">
+            <button type="button" aria-label={tx('Sil')} onClick={askDelete} className="cursor-pointer rounded-lg p-1.5 text-muted-foreground opacity-0 transition group-hover:opacity-100 hover:text-destructive">
               <Trash2 className="size-3.5" />
             </button>
           )}

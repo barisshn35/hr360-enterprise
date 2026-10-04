@@ -59,7 +59,7 @@ export function ShiftEnginePage() {
           onOpenRoster={(id) => selectTeam(id, 'takvim')}
         />
       )}
-      {tab === 'desenler' && <PatternsView />}
+      {tab === 'desenler' && <PatternsView onOpenTeam={(id) => selectTeam(id, 'ekipler')} />}
     </div>
   )
 }

@@ -12,6 +12,7 @@ import { expenseApi } from '@/api/expense'
 import { useMyEmployeeId } from '@/api/queries'
 import { useAuth } from '@/auth/useAuth'
 import { expenseCategoryLabels, type ExpenseCategory, type ExpenseItem } from '@/api/types'
+import type { ExpenseClaim } from '@/api/expense'
 import { formatMoney } from '@/lib/format'
 import { localISODate } from '@/lib/dates'
 import { tx } from '@/lib/i18n'
@@ -26,6 +27,9 @@ interface DraftItem {
   /** TRY dışı: tutar bu para birimindedir; TL karşılığı harcama günündeki TCMB kuruyla hesaplanır. */
   currency: string
   km: string
+  /** Düzenlemede mevcut kalemden korunan alanlar (formda gösterilmez). */
+  receiptStorageKey?: string | null
+  travelRequestId?: string | null
 }
 
 const CURRENCIES = ['TRY', 'USD', 'EUR', 'GBP', 'CHF']
@@ -40,6 +44,22 @@ function emptyItem(): DraftItem {
     description: '',
     currency: 'TRY',
     km: '',
+  }
+}
+
+/** Kayıtlı kalemi forma çevirir (düzenleme). Yabancı para kalemlerinde özgün tutar gösterilir. */
+function draftFromItem(i: ExpenseItem): DraftItem {
+  const foreign = i.category !== 'Mileage' && i.originalCurrency && i.originalAmount != null
+  return {
+    key: nextKey++,
+    category: i.category,
+    amount: i.category === 'Mileage' ? '' : String(foreign ? i.originalAmount : i.amount),
+    expenseDate: i.expenseDate,
+    description: i.description ?? '',
+    currency: foreign ? i.originalCurrency! : 'TRY',
+    km: i.km != null ? String(i.km) : '',
+    receiptStorageKey: i.receiptStorageKey,
+    travelRequestId: i.travelRequestId,
   }
 }
 
@@ -116,7 +136,12 @@ interface Errors {
  * Toplam kullanıcı yazdıkça kendiliğinden güncellenir; backend zaten
  * kalemlerden hesapladığı için gönderilmez, burada yalnızca gösterilir.
  */
-export function NewClaimModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function NewClaimModal({ open, onClose, claim }: {
+  open: boolean
+  onClose: () => void
+  /** Verilirse taslak düzenleme kipinde açılır (talep sahibi değiştirilemez). */
+  claim?: ExpenseClaim
+}) {
   const toast = useToast()
   const queryClient = useQueryClient()
   const reduced = useReducedMotion()
@@ -133,6 +158,16 @@ export function NewClaimModal({ open, onClose }: { open: boolean; onClose: () =>
   const [items, setItems] = useState<DraftItem[]>([emptyItem()])
   const [errors, setErrors] = useState<Errors>({})
   const [submitted, setSubmitted] = useState(false)
+  const editing = Boolean(claim)
+
+  // Düzenleme: pencere her açıldığında formu kayıtlı taslaktan doldur.
+  useEffect(() => {
+    if (!open || !claim) return
+    setTitle(claim.title)
+    setItems((claim.items ?? []).length > 0 ? (claim.items ?? []).map(draftFromItem) : [emptyItem()])
+    setErrors({})
+    setSubmitted(false)
+  }, [open, claim])
 
   const policy = useQuery({ queryKey: ['expense', 'policy'], queryFn: ({ signal }) => expenseApi.policy(signal), enabled: open, staleTime: 300_000 })
   const kmRate = policy.data?.kmRate ?? 0
@@ -197,7 +232,7 @@ export function NewClaimModal({ open, onClose }: { open: boolean; onClose: () =>
 
   function validate(overrideEmployeeId?: string): Errors {
     const next: Errors = {}
-    if (!(overrideEmployeeId ?? employeeId)) next.employeeId = tx('Çalışan seçilmeli.')
+    if (!editing && !(overrideEmployeeId ?? employeeId)) next.employeeId = tx('Çalışan seçilmeli.')
     if (title.trim().length < 3) next.title = tx('Başlık en az 3 karakter olmalı.')
     if (items.length === 0) {
       next.items = tx('En az bir kalem eklenmeli.')
@@ -221,9 +256,12 @@ export function NewClaimModal({ open, onClose }: { open: boolean; onClose: () =>
         amount: i.category === 'Mileage' ? 0 : Number(i.amount),
         expenseDate: i.expenseDate,
         description: i.description.trim() || undefined,
+        receiptStorageKey: i.receiptStorageKey ?? undefined,
+        travelRequestId: i.travelRequestId ?? undefined,
         ...(i.category === 'Mileage' ? { km: Number(i.km) } : {}),
         ...(i.category !== 'Mileage' && i.currency !== 'TRY' ? { originalCurrency: i.currency, originalAmount: Number(i.amount) } : {}),
       }))
+      if (claim) return expenseApi.updateClaim(claim.id, { title: title.trim(), currency: 'TRY', items: payload })
       return expenseApi.createClaim({
         employeeId,
         title: title.trim(),
@@ -233,11 +271,11 @@ export function NewClaimModal({ open, onClose }: { open: boolean; onClose: () =>
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['expense'] })
-      toast.ok(tx('Masraf talebi taslak olarak oluşturuldu'))
+      toast.ok(editing ? tx('Taslak güncellendi') : tx('Masraf talebi taslak olarak oluşturuldu'))
       onClose()
       reset()
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Talep oluşturulamadı.')),
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : editing ? tx('Taslak kaydedilemedi.') : tx('Talep oluşturulamadı.')),
   })
 
   function submit(e: React.FormEvent) {
@@ -260,8 +298,8 @@ export function NewClaimModal({ open, onClose }: { open: boolean; onClose: () =>
     <Modal
       open={open}
       onClose={onClose}
-      title={tx('Yeni masraf talebi')}
-      note={tx('Taslak olarak açılır; onaya göndermek ayrı bir adımdır.')}
+      title={editing ? tx('Taslağı düzenle') : tx('Yeni masraf talebi')}
+      note={editing ? tx('Yalnızca taslak düzenlenebilir; onaya göndermek ayrı bir adımdır.') : tx('Taslak olarak açılır; onaya göndermek ayrı bir adımdır.')}
       size="lg"
       footer={
         <>
@@ -291,7 +329,7 @@ export function NewClaimModal({ open, onClose }: { open: boolean; onClose: () =>
             disabled={mutation.isPending}
           >
             {mutation.isPending && <LoaderCircle className="size-4 animate-spin" />}
-            {tx('Taslağı oluştur')}
+            {editing ? tx('Kaydet') : tx('Taslağı oluştur')}
           </Button>
         </>
       }
@@ -299,7 +337,7 @@ export function NewClaimModal({ open, onClose }: { open: boolean; onClose: () =>
       <form id="new-claim" onSubmit={submit} noValidate className="space-y-5">
         <ErrorSummary items={summary} />
 
-        {canPickOthers ? (
+        {editing ? null : canPickOthers ? (
           <EmployeePicker
             id="claim-employee"
             value={employeeId}

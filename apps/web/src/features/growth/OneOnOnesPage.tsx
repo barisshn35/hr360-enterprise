@@ -18,6 +18,7 @@ import { useToast } from '@/components/ui/Toast'
 import { useMyEmployeeId } from '@/api/queries'
 import { MeetingPanel, SlotFinder } from '@/features/shared/Meetings'
 import { tx } from '@/lib/i18n'
+import { useConfirm } from '@/components/ui/Confirm'
 
 const MOODS = ['😞', '🙁', '😐', '🙂', '😄']
 
@@ -57,6 +58,10 @@ function MeetingDetail({ m }: { m: OneOnOne }) {
   const upd = useAction((body: Parameters<typeof engagementApi.updateOneOnOne>[1]) => engagementApi.updateOneOnOne(m.id, body), { invalidate: [['one-on-ones']] })
   const del = useAction(() => engagementApi.deleteOneOnOne(m.id), { success: tx('Silindi'), invalidate: [['one-on-ones']] })
   const other = m.iAmManager ? m.employeeName : m.managerName
+  const confirm = useConfirm()
+  const askDelete = async () => {
+    if (await confirm({ title: tx('1:1 görüşme silinsin mi?'), note: tx('{0} ile görüşme; gündem maddeleri, ortak ve özel notlarla birlikte kalıcı olarak silinir.', [other]), action: tx('Sil') })) del.mutate(undefined)
+  }
   return (
     <Panel>
       <PanelHead
@@ -66,7 +71,7 @@ function MeetingDetail({ m }: { m: OneOnOne }) {
           <div className="flex flex-wrap gap-1.5">
             <Button size="sm" variant="outline" onClick={() => engagementApi.oneOnOneIcs(m).catch((e) => toast.stop(errMsg(e)))}><CalendarPlus className="size-4" />{' '}{tx('Takvime ekle')}</Button>
             {m.iAmManager && m.status === 'Planned' && <Button size="sm" onClick={() => upd.mutate({ status: 'Done' })}>{tx('Tamamlandı')}</Button>}
-            {m.iAmManager && <Button size="icon" variant="ghost" aria-label={tx('Sil')} onClick={() => del.mutate(undefined)}><Trash2 className="size-4" /></Button>}
+            {m.iAmManager && <Button size="icon" variant="ghost" aria-label={tx('Sil')} onClick={askDelete}><Trash2 className="size-4" /></Button>}
           </div>
         }
       />

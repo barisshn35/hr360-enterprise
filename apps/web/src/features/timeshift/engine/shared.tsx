@@ -296,3 +296,86 @@ export function Legend({ types, className }: { types: RosterDayType[]; className
     </ul>
   )
 }
+
+/* ------------------------------ Yasal sınır uyarıları ------------------------------ */
+
+type LaborDay = { type: ShiftDayType; startTime: string | null; endTime: string | null }
+
+const toMinutes = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5))
+
+/** Vardiyanın 20:00–06:00 gece aralığına düşen dakikası (İş Kanunu m.69). */
+function nightMinutes(start: string, end: string): number {
+  const s = toMinutes(start)
+  const e = s + shiftMinutes(start, end)
+  // Önceki, aynı ve ertesi günün gece pencereleri (dakika, gün başına göre).
+  const windows: Array<[number, number]> = [[-240, 360], [1200, 1800], [2640, 3240]]
+  return windows.reduce((sum, [a, b]) => sum + Math.max(0, Math.min(e, b) - Math.max(s, a)), 0)
+}
+
+/**
+ * Desen için İş Kanunu sınır uyarıları — engellemez, yalnızca bilgilendirir
+ * (denkleştirme, mola ve toplu sözleşme gibi istisnaları planlayıcı bilir).
+ * Mola desende tutulmadığından süreler molasız brüt hesaplanır.
+ *  - günlük çalışma 11 saati aşamaz (m.63, Çalışma Süresi Yönetmeliği)
+ *  - haftalık ortalama 45 saat (m.63; denkleştirmeyle ortalama)
+ *  - gece çalışması 7,5 saati aşamaz (m.69)
+ *  - iki vardiya arasında en az 11 saat kesintisiz dinlenme (Yönetmelik m.8)
+ */
+export function laborWarnings(days: LaborDay[]): string[] {
+  const out: string[] = []
+  const work = days.map((d) => (d.type !== 'Off' && d.startTime && d.endTime ? d : null))
+  if (!work.some(Boolean)) return out
+
+  const longest = Math.max(...work.map((d) => (d ? shiftMinutes(d.startTime, d.endTime) : 0)))
+  if (longest > 11 * 60)
+    out.push(tx('Günlük çalışma 11 saati aşıyor (en uzun vardiya {0}).', [hoursLabel(longest)]))
+
+  const total = work.reduce((sum, d) => sum + (d ? shiftMinutes(d.startTime, d.endTime) : 0), 0)
+  const weekly = (total / days.length) * 7
+  if (weekly > 45 * 60)
+    out.push(tx('Haftalık ortalama 45 saati aşıyor ({0}).', [hoursLabel(weekly)]))
+
+  const night = Math.max(...work.map((d) => (d ? nightMinutes(d.startTime!, d.endTime!) : 0)))
+  if (night > 7.5 * 60)
+    out.push(tx('Gece çalışması (20:00–06:00) 7,5 saati aşıyor ({0}).', [hoursLabel(night)]))
+
+  // Döngüsel: son günden sonra ilk gün gelir.
+  let minRest = Infinity
+  for (let i = 0; i < work.length; i++) {
+    const a = work[i]
+    const b = work[(i + 1) % work.length]
+    if (!a || !b) continue
+    const endA = toMinutes(a.startTime!) + shiftMinutes(a.startTime, a.endTime)
+    const rest = 24 * 60 + toMinutes(b.startTime!) - endA
+    minRest = Math.min(minRest, rest)
+  }
+  if (minRest < 11 * 60)
+    out.push(
+      minRest <= 0
+        ? tx('Art arda iki vardiya çakışıyor ya da arada dinlenme yok (en az 11 saat olmalı).')
+        : tx('Vardiyalar arası dinlenme 11 saatin altında (en kısa {0}).', [hoursLabel(minRest)]),
+    )
+  return out
+}
+
+/** Yasal sınır uyarılarını gösteren kutu; uyarı yoksa hiçbir şey çizmez. */
+export function LaborWarnings({ days, className }: { days: LaborDay[]; className?: string }) {
+  const list = laborWarnings(days)
+  if (list.length === 0) return null
+  return (
+    <div
+      role="note"
+      className={cn(
+        'rounded-lg border border-[hsl(var(--warning))]/30 bg-[hsl(var(--warning))]/8 px-3 py-2 text-[12px]',
+        className,
+      )}
+    >
+      <p className="font-medium">{tx('Yasal sınır uyarısı (kaydı engellemez)')}</p>
+      <ul className="mt-1 list-disc space-y-0.5 pl-4">
+        {list.map((w) => (
+          <li key={w}>{w}</li>
+        ))}
+      </ul>
+    </div>
+  )
+}

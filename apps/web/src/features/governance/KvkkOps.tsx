@@ -16,6 +16,7 @@ import {
 import { formatDateTime } from '@/lib/format'
 import { PersonSelect, errMsg, useAction } from '@/features/shared/kit'
 import { tx, txServer } from '@/lib/i18n'
+import { useConfirm } from '@/components/ui/Confirm'
 
 /* ================================================================== K2 aydınlatma metinleri */
 
@@ -151,6 +152,11 @@ export function BreachesPanel() {
   const [form, setForm] = useState<DataBreach | null>(null)
   const notify = useAction((id: string) => kvkkOpsApi.notifyBreach(id), { success: (r) => tx('{0} çalışana bilgilendirme gönderildi', [r.notified]), invalidate: [['privacy']] })
   const close = useAction((id: string) => kvkkOpsApi.closeBreach(id), { success: tx('İhlal kaydı kapatıldı'), invalidate: [['privacy']] })
+  const confirm = useConfirm()
+  const askClose = async (b: DataBreach) => {
+    const warn = !b.reportedToBoardAt ? ` ${tx('Kurul bildirimi henüz işaretlenmedi.')}` : ''
+    if (await confirm({ title: tx('İhlal kaydı kapatılsın mı?'), note: tx('Kapanan kayıt artık düzenlenemez, Kurul formu ve bilgilendirme yapılamaz.') + warn, action: tx('Kapat') })) close.mutate(b.id)
+  }
   return (
     <div className="space-y-4">
       <div className="flex justify-end"><Button onClick={() => setEdit('new')}><ShieldAlert className="size-4" />{' '}{tx('İhlal bildir')}</Button></div>
@@ -177,7 +183,7 @@ export function BreachesPanel() {
                   <Button size="sm" variant="outline" onClick={() => setEdit(b)}>{tx('Düzenle')}</Button>
                   <Button size="sm" variant="outline" onClick={() => setForm(b)}><FileText className="size-4" />{' '}{tx('Kurul formu')}</Button>
                   <Button size="sm" variant="outline" disabled={!b.affectedEmployees.length || notify.isPending} onClick={() => notify.mutate(b.id)}><Bell className="size-4" />{' '}{tx('Etkilenenleri bilgilendir')}</Button>
-                  <Button size="sm" variant="outline" onClick={() => close.mutate(b.id)}>{tx('Kapat')}</Button>
+                  <Button size="sm" variant="outline" disabled={close.isPending} onClick={() => askClose(b)}>{tx('Kapat')}</Button>
                 </div>
               )}
             </PanelBody>
@@ -255,6 +261,8 @@ export function ResponseTemplatePicker({ kind, name, date, onPick }: { kind: str
 
 const riskTone = { Low: 'success', Medium: 'warning', High: 'danger' } as const
 const riskLabel = (r: PrivacyAssessment['risk']) => (r === 'High' ? tx('Yüksek risk') : r === 'Medium' ? tx('Orta risk') : tx('Düşük risk'))
+/** Hiç soru yanıtlanmamışsa sunucunun hesapladığı "Düşük" yanıltıcıdır; "Değerlendirilmedi" gösterilir. */
+const isUnanswered = (a: PrivacyAssessment) => !Object.values(a.answers ?? {}).some((x) => !!x?.answer)
 
 function AssessmentEditor({ a, onClose }: { a: PrivacyAssessment | null; onClose: () => void }) {
   const meta = useQuery({ queryKey: ['privacy', 'pia-questions'], queryFn: ({ signal }) => kvkkOpsApi.piaQuestions(signal) })
@@ -298,6 +306,10 @@ export function AssessmentsPanel() {
   const [edit, setEdit] = useState<PrivacyAssessment | null | 'new'>(null)
   const approve = useAction((id: string) => kvkkOpsApi.approveAssessment(id), { success: tx('Değerlendirme onaylandı'), invalidate: [['privacy']] })
   const del = useAction((id: string) => kvkkOpsApi.deleteAssessment(id), { success: tx('Silindi'), invalidate: [['privacy']] })
+  const confirm = useConfirm()
+  const askDelete = async (a: PrivacyAssessment) => {
+    if (await confirm({ title: tx('“{0}” değerlendirmesi silinsin mi?', [a.subject]), note: tx('Taslak değerlendirme ve yanıtları kalıcı olarak silinir.'), action: tx('Sil') })) del.mutate(a.id)
+  }
   return (
     <div className="space-y-4">
       <div className="flex justify-end"><Button onClick={() => setEdit('new')}><Plus className="size-4" />{' '}{tx('Yeni değerlendirme')}</Button></div>
@@ -309,11 +321,11 @@ export function AssessmentsPanel() {
                 <p className="text-[13.5px] font-medium">{a.subject}</p>
                 <p className="text-[12px] text-muted-foreground">{a.status === 'Approved' ? tx('Onaylayan: {0} · {1}', [a.approvedBy ?? '—', a.approvedAt ? formatDateTime(a.approvedAt) : '']) : tx('Taslak · {0}', [a.createdBy])}</p>
               </div>
-              <StatusBadge tone={riskTone[a.risk]}>{riskLabel(a.risk)}</StatusBadge>
+              {isUnanswered(a) ? <StatusBadge tone="neutral">{tx('Değerlendirilmedi')}</StatusBadge> : <StatusBadge tone={riskTone[a.risk]}>{riskLabel(a.risk)}</StatusBadge>}
               <StatusBadge tone={a.status === 'Approved' ? 'success' : 'neutral'}>{a.status === 'Approved' ? tx('Onaylı') : tx('Taslak')}</StatusBadge>
               <Button size="sm" variant="outline" onClick={() => setEdit(a)}>{tx('Düzenle')}</Button>
               {a.status !== 'Approved' && <Button size="sm" onClick={() => approve.mutate(a.id)}><CheckCircle2 className="size-4" />{' '}{tx('Onayla')}</Button>}
-              {a.status !== 'Approved' && <Button size="sm" variant="ghost" aria-label={tx('Sil')} onClick={() => del.mutate(a.id)}><Trash2 className="size-4" /></Button>}
+              {a.status !== 'Approved' && <Button size="sm" variant="ghost" aria-label={tx('Sil')} onClick={() => askDelete(a)}><Trash2 className="size-4" /></Button>}
             </li>
           ))}
         </ul></PanelBody></Panel>

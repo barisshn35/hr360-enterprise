@@ -33,6 +33,7 @@ const SERIES_COLORS = [CHART.c1, CHART.c2, CHART.c3, CHART.c4, CHART.c5]
 
 export function CycleTab({
   cycles,
+  cyclesPending = false,
   cycleId,
   onCycle,
   teamId,
@@ -43,6 +44,8 @@ export function CycleTab({
   onEmployee,
 }: {
   cycles: ReviewCycle[]
+  /** Dönemler yüklenirken "dönem yok" boş durumu yerine yükleme göstergesi. */
+  cyclesPending?: boolean
   cycleId: string
   onCycle: (id: string) => void
   teamId: string | null
@@ -80,6 +83,15 @@ export function CycleTab({
   const toggleCompare = (id: string) => {
     const next = compareIds.includes(id) ? compareIds.filter((x) => x !== id) : [...compareIds, id]
     onCompare(selectable.filter((c) => next.includes(c.id)).map((c) => c.id))
+  }
+
+  if (cyclesPending) {
+    return (
+      <div className="flex flex-col gap-5" aria-busy="true">
+        <Skeleton className="h-10 w-full max-w-3xl rounded-xl" />
+        <Skeleton className="h-80 rounded-2xl" />
+      </div>
+    )
   }
 
   if (!selectable.length) {
@@ -147,9 +159,23 @@ export function CycleTab({
           <ErrorState title={tx('Dönem sonucu alınamadı')} message={errorText(result.error)} onRetry={() => void result.refetch()} />
         </Panel>
       )}
-      {result.isPending && cycleId && <Skeleton className="h-80 rounded-2xl" />}
+      {result.isPending && cycleId && <Skeleton className="h-80 rounded-2xl" aria-busy="true" />}
 
-      {r && (
+      {/* Puan yokken (ör. yeni açılmış dönem) 0'lı kutucuklar, "0–0" dağılım ve çelişen iletiler yerine tek boş durum. */}
+      {r && r.members.length === 0 && (
+        <Panel>
+          <EmptyState
+            icon={CalendarRange}
+            title={tx('Bu dönemde henüz puan yok')}
+            detail={r.unscored.length
+              ? tx('{0} kişinin değerlendirmesi bekleniyor; puanlar geldikçe dağılım ve sıralama burada görünür.', [r.unscored.length])
+              : tx('Dönem kapsamında puanlanacak çalışan bulunamadı.')}
+          />
+          {r.unscored.length > 0 && <div className="px-5 pb-5"><UnscoredList people={r.unscored} nameOf={people.nameOf} /></div>}
+        </Panel>
+      )}
+
+      {r && r.members.length > 0 && (
         <>
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             <StatTile label={tx('Ortalama')} value={r.comparison.average} hint={r.cycleName} />

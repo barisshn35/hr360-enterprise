@@ -106,29 +106,47 @@ public class ExpenseClaimsController : ControllerBase
     public static async Task<(IActionResult? Error, ExpenseClaim? Claim)> CreateCoreAsync(
         ExpenseDbContext db, FxService fx, string? tenantSlug, CreateClaimRequest request, CancellationToken ct)
     {
-        static IActionResult BadRequest(object message) => new BadRequestObjectResult(message);
-        if (string.IsNullOrWhiteSpace(request.Title) || request.Title.Length > 200)
-            return (BadRequest("Başlık zorunlu ve en fazla 200 karakter olabilir"), null);
-        var currency = (request.Currency ?? "").Trim().ToUpperInvariant();
-        if (!System.Text.RegularExpressions.Regex.IsMatch(currency, "^[A-Z]{3}$"))
-            return (BadRequest("Para birimi 3 harfli ISO kodu olmalı (örn. TRY)"), null);
-        if (request.Items is null || request.Items.Count == 0 || request.Items.Count > 50)
-            return (BadRequest("Beyanda 1-50 arası kalem olmalı"), null);
-        var latestAllowed = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(1));
-        if (request.Items.Any(i => i.ExpenseDate > latestAllowed))
-            return (BadRequest("Harcama tarihi gelecekte olamaz"), null);
-        if (request.Items.Any(i => i.Amount > 1_000_000m))
-            return (BadRequest("Kalem tutarı en fazla 1.000.000 olabilir"), null);
+        var (error, currency, items) = await BuildItemsAsync(db, fx, tenantSlug, request.Title, request.Currency, request.Items, ct);
+        if (error is not null) return (error, null);
 
         var claim = new ExpenseClaim
         {
             EmployeeId = request.EmployeeId,
             Title = request.Title.Trim(),
-            Currency = currency
+            Currency = currency!
         };
+        claim.Items.AddRange(items!);
+        claim.TotalAmount = claim.Items.Sum(i => i.Amount);
+        db.Claims.Add(claim);
+        await db.SaveChangesAsync(ct);
+        return (null, claim);
+    }
 
+    /// <summary>
+    /// Başlık, para birimi ve kalemleri doğrular; kalem varlıklarını (km/döviz hesabı
+    /// yapılmış hâlde) üretir. Oluşturma ve taslak düzenleme aynı kuralları kullanır.
+    /// </summary>
+    private static async Task<(IActionResult? Error, string? Currency, List<ExpenseItem>? Items)> BuildItemsAsync(
+        ExpenseDbContext db, FxService fx, string? tenantSlug, string? title, string? currencyRaw,
+        List<ExpenseItemInput>? inputs, CancellationToken ct)
+    {
+        static IActionResult BadRequest(object message) => new BadRequestObjectResult(message);
+        if (string.IsNullOrWhiteSpace(title) || title.Length > 200)
+            return (BadRequest("Başlık zorunlu ve en fazla 200 karakter olabilir"), null, null);
+        var currency = (currencyRaw ?? "").Trim().ToUpperInvariant();
+        if (!System.Text.RegularExpressions.Regex.IsMatch(currency, "^[A-Z]{3}$"))
+            return (BadRequest("Para birimi 3 harfli ISO kodu olmalı (örn. TRY)"), null, null);
+        if (inputs is null || inputs.Count == 0 || inputs.Count > 50)
+            return (BadRequest("Beyanda 1-50 arası kalem olmalı"), null, null);
+        var latestAllowed = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(1));
+        if (inputs.Any(i => i.ExpenseDate > latestAllowed))
+            return (BadRequest("Harcama tarihi gelecekte olamaz"), null, null);
+        if (inputs.Any(i => i.Amount > 1_000_000m))
+            return (BadRequest("Kalem tutarı en fazla 1.000.000 olabilir"), null, null);
+
+        var items = new List<ExpenseItem>();
         var policy = await db.Policies.AsNoTracking().FirstOrDefaultAsync(ct);
-        foreach (var item in request.Items)
+        foreach (var item in inputs)
         {
             var amount = item.Amount;
             decimal? rate = null;
@@ -137,22 +155,22 @@ public class ExpenseClaimsController : ControllerBase
             // G9: kilometre masrafı km × kiracının km ücreti; yabancı para harcama günündeki TCMB kuruyla TL'ye çevrilir.
             if (item.Category == ExpenseCategory.Mileage)
             {
-                if (item.Km is not (> 0 and <= 10000)) return (BadRequest("Kilometre 0–10000 arasında olmalı"), null);
+                if (item.Km is not (> 0 and <= 10000)) return (BadRequest("Kilometre 0–10000 arasında olmalı"), null, null);
                 km = item.Km;
                 amount = Math.Round(item.Km.Value * (policy?.KmRate ?? new ExpensePolicy().KmRate), 2);
             }
             else if (!string.IsNullOrWhiteSpace(item.OriginalCurrency) && item.OriginalCurrency.ToUpperInvariant() != currency)
             {
-                if (currency != "TRY") return (BadRequest("Yabancı para kalemi yalnızca TL beyanda kullanılabilir"), null);
-                if (item.OriginalAmount is not > 0) return (BadRequest("Yabancı para tutarı gerekli"), null);
+                if (currency != "TRY") return (BadRequest("Yabancı para kalemi yalnızca TL beyanda kullanılabilir"), null, null);
+                if (item.OriginalAmount is not > 0) return (BadRequest("Yabancı para tutarı gerekli"), null, null);
                 origCur = item.OriginalCurrency.Trim().ToUpperInvariant();
                 var fxRate = await fx.RateAsync(db, tenantSlug, origCur, item.ExpenseDate, ct);
-                if (fxRate is null) return (BadRequest(new { message = $"{origCur} için {item.ExpenseDate:dd.MM.yyyy} kuru bulunamadı; İK elle kur girebilir.", code = "fx_unavailable" }), null);
+                if (fxRate is null) return (BadRequest(new { message = $"{origCur} için {item.ExpenseDate:dd.MM.yyyy} kuru bulunamadı; İK elle kur girebilir.", code = "fx_unavailable" }), null, null);
                 rate = fxRate.Value.Rate;
                 amount = Math.Round(item.OriginalAmount.Value * rate.Value, 2);
             }
-            if (amount <= 0) return (BadRequest("Kalem tutari sifirdan buyuk olmali"), null);
-            claim.Items.Add(new ExpenseItem
+            if (amount <= 0) return (BadRequest("Kalem tutari sifirdan buyuk olmali"), null, null);
+            items.Add(new ExpenseItem
             {
                 Category = item.Category,
                 Amount = amount,
@@ -166,11 +184,60 @@ public class ExpenseClaimsController : ControllerBase
                 TravelRequestId = item.TravelRequestId,
             });
         }
+        return (null, currency, items);
+    }
 
+    /// <summary>
+    /// Taslak beyanı düzenler (başlık + kalemlerin tamamı yeniden yazılır). Yalnızca Draft
+    /// durumundaki beyan; yalnızca sahibi ya da İK. Doğrulama oluşturmayla aynıdır.
+    /// </summary>
+    [HttpPut("{id}")]
+    public async Task<IActionResult> Update(Guid id, [FromBody] UpdateClaimRequest request, CancellationToken ct)
+    {
+        var claim = await _db.Claims.Include(c => c.Items).FirstOrDefaultAsync(c => c.Id == id, ct);
+        if (claim is null) return NotFound();
+        if (!IsHr)
+        {
+            var me = await _approvals.FindMyEmployeeIdAsync(ct);
+            if (me is null || me.Value != claim.EmployeeId) return NotFound();
+        }
+        if (claim.Status != ClaimStatus.Draft)
+            return Conflict(new { message = "Yalnızca taslak durumundaki beyan düzenlenebilir" });
+
+        var (error, currency, items) = await BuildItemsAsync(_db, _fx, _tenant.TenantSlug, request.Title, request.Currency, request.Items, ct);
+        if (error is not null) return error;
+
+        claim.Title = request.Title.Trim();
+        claim.Currency = currency!;
+        _db.Items.RemoveRange(claim.Items);
+        claim.Items.Clear();
+        foreach (var item in items!)
+        {
+            item.ClaimId = claim.Id;
+            claim.Items.Add(item);
+        }
         claim.TotalAmount = claim.Items.Sum(i => i.Amount);
-        db.Claims.Add(claim);
-        await db.SaveChangesAsync(ct);
-        return (null, claim);
+        await _db.SaveChangesAsync(ct);
+        return Ok(claim);
+    }
+
+    /// <summary>Taslak beyanı (kalemleriyle) siler. Yalnızca Draft; yalnızca sahibi ya da İK.</summary>
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
+    {
+        var claim = await _db.Claims.Include(c => c.Items).FirstOrDefaultAsync(c => c.Id == id, ct);
+        if (claim is null) return NotFound();
+        if (!IsHr)
+        {
+            var me = await _approvals.FindMyEmployeeIdAsync(ct);
+            if (me is null || me.Value != claim.EmployeeId) return NotFound();
+        }
+        if (claim.Status != ClaimStatus.Draft)
+            return Conflict(new { message = "Yalnızca taslak durumundaki beyan silinebilir" });
+        _db.Items.RemoveRange(claim.Items);
+        _db.Claims.Remove(claim);
+        await _db.SaveChangesAsync(ct);
+        return NoContent();
     }
 
     [HttpPost("{id}/submit")]
@@ -286,5 +353,6 @@ public record ExpenseItemInput(
     string? OriginalCurrency = null, decimal? OriginalAmount = null, decimal? Km = null, Guid? TravelRequestId = null);
 public record CreateClaimRequest(
     Guid EmployeeId, string Title, string Currency, List<ExpenseItemInput> Items);
+public record UpdateClaimRequest(string Title, string Currency, List<ExpenseItemInput> Items);
 public record SubmitClaimRequest(Guid? WorkflowRequestId);
 public record ResolveClaimRequest(bool Approved);
