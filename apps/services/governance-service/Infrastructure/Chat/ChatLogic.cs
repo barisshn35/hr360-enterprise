@@ -300,47 +300,6 @@ public static class ReceiptParser
     }
 }
 
-/// <summary>B14: vardiya takası kuralları (timeshift-service SwapRules ile aynı: çakışma yok, 11 saat dinlenme, haftada en çok 45 saat).</summary>
-public static class SwapCheck
-{
-    public const int MinRestHours = 11;
-    public const int WeeklyMaxHours = 45;
-
-    public sealed record Interval(DateTime Start, DateTime End, int BreakMinutes)
-    {
-        public int NetMinutes => Math.Max(0, (int)(End - Start).TotalMinutes - BreakMinutes);
-        public static Interval Of(DateOnly date, TimeOnly start, TimeOnly end, int breakMinutes)
-        {
-            var s = date.ToDateTime(start);
-            var e = date.ToDateTime(end);
-            if (e <= s) e = e.AddDays(1); // gece vardiyası
-            return new(s, e, breakMinutes);
-        }
-    }
-
-    public static string? Validate(IReadOnlyList<Interval> schedule, IReadOnlyList<Interval> changed, string who = "Çalışan")
-    {
-        var ordered = schedule.OrderBy(s => s.Start).ToList();
-        foreach (var c in changed)
-            foreach (var other in ordered)
-            {
-                if (ReferenceEquals(other, c)) continue;
-                if (other.Start < c.End && c.Start < other.End)
-                    return $"{who}: {c.Start:dd.MM HH:mm} vardiyası {other.Start:dd.MM HH:mm} vardiyasıyla çakışıyor";
-                var gap = other.Start >= c.End ? other.Start - c.End : c.Start - other.End;
-                if (gap < TimeSpan.FromHours(MinRestHours))
-                    return $"{who}: vardiyalar arasında en az {MinRestHours} saat dinlenme olmalı";
-            }
-        foreach (var wk in changed.Select(c => (ISOWeek.GetYear(c.Start), ISOWeek.GetWeekOfYear(c.Start))).Distinct())
-        {
-            var minutes = ordered.Where(s => (ISOWeek.GetYear(s.Start), ISOWeek.GetWeekOfYear(s.Start)) == wk).Sum(s => s.NetMinutes);
-            if (minutes > WeeklyMaxHours * 60)
-                return $"{who}: {wk.Item2}. haftada çalışma {minutes / 60.0:0.#} saate çıkıyor (haftalık en çok {WeeklyMaxHours} saat)";
-        }
-        return null;
-    }
-}
-
 /// <summary>BG16: "peki geçen ay?" gibi devam sorularını önceki soruyla birleştirir.</summary>
 public static class FollowUp
 {

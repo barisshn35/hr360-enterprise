@@ -92,18 +92,33 @@ public class ExpenseClaimsController : ControllerBase
                 return StatusCode(StatusCodes.Status403Forbidden,
                     new { message = "Yalnızca kendi adınıza masraf beyanı oluşturabilirsiniz" });
         }
+        var (error, claim) = await CreateCoreAsync(_db, _fx, _tenant.TenantSlug, request, ct);
+        if (error is not null) return error;
+        return CreatedAtAction(nameof(GetById), new { id = claim!.Id }, claim);
+    }
+
+    /// <summary>
+    /// Taslak beyan oluşturmanın ortak çekirdeği: web ucu (<see cref="Create"/>) ve sohbet
+    /// botunun iç ucu (InternalChatController) aynı doğrulamayı (para birimi, kalem sayısı,
+    /// gelecek tarih, tutar sınırı, km/döviz hesabı) buradan geçirir. Yetki kontrolü çağırandadır.
+    /// </summary>
+    [NonAction]
+    public static async Task<(IActionResult? Error, ExpenseClaim? Claim)> CreateCoreAsync(
+        ExpenseDbContext db, FxService fx, string? tenantSlug, CreateClaimRequest request, CancellationToken ct)
+    {
+        static IActionResult BadRequest(object message) => new BadRequestObjectResult(message);
         if (string.IsNullOrWhiteSpace(request.Title) || request.Title.Length > 200)
-            return BadRequest("Başlık zorunlu ve en fazla 200 karakter olabilir");
+            return (BadRequest("Başlık zorunlu ve en fazla 200 karakter olabilir"), null);
         var currency = (request.Currency ?? "").Trim().ToUpperInvariant();
         if (!System.Text.RegularExpressions.Regex.IsMatch(currency, "^[A-Z]{3}$"))
-            return BadRequest("Para birimi 3 harfli ISO kodu olmalı (örn. TRY)");
+            return (BadRequest("Para birimi 3 harfli ISO kodu olmalı (örn. TRY)"), null);
         if (request.Items is null || request.Items.Count == 0 || request.Items.Count > 50)
-            return BadRequest("Beyanda 1-50 arası kalem olmalı");
+            return (BadRequest("Beyanda 1-50 arası kalem olmalı"), null);
         var latestAllowed = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(1));
         if (request.Items.Any(i => i.ExpenseDate > latestAllowed))
-            return BadRequest("Harcama tarihi gelecekte olamaz");
+            return (BadRequest("Harcama tarihi gelecekte olamaz"), null);
         if (request.Items.Any(i => i.Amount > 1_000_000m))
-            return BadRequest("Kalem tutarı en fazla 1.000.000 olabilir");
+            return (BadRequest("Kalem tutarı en fazla 1.000.000 olabilir"), null);
 
         var claim = new ExpenseClaim
         {
@@ -112,7 +127,7 @@ public class ExpenseClaimsController : ControllerBase
             Currency = currency
         };
 
-        var policy = await _db.Policies.AsNoTracking().FirstOrDefaultAsync(ct);
+        var policy = await db.Policies.AsNoTracking().FirstOrDefaultAsync(ct);
         foreach (var item in request.Items)
         {
             var amount = item.Amount;
@@ -122,21 +137,21 @@ public class ExpenseClaimsController : ControllerBase
             // G9: kilometre masrafı km × kiracının km ücreti; yabancı para harcama günündeki TCMB kuruyla TL'ye çevrilir.
             if (item.Category == ExpenseCategory.Mileage)
             {
-                if (item.Km is not (> 0 and <= 10000)) return BadRequest("Kilometre 0–10000 arasında olmalı");
+                if (item.Km is not (> 0 and <= 10000)) return (BadRequest("Kilometre 0–10000 arasında olmalı"), null);
                 km = item.Km;
                 amount = Math.Round(item.Km.Value * (policy?.KmRate ?? new ExpensePolicy().KmRate), 2);
             }
             else if (!string.IsNullOrWhiteSpace(item.OriginalCurrency) && item.OriginalCurrency.ToUpperInvariant() != currency)
             {
-                if (currency != "TRY") return BadRequest("Yabancı para kalemi yalnızca TL beyanda kullanılabilir");
-                if (item.OriginalAmount is not > 0) return BadRequest("Yabancı para tutarı gerekli");
+                if (currency != "TRY") return (BadRequest("Yabancı para kalemi yalnızca TL beyanda kullanılabilir"), null);
+                if (item.OriginalAmount is not > 0) return (BadRequest("Yabancı para tutarı gerekli"), null);
                 origCur = item.OriginalCurrency.Trim().ToUpperInvariant();
-                var fx = await _fx.RateAsync(_db, _tenant.TenantSlug, origCur, item.ExpenseDate, ct);
-                if (fx is null) return BadRequest(new { message = $"{origCur} için {item.ExpenseDate:dd.MM.yyyy} kuru bulunamadı; İK elle kur girebilir.", code = "fx_unavailable" });
-                rate = fx.Value.Rate;
+                var fxRate = await fx.RateAsync(db, tenantSlug, origCur, item.ExpenseDate, ct);
+                if (fxRate is null) return (BadRequest(new { message = $"{origCur} için {item.ExpenseDate:dd.MM.yyyy} kuru bulunamadı; İK elle kur girebilir.", code = "fx_unavailable" }), null);
+                rate = fxRate.Value.Rate;
                 amount = Math.Round(item.OriginalAmount.Value * rate.Value, 2);
             }
-            if (amount <= 0) return BadRequest("Kalem tutari sifirdan buyuk olmali");
+            if (amount <= 0) return (BadRequest("Kalem tutari sifirdan buyuk olmali"), null);
             claim.Items.Add(new ExpenseItem
             {
                 Category = item.Category,
@@ -153,9 +168,9 @@ public class ExpenseClaimsController : ControllerBase
         }
 
         claim.TotalAmount = claim.Items.Sum(i => i.Amount);
-        _db.Claims.Add(claim);
-        await _db.SaveChangesAsync();
-        return CreatedAtAction(nameof(GetById), new { id = claim.Id }, claim);
+        db.Claims.Add(claim);
+        await db.SaveChangesAsync(ct);
+        return (null, claim);
     }
 
     [HttpPost("{id}/submit")]

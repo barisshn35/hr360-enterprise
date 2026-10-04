@@ -48,4 +48,25 @@ public static class TsOps
         }
         catch (Exception ex) when (ex is not OperationCanceledException) { /* bildirim yazılamazsa iş akışı bozulmaz */ }
     }
+
+    /// <summary>
+    /// Sohbet botundan (iç uç) gelen işlemin denetim satırı: eyleyen çalışan, kaynak "chat".
+    /// Eylem adları botun eskiden yazdıklarıyla aynıdır (PeerAccepted, Approved…). Alan düzeyindeki
+    /// değişiklikler ayrıca AuditInterceptor tarafından yazılır.
+    /// </summary>
+    public static async Task ChatAuditAsync(TimeShiftDbContext db, string tenant, Guid employeeId, string entityType, string entityId, string action,
+        object changes, string platform, CancellationToken ct)
+    {
+        try
+        {
+            var o = System.Text.Json.JsonSerializer.SerializeToNode(changes) as System.Text.Json.Nodes.JsonObject ?? new();
+            o["source"] = "chat";
+            o["via"] = "chat";
+            await db.Database.ExecuteSqlRawAsync("""
+                INSERT INTO audit_log ("TenantSlug","Service","EntityType","EntityId","Action","Changes","UserId","UserName","CorrelationId","IpAddress","OccurredAt")
+                VALUES ({0},'timeshift-service',{1},{2},{3},{4}::jsonb,{5},{6},{7},NULL,now())
+                """, new object[] { tenant, entityType, entityId, action, o.ToJsonString(), "employee:" + employeeId, $"Sohbet ({platform})", Guid.NewGuid().ToString("N") }, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException) { Console.Error.WriteLine($"[audit] timeshift-service: sohbet denetim kaydı yazılamadı: {ex.Message}"); }
+    }
 }

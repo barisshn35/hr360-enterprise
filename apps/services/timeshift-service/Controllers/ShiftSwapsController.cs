@@ -101,7 +101,21 @@ public class ShiftSwapsController : ControllerBase
         if (me is { } m && (m == s.RequesterEmployeeId || m == s.TargetEmployeeId)) return false;
         if (IsHr) return true;
         if (!User.IsInRole("manager") || me is null) return false;
-        return await HeadOfAsync(s.RequesterEmployeeId, ct) == me;
+        return await CanDecideAsHeadAsync(s, me.Value, ct);
+    }
+
+    /// <summary>Yönetici kuralı: karar veren taraflardan biri değil ve talep edenin bölüm başı.</summary>
+    internal static bool IsHeadDecider(ShiftSwapRequest s, Guid decider, Guid? requesterHead) =>
+        decider != s.RequesterEmployeeId && decider != s.TargetEmployeeId && requesterHead == decider;
+
+    /// <summary>
+    /// Sohbet (iç uç) yolu: rol bilgisi yoktur; karar veren, bot tarafından doğrulanmış çalışan
+    /// kimliğidir ve yalnızca bölüm başı kuralı uygulanır (web'deki yönetici yolu ile aynı).
+    /// </summary>
+    internal async Task<bool> CanDecideAsHeadAsync(ShiftSwapRequest s, Guid decider, CancellationToken ct)
+    {
+        if (decider == s.RequesterEmployeeId || decider == s.TargetEmployeeId) return false;
+        return IsHeadDecider(s, decider, await HeadOfAsync(s.RequesterEmployeeId, ct));
     }
 
     private async Task<object> DtoAsync(ShiftSwapRequest s, Dictionary<Guid, ShiftAssignment> assignments, Dictionary<Guid, string> names, Guid? me, CancellationToken ct) => new
@@ -202,22 +216,27 @@ public class ShiftSwapsController : ControllerBase
     public record RespondInput(bool Accept);
 
     [HttpPost("{id:guid}/respond")]
-    public async Task<IActionResult> Respond(Guid id, [FromBody] RespondInput b, CancellationToken ct)
+    public async Task<IActionResult> Respond(Guid id, [FromBody] RespondInput b, CancellationToken ct) =>
+        await RespondCoreAsync(await _employees.FindMyEmployeeIdAsync(ct), id, b.Accept, null, ct);
+
+    /// <summary>Hedef kişinin kabul/reddi (web ve sohbet iç ucu). chatPlatform doluysa sohbet denetim kaydı yazılır.</summary>
+    internal async Task<IActionResult> RespondCoreAsync(Guid? me, Guid id, bool accept, string? chatPlatform, CancellationToken ct)
     {
-        var me = await _employees.FindMyEmployeeIdAsync(ct);
         var s = await _db.ShiftSwapRequests.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (s is null || me is null || s.TargetEmployeeId != me) return NotFound();
-        if (s.Status != SwapStatus.PendingPeer) return Conflict(new { message = "Talep yanıt beklemiyor" });
-        s.Status = b.Accept ? SwapStatus.PendingApproval : SwapStatus.Declined;
+        if (s.Status != SwapStatus.PendingPeer) return Conflict(new { message = "Talep yanıt beklemiyor", code = "not_pending" });
+        s.Status = accept ? SwapStatus.PendingApproval : SwapStatus.Declined;
         s.PeerRespondedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);
         var target = await TsOps.PersonAsync(_db, Tenant, me.Value, ct);
-        await TsOps.NotifyAsync(_db, Tenant, s.RequesterEmployeeId, b.Accept ? "Takas talebiniz kabul edildi" : "Takas talebiniz reddedildi",
-            b.Accept ? $"{target?.FullName} takas talebinizi kabul etti; yönetici onayı bekleniyor." : $"{target?.FullName} takas talebinizi kabul etmedi.",
-            b.Accept ? "shift.swap.accepted" : "shift.swap.declined", ct);
-        if (b.Accept && await HeadOfAsync(s.RequesterEmployeeId, ct) is { } head && head != s.RequesterEmployeeId && head != s.TargetEmployeeId)
+        await TsOps.NotifyAsync(_db, Tenant, s.RequesterEmployeeId, accept ? "Takas talebiniz kabul edildi" : "Takas talebiniz reddedildi",
+            accept ? $"{target?.FullName} takas talebinizi kabul etti; yönetici onayı bekleniyor." : $"{target?.FullName} takas talebinizi kabul etmedi.",
+            accept ? "shift.swap.accepted" : "shift.swap.declined", ct);
+        if (accept && await HeadOfAsync(s.RequesterEmployeeId, ct) is { } head && head != s.RequesterEmployeeId && head != s.TargetEmployeeId)
             await TsOps.NotifyAsync(_db, Tenant, head, "Onay bekleyen vardiya takası",
                 "Ekibinizde iki çalışan vardiya takasında anlaştı; Vardiya ekranındaki takas onaylarından karar verin.", "shift.swap.approval", ct);
+        if (chatPlatform is not null)
+            await TsOps.ChatAuditAsync(_db, Tenant, me.Value, "ShiftSwapRequest", s.Id.ToString(), accept ? "PeerAccepted" : "PeerDeclined", new { }, chatPlatform, ct);
         return Ok(new { s.Id, s.Status });
     }
 
@@ -227,10 +246,20 @@ public class ShiftSwapsController : ControllerBase
     public async Task<IActionResult> Decide(Guid id, [FromBody] DecideInput b, CancellationToken ct)
     {
         var me = await _employees.FindMyEmployeeIdAsync(ct);
+        return await DecideCoreAsync(id, b, s => CanApproveAsync(s, me, ct), () => UserName, null, ct);
+    }
+
+    /// <summary>
+    /// Onay/ret (web ve sohbet iç ucu). Yetki kuralı çağırandan gelir (web: İK ya da bölüm başı yönetici;
+    /// sohbet: bölüm başı). chatActor doluysa (çalışan, platform) sohbet denetim kaydı yazılır.
+    /// </summary>
+    internal async Task<IActionResult> DecideCoreAsync(Guid id, DecideInput b, Func<ShiftSwapRequest, Task<bool>> canApprove, Func<string> decidedBy,
+        (Guid EmployeeId, string Platform)? chatActor, CancellationToken ct)
+    {
         var s = await _db.ShiftSwapRequests.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (s is null) return NotFound();
-        if (!await CanApproveAsync(s, me, ct)) return StatusCode(403, new { message = "Bu takası onaylama yetkiniz yok" });
-        if (s.Status != SwapStatus.PendingApproval) return Conflict(new { message = "Takas onay beklemiyor" });
+        if (!await canApprove(s)) return StatusCode(403, new { message = "Bu takası onaylama yetkiniz yok" });
+        if (s.Status != SwapStatus.PendingApproval) return Conflict(new { message = "Takas onay beklemiyor", code = "not_pending" });
         if (b.Reason is { Length: > 300 }) return BadRequest(new { message = "Gerekçe en fazla 300 karakter olabilir" });
 
         if (!b.Approve)
@@ -238,9 +267,11 @@ public class ShiftSwapsController : ControllerBase
             s.Status = SwapStatus.Rejected;
             s.RejectReason = string.IsNullOrWhiteSpace(b.Reason) ? "Yönetici onaylamadı" : b.Reason.Trim();
             s.DecidedAt = DateTimeOffset.UtcNow;
-            s.DecidedBy = UserName;
+            s.DecidedBy = decidedBy();
             await _db.SaveChangesAsync(ct);
             await NotifyBothAsync(s, "Vardiya takası onaylanmadı", $"Takas talebi onaylanmadı: {s.RejectReason}", ct);
+            if (chatActor is { } ca0)
+                await TsOps.ChatAuditAsync(_db, Tenant, ca0.EmployeeId, "ShiftSwapRequest", s.Id.ToString(), "Rejected", new { rule = false }, ca0.Platform, ct);
             return Ok(new { s.Id, s.Status, s.RejectReason });
         }
 
@@ -269,9 +300,11 @@ public class ShiftSwapsController : ControllerBase
             fresh.Status = SwapStatus.Rejected;
             fresh.RejectReason = reason;
             fresh.DecidedAt = DateTimeOffset.UtcNow;
-            fresh.DecidedBy = UserName;
+            fresh.DecidedBy = decidedBy();
             await _db.SaveChangesAsync(ct);
             await NotifyBothAsync(fresh, "Vardiya takası reddedildi", $"Takas kurallara uymadığı için reddedildi: {reason}", ct);
+            if (chatActor is { } ca1)
+                await TsOps.ChatAuditAsync(_db, Tenant, ca1.EmployeeId, "ShiftSwapRequest", fresh.Id.ToString(), "Rejected", new { rule = true }, ca1.Platform, ct);
             return BadRequest(new { message = reason, code = "rule_violation", status = fresh.Status });
         }
 
@@ -286,7 +319,7 @@ public class ShiftSwapsController : ControllerBase
         }
         s.Status = SwapStatus.Approved;
         s.DecidedAt = DateTimeOffset.UtcNow;
-        s.DecidedBy = UserName;
+        s.DecidedBy = decidedBy();
         try
         {
             await _db.SaveChangesAsync(ct);
@@ -298,6 +331,8 @@ public class ShiftSwapsController : ControllerBase
             return Conflict(new { message = "Takas uygulanamadı: atamalar eşzamanlı değişti; yeniden deneyin" });
         }
         await NotifyBothAsync(s, "Vardiya takası onaylandı", "Vardiya takasınız onaylandı; güncel programınızı Vardiya ekranında görebilirsiniz.", ct);
+        if (chatActor is { } ca2)
+            await TsOps.ChatAuditAsync(_db, Tenant, ca2.EmployeeId, "ShiftSwapRequest", s.Id.ToString(), "Approved", new { rule = false }, ca2.Platform, ct);
         return Ok(new { s.Id, s.Status });
     }
 

@@ -28,12 +28,16 @@ public sealed partial class ChatFeatures
 
     private static string UserIdOf(Person p) => p.UserId ?? $"employee:{p.Id}";
 
-    /// <summary>Uygulama içi bildirim (notification-service gelen kutusu); yalnızca gerekli bilgi.</summary>
-    private Task NotifyAsync(string tenant, Guid recipient, string subject, string body, string code, CancellationToken ct) =>
-        _sql.ExecuteAsync("""
-            INSERT INTO notification_messages ("Id","TenantSlug","RecipientEmployeeId","RecipientEmail","Channel","TemplateCode","Subject","Body","Status","AttemptCount","CreatedAt","Language")
-            VALUES ($1,$2,$3,NULL,'InApp',$4,$5,$6,'Pending',0,now(),'tr')
-            """, ct, Guid.NewGuid(), tenant, recipient, code, subject, body);
+    /// <summary>
+    /// Uygulama içi bildirim (notification-service gelen kutusu, iç uç); yalnızca gerekli bilgi.
+    /// En iyi çaba: bildirim oluşturulamazsa kullanıcı akışı bozulmaz, yalnızca log'a düşer.
+    /// </summary>
+    private async Task NotifyAsync(string tenant, Guid recipient, string subject, string body, string code, CancellationToken ct)
+    {
+        var r = await ChatInternal.PostAsync(_http, ChatInternal.NotificationBase, "/api/internal/chat/notify",
+            new { tenantSlug = tenant, recipientEmployeeId = recipient, subject, body, templateCode = code, language = "tr" }, false, ct);
+        if (!r.Ok) _log.LogDebug("Sohbet bildirimi oluşturulamadı (HTTP {Status}): {Message}", r.Status, r.Message);
+    }
 
     // ================================================================== komutlar
 
@@ -328,27 +332,30 @@ public sealed partial class ChatFeatures
             new ChatButton(en ? "No" : "Vazgeç", "cancel")) with { Replace = true };
     }
 
-    /// <summary>leave-service'in iptal kuralı: yalnızca talep sahibi, yalnızca sonuçlanmamış talep; bekleyen gün bakiyeden düşülür, onay akışı iptal edilir.</summary>
+    /// <summary>
+    /// İptal leave-service'in iç ucundan (POST /api/internal/chat/leave-cancel): web ucuyla aynı kural
+    /// (yalnızca talep sahibi, yalnızca sonuçlanmamış talep; bekleyen gün bakiyeden düşülür, onay akışı
+    /// kapatılır) ve denetim kaydı orada yazılır.
+    /// </summary>
     private async Task<ChatReply> CancelLeaveAsync(ChatApp app, string tenant, Guid emp, string value, bool en, CancellationToken ct)
     {
         if (!Guid.TryParse(value, out var id)) return ChatReply.Of("—", en);
-        var r = (await _sql.QueryAsync("""
-            UPDATE leave_requests l SET "Status" = 'Cancelled' FROM leave_requests o
-            WHERE o."Id" = l."Id" AND l."Id" = $2 AND l."TenantSlug" = $1 AND l."EmployeeId" = $3 AND l."Status" IN ('Submitted','Draft')
-            RETURNING l."Type", l."StartDate", l."EndDate", l."Days", l."WorkflowRequestId", o."Status"
-            """, x => (Type: x.GetString(0), S: x.GetFieldValue<DateOnly>(1), E: x.GetFieldValue<DateOnly>(2), Days: x.GetDecimal(3), Wf: x.GuidOrNull(4), Old: x.GetString(5)),
-            ct, tenant, id, emp)).FirstOrDefault();
-        if (r.Type is null)
-            return ChatReply.Of(en ? "This request can no longer be cancelled (already decided or cancelled)." : "Bu talep artık iptal edilemez (karara bağlanmış ya da iptal edilmiş).", en) with { Replace = true };
-        if (r.Old == "Submitted")
-            await _sql.ExecuteAsync("""
-                UPDATE leave_balances SET "PendingDays" = greatest(0, "PendingDays" - $5), "UpdatedAt" = now()
-                WHERE "TenantSlug" = $1 AND "EmployeeId" = $2 AND "Year" = $3 AND "Type" = $4
-                """, ct, tenant, emp, r.S.Year, r.Type, r.Days);
-        if (r.Wf is { } wf)
-            await _sql.ExecuteAsync("UPDATE workflow_requests SET \"Status\" = 'Cancelled', \"CompletedAt\" = now() WHERE \"TenantSlug\" = $1 AND \"Id\" = $2 AND \"Status\" = 'Pending'", ct, tenant, wf);
-        await AuditAsync(tenant, emp, "LeaveRequest", id.ToString(), "Cancelled", new { from = r.Old, to = "Cancelled" }, app.Platform);
-        return ChatReply.Of(en ? $"✅ Your leave request {r.S:dd.MM} – {r.E:dd.MM} was cancelled." : $"✅ {r.S:dd.MM} – {r.E:dd.MM} izin talebiniz iptal edildi.", en,
+        var r = await ChatInternal.PostAsync(_http, ChatInternal.LeaveBase, "/api/internal/chat/leave-cancel",
+            new { tenantSlug = tenant, employeeId = emp, leaveId = id, channel = app.Platform }, en, ct);
+        if (!r.Ok)
+        {
+            var msg = r.Status switch
+            {
+                409 when r.Str("code") == "not_cancellable" => en ? "This request can no longer be cancelled (already decided or cancelled)." : "Bu talep artık iptal edilemez (karara bağlanmış ya da iptal edilmiş).",
+                404 => en ? "Leave request not found." : "İzin talebi bulunamadı.",
+                400 or 409 when en => "The leave request could not be cancelled; please try again.",
+                _ => r.Message!,
+            };
+            return ChatReply.Of(msg, en) with { Replace = true };
+        }
+        DateOnly.TryParseExact(r.Str("startDate"), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var s);
+        DateOnly.TryParseExact(r.Str("endDate"), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var e);
+        return ChatReply.Of(en ? $"✅ Your leave request {s:dd.MM} – {e:dd.MM} was cancelled." : $"✅ {s:dd.MM} – {e:dd.MM} izin talebiniz iptal edildi.", en,
             ChatButton.Link(en ? "Leave in HR360" : "Panelde aç", $"{Origin}/panel/izin")) with { Replace = true };
     }
 
@@ -526,17 +533,19 @@ public sealed partial class ChatFeatures
         date ??= Today;
         if (date > Today.AddDays(1)) return ChatReply.Of(L("Harcama tarihi gelecekte olamaz.", "The expense date cannot be in the future."), en);
         if (!await PendingCloseAsync(id, "Done", ct)) return ChatReply.Of(L("Bu öneri zaten kullanıldı.", "This suggestion was already used."), en) with { Replace = true };
-        var claimId = Guid.NewGuid();
         var title = en ? $"Receipt {date:dd.MM.yyyy}" : $"Fiş {date:dd.MM.yyyy}";
-        await _sql.ExecuteAsync("""
-            INSERT INTO expense_claims ("Id","TenantSlug","EmployeeId","Title","Currency","TotalAmount","Status","CreatedAt")
-            VALUES ($1,$2,$3,$4,'TRY',$5,'Draft',now())
-            """, ct, claimId, app.TenantSlug, emp, title, amount.Value);
-        await _sql.ExecuteAsync("""
-            INSERT INTO expense_items ("Id","TenantSlug","ClaimId","Category","Amount","ExpenseDate","Description")
-            VALUES ($1,$2,$3,$4,$5,$6,$7)
-            """, ct, Guid.NewGuid(), app.TenantSlug, claimId, category, amount.Value, date.Value, en ? "From chat (receipt reading)" : "Sohbetten (fiş okuma)");
-        await AuditAsync(app.TenantSlug, emp, "ExpenseClaim", claimId.ToString(), "Created", new { status = "Draft", source = "chat" }, app.Platform);
+        // Taslak beyan expense-service'in iç ucuyla açılır (web Create kuralları + denetim kaydı orada).
+        var r = await ChatInternal.PostAsync(_http, ChatInternal.ExpenseBase, "/api/internal/chat/expense-draft", new
+        {
+            tenantSlug = app.TenantSlug, employeeId = emp, title, currency = "TRY", amount = amount.Value, date = date.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            category, description = en ? "From chat (receipt reading)" : "Sohbetten (fiş okuma)", platform = app.Platform,
+        }, en, ct);
+        if (!r.Ok)
+        {
+            // Öneri tükenmesin: düzeltip yeniden onaylanabilsin.
+            await _sql.ExecuteAsync("UPDATE governance_chat_pending SET \"State\" = 'Pending', \"ConfirmedAt\" = NULL WHERE \"Id\" = $1 AND \"State\" = 'Done'", ct, id);
+            return ChatReply.Of(r.Message!, en);
+        }
         return ChatReply.Of(en
                 ? $"✅ Draft expense claim created: {amount.Value.ToString("N2", CultureInfo.GetCultureInfo("en-GB"))} TL ({ReceiptParser.CategoryLabel(category, true)}, {date:dd.MM.yyyy}). Review and submit it in HR360."
                 : $"✅ Taslak masraf beyanı oluşturuldu: {amount.Value.ToString("N2", Tr)} TL ({ReceiptParser.CategoryLabel(category, false)}, {date:dd.MM.yyyy}). HR360'ta kontrol edip onaya gönderin.", en,
@@ -593,19 +602,20 @@ public sealed partial class ChatFeatures
         }
         if (to is null) return ChatReply.Of(L($"“{Trim(target, 40)}” adlı tek bir çalışan bulunamadı. E-posta adının başını yazın (ör. *@ayse.yilmaz*).",
             $"Could not find a single employee matching “{Trim(target, 40)}”. Use the start of their email (e.g. *@ayse.yilmaz*)."), en);
-        if (to.Id == who.EmployeeId) return ChatReply.Of(L("Kendinize takdir gönderemezsiniz.", "You cannot send kudos to yourself."), en);
-        if (message.Length is 0 or > 500) return ChatReply.Of(L("Mesaj 1–500 karakter olmalı. ", "The message must be 1–500 characters. ") + usage, en);
-        var from = await _people.FindAsync(tenant, who.EmployeeId!.Value, ct);
-        var kid = Guid.NewGuid();
-        await _sql.ExecuteAsync("""
-            INSERT INTO engagement_kudos ("Id","TenantSlug","FromUserId","FromEmployeeId","FromName","ToEmployeeId","ToName","Badge","Message","LikedBy","CreatedAt")
-            VALUES ($1,$2,$3,$4,$5,$6,$7,'thanks',$8,'{}',now())
-            """, ct, kid, tenant, from is null ? $"employee:{who.EmployeeId}" : UserIdOf(from), who.EmployeeId, from?.Name ?? who.DisplayName ?? "", to.Id, to.Name, message);
-        await NotifyAsync(tenant, to.Id, $"{from?.Name} size takdir gönderdi: Teşekkürler", message, "engagement.kudos", ct);
-        await AuditAsync(tenant, who.EmployeeId!.Value, "Kudos", kid.ToString(), "Created", new { to = to.Id, source = "chat" }, app.Platform);
+        // Kurallar (rozet, kendine takdir, 1–500 karakter), uygulama içi bildirim ve denetim kaydı engagement-service'te.
+        var r = await ChatInternal.PostAsync(_http, ChatInternal.EngagementBase, "/api/internal/chat/kudos",
+            new { tenantSlug = tenant, employeeId = who.EmployeeId!.Value, toEmployeeId = to.Id, message, badge = "thanks", platform = app.Platform }, en, ct);
+        if (!r.Ok)
+            return ChatReply.Of(r.Str("code") switch
+            {
+                "self" => L("Kendinize takdir gönderemezsiniz.", "You cannot send kudos to yourself."),
+                "message_length" => L("Mesaj 1–500 karakter olmalı. ", "The message must be 1–500 characters. ") + usage,
+                _ => r.Message!,
+            }, en);
+        var fromName = r.Str("fromName") ?? who.DisplayName ?? "";
         // Alıcıya DM (yalnızca alıcının kendisine; sessiz saate uyar).
         var toEn = await _chat.EnAsync(tenant, to.Id, ct);
-        var dm = toEn ? $"🙌 *{from?.Name}* thanked you: “{message}”" : $"🙌 *{from?.Name}* size teşekkür etti: “{message}”";
+        var dm = toEn ? $"🙌 *{fromName}* thanked you: “{message}”" : $"🙌 *{fromName}* size teşekkür etti: “{message}”";
         try { await SendAsync(db, app, to.Id, ChatReply.Of(dm, toEn, ChatButton.Link(toEn ? "Kudos wall" : "Takdir duvarı", $"{Origin}/panel/takdir")), "engagement.kudos", false, ct); await db.SaveChangesAsync(ct); }
         catch (Exception ex) when (ex is ChatApiException or HttpRequestException) { _log.LogInformation("Takdir DM'i gönderilemedi: {Message}", ex.Message); }
         await CountAsync(app, "kudos", "ok", ct);
@@ -679,43 +689,35 @@ public sealed partial class ChatFeatures
         var parts = value.Split('|');
         if (parts.Length != 2 || !Guid.TryParse(parts[0], out var deskId) || !DateOnly.TryParse(parts[1], CultureInfo.InvariantCulture, out var day))
             return ChatReply.Of("—", en);
-        if (day < Today || day > Today.AddDays(30)) return ChatReply.Of(en ? "That day can no longer be booked." : "Bu güne artık rezervasyon yapılamaz.", en) with { Replace = true };
-        var me = await _people.FindAsync(tenant, emp, ct);
-        if (me is null) return ChatReply.Of("—", en);
-        var uid = UserIdOf(me);
-        var id = Guid.NewGuid();
-        var n = await _sql.ExecuteAsync("""
-            INSERT INTO engagement_desk_bookings ("Id","TenantSlug","DeskId","UserId","EmployeeId","PersonName","Date","StartMinute","EndMinute","Title","CreatedAt")
-            SELECT $1,$2,$3,$4,$5,$6,$7,540,1080,NULL,now()
-            WHERE EXISTS (SELECT 1 FROM engagement_desks d WHERE d."Id" = $3 AND d."TenantSlug" = $2 AND d."IsActive" AND d."Kind" = 'Desk')
-              AND NOT EXISTS (SELECT 1 FROM engagement_desk_bookings b WHERE b."DeskId" = $3 AND b."Date" = $7 AND b."StartMinute" < 1080 AND 540 < b."EndMinute")
-              AND NOT EXISTS (SELECT 1 FROM engagement_desk_bookings b JOIN engagement_desks d ON d."Id" = b."DeskId"
-                              WHERE (b."UserId" = $4 OR b."EmployeeId" = $5) AND b."Date" = $7 AND d."Kind" = 'Desk' AND b."StartMinute" < 1080 AND 540 < b."EndMinute")
-            """, ct, id, tenant, deskId, uid, emp, me.Name, day);
-        if (n == 0)
+        // Kurallar, "kim nerede" güncellemesi ve denetim kaydı engagement-service'te.
+        var r = await ChatInternal.PostAsync(_http, ChatInternal.EngagementBase, "/api/internal/chat/desk-book",
+            new { tenantSlug = tenant, employeeId = emp, deskId, date = day.ToString("yyyy-MM-dd"), startMinute = 540, endMinute = 1080, platform = app.Platform }, en, ct);
+        if (!r.Ok)
         {
-            var again = await DeskListAsync(tenant, emp, day, en, ct);
-            return again with { Text = (en ? "⚠️ That desk was just taken (or you already have one). " : "⚠️ Bu masa az önce doldu (ya da o gün bir masanız var). ") + again.Text, Replace = true };
+            switch (r.Str("code"))
+            {
+                case "date_range":
+                    return ChatReply.Of(en ? "That day can no longer be booked." : "Bu güne artık rezervasyon yapılamaz.", en) with { Replace = true };
+                case "taken" or "has_desk" or "not_found":
+                    var again = await DeskListAsync(tenant, emp, day, en, ct);
+                    return again with { Text = (en ? "⚠️ That desk was just taken (or you already have one). " : "⚠️ Bu masa az önce doldu (ya da o gün bir masanız var). ") + again.Text, Replace = true };
+                default:
+                    return ChatReply.Of(r.Message!, en) with { Replace = true };
+            }
         }
-        var updated = await _sql.ExecuteAsync("UPDATE engagement_presence SET \"Mode\" = 'Office' WHERE \"TenantSlug\" = $1 AND \"UserId\" = $2 AND \"Date\" = $3", ct, tenant, uid, day);
-        if (updated == 0)
-            await _sql.ExecuteAsync("""
-                INSERT INTO engagement_presence ("Id","TenantSlug","UserId","EmployeeId","PersonName","Date","Mode","CreatedAt") VALUES ($1,$2,$3,$4,$5,$6,'Office',now())
-                """, ct, Guid.NewGuid(), tenant, uid, emp, me.Name, day);
-        var code = await _sql.ScalarAsync("SELECT \"Code\" FROM engagement_desks WHERE \"Id\" = $1", ct, deskId) as string;
-        await AuditAsync(tenant, emp, "DeskBooking", id.ToString(), "Created", new { day = day.ToString("yyyy-MM-dd"), source = "chat" }, app.Platform);
+        var id = r.Str("id");
+        var code = r.Str("code");
         return ChatReply.Of(en ? $"✅ Desk *{code}* is booked for {day:dd.MM.yyyy} (09:00–18:00)." : $"✅ *{code}* masası {day:dd.MM.yyyy} için ayrıldı (09:00–18:00).", en,
-            new ChatButton(en ? "Cancel booking" : "Rezervasyonu iptal et", "desk_cancel", id.ToString(), "danger")) with { Replace = true };
+            new ChatButton(en ? "Cancel booking" : "Rezervasyonu iptal et", "desk_cancel", id ?? "", "danger")) with { Replace = true };
     }
 
     private async Task<ChatReply> DeskCancelAsync(ChatApp app, string tenant, Guid emp, string value, bool en, CancellationToken ct)
     {
         if (!Guid.TryParse(value, out var id)) return ChatReply.Of("—", en);
-        var me = await _people.FindAsync(tenant, emp, ct);
-        var n = await _sql.ExecuteAsync("DELETE FROM engagement_desk_bookings WHERE \"TenantSlug\" = $1 AND \"Id\" = $2 AND (\"EmployeeId\" = $3 OR \"UserId\" = $4)",
-            ct, tenant, id, emp, me is null ? "" : UserIdOf(me));
-        if (n > 0) await AuditAsync(tenant, emp, "DeskBooking", id.ToString(), "Deleted", new { source = "chat" }, app.Platform);
-        return ChatReply.Of(n > 0 ? (en ? "Booking cancelled." : "Rezervasyon iptal edildi.") : (en ? "Booking not found." : "Rezervasyon bulunamadı."), en) with { Replace = true };
+        var r = await ChatInternal.PostAsync(_http, ChatInternal.EngagementBase, "/api/internal/chat/desk-cancel",
+            new { tenantSlug = tenant, employeeId = emp, bookingId = id, platform = app.Platform }, en, ct);
+        if (!r.Ok && r.Status != 404) return ChatReply.Of(r.Message!, en) with { Replace = true };
+        return ChatReply.Of(r.Ok ? (en ? "Booking cancelled." : "Rezervasyon iptal edildi.") : (en ? "Booking not found." : "Rezervasyon bulunamadı."), en) with { Replace = true };
     }
 
     // ================================================================== B14 vardiya ve takas
@@ -785,139 +787,45 @@ public sealed partial class ChatFeatures
         return ChatReply.Of(string.Join("\n", lines), en, buttons.ToArray());
     }
 
-    /// <summary>timeshift kuralı: yalnızca hedef kişi ve yalnızca PendingPeer iken; kabulde bölüm başına bildirim.</summary>
+    /// <summary>
+    /// Takas yanıtı timeshift-service iç ucundan (/api/internal/chat/swap-respond): yalnızca hedef kişi ve
+    /// yalnızca PendingPeer iken; bildirim ve denetim kaydı orada yazılır.
+    /// </summary>
     private async Task<ChatReply> SwapRespondAsync(ChatApp app, string tenant, Guid emp, string value, bool accept, bool en, CancellationToken ct)
     {
         if (!Guid.TryParse(value, out var id)) return ChatReply.Of("—", en);
-        var r = (await _sql.QueryAsync("""
-            UPDATE timeshift_swap_requests SET "Status" = $4, "PeerRespondedAt" = now()
-            WHERE "TenantSlug" = $1 AND "Id" = $2 AND "TargetEmployeeId" = $3 AND "Status" = 'PendingPeer' RETURNING "RequesterEmployeeId"
-            """, x => x.GetGuid(0), ct, tenant, id, emp, accept ? "PendingApproval" : "Declined")).FirstOrDefault();
-        if (r == Guid.Empty) return ChatReply.Of(en ? "This request is no longer awaiting your answer." : "Bu talep artık yanıtınızı beklemiyor.", en) with { Replace = true };
-        var me = await _people.FindAsync(tenant, emp, ct);
-        await NotifyAsync(tenant, r, accept ? "Takas talebiniz kabul edildi" : "Takas talebiniz reddedildi",
-            accept ? $"{me?.Name} takas talebinizi kabul etti; yönetici onayı bekleniyor." : $"{me?.Name} takas talebinizi kabul etmedi.",
-            accept ? "shift.swap.accepted" : "shift.swap.declined", ct);
-        if (accept && (await _people.FindAsync(tenant, r, ct))?.DepartmentHeadId is { } head && head != r && head != emp)
-            await NotifyAsync(tenant, head, "Onay bekleyen vardiya takası", "Ekibinizde iki çalışan vardiya takasında anlaştı; Vardiya ekranındaki takas onaylarından karar verin.", "shift.swap.approval", ct);
-        await AuditAsync(tenant, emp, "ShiftSwapRequest", id.ToString(), accept ? "PeerAccepted" : "PeerDeclined", new { source = "chat" }, app.Platform);
+        var r = await ChatInternal.PostAsync(_http, ChatInternal.TimeshiftBase, "/api/internal/chat/swap-respond",
+            new { tenantSlug = tenant, employeeId = emp, swapId = id, accept, platform = app.Platform }, en, ct);
+        if (!r.Ok)
+            return r.Status is 404 or 409
+                ? ChatReply.Of(en ? "This request is no longer awaiting your answer." : "Bu talep artık yanıtınızı beklemiyor.", en) with { Replace = true }
+                : ChatReply.Of(r.Message!, en);
         return ChatReply.Of(accept ? (en ? "✅ You accepted the swap; it now awaits manager approval." : "✅ Takası kabul ettiniz; yönetici onayı bekleniyor.")
             : (en ? "You declined the swap." : "Takası reddettiniz."), en) with { Replace = true };
     }
 
     /// <summary>
-    /// timeshift onay kuralları: yalnızca talep edenin bölüm başı (taraflar hariç), yalnızca PendingApproval;
-    /// atamalar değişmemiş, geçmiş değil, aynı ekip, çakışma yok, 11 saat dinlenme, haftada en çok 45 saat.
-    /// Değişim tek işlemde (satır kilidiyle) yapılır.
+    /// Takas onayı/reddi timeshift-service iç ucundan (/api/internal/chat/swap-decide): yetki (talep edenin
+    /// bölüm başı, taraflar hariç), durum ve takas kuralları (aynı ekip, çakışma, 11 saat dinlenme, haftalık
+    /// 45 saat) web ile aynı çekirdekte uygulanır; değişim, bildirim ve denetim kaydı orada yapılır.
     /// </summary>
     private async Task<ChatReply> SwapDecideAsync(ChatApp app, string tenant, Guid emp, string value, bool approve, bool en, CancellationToken ct)
     {
         if (!Guid.TryParse(value, out var id)) return ChatReply.Of("—", en);
-        var me = await _people.FindAsync(tenant, emp, ct);
-        await using var conn = await _sql.DataSource.OpenConnectionAsync(ct);
-        await using var tx = await conn.BeginTransactionAsync(ct);
-        async Task<List<T>> Q<T>(string sql, Func<Npgsql.NpgsqlDataReader, T> map, params object?[] args)
+        var r = await ChatInternal.PostAsync(_http, ChatInternal.TimeshiftBase, "/api/internal/chat/swap-decide",
+            new { tenantSlug = tenant, employeeId = emp, swapId = id, approve, platform = app.Platform }, en, ct);
+        if (r.Ok)
+            return ChatReply.Of(approve ? (en ? "✅ Swap approved; the schedule was updated." : "✅ Takas onaylandı; program güncellendi.")
+                : (en ? "⛔ Swap rejected." : "⛔ Takas reddedildi."), en) with { Replace = true };
+        return r.Status switch
         {
-            await using var cmd = new Npgsql.NpgsqlCommand(sql, conn, tx);
-            foreach (var a in args) cmd.Parameters.Add(new Npgsql.NpgsqlParameter { Value = a ?? DBNull.Value });
-            await using var rd = await cmd.ExecuteReaderAsync(ct);
-            var list = new List<T>();
-            while (await rd.ReadAsync(ct)) list.Add(map(rd));
-            return list;
-        }
-        async Task X(string sql, params object?[] args)
-        {
-            await using var cmd = new Npgsql.NpgsqlCommand(sql, conn, tx);
-            foreach (var a in args) cmd.Parameters.Add(new Npgsql.NpgsqlParameter { Value = a ?? DBNull.Value });
-            await cmd.ExecuteNonQueryAsync(ct);
-        }
-        var s = (await Q("""
-            SELECT "Status", "RequesterEmployeeId", "TargetEmployeeId", "RequesterAssignmentId", "TargetAssignmentId" FROM timeshift_swap_requests
-            WHERE "TenantSlug" = $1 AND "Id" = $2 FOR UPDATE
-            """, r => (St: r.GetString(0), Req: r.GetGuid(1), Tgt: r.GetGuid(2), RA: r.GetGuid(3), TA: r.GuidOrNull(4)), tenant, id)).FirstOrDefault();
-        if (s.St is null) return ChatReply.Of(en ? "Swap request not found." : "Takas talebi bulunamadı.", en) with { Replace = true };
-        var reqPerson = await _people.FindAsync(tenant, s.Req, ct);
-        if (emp == s.Req || emp == s.Tgt || reqPerson?.DepartmentHeadId != emp)
-            return ChatReply.Of(en ? "You are not allowed to decide on this swap." : "Bu takası onaylama yetkiniz yok.", en);
-        if (s.St != "PendingApproval") return ChatReply.Of(en ? "This swap is not awaiting approval." : "Takas onay beklemiyor.", en) with { Replace = true };
-        var decidedBy = me?.Name ?? "Sohbet";
-        string? reason = null;
-        if (approve)
-        {
-            var ids = new List<Guid> { s.RA };
-            if (s.TA is { } ta0) ids.Add(ta0);
-            var asg = (await Q(AssignmentSql + " WHERE a.\"Id\" = ANY($1) FOR UPDATE OF a", MapAssignment, (object)ids.ToArray())).ToDictionary(a => a.Id);
-            var mine = asg.GetValueOrDefault(s.RA);
-            var theirs = s.TA is { } ta ? asg.GetValueOrDefault(ta) : null;
-            if (mine is null || mine.EmployeeId != s.Req || (s.TA is not null && (theirs is null || theirs.EmployeeId != s.Tgt))) reason = "Vardiya atamaları talepten sonra değişmiş";
-            else if (mine.Date < Today || (theirs is not null && theirs.Date < Today)) reason = "Geçmiş vardiya takas edilemez";
-            else if (!await SameShiftTeamAsync(tenant, s.Req, s.Tgt, mine.Date, ct)) reason = "Çalışanlar artık aynı ekipte değil";
-            else
-            {
-                var from = (theirs is null || mine.Date < theirs.Date ? mine.Date : theirs.Date).AddDays(-8);
-                var to = (theirs is null || mine.Date > theirs.Date ? mine.Date : theirs.Date).AddDays(8);
-                async Task<List<Assignment>> Window(Guid e) =>
-                    await Q(AssignmentSql + " WHERE a.\"TenantSlug\" = $1 AND a.\"EmployeeId\" = $2 AND a.\"Date\" BETWEEN $3 AND $4", MapAssignment, tenant, e, from, to);
-                static SwapCheck.Interval I(Assignment a) => SwapCheck.Interval.Of(a.Date, a.Start, a.End, a.Break);
-                var reqName = reqPerson?.Name.Split(' ')[0] ?? "Çalışan";
-                var tgtName = (await _people.FindAsync(tenant, s.Tgt, ct))?.Name.Split(' ')[0] ?? "Çalışan";
-                var aList = (await Window(s.Req)).Where(x => x.Id != mine.Id).Select(I).ToList();
-                if (theirs is not null)
-                {
-                    if (aList.Any(x => DateOnly.FromDateTime(x.Start) == theirs.Date)) reason = $"{reqName}: {theirs.Date:dd.MM.yyyy} günü zaten bir vardiyası var";
-                    else { var n = I(theirs); aList.Add(n); reason = SwapCheck.Validate(aList, new[] { n }, reqName); }
-                }
-                if (reason is null)
-                {
-                    var bList = (await Window(s.Tgt)).Where(x => x.Id != theirs?.Id).Select(I).ToList();
-                    if (bList.Any(x => DateOnly.FromDateTime(x.Start) == mine.Date)) reason = $"{tgtName}: {mine.Date:dd.MM.yyyy} günü zaten bir vardiyası var";
-                    else { var m = I(mine); bList.Add(m); reason = SwapCheck.Validate(bList, new[] { m }, tgtName); }
-                }
-                if (reason is null)
-                {
-                    if (theirs is not null && theirs.Date == mine.Date)
-                        await X("""
-                            UPDATE timeshift_assignments a SET "ShiftId" = CASE WHEN a."Id" = $1 THEN (SELECT "ShiftId" FROM timeshift_assignments WHERE "Id" = $2)
-                                                                               ELSE (SELECT "ShiftId" FROM timeshift_assignments WHERE "Id" = $1) END
-                            WHERE a."Id" IN ($1, $2)
-                            """, mine.Id, theirs.Id);
-                    else
-                    {
-                        await X("UPDATE timeshift_assignments SET \"EmployeeId\" = $2 WHERE \"Id\" = $1", mine.Id, s.Tgt);
-                        if (theirs is not null) await X("UPDATE timeshift_assignments SET \"EmployeeId\" = $2 WHERE \"Id\" = $1", theirs.Id, s.Req);
-                    }
-                    await X("UPDATE timeshift_swap_requests SET \"Status\" = 'Approved', \"DecidedAt\" = now(), \"DecidedBy\" = $2 WHERE \"Id\" = $1", id, decidedBy);
-                }
-            }
-        }
-        if (!approve || reason is not null)
-            await X("UPDATE timeshift_swap_requests SET \"Status\" = 'Rejected', \"RejectReason\" = $2, \"DecidedAt\" = now(), \"DecidedBy\" = $3 WHERE \"Id\" = $1",
-                id, reason ?? "Yönetici onaylamadı", decidedBy);
-        await tx.CommitAsync(ct);
-        var (subject, body) = approve && reason is null
-            ? ("Vardiya takası onaylandı", "Vardiya takasınız onaylandı; güncel programınızı Vardiya ekranında görebilirsiniz.")
-            : reason is not null ? ("Vardiya takası reddedildi", $"Takas kurallara uymadığı için reddedildi: {reason}") : ("Vardiya takası onaylanmadı", "Takas talebi onaylanmadı: Yönetici onaylamadı");
-        await NotifyAsync(tenant, s.Req, subject, body, "shift.swap.decision", ct);
-        await NotifyAsync(tenant, s.Tgt, subject, body, "shift.swap.decision", ct);
-        await AuditAsync(tenant, emp, "ShiftSwapRequest", id.ToString(), approve && reason is null ? "Approved" : "Rejected", new { source = "chat", rule = reason is not null }, app.Platform);
-        return ChatReply.Of(approve && reason is null ? (en ? "✅ Swap approved; the schedule was updated." : "✅ Takas onaylandı; program güncellendi.")
-            : reason is not null ? (en ? $"⛔ Swap rejected by the rules: {reason}" : $"⛔ Takas kurallara uymadığı için reddedildi: {reason}")
-            : (en ? "⛔ Swap rejected." : "⛔ Takas reddedildi."), en) with { Replace = true };
-    }
-
-    /// <summary>Aynı vardiya ekibi; ikisi de ekipsizse aynı departman (timeshift SameTeamAsync).</summary>
-    private async Task<bool> SameShiftTeamAsync(string tenant, Guid a, Guid b, DateOnly date, CancellationToken ct)
-    {
-        var m = await _sql.QueryAsync("""
-            SELECT "EmployeeId", "ShiftTeamId" FROM timeshift_shift_team_members
-            WHERE "TenantSlug" = $1 AND "EmployeeId" IN ($2, $3) AND "EffectiveFrom" <= $4 AND ("EffectiveTo" IS NULL OR "EffectiveTo" >= $4)
-            """, r => (E: r.GetGuid(0), T: r.GetGuid(1)), ct, tenant, a, b, date);
-        var ta = m.Where(x => x.E == a).Select(x => x.T).ToHashSet();
-        var tb = m.Where(x => x.E == b).Select(x => x.T).ToHashSet();
-        if (ta.Count > 0 || tb.Count > 0) return ta.Overlaps(tb);
-        var pa = await _people.FindAsync(tenant, a, ct);
-        var pb = await _people.FindAsync(tenant, b, ct);
-        return pa?.DepartmentId is { } da && da == pb?.DepartmentId;
+            400 when r.Str("code") == "rule_violation" =>
+                ChatReply.Of(en ? $"⛔ Swap rejected by the rules: {r.Message}" : $"⛔ Takas kurallara uymadığı için reddedildi: {r.Message}", en) with { Replace = true },
+            404 => ChatReply.Of(en ? "Swap request not found." : "Takas talebi bulunamadı.", en) with { Replace = true },
+            403 => ChatReply.Of(en ? "You are not allowed to decide on this swap." : "Bu takası onaylama yetkiniz yok.", en),
+            409 when r.Str("code") == "not_pending" => ChatReply.Of(en ? "This swap is not awaiting approval." : "Takas onay beklemiyor.", en) with { Replace = true },
+            _ => ChatReply.Of(r.Message!, en),
+        };
     }
 
     // ================================================================== B15 duyurular
@@ -1027,47 +935,32 @@ public sealed partial class ChatFeatures
         catch (Exception) { return TimeZoneInfo.Utc; }
     }
 
-    /// <summary>timeshift ClockCore kuralları: açık kayıt (son 16 saat) varken yeni giriş yok; günde bir giriş; çıkış açık kaydı kapatır.</summary>
+    /// <summary>
+    /// Giriş-çıkış timeshift-service iç ucundan (/api/internal/chat/punch): web/QR/terminal ile aynı ClockCore
+    /// kuralları (açık kayıt varken yeni giriş yok; günde bir giriş; çıkış açık kaydı kapatır, mesai hesaplanır).
+    /// Yöntem "Chat", konum denetimi yok (OnSite boş).
+    /// </summary>
     private async Task<ChatReply> ClockAsync(ChatApp app, string tenant, Guid emp, bool goingIn, bool en, CancellationToken ct)
     {
-        var at = DateTimeOffset.UtcNow;
-        var date = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(at, Zone).DateTime);
-        var open = (await _sql.QueryAsync("""
-            SELECT "Id", "ClockIn" FROM timeshift_time_entries
-            WHERE "TenantSlug" = $1 AND "EmployeeId" = $2 AND "ClockIn" IS NOT NULL AND "ClockOut" IS NULL AND "ClockIn" > $3 AND "ClockIn" <= $4
-            ORDER BY "ClockIn" DESC LIMIT 1
-            """, r => (Id: r.GetGuid(0), In: r.GetFieldValue<DateTimeOffset>(1)), ct, tenant, emp, at.AddHours(-16), at)).FirstOrDefault();
+        var r = await ChatInternal.PostAsync(_http, ChatInternal.TimeshiftBase, "/api/internal/chat/punch",
+            new { tenantSlug = tenant, employeeId = emp, kind = goingIn ? "in" : "out", platform = app.Platform }, en, ct);
+        if (!r.Ok)
+            return r.Str("code") switch
+            {
+                "open_entry" => ChatReply.Of(en ? "You already have an open clock-in; clock out first." : "Açık bir giriş kaydınız var; önce çıkış yapın.", en,
+                    new ChatButton(en ? "Clock out" : "Çıkış yap", "clock", "out")),
+                "already_in" => ChatReply.Of(en ? "There is already a clock-in for today." : "Bu gün için giriş kaydı zaten var.", en),
+                "no_open_entry" => ChatReply.Of(en ? "Clock in first." : "Önce giriş kaydı oluşturulmalı.", en, new ChatButton(en ? "Clock in" : "Giriş yap", "clock", "in")),
+                _ => ChatReply.Of(r.Message!, en),
+            };
+        var body = r.Body.ValueKind == JsonValueKind.Object ? r.Body : default;
+        var at = body.ValueKind == JsonValueKind.Object && body.TryGetProperty("at", out var atEl) && atEl.TryGetDateTimeOffset(out var atVal) ? atVal : DateTimeOffset.UtcNow;
         var local = TimeZoneInfo.ConvertTime(at, Zone);
-        if (goingIn)
-        {
-            if (open.Id != Guid.Empty) return ChatReply.Of(en ? "You already have an open clock-in; clock out first." : "Açık bir giriş kaydınız var; önce çıkış yapın.", en,
-                new ChatButton(en ? "Clock out" : "Çıkış yap", "clock", "out"));
-            var existing = await _sql.QueryAsync("SELECT \"Id\", \"ClockIn\" IS NOT NULL FROM timeshift_time_entries WHERE \"TenantSlug\" = $1 AND \"EmployeeId\" = $2 AND \"Date\" = $3",
-                r => (Id: r.GetGuid(0), HasIn: r.GetBoolean(1)), ct, tenant, emp, date);
-            if (existing.Any(e => e.HasIn)) return ChatReply.Of(en ? "There is already a clock-in for today." : "Bu gün için giriş kaydı zaten var.", en);
-            if (existing.Count > 0)
-                await _sql.ExecuteAsync("UPDATE timeshift_time_entries SET \"ClockIn\" = $2, \"Source\" = 'Chat' WHERE \"Id\" = $1", ct, existing[0].Id, at);
-            else
-                await _sql.ExecuteAsync("""
-                    INSERT INTO timeshift_time_entries ("Id","TenantSlug","EmployeeId","Date","ClockIn","ClockOut","WorkedMinutes","OvertimeMinutes","Source","Note","CreatedAt")
-                    VALUES ($1,$2,$3,$4,$5,NULL,0,0,'Chat',NULL,now())
-                    """, ct, Guid.NewGuid(), tenant, emp, date, at);
-        }
-        else
-        {
-            if (open.Id == Guid.Empty) return ChatReply.Of(en ? "Clock in first." : "Önce giriş kaydı oluşturulmalı.", en, new ChatButton(en ? "Clock in" : "Giriş yap", "clock", "in"));
-            var worked = (int)(at - open.In).TotalMinutes;
-            await _sql.ExecuteAsync("UPDATE timeshift_time_entries SET \"ClockOut\" = $2, \"WorkedMinutes\" = $3, \"OvertimeMinutes\" = $4 WHERE \"Id\" = $1",
-                ct, open.Id, at, worked, Math.Max(0, worked - 480));
-        }
-        await _sql.ExecuteAsync("""
-            INSERT INTO timeshift_clock_punches ("Id","TenantSlug","EmployeeId","SiteId","Kind","Method","OnSite","At") VALUES ($1,$2,$3,NULL,$4,'Chat',NULL,$5)
-            """, ct, Guid.NewGuid(), tenant, emp, goingIn ? "In" : "Out", at);
         await CountAsync(app, "clock", goingIn ? "in" : "out", ct);
         if (goingIn)
             return ChatReply.Of(en ? $"🟢 Clocked in at {local:HH:mm}. Have a good day!" : $"🟢 Giriş kaydedildi: {local:HH:mm}. İyi çalışmalar!", en,
                 new ChatButton(en ? "Clock out" : "Çıkış yap", "clock", "out"));
-        var minutes = (int)(at - open.In).TotalMinutes;
+        var minutes = body.ValueKind == JsonValueKind.Object && body.TryGetProperty("workedMinutes", out var wEl) && wEl.TryGetInt32(out var w) ? w : 0;
         return ChatReply.Of(en ? $"🔴 Clocked out at {local:HH:mm} ({minutes / 60}h {minutes % 60}m today)." : $"🔴 Çıkış kaydedildi: {local:HH:mm} (bugün {minutes / 60} sa {minutes % 60} dk).", en);
     }
 
@@ -1096,12 +989,18 @@ public sealed partial class ChatFeatures
         if (!Guid.TryParse(value, out var pid) || await PendingGetAsync(tenant, emp, pid, ct) is not { Kind: "hrcase" } p || !await PendingCloseAsync(pid, "Done", ct))
             return ChatReply.Of(en ? "This offer has expired; ask again." : "Bu önerinin süresi doldu; yeniden sorun.", en) with { Replace = true };
         var q = p.Payload.GetProperty("q").GetString() ?? "";
-        var caseId = Guid.NewGuid();
-        await _sql.ExecuteAsync("""
-            INSERT INTO expense_hr_cases ("Id","TenantSlug","EmployeeId","Subject","Description","Category","Priority","Status","CreatedAt")
-            VALUES ($1,$2,$3,$4,$5,'Other','Normal','Open',now())
-            """, ct, caseId, tenant, emp, (en ? "Question from chat: " : "Sohbetten soru: ") + Trim(q.Replace('\n', ' '), 80), q);
-        await AuditAsync(tenant, emp, "HrCase", caseId.ToString(), "Created", new { source = "chat" }, app.Platform);
+        // Vaka expense-service'in iç ucuyla açılır (web Create kuralları + denetim kaydı orada).
+        var r = await ChatInternal.PostAsync(_http, ChatInternal.ExpenseBase, "/api/internal/chat/hr-case", new
+        {
+            tenantSlug = tenant, employeeId = emp, subject = (en ? "Question from chat: " : "Sohbetten soru: ") + Trim(q.Replace('\n', ' '), 80),
+            description = q, category = "Other", platform = app.Platform,
+        }, en, ct);
+        if (!r.Ok)
+        {
+            // Öneri tükenmesin: yeniden denenebilsin.
+            await _sql.ExecuteAsync("UPDATE governance_chat_pending SET \"State\" = 'Pending', \"ConfirmedAt\" = NULL WHERE \"Id\" = $1 AND \"State\" = 'Done'", ct, pid);
+            return ChatReply.Of(r.Message!, en);
+        }
         await CountAsync(app, "hrcase", "created", ct);
         return ChatReply.Of(en ? "✅ Your HR case was opened; HR will get back to you." : "✅ İK vakanız açıldı; İK size dönecek.", en,
             ChatButton.Link(en ? "My HR cases" : "Panelde aç", $"{Origin}/panel/ik-vakalari")) with { Replace = true };

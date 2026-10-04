@@ -74,8 +74,21 @@ public class HrCasesController : ControllerBase
                 return StatusCode(StatusCodes.Status403Forbidden,
                     new { message = "Yalnızca kendi adınıza vaka açabilirsiniz" });
         }
+        var (error, hrCase) = await CreateCoreAsync(_db, request, ct);
+        if (error is not null) return error;
+        return CreatedAtAction(nameof(GetById), new { id = hrCase!.Id }, hrCase);
+    }
+
+    /// <summary>
+    /// Vaka açmanın ortak çekirdeği: web ucu ve sohbet botunun iç ucu (InternalChatController)
+    /// aynı doğrulamadan geçer. Yetki (kimin adına) kontrolü çağırandadır.
+    /// </summary>
+    [NonAction]
+    public static async Task<(IActionResult? Error, HrCase? Case)> CreateCoreAsync(
+        ExpenseDbContext db, CreateCaseRequest request, CancellationToken ct)
+    {
         if (string.IsNullOrWhiteSpace(request.Subject) || request.Subject.Length > 200)
-            return BadRequest("Konu zorunlu ve en fazla 200 karakter olabilir");
+            return (new BadRequestObjectResult("Konu zorunlu ve en fazla 200 karakter olabilir"), null);
 
         var hrCase = new HrCase
         {
@@ -85,9 +98,9 @@ public class HrCasesController : ControllerBase
             Category = request.Category,
             Priority = request.Priority
         };
-        _db.Cases.Add(hrCase);
-        await _db.SaveChangesAsync();
-        return CreatedAtAction(nameof(GetById), new { id = hrCase.Id }, hrCase);
+        db.Cases.Add(hrCase);
+        await db.SaveChangesAsync(ct);
+        return (null, hrCase);
     }
 
     [HttpPost("{id}/assign")]

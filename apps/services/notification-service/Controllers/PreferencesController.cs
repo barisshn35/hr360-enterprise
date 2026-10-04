@@ -210,11 +210,7 @@ public class PreferencesController : ControllerBase
     [AllowAnonymous]
     public async Task<IActionResult> Effective([FromQuery] Guid employeeId, [FromQuery] string? tenant, [FromQuery] string? templateCode, CancellationToken ct)
     {
-        var expected = Environment.GetEnvironmentVariable("INTERNAL_SERVICE_TOKEN");
-        var given = Request.Headers["X-Internal-Token"].FirstOrDefault() ?? "";
-        if (string.IsNullOrEmpty(expected) || !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
-                System.Text.Encoding.UTF8.GetBytes(expected), System.Text.Encoding.UTF8.GetBytes(given)))
-            return NotFound();
+        if (!InternalToken.Valid(Request)) return NotFound();
         if (employeeId == Guid.Empty) return BadRequest(new { message = "employeeId gerekli" });
 
         var gq = _db.Preferences.IgnoreQueryFilters().AsNoTracking().Where(p => p.EmployeeId == employeeId);

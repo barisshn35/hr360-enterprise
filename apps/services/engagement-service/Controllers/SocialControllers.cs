@@ -68,24 +68,39 @@ public class KudosController : AppController
     [HttpPost]
     public async Task<IActionResult> Create(CreateKudos body, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(body.Message) || body.Message.Length > 500)
-            return BadRequest(new { message = "Mesaj 1–500 karakter olmalı." });
-        if (!Badges.ContainsKey(body.Badge)) return BadRequest(new { message = "Geçersiz rozet." });
-        var to = await People.FindAsync(Tenant, body.ToEmployeeId, ct);
-        if (to is null) return NotFound(new { message = "Çalışan bulunamadı." });
         var from = await MyPersonAsync(ct);
-        if (from?.Id == to.Id) return BadRequest(new { message = "Kendinize takdir gönderemezsiniz." });
+        var (error, k) = await CreateCoreAsync(_db, _notify, People, Tenant, new Actor(Me.UserId, from?.Id, from?.Name ?? Me.Name), body, ct);
+        return error?.ToResult() ?? Ok(new { k!.Id });
+    }
+
+    /// <summary>Takdir kuralları (saf): mesaj 1–500 karakter, rozet tanımlı olmalı.</summary>
+    public static RuleError? Validate(string? message, string? badge)
+    {
+        if (string.IsNullOrWhiteSpace(message) || message.Length > 500)
+            return RuleError.Bad("Mesaj 1–500 karakter olmalı.", "message_length");
+        if (badge is null || !Badges.ContainsKey(badge)) return RuleError.Bad("Geçersiz rozet.", "badge");
+        return null;
+    }
+
+    /// <summary>Web ucu ve sohbet botu (/api/internal/chat/kudos) için ortak takdir oluşturma.</summary>
+    internal static async Task<(RuleError? Error, Kudos? Kudos)> CreateCoreAsync(EngagementDbContext db, Notifier notify, PeopleDirectory people,
+        string tenant, Actor from, CreateKudos body, CancellationToken ct)
+    {
+        if (Validate(body.Message, body.Badge) is { } invalid) return (invalid, null);
+        var to = await people.FindAsync(tenant, body.ToEmployeeId, ct);
+        if (to is null) return (RuleError.NotFound("Çalışan bulunamadı."), null);
+        if (from.EmployeeId == to.Id) return (RuleError.Bad("Kendinize takdir gönderemezsiniz.", "self"), null);
 
         var k = new Kudos
         {
-            FromUserId = Me.UserId, FromEmployeeId = from?.Id, FromName = from?.Name ?? Me.Name,
+            FromUserId = from.UserId, FromEmployeeId = from.EmployeeId, FromName = from.Name,
             ToEmployeeId = to.Id, ToName = to.Name, Badge = body.Badge, Message = body.Message.Trim(),
         };
-        _db.Kudos.Add(k);
-        await _db.SaveChangesAsync(ct);
-        await _notify.InAppAsync(Tenant, to.Id, $"{k.FromName} size takdir gönderdi: {Badges[k.Badge]}",
+        db.Kudos.Add(k);
+        await db.SaveChangesAsync(ct);
+        await notify.InAppAsync(tenant, to.Id, $"{k.FromName} size takdir gönderdi: {Badges[k.Badge]}",
             k.Message, "engagement.kudos", ct);
-        return Ok(new { k.Id });
+        return (null, k);
     }
 
     [HttpPost("{id:guid}/like")]

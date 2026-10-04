@@ -36,6 +36,8 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
     {
         "salary", "iban", "nationalid", "tckn", "identitynumber", "password", "secret",
         "keyhash", "token", "bankaccount", "privatenotes",
+        // KVKK: ayrılış görüşmesi yanıtları kişisel görüş içerir; denetimde yalnızca değiştiği görünür.
+        "exitinterview",
     };
 
     /// <summary>Teknik/altyapı tabloları denetlenmez (gürültü olur).</summary>

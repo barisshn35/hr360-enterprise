@@ -361,15 +361,110 @@ public class LeaveRequestsController : ControllerBase
             var me = await _approvals.FindMyEmployeeIdAsync(ct);
             if (me is null || me.Value != leave.EmployeeId) return NotFound();
         }
+        var (code, message) = await CancelCoreAsync(leave, internalCall: false, ct);
+        return code switch
+        {
+            0 => Ok(leave),
+            // Web istemcisi bu iki durumda düz metin bekler (eski biçim korunur).
+            StatusCodes.Status400BadRequest => BadRequest(message),
+            _ => StatusCode(code, new { message }),
+        };
+    }
+
+    /// <summary>
+    /// Sohbet botundan (Slack/Teams) izin iptali: web ucuyla aynı kural (CancelCoreAsync).
+    /// Çalışan, botun doğrulanmış sohbet hesabından gelir; yalnızca kendi talebini iptal eder.
+    /// Denetim kaydı bu serviste, kişi adına ve "via: chat" işaretiyle yazılır.
+    /// Gateway /api/*/internal/ yollarını dışarıya kapatır; anahtar yoksa uç kapalıdır.
+    /// </summary>
+    [HttpPost("/api/internal/chat/leave-cancel")]
+    [AllowAnonymous]
+    public async Task<IActionResult> CancelInternal([FromBody] InternalCancelLeaveRequest request,
+        [FromServices] Tenancy.TenantContext tenant, CancellationToken ct)
+    {
+        if (!InternalTokenValid()) return NotFound();
+        if (string.IsNullOrWhiteSpace(request.TenantSlug)) return BadRequest(new { message = "Kiracı belirtilmedi" });
+        if (request.EmployeeId == Guid.Empty || request.LeaveId == Guid.Empty)
+            return BadRequest(new { message = "Çalışan ve izin talebi belirtilmeli" });
+        tenant.TenantSlug = request.TenantSlug;
+        tenant.IsPlatformAdmin = false;
+        var channel = ChatChannel(request.Channel);
+        // Otomatik denetim satırları (AuditInterceptor) "system" yerine kişiye yazılsın.
+        HttpContext.User = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity(new[]
+        {
+            new System.Security.Claims.Claim("sub", $"employee:{request.EmployeeId}"),
+            new System.Security.Claims.Claim("name", $"Sohbet ({channel})"),
+        }));
+
+        var leave = await _db.LeaveRequests.FirstOrDefaultAsync(x => x.Id == request.LeaveId, ct);
+        // Başkasının talebi: varlığını sızdırmamak için 404.
+        if (leave is null || leave.EmployeeId != request.EmployeeId)
+            return NotFound(new { message = "İzin talebi bulunamadı." });
+        var from = leave.Status;
+        var (code, message) = await CancelCoreAsync(leave, internalCall: true, ct);
+        // Sonuçlanmış/iptal edilmiş talep: 409 + code "not_cancellable" (bot İngilizce metnini buna göre seçer).
+        if (code == StatusCodes.Status400BadRequest)
+            return Conflict(new { message, code = "not_cancellable", status = from.ToString() });
+        if (code != 0) return StatusCode(code, new { message, code = "retry" });
+
+        await ChatAuditAsync(leave, from, request.EmployeeId, channel, ct);
+        return Ok(new
+        {
+            leave.Id, type = leave.Type.ToString(), startDate = leave.StartDate, endDate = leave.EndDate,
+            leave.Days, from = from.ToString(), status = leave.Status.ToString(),
+        });
+    }
+
+    private bool InternalTokenValid()
+    {
+        var expected = Environment.GetEnvironmentVariable("INTERNAL_SERVICE_TOKEN");
+        var given = Request.Headers["X-Internal-Token"].FirstOrDefault() ?? "";
+        return !string.IsNullOrEmpty(expected)
+            && System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+                System.Text.Encoding.UTF8.GetBytes(expected), System.Text.Encoding.UTF8.GetBytes(given));
+    }
+
+    /// <summary>Denetim kaydındaki kanal adı: bilinen sohbet sağlayıcısı, yoksa "chat".</summary>
+    internal static string ChatChannel(string? channel) =>
+        channel is "Slack" or "Teams" or "Mattermost" or "RocketChat" ? channel : "chat";
+
+    /// <summary>
+    /// Botun eskiden yazdığı satırla aynı eylem adı (LeaveRequest / Cancelled); artık sahibi olan
+    /// serviste. Denetim yazılamazsa iş işlemi bozulmaz (AuditInterceptor ile aynı ilke).
+    /// </summary>
+    private async Task ChatAuditAsync(LeaveRequest leave, LeaveRequestStatus from, Guid employeeId, string channel, CancellationToken ct)
+    {
+        try
+        {
+            var changes = JsonSerializer.Serialize(new { from = from.ToString(), to = leave.Status.ToString(), via = "chat" });
+            var correlation = Request.Headers["X-Correlation-Id"].FirstOrDefault() ?? HttpContext.TraceIdentifier;
+            await _db.Database.ExecuteSqlRawAsync(
+                "INSERT INTO audit_log (\"TenantSlug\",\"Service\",\"EntityType\",\"EntityId\",\"Action\",\"Changes\",\"UserId\",\"UserName\",\"CorrelationId\",\"IpAddress\",\"OccurredAt\") " +
+                "VALUES ({0},'leave-service','LeaveRequest',{1},'Cancelled',{2}::jsonb,{3},{4},{5},NULL,now())",
+                new object[] { leave.TenantSlug, leave.Id.ToString(), changes, $"employee:{employeeId}", $"Sohbet ({channel})", correlation }, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Console.Error.WriteLine($"[audit] leave-service: sohbet iptal denetim kaydı yazılamadı: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// İptal kuralı (web ve sohbet ortak): yalnızca sonuçlanmamış talep (Draft/Submitted);
+    /// Submitted ise bekleyen gün bakiyeden düşülür; açık onay akışı kapatılır.
+    /// Dönüş: (0, null) başarı; aksi halde HTTP kodu ve Türkçe ileti. Sahiplik kontrolü çağıranda.
+    /// </summary>
+    private async Task<(int Code, string? Message)> CancelCoreAsync(LeaveRequest leave, bool internalCall, CancellationToken ct)
+    {
         if (leave.Status == LeaveRequestStatus.Cancelled)
-            return BadRequest("Talep zaten iptal edilmiş");
+            return (StatusCodes.Status400BadRequest, "Talep zaten iptal edilmiş");
         if (leave.Status is LeaveRequestStatus.Approved or LeaveRequestStatus.Rejected)
-            return BadRequest("Sonuçlanmış talep iptal edilemez");
+            return (StatusCodes.Status400BadRequest, "Sonuçlanmış talep iptal edilemez");
 
         var balance = await _db.LeaveBalances.FirstOrDefaultAsync(b =>
             b.EmployeeId == leave.EmployeeId &&
             b.Year == leave.StartDate.Year &&
-            b.Type == leave.Type);
+            b.Type == leave.Type, ct);
 
         if (balance is not null && leave.Status == LeaveRequestStatus.Submitted)
         {
@@ -384,14 +479,18 @@ public class LeaveRequestsController : ControllerBase
         }
         catch (DbUpdateConcurrencyException)
         {
-            return Conflict(new { message = "Bakiye aynı anda güncellendi; lütfen tekrar deneyin." });
+            return (StatusCodes.Status409Conflict, "Bakiye aynı anda güncellendi; lütfen tekrar deneyin.");
         }
 
         // NOT: Onceden iptal edilen iznin onay akisi acik kaliyordu - onayci talebi
         // "Onay kutusu"nda gormeye devam ediyor, onaylasa bile hicbir sey olmuyordu.
+        // Sohbet yolunda kullanicinin jetonu yok: workflow-service'in ic ucu kullanilir.
         if (leave.WorkflowRequestId is { } wf)
-            await _approvals.CancelWorkflowAsync(wf, ct);
-        return Ok(leave);
+        {
+            if (internalCall) await _approvals.CancelWorkflowInternalAsync(leave.TenantSlug, wf, leave.EmployeeId, ct);
+            else await _approvals.CancelWorkflowAsync(wf, ct);
+        }
+        return (0, null);
     }
 }
 
@@ -402,3 +501,5 @@ public record CreateLeaveRequest(
 public record ResolveLeaveRequest(bool Approved);
 public record InternalCreateLeaveRequest(string TenantSlug, Guid EmployeeId, LeaveType Type, DateOnly StartDate, DateOnly EndDate,
     decimal Days, string? Reason);
+/// <summary>Sohbet botundan iptal: Channel isteğe bağlı (Slack/Teams/...; denetim kaydındaki kanal adı).</summary>
+public record InternalCancelLeaveRequest(string TenantSlug, Guid EmployeeId, Guid LeaveId, string? Channel = null);

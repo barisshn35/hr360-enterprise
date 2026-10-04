@@ -54,10 +54,7 @@ public class SurveysController : AppController
     [Authorize(Policy = "RequireHrAdmin")]
     public async Task<IActionResult> Create(SurveyInput body, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(body.Title) || body.Questions.Count == 0)
-            return BadRequest(new { message = "Başlık ve en az bir soru gerekli." });
-        if (body.Questions.Any(q => q.Type is not ("Nps" or "Scale" or "Choice" or "Text")))
-            return BadRequest(new { message = "Soru tipi Nps, Scale, Choice veya Text olmalı." });
+        if (ValidateSurvey(body.Title, body.Questions) is { } invalid) return invalid.ToResult();
         var s = new Survey
         {
             Title = body.Title.Trim(), Description = body.Description, Kind = body.Kind is "eNPS" or "Pulse" ? body.Kind : "Custom",
@@ -139,16 +136,41 @@ public class SurveysController : AppController
     {
         var s = await _db.Surveys.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
         if (s is null) return NotFound();
-        if (s.Status != "Open" || (s.ClosesAt is { } c && c < DateTime.UtcNow))
-            return BadRequest(new { message = "Anket yanıta kapalı." });
+        if (CheckOpen(s, DateTime.UtcNow) is { } closed) return closed.ToResult();
         var key = RespondentKey(id);
         if (await _db.SurveyResponses.AnyAsync(r => r.RespondentKey == key && r.SurveyId == id, ct))
             return Conflict(new { message = "Bu ankete zaten yanıt verdiniz." });
 
+        var (invalid, answers) = ValidateAnswers(s, body.Answers);
+        if (invalid is not null) return invalid.ToResult();
+        var me = await MyPersonAsync(ct);
+        _db.SurveyResponses.Add(new SurveyResponse { SurveyId = id, RespondentKey = key, DepartmentName = me?.Department, Answers = answers });
+        await _db.SaveChangesAsync(ct);
+        return Ok(new { ok = true });
+    }
+
+    /* ---------------- ortak kurallar (web ucu ve sohbet botu /api/internal/chat/pulse-*) ---------------- */
+
+    public static RuleError? ValidateSurvey(string? title, List<SurveyQuestion>? questions)
+    {
+        if (string.IsNullOrWhiteSpace(title) || questions is null || questions.Count == 0)
+            return RuleError.Bad("Başlık ve en az bir soru gerekli.", "invalid");
+        if (questions.Any(q => q.Type is not ("Nps" or "Scale" or "Choice" or "Text")))
+            return RuleError.Bad("Soru tipi Nps, Scale, Choice veya Text olmalı.", "invalid");
+        return null;
+    }
+
+    public static RuleError? CheckOpen(Survey s, DateTime nowUtc) =>
+        s.Status != "Open" || (s.ClosesAt is { } c && c < nowUtc) ? RuleError.Bad("Anket yanıta kapalı.", "closed") : null;
+
+    /// <summary>Yanıtları soruların tipine göre doğrular ve normalleştirir (zorunlu soru boş bırakılamaz).</summary>
+    public static (RuleError? Error, List<SurveyAnswer> Answers) ValidateAnswers(Survey s, List<SurveyAnswer>? given)
+    {
+        given ??= new();
         var answers = new List<SurveyAnswer>();
         foreach (var q in s.Questions)
         {
-            var a = body.Answers.FirstOrDefault(x => x.QuestionId == q.Id);
+            var a = given.FirstOrDefault(x => x.QuestionId == q.Id);
             var ok = q.Type switch
             {
                 "Nps" => a?.Score is >= 0 and <= 10,
@@ -156,13 +178,10 @@ public class SurveysController : AppController
                 "Choice" => a?.Choice is { } ch && q.Options.Contains(ch),
                 _ => !string.IsNullOrWhiteSpace(a?.Text),
             };
-            if (!ok && q.Required) return BadRequest(new { message = $"Yanıtlanmamış soru: {q.Text}" });
+            if (!ok && q.Required) return (RuleError.Bad($"Yanıtlanmamış soru: {q.Text}", "answer"), answers);
             if (ok) answers.Add(new SurveyAnswer { QuestionId = q.Id, Score = a!.Score, Choice = a.Choice, Text = a.Text?.Trim() is { Length: > 0 } t ? t[..Math.Min(t.Length, 2000)] : null });
         }
-        var me = await MyPersonAsync(ct);
-        _db.SurveyResponses.Add(new SurveyResponse { SurveyId = id, RespondentKey = key, DepartmentName = me?.Department, Answers = answers });
-        await _db.SaveChangesAsync(ct);
-        return Ok(new { ok = true });
+        return (null, answers);
     }
 
     private async Task AuditViewAsync(Guid surveyId, string field, int count)
@@ -621,18 +640,39 @@ public class OffboardingController : AppController
     {
         var c = await _db.OffboardingCases.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (c is null) return NotFound();
-        c.ExitInterview = body.Interview;
         c.RehireEligible = body.RehireEligible;
-        _db.Entry(c).Property(x => x.ExitInterview).IsModified = true;
+        ApplyInterview(_db, c, body.Interview, Me.Name);
+        await _db.SaveChangesAsync(ct);
+        return Ok(c);
+    }
+
+    /// <summary>
+    /// Çıkış görüşmesini kayda yazar ve kontrol listesindeki "exit-interview" adımını tamamlar
+    /// (web ucu ve sohbet botunun çıkış anketi ortak yolu). Kaydetmez.
+    /// </summary>
+    internal static void ApplyInterview(EngagementDbContext db, OffboardingCase c, ExitInterview interview, string doneBy)
+    {
+        c.ExitInterview = interview;
+        db.Entry(c).Property(x => x.ExitInterview).IsModified = true;
         var item = c.Checklist.FirstOrDefault(i => i.Key == "exit-interview");
         if (item is not null && !item.Done)
         {
             c.Checklist = c.Checklist.Select(i => i.Key == "exit-interview"
-                ? new ChecklistItem { Key = i.Key, Title = i.Title, Owner = i.Owner, Hint = i.Hint, Done = true, DoneAt = DateTime.UtcNow, DoneBy = Me.Name } : i).ToList();
-            _db.Entry(c).Property(x => x.Checklist).IsModified = true;
+                ? new ChecklistItem { Key = i.Key, Title = i.Title, Owner = i.Owner, Hint = i.Hint, Done = true, DoneAt = DateTime.UtcNow, DoneBy = doneBy } : i).ToList();
+            db.Entry(c).Property(x => x.Checklist).IsModified = true;
         }
-        await _db.SaveChangesAsync(ct);
-        return Ok(c);
+    }
+
+    /// <summary>Çalışanın kendi doldurduğu çıkış anketi (sohbet): puanlar 1–5, neden kısa metin, yorum en çok 2000 karakter.</summary>
+    public static RuleError? ValidateSelfInterview(ExitInterview? iv)
+    {
+        if (iv is null) return RuleError.Bad("Yanıtlar eksik.", "invalid");
+        if (new[] { iv.ManagerScore, iv.CultureScore, iv.GrowthScore, iv.CompensationScore }.Any(s => s is not null and (< 1 or > 5)))
+            return RuleError.Bad("Puanlar 1–5 arasında olmalı.", "invalid");
+        if (string.IsNullOrWhiteSpace(iv.PrimaryReason) || iv.PrimaryReason.Length > 200)
+            return RuleError.Bad("Ayrılma nedeni 1–200 karakter olmalı.", "invalid");
+        if (iv.Comments is { Length: > 2000 }) return RuleError.Bad("Yorum en fazla 2000 karakter olabilir.", "invalid");
+        return null;
     }
 
     /// <summary>

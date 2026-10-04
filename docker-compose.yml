@@ -311,6 +311,8 @@ services:
     <<: *dotnet-service
     build: ./apps/services/onboarding-service
     environment:
+      # Sohbet botunun "görev tamamlandı" çağrısı (servisler arası iç uç)
+      INTERNAL_SERVICE_TOKEN: "${INTERNAL_SERVICE_TOKEN:-}"
       EMPLOYEE_SERVICE_URL: "http://employee-service:8080"
       ONBOARDING_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=12"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
@@ -457,6 +459,8 @@ services:
     environment:
       # Bordro/masraf dosyaları ve pasaport no bu anahtarla şifrelenir; TCKN/IBAN açılır.
       TENANT_SECRET_KEY: "${TENANT_SECRET_KEY}"
+      # Sohbet botunun masraf taslağı / İK vakası çağrıları (servisler arası iç uç)
+      INTERNAL_SERVICE_TOKEN: "${INTERNAL_SERVICE_TOKEN:-}"
       EXPENSE_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=12"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
       KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"

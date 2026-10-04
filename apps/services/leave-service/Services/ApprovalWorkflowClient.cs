@@ -168,6 +168,28 @@ public class ApprovalWorkflowClient
     }
 
     /// <summary>
+    /// Servisler arasi (jetonsuz) yol: talep sahibi adina akisi workflow-service'in ic ucuyla
+    /// kapatir (sohbet botundan iptal). Basarisiz olursa false - kayit yine iptal edilir.
+    /// </summary>
+    public async Task<bool> CancelWorkflowInternalAsync(string tenantSlug, Guid workflowId, Guid requesterEmployeeId, CancellationToken ct)
+    {
+        var token = Environment.GetEnvironmentVariable("INTERNAL_SERVICE_TOKEN");
+        if (string.IsNullOrEmpty(token) || string.IsNullOrEmpty(tenantSlug)) return false;
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Post, $"{_workflowServiceUrl}/api/internal/workflows/{workflowId}/cancel")
+            {
+                Content = new StringContent(JsonSerializer.Serialize(new { tenantSlug, actorEmployeeId = requesterEmployeeId }),
+                    Encoding.UTF8, "application/json"),
+            };
+            req.Headers.Add("X-Internal-Token", token);
+            using var resp = await _http.SendAsync(req, ct);
+            return resp.IsSuccessStatusCode;
+        }
+        catch (Exception) { return false; }
+    }
+
+    /// <summary>
     /// Istegi yapan kullanicinin kendi calisan kaydinin ID'sini bulur -
     /// "kendi actigi talebi kendi sonuclandiramaz" (self-approval engeli)
     /// ve "employee rolu yalnizca kendi kaydini sorgulayabilir" (GetAll

@@ -347,7 +347,8 @@ public class ChatBotAdminController : AppController
         var send = body.SendAt is { } s ? DateTime.SpecifyKind(s, DateTimeKind.Utc) : DateTime.UtcNow;
         var close = body.ClosesAt is { } c ? DateTime.SpecifyKind(c, DateTimeKind.Utc) : send.AddDays(7);
         if (close <= send) return BadRequest(new { message = L("Kapanış zamanı gönderimden sonra olmalı.", "The closing time must be after the send time.") });
-        var id = await _chat.Features.SchedulePulseAsync(Tenant, q, send, close, Me.Name, ct);
+        var (id, status, error) = await _chat.Features.SchedulePulseAsync(Tenant, q, send, close, Me.Name, ct);
+        if (id is null) return StatusCode(status is >= 400 and < 500 and not 404 ? status : StatusCodes.Status502BadGateway, new { message = error });
         return Ok(new { id });
     }
 
@@ -356,7 +357,9 @@ public class ChatBotAdminController : AppController
     {
         var survey = await Db.ScalarAsync("UPDATE governance_chat_pulses SET \"Status\" = 'Closed', \"ClosesAt\" = now() WHERE \"TenantSlug\" = $1 AND \"Id\" = $2 RETURNING \"SurveyId\"", ct, Tenant, id);
         if (survey is not Guid sid) return NotFound();
-        await Db.ExecuteAsync("UPDATE engagement_surveys SET \"Status\" = 'Closed' WHERE \"Id\" = $1", ct, sid);
+        // Anket engagement-service'te kapatılır; başarısızsa İK tekrar deneyebilir (yukarıdaki güncelleme tekrarlanabilir).
+        if (!await _chat.Features.ClosePulseSurveyAsync(Tenant, sid, ct))
+            return StatusCode(StatusCodes.Status502BadGateway, new { message = L("Anket kapatılamadı; lütfen tekrar deneyin.", "The survey could not be closed; please try again.") });
         return NoContent();
     }
 }

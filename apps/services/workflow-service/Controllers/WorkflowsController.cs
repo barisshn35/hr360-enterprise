@@ -463,12 +463,41 @@ public class WorkflowsController : ControllerBase
             var me = await _employees.FindMyEmployeeIdAsync(ct);
             if (me is null || me.Value != wf.RequesterEmployeeId) return NotFound();
         }
+        return await CancelCoreAsync(wf, ct) ?? Ok(wf);
+    }
+
+    /// <summary>
+    /// Servisler arası (jetonsuz) iptal: sohbet botundan iptal edilen izin talebinin akışını
+    /// leave-service kapatır. Yalnızca talep sahibi adına (actorEmployeeId = talep eden);
+    /// web ucuyla aynı kural (yalnızca bekleyen akış). Gateway /api/*/internal/ yollarını dışarıya kapatır.
+    /// </summary>
+    [HttpPost("/api/internal/workflows/{id}/cancel")]
+    [AllowAnonymous]
+    public async Task<IActionResult> CancelInternal(Guid id, [FromBody] InternalCancelWorkflowRequest request,
+        [FromServices] Tenancy.TenantContext tenant, CancellationToken ct)
+    {
+        var expected = Environment.GetEnvironmentVariable("INTERNAL_SERVICE_TOKEN");
+        var given = Request.Headers["X-Internal-Token"].FirstOrDefault() ?? "";
+        if (string.IsNullOrEmpty(expected)
+            || !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+                System.Text.Encoding.UTF8.GetBytes(expected), System.Text.Encoding.UTF8.GetBytes(given)))
+            return NotFound();
+        if (string.IsNullOrWhiteSpace(request.TenantSlug)) return BadRequest(new { message = "Kiracı belirtilmedi" });
+        tenant.TenantSlug = request.TenantSlug;
+        tenant.IsPlatformAdmin = false;
+        var wf = await _db.WorkflowRequests.FirstOrDefaultAsync(w => w.Id == id, ct);
+        if (wf is null || wf.RequesterEmployeeId != request.ActorEmployeeId) return NotFound(new { message = "Talep bulunamadı" });
+        return await CancelCoreAsync(wf, ct) ?? Ok(new { wf.Id, status = wf.Status.ToString() });
+    }
+
+    private async Task<IActionResult?> CancelCoreAsync(WorkflowRequest wf, CancellationToken ct)
+    {
         if (wf.Status != WorkflowStatus.Pending)
             return BadRequest(new { message = "Yalnızca bekleyen talep iptal edilebilir" });
         wf.Status = WorkflowStatus.Cancelled;
         wf.CompletedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);
-        return Ok(wf);
+        return null;
     }
 
     [HttpPost("{id}/steps/{stepId}/delegate")]
@@ -532,4 +561,5 @@ public record DecideRequest(StepDecision Decision, string? Comment);
 public record InternalCreateWorkflowRequest(string TenantSlug, WorkflowType Type, Guid RequesterEmployeeId, string? Subject, string? Payload,
     List<Guid>? ApproverEmployeeIds, int? SlaHours);
 public record InternalDecideRequest(string TenantSlug, Guid ActorEmployeeId, StepDecision Decision, string? Comment, string? Channel);
+public record InternalCancelWorkflowRequest(string TenantSlug, Guid ActorEmployeeId);
 public record DelegateRequest(Guid DelegateToEmployeeId, string? Comment);

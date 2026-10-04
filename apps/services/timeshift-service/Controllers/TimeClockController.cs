@@ -67,21 +67,9 @@ public class TimeClockController : ControllerBase
 
     private static long Window(DateTimeOffset t) => t.ToUnixTimeSeconds() / QrWindowSeconds;
 
-    private async Task<(string? Error, TimeClockPunch? Punch, TimeEntry? Entry)> PunchAsync(Guid employeeId, Guid? siteId, string kind,
-        TimeEntrySource method, bool? onSite, CancellationToken ct)
-    {
-        var at = DateTimeOffset.UtcNow;
-        var open = await ClockCore.OpenEntryAsync(_db, employeeId, at, ct);
-        var goingIn = kind switch { "in" => true, "out" => false, _ => open is null };
-        var (err, entry) = goingIn
-            ? await ClockCore.ClockInAsync(_db, employeeId, at, method, ct)
-            : await ClockCore.ClockOutAsync(_db, employeeId, at, ct);
-        if (err is not null) return (err, null, null);
-        var p = new TimeClockPunch { EmployeeId = employeeId, SiteId = siteId, Kind = goingIn ? PunchKind.In : PunchKind.Out, Method = method, OnSite = onSite, At = at };
-        _db.TimeClockPunches.Add(p);
-        await _db.SaveChangesAsync(ct);
-        return (null, p, entry);
-    }
+    private Task<(string? Error, TimeClockPunch? Punch, TimeEntry? Entry)> PunchAsync(Guid employeeId, Guid? siteId, string kind,
+        TimeEntrySource method, bool? onSite, CancellationToken ct) =>
+        ClockCore.PunchAsync(_db, employeeId, siteId, kind, method, onSite, ct);
 
     // ------------------------------------------------------------------ noktalar (İK)
 

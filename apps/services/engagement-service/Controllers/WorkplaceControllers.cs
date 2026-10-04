@@ -90,54 +90,84 @@ public class WorkplaceController : AppController
     [HttpPost("bookings")]
     public async Task<IActionResult> Book(BookingInput body, CancellationToken ct)
     {
-        if (body.StartMinute < 0 || body.EndMinute > 24 * 60 || body.EndMinute <= body.StartMinute)
-            return BadRequest(new { message = "Saat aralığı geçersiz." });
-        var today = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(3));
-        if (body.Date < today) return BadRequest(new { message = "Geçmiş bir güne rezervasyon yapılamaz." });
-        if (body.Date > today.AddDays(30)) return BadRequest(new { message = "En fazla 30 gün sonrası için rezervasyon yapılabilir." });
-        var desk = await _db.Desks.AsNoTracking().FirstOrDefaultAsync(d => d.Id == body.DeskId && d.IsActive, ct);
-        if (desk is null) return NotFound(new { message = "Masa/oda bulunamadı." });
+        var me = await MyPersonAsync(ct);
+        var (error, b, _) = await BookCoreAsync(_db, new Actor(Me.UserId, me?.Id, me?.Name ?? Me.Name), body, null, ct);
+        if (error is not null) return error.ToResult();
+        await HttpContext.RequestServices.GetRequiredService<AppCache>().BumpAsync("presence", Tenant);
+        return Ok(new { b!.Id });
+    }
 
-        var clash = await _db.DeskBookings.AnyAsync(b => b.DeskId == body.DeskId && b.Date == body.Date
+    public static DateOnly TodayTr => DateOnly.FromDateTime(DateTime.UtcNow.AddHours(3));
+
+    /// <summary>Rezervasyon kuralları (saf): geçerli saat aralığı, bugün – 30 gün sonrası.</summary>
+    public static RuleError? ValidateBooking(DateOnly date, int startMinute, int endMinute, DateOnly today)
+    {
+        if (startMinute < 0 || endMinute > 24 * 60 || endMinute <= startMinute)
+            return RuleError.Bad("Saat aralığı geçersiz.", "time_range");
+        if (date < today) return RuleError.Bad("Geçmiş bir güne rezervasyon yapılamaz.", "date_range");
+        if (date > today.AddDays(30)) return RuleError.Bad("En fazla 30 gün sonrası için rezervasyon yapılabilir.", "date_range");
+        return null;
+    }
+
+    /// <summary>
+    /// Web ucu ve sohbet botu (/api/internal/chat/desk-book) için ortak rezervasyon: masa/oda etkin olmalı,
+    /// aralık çakışmamalı, kişinin aynı saatte tek masası olur; masa ayıran o gün "ofiste" görünür.
+    /// <paramref name="kind"/> verilirse yalnızca o türdeki kaynak ayrılabilir.
+    /// </summary>
+    internal static async Task<(RuleError? Error, DeskBooking? Booking, Desk? Desk)> BookCoreAsync(EngagementDbContext db, Actor actor,
+        BookingInput body, string? kind, CancellationToken ct)
+    {
+        if (ValidateBooking(body.Date, body.StartMinute, body.EndMinute, TodayTr) is { } invalid) return (invalid, null, null);
+        var desk = await db.Desks.AsNoTracking().FirstOrDefaultAsync(d => d.Id == body.DeskId && d.IsActive, ct);
+        if (desk is null || (kind is not null && desk.Kind != kind)) return (RuleError.NotFound("Masa/oda bulunamadı."), null, null);
+
+        var clash = await db.DeskBookings.AnyAsync(b => b.DeskId == body.DeskId && b.Date == body.Date
             && b.StartMinute < body.EndMinute && body.StartMinute < b.EndMinute, ct);
-        if (clash) return Conflict(new { message = $"{desk.Name} bu saat aralığında dolu." });
+        if (clash) return (RuleError.Conflict($"{desk.Name} bu saat aralığında dolu.", "taken"), null, null);
         if (desk.Kind == "Desk")
         {
-            var mineSameDay = await _db.DeskBookings.AnyAsync(b => b.UserId == Me.UserId && b.Date == body.Date
-                && b.StartMinute < body.EndMinute && body.StartMinute < b.EndMinute
-                && _db.Desks.Any(d => d.Id == b.DeskId && d.Kind == "Desk"), ct);
-            if (mineSameDay) return Conflict(new { message = "Bu saatlerde zaten bir masanız var." });
+            var mineSameDay = await db.DeskBookings.AnyAsync(b => (b.UserId == actor.UserId || (actor.EmployeeId != null && b.EmployeeId == actor.EmployeeId))
+                && b.Date == body.Date && b.StartMinute < body.EndMinute && body.StartMinute < b.EndMinute
+                && db.Desks.Any(d => d.Id == b.DeskId && d.Kind == "Desk"), ct);
+            if (mineSameDay) return (RuleError.Conflict("Bu saatlerde zaten bir masanız var.", "has_desk"), null, null);
         }
 
-        var me = await MyPersonAsync(ct);
-        var b = new DeskBooking
+        var booking = new DeskBooking
         {
-            DeskId = desk.Id, UserId = Me.UserId, EmployeeId = me?.Id, PersonName = me?.Name ?? Me.Name,
+            DeskId = desk.Id, UserId = actor.UserId, EmployeeId = actor.EmployeeId, PersonName = actor.Name,
             Date = body.Date, StartMinute = body.StartMinute, EndMinute = body.EndMinute, Title = body.Title,
         };
-        _db.DeskBookings.Add(b);
+        db.DeskBookings.Add(booking);
 
         // Masa ayıran kişi o gün ofistedir — "kim nerede" kendiliğinden güncellenir.
         if (desk.Kind == "Desk")
         {
-            var pres = await _db.Presence.FirstOrDefaultAsync(p => p.UserId == Me.UserId && p.Date == body.Date, ct);
+            var pres = await db.Presence.FirstOrDefaultAsync(p => p.UserId == actor.UserId && p.Date == body.Date, ct);
             if (pres is null)
-                _db.Presence.Add(new Presence { UserId = Me.UserId, EmployeeId = me?.Id, PersonName = b.PersonName, Date = body.Date, Mode = "Office" });
+                db.Presence.Add(new Presence { UserId = actor.UserId, EmployeeId = actor.EmployeeId, PersonName = booking.PersonName, Date = body.Date, Mode = "Office" });
             else pres.Mode = "Office";
         }
-        await _db.SaveChangesAsync(ct);
-        return Ok(new { b.Id });
+        await db.SaveChangesAsync(ct);
+        return (null, booking, desk);
     }
 
     [HttpDelete("bookings/{id:guid}")]
     public async Task<IActionResult> Cancel(Guid id, CancellationToken ct)
     {
-        var b = await _db.DeskBookings.FirstOrDefaultAsync(x => x.Id == id, ct);
-        if (b is null) return NotFound();
-        if (b.UserId != Me.UserId && !Me.IsHr) return Forbid();
-        _db.DeskBookings.Remove(b);
-        await _db.SaveChangesAsync(ct);
-        return NoContent();
+        var me = Me;
+        var status = await CancelCoreAsync(_db, id, b => b.UserId == me.UserId || me.IsHr, ct);
+        return status switch { StatusCodes.Status404NotFound => NotFound(), StatusCodes.Status403Forbidden => Forbid(), _ => NoContent() };
+    }
+
+    /// <summary>Ortak iptal: 204 silindi, 404 yok, 403 iptal yetkisi yok.</summary>
+    internal static async Task<int> CancelCoreAsync(EngagementDbContext db, Guid id, Func<DeskBooking, bool> mayCancel, CancellationToken ct)
+    {
+        var b = await db.DeskBookings.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (b is null) return StatusCodes.Status404NotFound;
+        if (!mayCancel(b)) return StatusCodes.Status403Forbidden;
+        db.DeskBookings.Remove(b);
+        await db.SaveChangesAsync(ct);
+        return StatusCodes.Status204NoContent;
     }
 
     /* ------------------------------------------------------- kim nerede */

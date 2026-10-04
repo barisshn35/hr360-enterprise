@@ -19,6 +19,10 @@ public static class ClockCore
     /// </summary>
     public const int MaxShiftHours = 16;
 
+    public const string ErrOpenEntry = "Açık bir giriş kaydınız var; önce çıkış yapın";
+    public const string ErrAlreadyIn = "Bu gün için giriş kaydı zaten var";
+    public const string ErrNoOpenEntry = "Önce giriş kaydı oluşturulmalı";
+
     /// <summary>İş günü işletmenin saat dilimine göre belirlenir (HR360_TIMEZONE, varsayılan Europe/Istanbul).</summary>
     public static readonly TimeZoneInfo BusinessZone = ResolveZone();
     private static TimeZoneInfo ResolveZone()
@@ -41,11 +45,11 @@ public static class ClockCore
         TimeEntrySource source, CancellationToken ct)
     {
         if (await OpenEntryAsync(db, employeeId, at, ct) is not null)
-            return ("Açık bir giriş kaydınız var; önce çıkış yapın", null);
+            return (ErrOpenEntry, null);
         var date = WorkDate(at);
         var entry = await db.TimeEntries.FirstOrDefaultAsync(t => t.EmployeeId == employeeId && t.Date == date, ct);
         if (entry is not null && entry.ClockIn is not null)
-            return ("Bu gün için giriş kaydı zaten var", null);
+            return (ErrAlreadyIn, null);
         entry ??= new TimeEntry { EmployeeId = employeeId, Date = date };
         entry.ClockIn = at;
         entry.Source = source;
@@ -57,12 +61,32 @@ public static class ClockCore
     public static async Task<(string? Error, TimeEntry? Entry)> ClockOutAsync(TimeShiftDbContext db, Guid employeeId, DateTimeOffset at, CancellationToken ct)
     {
         var entry = await OpenEntryAsync(db, employeeId, at, ct);
-        if (entry?.ClockIn is null) return ("Önce giriş kaydı oluşturulmalı", null);
+        if (entry?.ClockIn is null) return (ErrNoOpenEntry, null);
         entry.ClockOut = at;
         var worked = (int)(at - entry.ClockIn.Value).TotalMinutes;
         entry.WorkedMinutes = worked;
         entry.OvertimeMinutes = Math.Max(0, worked - StandardWorkMinutes);
         return (null, entry);
+    }
+
+    /// <summary>
+    /// Giriş-çıkış hareketi: kind "in" | "out" | "auto" (açık kayıt varsa çıkış). Kayıt ve hareket
+    /// tek SaveChanges ile yazılır. Web/QR, kart/PIN terminali ve sohbet (iç uç) bu yolu kullanır.
+    /// </summary>
+    public static async Task<(string? Error, TimeClockPunch? Punch, TimeEntry? Entry)> PunchAsync(TimeShiftDbContext db, Guid employeeId,
+        Guid? siteId, string kind, TimeEntrySource method, bool? onSite, CancellationToken ct)
+    {
+        var at = DateTimeOffset.UtcNow;
+        var open = await OpenEntryAsync(db, employeeId, at, ct);
+        var goingIn = kind switch { "in" => true, "out" => false, _ => open is null };
+        var (err, entry) = goingIn
+            ? await ClockInAsync(db, employeeId, at, method, ct)
+            : await ClockOutAsync(db, employeeId, at, ct);
+        if (err is not null) return (err, null, null);
+        var p = new TimeClockPunch { EmployeeId = employeeId, SiteId = siteId, Kind = goingIn ? PunchKind.In : PunchKind.Out, Method = method, OnSite = onSite, At = at };
+        db.TimeClockPunches.Add(p);
+        await db.SaveChangesAsync(ct);
+        return (null, p, entry);
     }
 
     /// <summary>İki nokta arası uzaklık (metre, haversine).</summary>

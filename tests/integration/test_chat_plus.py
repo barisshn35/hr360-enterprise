@@ -115,6 +115,10 @@ for a in apps or []:
 
 # Test çalışanları (yalnızca T5E1 Mühendislik'te: takas aynı departman kuralı için).
 TE = {}
+# Yarıda kalmış önceki koşudan kalan test çalışanları (aynı e-posta benzersiz).
+_old = """SELECT "Id" FROM employee_employees WHERE "TenantSlug" = 'demo' AND "Email" LIKE 't5ep_.x@demo.hr360'"""
+sql(f"""DELETE FROM employee_assignments WHERE "EmployeeId" IN ({_old})""")
+sql(f"""DELETE FROM employee_employees WHERE "Id" IN ({_old})""")
 for i in range(1, 5):
     eid = str(uuid.uuid4())
     hire = (TODAY.replace(year=TODAY.year - 3) if i == 3 else TODAY - dt.timedelta(days=30)).isoformat()
@@ -442,8 +446,8 @@ if db_:
 # ====================================================================== B9 işe başlama
 tb = time.time()
 plan0, plan1 = str(uuid.uuid4()), str(uuid.uuid4())
-sql(f"""INSERT INTO onboarding_plans ("Id","TenantSlug","EmployeeId","StartDate","Status","CreatedAt","BuddyEmployeeId") VALUES ('{plan0}','demo','{TE[2]}','{TODAY}','Active',now(),'{MEHMET}'),
-        ('{plan1}','demo','{TE[3]}','{TODAY - dt.timedelta(days=1)}','Active',now(),NULL)""")
+sql(f"""INSERT INTO onboarding_plans ("Id","TenantSlug","EmployeeId","StartDate","Status","CreatedAt","BuddyEmployeeId") VALUES ('{plan0}','demo','{TE[2]}','{TODAY}','InProgress',now(),'{MEHMET}'),
+        ('{plan1}','demo','{TE[3]}','{TODAY - dt.timedelta(days=1)}','InProgress',now(),NULL)""")
 task = str(uuid.uuid4())
 sql(f"""INSERT INTO onboarding_tasks ("Id","TenantSlug","PlanId","Title","Category","Status","Order","OwnerRole") VALUES
         ('{uuid.uuid4()}','demo','{plan0}','{TAG} Laptop teslim al','IT','Pending',1,'Employee'),

@@ -172,25 +172,6 @@ public class ChatReceiptTests
     public void Rejects_invalid_amounts(string s) => Assert.Null(ReceiptParser.ParseAmount(s));
 }
 
-public class ChatSwapRuleTests
-{
-    private static SwapCheck.Interval S(int day, int start, int end) =>
-        SwapCheck.Interval.Of(new DateOnly(2026, 10, day), new TimeOnly(start, 0), new TimeOnly(end, 0), 60);
-
-    [Fact]
-    public void Overlap_and_rest_and_weekly_limit()
-    {
-        var night = S(5, 22, 6); // gece vardiyası ertesi güne taşar
-        var morning = S(6, 8, 16);
-        Assert.Contains("dinlenme", SwapCheck.Validate(new[] { night, morning }, new[] { morning }));
-        var ok = S(7, 8, 16);
-        Assert.Null(SwapCheck.Validate(new[] { S(6, 8, 16), ok }, new[] { ok }));
-        // Haftada 6 × 9 saat net 8 saat = 48 > 45
-        var week = Enumerable.Range(5, 6).Select(d => S(d, 8, 17)).ToList();
-        Assert.Contains("45", SwapCheck.Validate(week, new[] { week[^1] }));
-    }
-}
-
 public class ChatFollowUpTests
 {
     [Fact]

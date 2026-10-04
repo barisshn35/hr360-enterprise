@@ -287,39 +287,62 @@ public class OnboardingPlansController : ControllerBase
     public async Task<IActionResult> UpdateTaskStatus(
         Guid id, Guid taskId, [FromBody] UpdateTaskStatusRequest request, CancellationToken ct)
     {
-        var task = await _db.Tasks.FirstOrDefaultAsync(t => t.Id == taskId && t.PlanId == id, ct);
-        if (task is null) return NotFound();
-        var planState = await _db.Plans.Where(p => p.Id == id)
+        var (error, task, _) = await SetTaskStatusCoreAsync(_db, id, taskId, request.Status, CanManage,
+            _employees.FindMyEmployeeIdAsync, failIfAlreadyDone: false, ct);
+        return error ?? Ok(task);
+    }
+
+    /// <summary>
+    /// Görev durumunu değiştirmenin ortak çekirdeği (web ucu ve sohbet botunun iç ucu
+    /// InternalChatController). <paramref name="planId"/> null ise plan görevden bulunur.
+    /// <paramref name="me"/> yalnızca yönetici olmayanlar için çağrılır. Tüm görevler bitince
+    /// plan kapanır (PlanCompleted = true).
+    /// </summary>
+    [NonAction]
+    public static async Task<(IActionResult? Error, OnboardingTask? Task, bool PlanCompleted)> SetTaskStatusCoreAsync(
+        OnboardingDbContext db, Guid? planId, Guid taskId, OnboardingTaskStatus status, bool canManage,
+        Func<CancellationToken, Task<Guid?>> me, bool failIfAlreadyDone, CancellationToken ct)
+    {
+        var task = planId is { } pid
+            ? await db.Tasks.FirstOrDefaultAsync(t => t.Id == taskId && t.PlanId == pid, ct)
+            : await db.Tasks.FirstOrDefaultAsync(t => t.Id == taskId, ct);
+        if (task is null) return (new NotFoundResult(), null, false);
+        var id = task.PlanId;
+        var planState = await db.Plans.Where(p => p.Id == id)
             .Select(p => new { p.EmployeeId, p.Status }).FirstAsync(ct);
 
         // GUVENLIK: Onceden yalnizca [Authorize] - her calisan herhangi bir gorevi
         // (orn. Hukuk: sozlesme imzalama) "tamamlandi" yapip plani otomatik
         // kapatabiliyordu. Yetkili: yonetenler, gorevin atandigi kisi ve - hukuki
         // gorevler haric - planin sahibi (yeni calisanin kendi adimlari).
-        if (!CanManage)
+        if (!canManage)
         {
-            var me = await _employees.FindMyEmployeeIdAsync(ct);
-            var isAssignee = me is not null && task.AssigneeEmployeeId == me.Value;
-            var isOwner = me is not null && planState.EmployeeId == me.Value && task.Category != TaskCategory.Legal;
-            if (!isAssignee && !isOwner) return NotFound();
+            var actor = await me(ct);
+            var isAssignee = actor is not null && task.AssigneeEmployeeId == actor.Value;
+            var isOwner = actor is not null && planState.EmployeeId == actor.Value && task.Category != TaskCategory.Legal;
+            if (!isAssignee && !isOwner) return (new NotFoundResult(), null, false);
         }
         if (planState.Status == PlanStatus.Cancelled)
-            return BadRequest("İptal edilmiş plandaki görev değiştirilemez");
+            return (new BadRequestObjectResult("İptal edilmiş plandaki görev değiştirilemez"), null, false);
+        if (failIfAlreadyDone && task.Status == OnboardingTaskStatus.Done)
+            return (new ConflictObjectResult(new { message = "Bu görev zaten tamamlanmış" }), null, false);
 
-        task.Status = request.Status;
-        task.CompletedAt = request.Status == OnboardingTaskStatus.Done ? DateTimeOffset.UtcNow : null;
-        await _db.SaveChangesAsync();
+        task.Status = status;
+        task.CompletedAt = status == OnboardingTaskStatus.Done ? DateTimeOffset.UtcNow : null;
+        await db.SaveChangesAsync(ct);
 
         // Tum gorevler bitince plani kapat.
-        var plan = await _db.Plans.Include(p => p.Tasks).FirstAsync(p => p.Id == id);
+        var plan = await db.Plans.Include(p => p.Tasks).FirstAsync(p => p.Id == id, ct);
+        var completed = false;
         if (plan.Tasks.All(t => t.Status == OnboardingTaskStatus.Done))
         {
             plan.Status = PlanStatus.Completed;
             plan.CompletedAt = DateTimeOffset.UtcNow;
-            await _db.SaveChangesAsync();
+            await db.SaveChangesAsync(ct);
+            completed = true;
         }
 
-        return Ok(task);
+        return (null, task, completed);
     }
 }
 

@@ -148,18 +148,18 @@ public sealed partial class ChatFeatures
         return sent;
     }
 
-    /// <summary>"✓ görev": yalnızca kendi planındaki, kendisine (ya da çalışan rolüne) atanmış görev.</summary>
+    /// <summary>
+    /// "✓ görev": onboarding-service'in iç ucuyla tamamlanır (web ucuyla aynı kural: kendisine atanmış
+    /// ya da — hukuki görevler hariç — kendi planındaki görev; plan ilerlemesi ve denetim kaydı orada).
+    /// </summary>
     private async Task<ChatReply> OnboardingDoneAsync(ChatApp app, string tenant, Guid emp, string value, bool en, CancellationToken ct)
     {
         if (!Guid.TryParse(value, out var id)) return ChatReply.Of("—", en);
-        var title = (await _sql.QueryAsync("""
-            UPDATE onboarding_tasks t SET "Status" = 'Done', "CompletedAt" = now()
-            FROM onboarding_plans p WHERE p."Id" = t."PlanId" AND t."TenantSlug" = $1 AND t."Id" = $2 AND p."EmployeeId" = $3
-              AND (t."AssigneeEmployeeId" = $3 OR t."OwnerRole" = 'Employee') AND t."Status" <> 'Done'
-            RETURNING t."Title"
-            """, r => r.GetString(0), ct, tenant, id, emp)).FirstOrDefault();
-        if (title is null) return ChatReply.Of(en ? "This task is already done or not yours." : "Bu görev zaten tamam ya da size ait değil.", en);
-        await AuditAsync(tenant, emp, "OnboardingTask", id.ToString(), "Completed", new { source = "chat" }, app.Platform);
+        var res = await ChatInternal.PostAsync(_http, ChatInternal.OnboardingBase, "/api/internal/chat/task-done",
+            new { tenantSlug = tenant, employeeId = emp, taskId = id, platform = app.Platform }, en, ct);
+        if (!res.Ok)
+            return ChatReply.Of(res.Status is 404 or 409 ? (en ? "This task is already done or not yours." : "Bu görev zaten tamam ya da size ait değil.") : res.Message!, en);
+        var title = res.Str("title") ?? "";
         return ChatReply.Of(en ? $"✅ Done: {title}" : $"✅ Tamamlandı: {title}", en);
     }
 
@@ -213,13 +213,16 @@ public sealed partial class ChatFeatures
     private async Task<int> PulseJobAsync(GovernanceDbContext db, ChatApp app, CancellationToken ct)
     {
         var tenant = app.TenantSlug;
-        // Süresi dolan nabızlar kapanır (anket de yanıta kapanır).
-        var closed = await _sql.QueryAsync("""
-            UPDATE governance_chat_pulses SET "Status" = 'Closed' WHERE "TenantSlug" = $1 AND "Status" <> 'Closed' AND "ClosesAt" IS NOT NULL AND "ClosesAt" < now() RETURNING "SurveyId"
-            """, r => r.GetGuid(0), ct, tenant);
-        foreach (var s in closed) await _sql.ExecuteAsync("UPDATE engagement_surveys SET \"Status\" = 'Closed' WHERE \"Id\" = $1", ct, s);
+        // Süresi dolan nabızlar kapanır (anket de engagement-service'te yanıta kapanır; kapatılamazsa sonraki turda yeniden denenir).
+        var expired = await _sql.QueryAsync("""
+            SELECT "Id", "SurveyId" FROM governance_chat_pulses WHERE "TenantSlug" = $1 AND "Status" <> 'Closed' AND "ClosesAt" IS NOT NULL AND "ClosesAt" < now()
+            """, r => (Id: r.GetGuid(0), Survey: r.GetGuid(1)), ct, tenant);
+        foreach (var e in expired)
+            if (await ClosePulseSurveyAsync(tenant, e.Survey, ct))
+                await _sql.ExecuteAsync("UPDATE governance_chat_pulses SET \"Status\" = 'Closed' WHERE \"Id\" = $1", ct, e.Id);
         var pulses = await _sql.QueryAsync("""
             SELECT "Id", "Question" FROM governance_chat_pulses WHERE "TenantSlug" = $1 AND "Status" IN ('Scheduled','Sent') AND "SendAt" <= now()
+              AND ("ClosesAt" IS NULL OR "ClosesAt" >= now())
             """, r => (Id: r.GetGuid(0), Q: r.GetString(1)), ct, tenant);
         var sent = 0;
         foreach (var p in pulses)
@@ -258,30 +261,45 @@ public sealed partial class ChatFeatures
             INSERT INTO governance_chat_pulse_answered ("TenantSlug","PulseId","EmployeeId","AnsweredOn") VALUES ($1,$2,$3,current_date) ON CONFLICT DO NOTHING
             """, ct, tenant, pid, emp) > 0;
         if (!first) return ChatReply.Of(en ? "You have already answered this pulse. Thank you!" : "Bu ankete zaten yanıt verdiniz. Teşekkürler!", en) with { Replace = true };
-        var answers = new JsonArray { new JsonObject { ["QuestionId"] = "pulse", ["Score"] = score, ["Choice"] = null, ["Text"] = null } };
-        await _sql.ExecuteAsync("""
-            INSERT INTO engagement_survey_responses ("Id","TenantSlug","SurveyId","RespondentKey","DepartmentName","Answers","SubmittedAt")
-            VALUES ($1,$2,$3,$4,NULL,$5::jsonb,date_trunc('day', now()))
-            """, ct, Guid.NewGuid(), tenant, pulse, "chat-" + Convert.ToHexString(RandomNumberGenerator.GetBytes(16)), answers.ToJsonString());
+        // Yanıt engagement-service'e KİMLİKSİZ gider (çalışan kimliği gönderilmez; servis rastgele anahtar,
+        // departmansız ve gün hassasiyetinde saklar). Yazılamazsa "yanıtladı" işareti geri alınır.
+        var res = await ChatInternal.PostAsync(_http, ChatInternal.EngagementBase, "/api/internal/chat/pulse-answer",
+            new { tenantSlug = tenant, surveyId = pulse, score }, en, ct);
+        if (!res.Ok)
+        {
+            await _sql.ExecuteAsync("DELETE FROM governance_chat_pulse_answered WHERE \"TenantSlug\" = $1 AND \"PulseId\" = $2 AND \"EmployeeId\" = $3", ct, tenant, pid, emp);
+            return (res.Str("code") == "closed" ? ChatReply.Of(en ? "This pulse is closed." : "Bu nabız anketi kapandı.", en) : ChatReply.Of(res.Message!, en)) with { Replace = true };
+        }
         await CountAsync(app, "pulse", "answered", ct);
         return ChatReply.Of(en ? "🙏 Thank you! Your answer was recorded anonymously." : "🙏 Teşekkürler! Yanıtınız anonim olarak kaydedildi.", en) with { Replace = true };
     }
 
-    /// <summary>İK'nın nabız planı: engagement'ta tek soruluk anonim anket (Scale 1–5) + gönderim planı.</summary>
-    public async Task<Guid> SchedulePulseAsync(string tenant, string question, DateTime sendAt, DateTime? closesAt, string createdBy, CancellationToken ct)
+    /// <summary>
+    /// İK'nın nabız planı: engagement'ta tek soruluk anonim anket (Scale 1–5; /api/internal/chat/pulse-survey) + gönderim planı.
+    /// Anket oluşturulamazsa Id null, Status/Error servisin yanıtıdır.
+    /// </summary>
+    public async Task<(Guid? Id, int Status, string? Error)> SchedulePulseAsync(string tenant, string question, DateTime sendAt, DateTime? closesAt, string createdBy, CancellationToken ct)
     {
-        var surveyId = Guid.NewGuid();
-        var questions = new JsonArray { new JsonObject { ["Id"] = "pulse", ["Text"] = question, ["Type"] = "Scale", ["Options"] = new JsonArray(), ["Required"] = true } };
-        await _sql.ExecuteAsync("""
-            INSERT INTO engagement_surveys ("Id","TenantSlug","Title","Description","Kind","Questions","IsAnonymous","Status","ClosesAt","CreatedByName","CreatedAt")
-            VALUES ($1,$2,$3,$4,'Pulse',$5::jsonb,true,'Open',$6,$7,now())
-            """, ct, surveyId, tenant, $"Sohbet nabzı — {sendAt.AddHours(3):dd.MM.yyyy}", "Sohbet botuyla gönderilen tek soruluk anonim nabız anketi.", questions.ToJsonString(), closesAt, createdBy);
+        var r = await ChatInternal.PostAsync(_http, ChatInternal.EngagementBase, "/api/internal/chat/pulse-survey",
+            new { tenantSlug = tenant, question, sendAt, closesAt, createdBy }, false, ct);
+        if (!r.Ok || !Guid.TryParse(r.Str("id"), out var surveyId)) return (null, r.Status, r.Message ?? "Anket oluşturulamadı.");
         var id = Guid.NewGuid();
         await _sql.ExecuteAsync("""
             INSERT INTO governance_chat_pulses ("Id","TenantSlug","SurveyId","Question","SendAt","ClosesAt","Status","SentCount","CreatedBy","CreatedAt")
             VALUES ($1,$2,$3,$4,$5,$6,'Scheduled',0,$7,now())
             """, ct, id, tenant, surveyId, question, sendAt, closesAt, createdBy);
-        return id;
+        return (id, 200, null);
+    }
+
+    /// <summary>Nabzın engagement anketini yanıta kapatır (/api/internal/chat/pulse-close). Anket artık yoksa (404) da kapalı sayılır.</summary>
+    public async Task<bool> ClosePulseSurveyAsync(string tenant, Guid surveyId, CancellationToken ct)
+    {
+        var r = await ChatInternal.PostAsync(_http, ChatInternal.EngagementBase, "/api/internal/chat/pulse-close",
+            new { tenantSlug = tenant, surveyId }, false, ct);
+        // Gövdesiz 404 = iç anahtar tutmadı (uç "yok"); yalnızca servisin "not_found" yanıtı anketin silindiği anlamına gelir.
+        var gone = r.Status == 404 && r.Str("code") == "not_found";
+        if (!r.Ok && !gone) _log.LogWarning("Nabız anketi kapatılamadı ({Survey}): {Message}", surveyId, r.Message);
+        return r.Ok || gone;
     }
 
     /// <summary>Nabız sonuçları: en az 5 yanıt yoksa dağılım gizlenir (KVKK küçük grup kuralı).</summary>
@@ -472,12 +490,18 @@ public sealed partial class ChatFeatures
             return ExitQuestion(caseId, step + 1, en) with { Replace = true };
         }
         answers["Comments"] = null;
-        // İK'nın yüz yüze girdiği görüşme varsa üzerine yazılmaz.
-        await _sql.ExecuteAsync("""
-            UPDATE engagement_offboarding_cases SET "ExitInterview" = $3::jsonb WHERE "TenantSlug" = $1 AND "Id" = $2 AND "ExitInterview" IS NULL
-            """, ct, tenant, caseId, answers.ToJsonString());
+        // engagement-service yazar (yalnızca çalışanın kendi açık kaydı; İK'nın yüz yüze girdiği görüşme varsa üzerine yazılmaz → 409 "exists") ve denetler.
+        var res = await ChatInternal.PostAsync(_http, ChatInternal.EngagementBase, "/api/internal/chat/exit-interview",
+            new { tenantSlug = tenant, caseId, employeeId = emp, answers, platform = app.Platform }, en, ct);
+        var code = res.Str("code");
+        if (!res.Ok && code is not ("exists" or "not_found"))
+        {
+            // Geçici hata: ilerleme 5. adımda kalır, son soru yeniden gösterilir.
+            var retry = ExitQuestion(caseId, step, en);
+            return retry with { Text = $"⚠️ {res.Message}\n\n{retry.Text}", Replace = true };
+        }
         await _sql.ExecuteAsync("UPDATE governance_chat_exit_progress SET \"Step\" = 6, \"AnswersEnc\" = NULL, \"CompletedAt\" = now(), \"UpdatedAt\" = now() WHERE \"CaseId\" = $1", ct, caseId);
-        await AuditAsync(tenant, emp, "OffboardingCase", caseId.ToString(), "ExitSurveyCompleted", new { source = "chat" }, app.Platform);
+        if (code == "not_found") return ChatReply.Of(en ? "This survey is closed. Thank you!" : "Bu anket kapandı. Teşekkürler!", en) with { Replace = true };
         await CountAsync(app, "exit", "completed", ct);
         return ChatReply.Of(en ? "🙏 Thank you. Your answers were sent to HR only. We wish you all the best!" : "🙏 Teşekkürler. Yanıtlarınız yalnızca İK'ya iletildi. Yolunuz açık olsun!", en) with { Replace = true };
     }
