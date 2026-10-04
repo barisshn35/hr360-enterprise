@@ -227,7 +227,15 @@ letsencrypt_issue() {
   if ! docker compose --profile letsencrypt run --rm --no-deps --entrypoint certbot certbot "${args[@]}"; then
     die "Let's Encrypt sertifikasi alinamadi. Kontrol edin: $host DNS kaydi bu sunucunun genel IP'sini gosteriyor mu, 80/tcp internetten (firewall/guvenlik grubu) acik mi?"
   fi
-  [ -f "$LE_DIR/live/$host/fullchain.pem" ] || die "sertifika dosyasi bulunamadi: $LE_DIR/live/$host/"
+  le_cert "$host" >/dev/null || die "sertifika dosyasi bulunamadi: $LE_DIR/live/$host/"
+}
+
+# Let's Encrypt sertifikasini (fullchain) basar. certbot dizinleri root'a ait ve 700 izinli
+# olusturur; betik docker grubundaki root olmayan bir kullaniciyla calisinca host'tan
+# okunamaz. Ozel anahtarin iznini gevsetmemek icin certbot konteyneri uzerinden okunur.
+le_cert() {
+  docker compose --profile letsencrypt run --rm --no-deps -T --entrypoint cat certbot \
+    "/etc/letsencrypt/live/$1/fullchain.pem" 2>/dev/null
 }
 
 # --- Let's Encrypt'i sonra yeniden deneme (auto) ---------------------------------
@@ -510,14 +518,14 @@ EOF
       crt="$DIR/fullchain.pem"
       if [ "$(get_env TLS_MODE)" = letsencrypt ]; then
         h="$(get_env PUBLIC_URL | sed -E 's#^https?://([^/:]+).*#\1#')"
-        crt="$LE_DIR/live/$h/fullchain.pem"
         if docker compose ps --status running -q certbot 2>/dev/null | grep -q .; then
           echo "  Otomatik yenileme: calisiyor"
         else
           echo "  Otomatik yenileme: CALISMIYOR (docker compose up -d)"
         fi
       fi
-      openssl x509 -in "$crt" -noout -subject -enddate 2>/dev/null | sed 's/^/  /'
+      if [ "$(get_env TLS_MODE)" = letsencrypt ]; then le_cert "$h"; else cat "$crt" 2>/dev/null; fi \
+        | openssl x509 -noout -subject -enddate 2>/dev/null | sed 's/^/  /'
     else
       echo "HTTPS: kapali ($(get_env PUBLIC_ORIGIN))"
     fi

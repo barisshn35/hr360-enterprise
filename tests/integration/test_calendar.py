@@ -13,7 +13,7 @@ import urllib.parse
 import urllib.request
 
 sys.path.insert(0, __import__("os").path.dirname(__file__))
-from common import ensure_transfers, AYSE, FAIL, api, check, mock, wait_for  # noqa: E402
+from common import ensure_transfers, AYSE, BASE, FAIL, api, check, mock, wait_for  # noqa: E402
 
 G = "/api/governance"
 MEHMET = "3ab24e3e-cb06-40ab-934c-9ff7eab91fb6"
@@ -28,7 +28,7 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def callback(provider, **params):
-    url = f"http://localhost{G}/calendar/oauth/callback/{provider}?" + urllib.parse.urlencode(params)
+    url = f"{BASE}{G}/calendar/oauth/callback/{provider}?" + urllib.parse.urlencode(params)
     opener = urllib.request.build_opener(NoRedirect)
     try:
         opener.open(url)
