@@ -36,7 +36,7 @@ acts = {a["id"]: a for a in inv["activities"]} if code == 200 else {}
 check("Envanter: işleme faaliyetleri", code == 200 and len(acts) >= 15 and "automated-analysis" in acts and "chat" in acts, (code, list(acts)[:5]))
 check("Envanter: hukuki sebep ve saklama dolu", all(a["legalBasis"] and a["retention"] and a["purpose"] for a in acts.values()), "")
 check("Envanter: izin kaydı özel nitelikli", acts.get("leave", {}).get("special") is True, acts.get("leave"))
-check("Envanter: sohbet botu yurt dışı aktarım içeriyor", {t["key"] for t in acts.get("chat", {}).get("transfers", [])} == {"slack", "microsoft"}, acts.get("chat"))
+check("Envanter: sohbet botu yurt dışı aktarım içeriyor", {t["key"] for t in acts.get("chat", {}).get("transfers", [])} == {"slack", "microsoft", "mattermost", "rocketchat"}, acts.get("chat"))
 
 # --- yurt dışı aktarım --------------------------------------------------------
 code, tr = api("admin", "GET", f"{P}/transfers")

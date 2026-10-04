@@ -310,9 +310,10 @@ public class SignatureAndHookTests
     public void Kanit_ozeti_alanlara_bagli()
     {
         var id = Guid.NewGuid(); var who = Guid.NewGuid(); var at = new DateTime(2026, 10, 3, 9, 0, 0, DateTimeKind.Utc);
-        var c1 = Signatures.Canonical("DocumentRequest", id, 1, "ab", who, at, "OTP-InApp", "1.2.3.0/24");
-        Assert.Equal(c1, Signatures.Canonical("DocumentRequest", id, 1, "ab", who, at, "OTP-InApp", "1.2.3.0/24"));
-        Assert.NotEqual(c1, Signatures.Canonical("DocumentRequest", id, 1, "ac", who, at, "OTP-InApp", "1.2.3.0/24"));
+        var c1 = Signatures.Canonical("DocumentRequest", id, 1, "ab", who, at, "OTP-InApp", "1.2.3.0/24", Signatures.DisclaimerTr);
+        Assert.Equal(c1, Signatures.Canonical("DocumentRequest", id, 1, "ab", who, at, "OTP-InApp", "1.2.3.0/24", Signatures.DisclaimerTr));
+        Assert.NotEqual(c1, Signatures.Canonical("DocumentRequest", id, 1, "ac", who, at, "OTP-InApp", "1.2.3.0/24", Signatures.DisclaimerTr));
+        Assert.NotEqual(c1, Signatures.Canonical("HrDocument", id, 1, "ab", who, at, "OTP-InApp", "1.2.3.0/24", Signatures.DisclaimerTr));
         Assert.Contains("5070", c1);
     }
 

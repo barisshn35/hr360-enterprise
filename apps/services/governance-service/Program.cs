@@ -31,6 +31,7 @@ builder.Services.AddSingleton<GovernanceService.Infrastructure.Sql>();
 builder.Services.AddSingleton<GovernanceService.Infrastructure.AppCache>();
 builder.Services.AddSingleton<GovernanceService.Infrastructure.PeopleDirectory>();
 builder.Services.AddSingleton<GovernanceService.Infrastructure.Notifier>();
+builder.Services.AddSingleton<GovernanceService.Infrastructure.SignatureEngine>();
 builder.Services.AddHttpClient();
 builder.Services.AddSingleton<GovernanceService.Infrastructure.EventHub>();
 builder.Services.AddSingleton<GovernanceService.Infrastructure.Dispatcher>();

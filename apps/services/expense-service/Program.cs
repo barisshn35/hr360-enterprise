@@ -21,6 +21,7 @@ builder.Services.AddScoped<TenantContext>();
 builder.Services.AddScoped<ITenantContext>(sp => sp.GetRequiredService<TenantContext>());
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddHttpClient<ApprovalWorkflowClient>();
+builder.Services.AddHttpClient<ExpenseService.Services.GovernanceSignatureClient>();
 builder.Services.AddHostedService<OutboxPublisher>();
 builder.Services.AddHostedService<WorkflowEventConsumer>();
 builder.Services.AddHttpClient<ExpenseService.Services.FxService>();

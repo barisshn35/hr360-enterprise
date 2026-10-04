@@ -60,7 +60,7 @@ public class DocumentRequestsController : AppController
         var me = await MyPersonAsync(ct);
         if (me is null) return Ok(Array.Empty<object>());
         var rows = await _db.DocumentRequests.AsNoTracking().Where(r => r.EmployeeId == me.Id).OrderByDescending(r => r.CreatedAt).Take(100).ToListAsync(ct);
-        var signed = (await Db.QueryAsync("SELECT \"DocumentId\" FROM governance_signatures WHERE \"TenantSlug\" = $1 AND \"SignerEmployeeId\" = $2",
+        var signed = (await Db.QueryAsync("SELECT \"DocumentId\" FROM governance_signatures WHERE \"TenantSlug\" = $1 AND \"SignerEmployeeId\" = $2 AND \"DocumentType\" = 'DocumentRequest'",
             x => x.GetGuid(0), ct, Tenant, me.Id)).ToHashSet();
         return Ok(rows.Select(r => new
         {

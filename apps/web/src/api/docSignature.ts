@@ -1,6 +1,6 @@
 import { apiFetch } from './client'
 
-/** Y28 basit elektronik imza (expense-service, /api/expense/documents/...). */
+/** Y28 basit elektronik imza — talep yaşam döngüsü (expense-service, /api/expense/documents/...); kod/imza/kanıt governance imza motorunda. */
 const BASE = '/api/expense/documents'
 
 export type SignatureStatus = 'Pending' | 'Signed' | 'Cancelled'
@@ -31,6 +31,9 @@ export interface SignatureEvidenceView {
   method: string
   evidenceHash: string
   integrityOk: boolean
+  documentVersion?: number
+  /** governance = tek imza motoru; legacy = birleşme öncesi expense kanıtı (salt okunur). */
+  source?: 'governance' | 'legacy'
 }
 
 export interface SignatureRequestView {
@@ -43,7 +46,8 @@ export interface SignatureRequestView {
   signedAt: string | null
   cancelledAt: string | null
   requestedDocumentHash: string
-  otp: { sent: boolean; channel: string | null; expiresAt: string | null; attemptsLeft: number; sendsLeft: number }
+  /** Kod durumu imza motorundadır; bu alan artık null döner. */
+  otp?: null
   document: SignedDocumentView | null
   evidence: SignatureEvidenceView | null
   disclaimer: string
@@ -68,10 +72,10 @@ export const docSignatureApi = {
   mine: (signal?: AbortSignal) =>
     apiFetch<{ items: SignatureRequestView[]; disclaimer: string }>(`${BASE}/signature-requests/mine`, { signal }),
   sendOtp: (id: string) =>
-    apiFetch<{ message: string; channel: string; expiresAt: string; attemptsLeft: number; sendsLeft: number }>(
+    apiFetch<{ message: string; otpId: string; channel: string; expiresAt: string; attemptsLeft: number; maxAttempts: number; sendsLeft: number }>(
       `${BASE}/signature-requests/${id}/otp`, { method: 'POST' }),
-  sign: (id: string, code: string) =>
+  sign: (id: string, code: string, otpId?: string) =>
     apiFetch<{ message: string; evidence: SignatureEvidenceView }>(`${BASE}/signature-requests/${id}/sign`, {
-      method: 'POST', body: { code, accept: true },
+      method: 'POST', body: { code, accept: true, otpId },
     }),
 }

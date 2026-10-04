@@ -121,13 +121,18 @@ export interface SignatureEvidence {
   documentSha256: string
   signerEmployeeId: string
   signedAt: string
-  method: 'OTP-InApp' | 'OTP-Email'
+  /** OTP-InApp | OTP-Email | OTP-InApp+Email */
+  method: string
   ipPrefix: string | null
+  /** Görüntü başlığı (şablon adı / dosya adı); kanıt özetine girmez. */
+  title: string | null
   disclaimer: string
   evidenceSha256: string
+  /** Kanıt özeti saklı alanlardan yeniden hesaplandığında eşleşiyor mu. */
+  integrityOk: boolean
   kind: 'simple-electronic-signature'
 }
-export interface OtpChallenge { otpId: string; channel: 'InApp' | 'Email'; expiresAt: string; maxAttempts: number; disclaimer: string }
+export interface OtpChallenge { otpId: string; channel: 'InApp' | 'Email'; expiresAt: string; maxAttempts: number; sendsLeft: number; disclaimer: string }
 
 export const platformGovApi = {
   /* özel alanlar */
@@ -163,4 +168,7 @@ export const platformGovApi = {
     apiFetch<SignatureEvidence>(`${BASE}/documents/requests/${docId}/sign`, { method: 'POST', body: { otpId, code } }),
   signature: (docId: string, signal?: AbortSignal) =>
     apiFetch<{ signed: boolean; evidence: SignatureEvidence | null; disclaimer: string }>(`${BASE}/documents/requests/${docId}/signature`, { signal }),
+  /** İmzaladığım belgeler — tüm türler (belge talepleri + İK özlük dokümanları). */
+  mySignatures: (signal?: AbortSignal) =>
+    apiFetch<{ items: SignatureEvidence[]; disclaimer: string }>(`${BASE}/documents/signatures/mine`, { signal }),
 }

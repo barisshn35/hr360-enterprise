@@ -358,6 +358,9 @@ eklenerek `tenant` etiketi açılabilir.
   kaydetmez), takip kodu yalnızca özet olarak saklanır; bildirimleri yalnızca şirketin atadığı etik kurulu görür.
 - **İSG** (`/panel/isg`): iş kazası/ramak kala (SGK'ya 3 iş günü bildirim süresi), periyodik muayene (sağlık notları
   şifreli, yalnızca işyeri hekimi rolü — Ayarlar › Roller'den `osh:physician` ek izni), İSG eğitimleri.
+  İSG rolleri otomatik atanmaz; şirket yöneticisi **Ayarlar › Roller** sayfasında kişiye ek izin olarak verir:
+  `osh:physician` (işyeri hekimi: muayene ve sağlık notlarını görür/girer) ve `osh:specialist` (iş güvenliği uzmanı:
+  kaza/ramak kala ve İSG eğitimlerini yönetir, sağlık notlarını göremez). İK yöneticisi rolü sağlık notlarını göremez.
 - **Disiplin** (`/panel/disiplin`): savunma istemi (en az 2 iş günü), tutanak, karar; çalışan kendi savunmasını
   uygulamadan verir; adli sicil bilgisi tutulmaz (uyarı), kapanıştan 24 ay sonra imha.
 - **İşe alım**: herkese açık kariyer sayfası `/kariyer/<şirket>` (aydınlatma bilgi olarak, CV havuzu için ayrı açık

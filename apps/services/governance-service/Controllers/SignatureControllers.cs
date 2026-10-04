@@ -1,4 +1,5 @@
-using System.Text.Json;
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -8,13 +9,15 @@ using GovernanceService.Infrastructure;
 namespace GovernanceService.Controllers;
 
 /* ======================================================================
- * Y28 OTP ile basit elektronik imza — düzenlenmiş belge talepleri için.
- * Çalışan kendi belgesini imzalar: 6 haneli kod uygulama içi (ya da
- * e-posta) bildirimle gelir, 10 dk geçerli, 5 deneme; kod özetlenmiş
- * saklanır. Kanıt: belge kimliği + sürüm, belge içeriğinin SHA-256'sı,
- * imzalayan çalışan, zaman, yöntem, /24 IP. Belge silinince kanıt da
- * silinir (belgenin saklama süresine bağlı).
- * "Basit elektronik imza — 5070 sayılı Kanun kapsamında güvenli/nitelikli
+ * Y28 OTP ile basit elektronik imza — TEK imza motoru (SignatureEngine).
+ * - Düzenlenmiş belge talepleri (DocumentRequest): bu dosyadaki web uçları.
+ * - İK özlük dokümanları (HrDocument): expense-service talep yaşam döngüsünü
+ *   yönetir, kod/imza/kanıt için aşağıdaki iç uçları çağırır.
+ * - Çalışanın imzaladığı tüm belgeler: GET api/documents/signatures/mine.
+ * Kanıt: belge türü + kimliği + sürümü, içerik SHA-256'sı, imzalayan, zaman,
+ * yöntem, /24 IP; kanıt satırı değiştirilemez (tetikleyici), belge silinince
+ * kanıt da silinir (belgenin saklama süresine bağlı).
+ * "Basit elektronik imza — 5070 sayılı Kanun kapsamında nitelikli (güvenli)
  * elektronik imza değildir."
  * ==================================================================== */
 [Route("api/documents/requests/{id:guid}")]
@@ -22,24 +25,14 @@ namespace GovernanceService.Controllers;
 public class DocumentSignatureController : AppController
 {
     private readonly GovernanceDbContext _db;
-    private readonly Notifier _notifier;
-    public DocumentSignatureController(GovernanceDbContext db, Notifier notifier) { _db = db; _notifier = notifier; }
+    private readonly SignatureEngine _engine;
+    public DocumentSignatureController(GovernanceDbContext db, SignatureEngine engine) { _db = db; _engine = engine; }
 
-    public sealed record Evidence(Guid Id, string DocumentType, Guid DocumentId, int DocumentVersion, string DocumentSha256, Guid SignerEmployeeId,
-        DateTime SignedAt, string Method, string? IpPrefix, string Disclaimer, string EvidenceSha256);
+    /// <summary>Belge talebinin en son imza kanıtı.</summary>
+    public static Task<SignatureEvidence?> EvidenceAsync(Sql sql, string tenant, Guid documentId, CancellationToken ct) =>
+        SignatureEngine.LatestAsync(sql, tenant, Signatures.DocumentRequest, documentId, ct);
 
-    public static async Task<Evidence?> EvidenceAsync(Sql sql, string tenant, Guid documentId, CancellationToken ct) =>
-        (await sql.QueryAsync("""
-            SELECT "Id","DocumentType","DocumentId","DocumentVersion","DocumentSha256","SignerEmployeeId","SignedAt","Method","IpPrefix","Disclaimer","EvidenceSha256"
-            FROM governance_signatures WHERE "TenantSlug" = $1 AND "DocumentId" = $2 ORDER BY "SignedAt" DESC LIMIT 1
-            """, r => new Evidence(r.GetGuid(0), r.GetString(1), r.GetGuid(2), r.GetInt32(3), r.GetString(4), r.GetGuid(5), r.GetFieldValue<DateTime>(6),
-                r.GetString(7), r.Str(8), r.GetString(9), r.GetString(10)), ct, tenant, documentId)).FirstOrDefault();
-
-    public static object View(Evidence e, bool en) => new
-    {
-        e.Id, e.DocumentType, e.DocumentId, e.DocumentVersion, e.DocumentSha256, e.SignerEmployeeId, e.SignedAt, e.Method, e.IpPrefix,
-        disclaimer = en ? Signatures.DisclaimerEn : e.Disclaimer, e.EvidenceSha256, kind = "simple-electronic-signature",
-    };
+    public static object View(SignatureEvidence e, bool en) => SignatureEngine.View(e, en);
 
     private async Task<(Models.DocumentRequest? Doc, Person? Me, IActionResult? Error)> OwnDocumentAsync(Guid id, CancellationToken ct)
     {
@@ -51,6 +44,8 @@ public class DocumentSignatureController : AppController
         return (r, me, null);
     }
 
+    private IActionResult Fail(SignatureError e) => StatusCode(e.Status, e.Body(En));
+
     public record OtpInput(string? Channel);
 
     /// <summary>İmza kodu ister. Önceki kullanılmamış kodlar geçersiz olur.</summary>
@@ -59,92 +54,25 @@ public class DocumentSignatureController : AppController
     {
         var (r, me, err) = await OwnDocumentAsync(RouteId, ct);
         if (err is not null) return err;
-        if (await EvidenceAsync(Db, Tenant, r!.Id, ct) is not null)
-            return Conflict(new { message = L("Belge zaten imzalanmış.", "The document is already signed."), code = "already_signed" });
         var channel = body?.Channel is "Email" ? "Email" : "InApp";
-        var recent = Convert.ToInt32(await Db.ScalarAsync("""
-            SELECT count(*)::int FROM governance_signature_otps WHERE "TenantSlug" = $1 AND "DocumentId" = $2 AND "CreatedAt" > now() - interval '1 hour'
-            """, ct, Tenant, r.Id));
-        if (recent >= 5) return StatusCode(429, new { message = L("Bu belge için saatte en fazla 5 kod istenebilir.", "At most 5 codes per hour can be requested for this document."), code = "otp_rate_limited" });
-        await Db.ExecuteAsync("""
-            UPDATE governance_signature_otps SET "ConsumedAt" = now() WHERE "TenantSlug" = $1 AND "DocumentId" = $2 AND "ConsumedAt" IS NULL
-            """, ct, Tenant, r.Id);
-        var otpId = Guid.NewGuid();
-        var code = Signatures.NewCode();
-        var expires = DateTime.UtcNow.AddMinutes(Signatures.ValidMinutes);
-        await Db.ExecuteAsync("""
-            INSERT INTO governance_signature_otps ("Id","TenantSlug","DocumentId","EmployeeId","CodeHash","Channel","Attempts","ExpiresAt","CreatedAt")
-            VALUES ($1,$2,$3,$4,$5,$6,0,$7,now())
-            """, ct, otpId, Tenant, r.Id, me!.Id, Signatures.Hash(otpId, code), channel, expires);
-        // Kod yalnızca bildirimle gider; yanıtta DÖNMEZ. Belge içeriği bildirime yazılmaz.
-        var sent = await _notifier.LocalizedAsync(Tenant, me.Id, "Belge imza kodu", "Document signing code",
-            $"\"{r.TemplateName}\" belgesini imzalamak için tek kullanımlık kodunuz: {code}. Kod {Signatures.ValidMinutes} dakika geçerlidir; kimseyle paylaşmayın. {Signatures.DisclaimerTr}.",
-            $"Your one-time code to sign \"{r.TemplateName}\": {code}. The code is valid for {Signatures.ValidMinutes} minutes; do not share it. {Signatures.DisclaimerEn}.",
-            "signature.otp", ct, channel);
-        if (!sent && channel == "Email")
-            return BadRequest(new { message = L("Kayıtlı e-posta adresiniz yok; uygulama içi kodu kullanın.", "You have no email address on record; use the in-app code."), code = "no_email" });
-        return Ok(new { otpId, channel, expiresAt = expires, maxAttempts = Signatures.MaxAttempts, disclaimer = En ? Signatures.DisclaimerEn : Signatures.DisclaimerTr });
+        var (otp, fail) = await _engine.RequestOtpAsync(Tenant, Signatures.DocumentRequest, r!.Id, me!.Id, r.TemplateName, channel, 1, ct);
+        if (fail is not null) return Fail(fail);
+        return Ok(new { otp!.OtpId, otp.Channel, otp.ExpiresAt, otp.MaxAttempts, otp.SendsLeft, disclaimer = En ? Signatures.DisclaimerEn : Signatures.DisclaimerTr });
     }
 
-    public record SignInput(Guid OtpId, string Code);
+    public record SignInput(Guid? OtpId, string? Code);
 
     [HttpPost("sign")]
     public async Task<IActionResult> Sign(SignInput body, CancellationToken ct)
     {
         var (r, me, err) = await OwnDocumentAsync(RouteId, ct);
         if (err is not null) return err;
-        if (await EvidenceAsync(Db, Tenant, r!.Id, ct) is not null)
-            return Conflict(new { message = L("Belge zaten imzalanmış.", "The document is already signed."), code = "already_signed" });
-        var otp = (await Db.QueryAsync("""
-            SELECT "CodeHash","Channel","Attempts","ExpiresAt","ConsumedAt" FROM governance_signature_otps
-            WHERE "TenantSlug" = $1 AND "Id" = $2 AND "DocumentId" = $3 AND "EmployeeId" = $4
-            """, x => (Hash: x.GetString(0), Channel: x.GetString(1), Attempts: x.GetInt32(2), Expires: x.GetFieldValue<DateTime>(3), Consumed: x.Ts(4)),
-            ct, Tenant, body.OtpId, r.Id, me!.Id)).FirstOrDefault();
-        if (otp.Hash is null) return NotFound(new { message = L("Kod bulunamadı; yeni kod isteyin.", "Code not found; request a new one."), code = "otp_not_found" });
-        switch (Signatures.State(otp.Expires, otp.Attempts, otp.Consumed, DateTime.UtcNow))
-        {
-            case "consumed": return StatusCode(410, new { message = L("Bu kod artık geçerli değil; yeni kod isteyin.", "This code is no longer valid; request a new one."), code = "otp_used" });
-            case "expired": return StatusCode(410, new { message = L("Kodun süresi doldu (10 dk); yeni kod isteyin.", "The code has expired (10 min); request a new one."), code = "otp_expired" });
-            case "locked": return StatusCode(429, new { message = L("Çok fazla hatalı deneme; yeni kod isteyin.", "Too many wrong attempts; request a new code."), code = "otp_locked" });
-        }
-        if (!Signatures.Matches(body.OtpId, body.Code ?? "", otp.Hash))
-        {
-            var attempts = otp.Attempts + 1;
-            await Db.ExecuteAsync("UPDATE governance_signature_otps SET \"Attempts\" = \"Attempts\" + 1 WHERE \"Id\" = $1", ct, body.OtpId);
-            var left = Math.Max(0, Signatures.MaxAttempts - attempts);
-            return left == 0
-                ? StatusCode(429, new { message = L("Çok fazla hatalı deneme; yeni kod isteyin.", "Too many wrong attempts; request a new code."), code = "otp_locked", attemptsLeft = 0 })
-                : BadRequest(new { message = L($"Kod hatalı. Kalan deneme: {left}.", $"Wrong code. Attempts left: {left}."), code = "otp_invalid", attemptsLeft = left });
-        }
-        // Tek kullanımlık: kodu önce tüket (eşzamanlı ikinci istek imza üretemez).
-        var consumed = await Db.ExecuteAsync("UPDATE governance_signature_otps SET \"ConsumedAt\" = now() WHERE \"Id\" = $1 AND \"ConsumedAt\" IS NULL", ct, body.OtpId);
-        if (consumed == 0) return StatusCode(410, new { message = L("Bu kod artık geçerli değil.", "This code is no longer valid."), code = "otp_used" });
-
-        var html = SecretBox.Unprotect(r.DocumentEnc)!;
-        var docHash = Signatures.Sha256Hex(html);
-        var signedAt = DateTime.UtcNow;
-        signedAt = signedAt.AddTicks(-(signedAt.Ticks % TimeSpan.TicksPerMillisecond));
-        var method = otp.Channel == "Email" ? "OTP-Email" : "OTP-InApp";
-        var ip = Signatures.TruncateIp(Request.Headers["X-Real-IP"].FirstOrDefault() ?? Request.Headers["X-Forwarded-For"].FirstOrDefault()
-            ?? HttpContext.Connection.RemoteIpAddress?.ToString());
-        const int version = 1;
-        var evidenceHash = Signatures.Sha256Hex(Signatures.Canonical("DocumentRequest", r.Id, version, docHash, me.Id, signedAt, method, ip));
-        var sigId = Guid.NewGuid();
-        await Db.ExecuteAsync("""
-            INSERT INTO governance_signatures ("Id","TenantSlug","DocumentType","DocumentId","DocumentVersion","DocumentSha256","SignerEmployeeId","SignedAt","Method","IpPrefix","Disclaimer","EvidenceSha256")
-            VALUES ($1,$2,'DocumentRequest',$3,$4,$5,$6,$7,$8,$9,$10,$11)
-            """, ct, sigId, Tenant, r.Id, version, docHash, me.Id, signedAt, method, ip, Signatures.DisclaimerTr, evidenceHash);
-        await Db.ExecuteAsync("""
-            INSERT INTO audit_log ("TenantSlug","Service","EntityType","EntityId","Action","Changes","UserId","UserName","IpAddress","OccurredAt")
-            VALUES ($1,'governance-service','DocumentRequest',$2,'Signed',$3::jsonb,$4,$5,$6,now())
-            """, ct, Tenant, r.Id.ToString(), JsonSerializer.Serialize(new { method, documentSha256 = docHash, evidence = evidenceHash }), Me.UserId, Me.Name, ip);
-        InternalEvents.Raise(HttpContext.RequestServices, Tenant, "document.signed", new
-        {
-            TenantSlug = Tenant, DocumentId = r.Id, DocumentType = "DocumentRequest", TemplateName = r.TemplateName, EmployeeId = me.Id,
-            SignedAt = signedAt, Method = method, DocumentSha256 = docHash,
-        });
-        var e = await EvidenceAsync(Db, Tenant, r.Id, ct);
-        return Ok(View(e!, En));
+        var docHash = Signatures.Sha256Hex(SecretBox.Unprotect(r!.DocumentEnc)!);
+        var ip = Request.Headers["X-Real-IP"].FirstOrDefault() ?? Request.Headers["X-Forwarded-For"].FirstOrDefault()
+            ?? HttpContext.Connection.RemoteIpAddress?.ToString();
+        var (e, fail) = await _engine.SignAsync(new SignRequest(Tenant, Signatures.DocumentRequest, r.Id, me!.Id, body.OtpId, body.Code, docHash, 1, ip,
+            Me.UserId, Me.Name, r.TemplateName), ct);
+        return fail is not null ? Fail(fail) : Ok(View(e!, En));
     }
 
     [HttpGet("signature")]
@@ -159,4 +87,103 @@ public class DocumentSignatureController : AppController
     }
 
     private Guid RouteId => Guid.Parse((string)RouteData.Values["id"]!);
+}
+
+/// <summary>Çalışanın imzaladığı belgeler — tüm belge türleri (belge talepleri + İK özlük dokümanları).</summary>
+[Route("api/documents/signatures")]
+[Authorize]
+public class MySignaturesController : AppController
+{
+    [HttpGet("mine")]
+    public async Task<IActionResult> Mine(CancellationToken ct)
+    {
+        var disclaimer = En ? Signatures.DisclaimerEn : Signatures.DisclaimerTr;
+        if (string.IsNullOrEmpty(HttpContext.RequestServices.GetRequiredService<Tenancy.ITenantContext>().TenantSlug))
+            return Ok(new { items = Array.Empty<object>(), disclaimer });
+        var me = await MyPersonAsync(ct);
+        if (me is null) return Ok(new { items = Array.Empty<object>(), disclaimer });
+        var rows = await SignatureEngine.MineAsync(Db, Tenant, me.Id, ct);
+        return Ok(new { items = rows.Select(e => SignatureEngine.View(e, En)), disclaimer });
+    }
+}
+
+/// <summary>
+/// Servisler arası imza uçları (expense-service → HrDocument). INTERNAL_SERVICE_TOKEN ile korunur
+/// (yoksa/yanlışsa 404); kiracı gövdeden alınır. Gateway /api/*/internal/ yollarını dışarıya kapatır.
+/// Belgenin sahipliği ve içerik özeti çağıran serviste doğrulanır; DocumentRequest türü burada
+/// imzalanamaz (sahiplik kontrolü yalnızca web uçlarında).
+/// </summary>
+[ApiController]
+[Route("api/internal/signatures")]
+[AllowAnonymous]
+public class InternalSignaturesController : ControllerBase
+{
+    private readonly SignatureEngine _engine;
+    private readonly Sql _sql;
+    private readonly Tenancy.TenantContext _tenant;
+    public InternalSignaturesController(SignatureEngine engine, Sql sql, Tenancy.TenantContext tenant) { _engine = engine; _sql = sql; _tenant = tenant; }
+
+    private bool En => Request.Headers["X-HR360-Lang"].ToString().StartsWith("en", StringComparison.OrdinalIgnoreCase);
+    private string L(string tr, string en) => En ? en : tr;
+
+    public static bool TokenOk(string? given)
+    {
+        var expected = Environment.GetEnvironmentVariable("INTERNAL_SERVICE_TOKEN");
+        return !string.IsNullOrEmpty(expected)
+               && CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(expected), Encoding.UTF8.GetBytes(given ?? ""));
+    }
+
+    /// <summary>Anahtar + kiracı + belge türü denetimi; geçerse TenantContext gövdedeki kiracıya ayarlanır.</summary>
+    private IActionResult? Guard(string? tenantSlug, string? documentType)
+    {
+        if (!TokenOk(Request.Headers["X-Internal-Token"].FirstOrDefault())) return NotFound();
+        if (string.IsNullOrWhiteSpace(tenantSlug)) return BadRequest(new { message = L("Kiracı belirtilmedi.", "Tenant is missing."), code = "tenant_missing" });
+        if (!Signatures.ValidDocumentType(documentType) || documentType == Signatures.DocumentRequest)
+            return BadRequest(new { message = L("Geçersiz belge türü.", "Invalid document type."), code = "invalid_document_type" });
+        _tenant.TenantSlug = tenantSlug.Trim();
+        _tenant.IsPlatformAdmin = false;
+        return null;
+    }
+
+    private IActionResult Fail(SignatureError e) => StatusCode(e.Status, e.Body(En));
+
+    public record OtpBody(string? TenantSlug, string? DocumentType, Guid DocumentId, Guid EmployeeId, string? Title, string? Channel, int? Version);
+
+    [HttpPost("otp")]
+    public async Task<IActionResult> Otp([FromBody] OtpBody b, CancellationToken ct)
+    {
+        if (Guard(b.TenantSlug, b.DocumentType) is { } g) return g;
+        if (b.DocumentId == Guid.Empty || b.EmployeeId == Guid.Empty) return BadRequest(new { message = L("Belge ve çalışan gerekli.", "Document and employee are required."), code = "invalid" });
+        var (otp, fail) = await _engine.RequestOtpAsync(_tenant.TenantSlug!, b.DocumentType!, b.DocumentId, b.EmployeeId,
+            string.IsNullOrWhiteSpace(b.Title) ? L("Belge", "Document") : b.Title.Trim(), b.Channel, Math.Max(1, b.Version ?? 1), ct);
+        if (fail is not null) return Fail(fail);
+        return Ok(new { otp!.OtpId, otp.Channel, otp.ExpiresAt, otp.MaxAttempts, otp.SendsLeft, disclaimer = En ? Signatures.DisclaimerEn : Signatures.DisclaimerTr });
+    }
+
+    public record SignBody(string? TenantSlug, string? DocumentType, Guid DocumentId, Guid EmployeeId, Guid? OtpId, string? Code, string? DocumentSha256,
+        int? Version, string? Ip, string? UserId, string? UserName, string? Title);
+
+    [HttpPost("sign")]
+    public async Task<IActionResult> Sign([FromBody] SignBody b, CancellationToken ct)
+    {
+        if (Guard(b.TenantSlug, b.DocumentType) is { } g) return g;
+        if (b.DocumentId == Guid.Empty || b.EmployeeId == Guid.Empty || b.DocumentSha256 is not { Length: 64 } h || !h.All(char.IsAsciiHexDigit))
+            return BadRequest(new { message = L("Belge, çalışan ve belge özeti (SHA-256) gerekli.", "Document, employee and document hash (SHA-256) are required."), code = "invalid" });
+        var (e, fail) = await _engine.SignAsync(new SignRequest(_tenant.TenantSlug!, b.DocumentType!, b.DocumentId, b.EmployeeId, b.OtpId, b.Code,
+            h.ToLowerInvariant(), Math.Max(1, b.Version ?? 1), b.Ip, b.UserId, b.UserName, b.Title), ct);
+        return fail is not null ? Fail(fail) : Ok(SignatureEngine.View(e!, En));
+    }
+
+    public record EvidenceBody(string? TenantSlug, string? DocumentType, Guid? DocumentId, Guid[]? Ids);
+
+    /// <summary>Belgenin kanıtları (tür + kimlik) ve/veya kimliğiyle istenen kanıtlar; en yeni önce.</summary>
+    [HttpPost("evidence")]
+    public async Task<IActionResult> Evidence([FromBody] EvidenceBody b, CancellationToken ct)
+    {
+        if (Guard(b.TenantSlug, b.DocumentType) is { } g) return g;
+        if (b.DocumentId is null && (b.Ids is null || b.Ids.Length == 0))
+            return Ok(new { items = Array.Empty<object>(), disclaimer = En ? Signatures.DisclaimerEn : Signatures.DisclaimerTr });
+        var rows = await SignatureEngine.ListAsync(_sql, _tenant.TenantSlug!, b.DocumentType!, b.DocumentId, b.Ids is { Length: > 0 } ? b.Ids : null, ct);
+        return Ok(new { items = rows.Select(e => SignatureEngine.View(e, En)), disclaimer = En ? Signatures.DisclaimerEn : Signatures.DisclaimerTr });
+    }
 }

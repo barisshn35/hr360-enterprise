@@ -22,6 +22,8 @@ sys.path.insert(0, os.path.dirname(__file__))
 from common import AYSE, FAIL, api, check, ensure_transfers, http, mock_calls, tok, wait_for  # noqa: E402
 
 G = "/api/governance"
+DISCLAIMER_TR = "Basit elektronik imza — 5070 sayılı Kanun kapsamında nitelikli (güvenli) elektronik imza değildir."
+DISCLAIMER_EN = "Simple electronic signature — not a qualified (secure) electronic signature under Turkish Law No. 5070."
 ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
 MEHMET = "64acb636-275c-4519-a7e5-979f2e54f209"
 FAIL.clear()
@@ -391,12 +393,15 @@ try:
     code, r = api("mehmet", "POST", f"{G}/documents/requests/{doc_id}/sign/otp", {"channel": "InApp"})
     check("Y28: başkası imza kodu isteyemez", code == 403, code)
 
-    def new_otp():
+    def new_otp(skip_cooldown=True):
+        if skip_cooldown:
+            # Tek imza motoru: aynı belge için iki kod arasında 30 sn beklenir — testte önceki kodları geri tarihle.
+            psql(f"""UPDATE governance_signature_otps SET "CreatedAt" = "CreatedAt" - interval '1 minute' WHERE "DocumentId" = '{doc_id}'""")
         c, o = lang("ayse", "POST", f"{G}/documents/requests/{doc_id}/sign/otp", {"channel": "InApp"}, "tr")
         code_txt = None
         for _ in range(5):
             body = psql(f"""SELECT "Body" FROM notification_messages WHERE "TemplateCode" = 'signature.otp' AND "RecipientEmployeeId" = '{AYSE}'
-                            ORDER BY "CreatedAt" DESC LIMIT 1""")
+                            AND "Body" LIKE '%TEST-5d çalışma belgesi%' ORDER BY "CreatedAt" DESC LIMIT 1""")
             m = re.search(r"\b(\d{6})\b", body)
             if m:
                 code_txt = m.group(1)
@@ -405,8 +410,11 @@ try:
         return c, o, code_txt
 
     c, otp1, code1 = new_otp()
-    check("Y28: kod istendi (yanıtta kod yok, 10 dk, 5 deneme)", c == 200 and code1 and code1 not in json.dumps(otp1) and otp1["maxAttempts"] == 5
-          and "5070" in otp1["disclaimer"], (c, otp1))
+    check("Y28: kod istendi (yanıtta kod yok, 10 dk, 5 deneme, tek uyarı metni)", c == 200 and code1 and code1 not in json.dumps(otp1) and otp1["maxAttempts"] == 5
+          and otp1["disclaimer"] == DISCLAIMER_TR and otp1["sendsLeft"] == 4, (c, otp1))
+    c, r = lang("ayse", "POST", f"{G}/documents/requests/{doc_id}/sign/otp", {"channel": "InApp"}, "tr")
+    check("Y28: 30 sn dolmadan yeni kod istenemez (otp_cooldown)", c == 429 and r.get("code") == "otp_cooldown", (c, r))
+    check("Y28: kod kaydı belge türüyle (DocumentRequest)", psql(f"""SELECT "DocumentType" FROM governance_signature_otps WHERE "Id" = '{otp1.get('otpId')}'""") == "DocumentRequest")
     stored_hash = psql(f"""SELECT "CodeHash" FROM governance_signature_otps WHERE "Id" = '{otp1.get('otpId')}'""")
     check("Y28: kod veritabanında özetli (düz değil)", len(stored_hash) == 64 and code1 not in stored_hash, stored_hash)
     subj = psql(f"""SELECT "Subject" || '|' || "Language" FROM notification_messages WHERE "TemplateCode" = 'signature.otp' AND "RecipientEmployeeId" = '{AYSE}' ORDER BY "CreatedAt" DESC LIMIT 1""")
@@ -434,7 +442,8 @@ try:
     t_sign = time.time()
     c, ev = lang("ayse", "POST", f"{G}/documents/requests/{doc_id}/sign", {"otpId": otp3["otpId"], "code": code3}, "tr")
     check("Y28: doğru kodla imzalandı — kanıt", c == 200 and ev["method"] == "OTP-InApp" and ev["documentId"] == doc_id and ev["documentVersion"] == 1
-          and ev["signerEmployeeId"] == AYSE and len(ev["evidenceSha256"]) == 64 and "5070" in ev["disclaimer"], (c, ev))
+          and ev["signerEmployeeId"] == AYSE and len(ev["evidenceSha256"]) == 64 and ev["disclaimer"] == DISCLAIMER_TR
+          and ev["documentType"] == "DocumentRequest" and ev["integrityOk"] is True and ev["title"] == "TEST-5d çalışma belgesi", (c, ev))
     check("Y28: kanıttaki belge özeti belge içeriğinin SHA-256'sı", c == 200 and ev["documentSha256"] == html_hash, (ev.get("documentSha256"), html_hash))
     check("Y28: IP /24'e kısaltılmış (ya da yok)", c == 200 and (ev["ipPrefix"] is None or ev["ipPrefix"].endswith(".0/24") or ev["ipPrefix"].endswith("/48")), ev.get("ipPrefix"))
     c, r = api("ayse", "POST", f"{G}/documents/requests/{doc_id}/sign", {"otpId": otp3["otpId"], "code": code3})
@@ -443,12 +452,20 @@ try:
     check("Y28: imzalı belge için yeni kod istenemez", c == 409 and r.get("code") == "already_signed", (c, r))
     c, d2 = lang("ayse", "GET", f"{G}/documents/requests/{doc_id}/document", None, "en")
     check("Y28: belge görünümünde imza kanıtı + İngilizce uyarı", c == 200 and d2["signature"]["evidenceSha256"] == ev.get("evidenceSha256")
-          and "Law No. 5070" in d2["signature"]["disclaimer"], (c, d2.get("signature")))
+          and d2["signature"]["disclaimer"] == DISCLAIMER_EN, (c, d2.get("signature")))
+    c, sm = api("ayse", "GET", f"{G}/documents/signatures/mine")
+    row = next((x for x in (sm or {}).get("items", []) if x["id"] == ev.get("id")), None)
+    check("Y28: İmzaladığım belgeler listesinde (tür, başlık, bütünlük)", c == 200 and row and row["documentType"] == "DocumentRequest"
+          and row["title"] == "TEST-5d çalışma belgesi" and row["integrityOk"] is True and sm["disclaimer"] == DISCLAIMER_TR, (c, row))
+    c, sm2 = api("mehmet", "GET", f"{G}/documents/signatures/mine")
+    check("Y28: başkasının imzası listede yok", c == 200 and all(x["id"] != ev.get("id") for x in sm2.get("items", [])), c)
+    err = psql(f"""UPDATE governance_signatures SET "Method" = 'X' WHERE "Id" = '{ev.get('id')}'""")
+    check("Y28: imza kanıtı değiştirilemez (tetikleyici)", "değiştirilemez" in err, err)
     c, mine = api("ayse", "GET", f"{G}/documents/requests/mine")
     check("Y28: taleplerim listesinde imzalı işareti", c == 200 and any(x["id"] == doc_id and x["signed"] for x in mine), c)
     c, v = http("GET", f"{G}/documents/verify/{req['verificationCode']}")
     check("Y28: doğrulama sayfasında imza kanıtı (kişisel veri yok)", c == 200 and v["signature"]["signed"] and v["signature"]["matchesDocument"]
-          and "5070" in v["signature"]["disclaimer"] and "signerEmployeeId" not in v["signature"], (c, v))
+          and v["signature"]["disclaimer"] == DISCLAIMER_TR and "signerEmployeeId" not in v["signature"], (c, v))
     c, s = api("admin", "GET", f"{G}/documents/requests/{doc_id}/signature")
     check("Y28: İK imza kanıtını görür", c == 200 and s["signed"], (c, s))
     c, s = api("mehmet", "GET", f"{G}/documents/requests/{doc_id}/signature")

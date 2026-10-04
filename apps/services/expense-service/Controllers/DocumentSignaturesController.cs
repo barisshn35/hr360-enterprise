@@ -11,10 +11,12 @@ using ExpenseService.Tenancy;
 namespace ExpenseService.Controllers;
 
 /// <summary>
-/// Y28: OTP ile basit elektronik imza. IK bir ozluk dokumanini calisana imzaya gonderir;
-/// calisan dokumani gorur, 6 haneli tek kullanimlik kod ister (uygulama ici bildirim + e-posta
-/// kanali satiri) ve kodla onaylar. Kod yalnizca HMAC ozetiyle saklanir, 10 dk gecerlidir,
-/// en fazla 5 deneme. Basarili imzada degistirilemez kanit kaydi olusur.
+/// Y28: OTP ile basit elektronik imza — talep yasam dongusu. IK bir ozluk dokumanini calisana
+/// imzaya gonderir/iptal eder; calisan dokumani gorur ve imzalar. Kod (OTP), imza ve kanit
+/// governance-service'teki TEK imza motoruna devredilir (DocumentType "HrDocument"; ayni
+/// kurallar: 6 hane, 10 dk, 5 hatali deneme, saatte 5 kod, 30 sn bekleme, kod yalnizca HMAC).
+/// Basarili imzada governance kanit kimligi talepte (EvidenceRef) tutulur. Bu degisiklikten
+/// onceki imzalarin kanitlari expense_signature_evidence'ta SALT OKUNUR kalir.
 ///
 /// Basit elektronik imza — 5070 sayili Kanun kapsaminda nitelikli (guvenli) elektronik imza
 /// DEGILDIR. Yanitlarin hepsinde "disclaimer" alani bulunur.
@@ -28,14 +30,16 @@ public class DocumentSignaturesController : ControllerBase
 
     private readonly ExpenseDbContext _db;
     private readonly ApprovalWorkflowClient _employees;
+    private readonly GovernanceSignatureClient _engine;
     private readonly ITenantContext _tenant;
     private readonly ILogger<DocumentSignaturesController> _log;
 
-    public DocumentSignaturesController(ExpenseDbContext db, ApprovalWorkflowClient employees, ITenantContext tenant,
-        ILogger<DocumentSignaturesController> log)
+    public DocumentSignaturesController(ExpenseDbContext db, ApprovalWorkflowClient employees, GovernanceSignatureClient engine,
+        ITenantContext tenant, ILogger<DocumentSignaturesController> log)
     {
         _db = db;
         _employees = employees;
+        _engine = engine;
         _tenant = tenant;
         _log = log;
     }
@@ -50,6 +54,11 @@ public class DocumentSignaturesController : ControllerBase
 
     private IActionResult Fail(int status, string message, string? code = null) =>
         StatusCode(status, new { message, code, disclaimer = SimpleSignature.Disclaimer });
+
+    /// <summary>Imza motorunun hatasini ayni durum/kodla iletir (+ kalan deneme).</summary>
+    private IActionResult Fail<T>(GovResult<T> r) => r.AttemptsLeft is { } left
+        ? StatusCode(r.Status, new { message = r.Message, code = r.Code, attemptsLeft = left, disclaimer = SimpleSignature.Disclaimer })
+        : Fail(r.Status, r.Message ?? "İmza işlemi tamamlanamadı", r.Code);
 
     private async Task AuditAsync(string entityType, string entityId, string action, object changes)
     {
@@ -92,44 +101,36 @@ public class DocumentSignaturesController : ControllerBase
     private static Npgsql.NpgsqlParameter Param(string name, object? value, NpgsqlTypes.NpgsqlDbType type = NpgsqlTypes.NpgsqlDbType.Text) =>
         new(name, type) { Value = value ?? DBNull.Value };
 
-    private async Task<string?> EmployeeEmailAsync(Guid employeeId, CancellationToken ct)
-    {
-        try
-        {
-            return await _db.Database.SqlQuery<string>($@"SELECT ""Email"" AS ""Value"" FROM employee_employees
-                    WHERE ""Id"" = {employeeId} AND ""TenantSlug"" = {Tenant} LIMIT 1").FirstOrDefaultAsync(ct);
-        }
-        catch (Exception) { return null; }
-    }
-
     private static object DocView(Document d) => new
     {
         d.Id, d.EmployeeId, type = d.Type.ToString(), d.FileName, d.StorageKey, d.SizeBytes, d.ContentType, d.UploadedAt, d.SignedAt,
         contentHash = SimpleSignature.DocumentHash(d),
     };
 
-    private static object EvidenceView(SignatureEvidence e) => new
-    {
-        e.Id, e.SignatureId, e.DocumentId, e.SignerEmployeeId, e.SignedAt, documentHash = e.DocumentHash, e.IpMasked,
-        e.UserAgentHash, e.OtpChannel, e.Method, e.EvidenceHash,
-        // Butunluk: kayitli alanlardan yeniden hesaplanan ozet saklanan ozetle ayni mi.
-        integrityOk = SimpleSignature.EvidenceHash(e) == e.EvidenceHash,
-    };
+    /// <summary>Kanit: yeni imzalarda governance kaniti (EvidenceRef), eskilerde expense_signature_evidence.</summary>
+    private static object? EvidenceView(DocumentSignature s, SignatureEvidence? legacy, IReadOnlyDictionary<Guid, GovEvidence> gov) =>
+        s.EvidenceRef is { } r ? (gov.TryGetValue(r, out var g) ? SignatureViews.Evidence(s.Id, g) : null)
+        : legacy is null ? null : SignatureViews.Legacy(legacy);
 
-    private static object RequestView(DocumentSignature s, Document? d, SignatureEvidence? e) => new
+    // "otp" alani kaldirildi: kod durumu artik imza motorunda; istemci kodu her acilista yeniden ister.
+    private static object RequestView(DocumentSignature s, Document? d, SignatureEvidence? legacy, IReadOnlyDictionary<Guid, GovEvidence> gov) => new
     {
         s.Id, s.DocumentId, s.EmployeeId, s.Status, s.Message, s.CreatedAt, s.SignedAt, s.CancelledAt,
         requestedDocumentHash = s.DocumentHash,
-        otp = new
-        {
-            sent = s.OtpHash is not null, channel = s.OtpChannel, expiresAt = s.OtpExpiresAt,
-            attemptsLeft = Math.Max(0, SimpleSignature.MaxAttempts - s.OtpAttempts),
-            sendsLeft = Math.Max(0, SimpleSignature.MaxSends - s.OtpSentCount),
-        },
+        otp = (object?)null,
         document = d is null ? null : DocView(d),
-        evidence = e is null ? null : EvidenceView(e),
+        evidence = EvidenceView(s, legacy, gov),
         disclaimer = SimpleSignature.Disclaimer,
     };
+
+    private static readonly IReadOnlyDictionary<Guid, GovEvidence> NoGov = new Dictionary<Guid, GovEvidence>();
+
+    private Task<Dictionary<Guid, GovEvidence>> GovEvidenceAsync(IEnumerable<DocumentSignature> rows, CancellationToken ct) =>
+        _engine.EvidenceAsync(Tenant, null, rows.Where(r => r.EvidenceRef is not null).Select(r => r.EvidenceRef!.Value).Distinct().ToList(), ct);
+
+    /// <summary>Imza surumu: dokumanin bu motorla imzalanmis talep sayisi + 1 (yeniden imza = yeni surum).</summary>
+    private async Task<int> NextVersionAsync(Guid documentId, CancellationToken ct) =>
+        await _db.DocumentSignatures.CountAsync(x => x.DocumentId == documentId && x.Status == SignatureStatus.Signed && x.EvidenceRef != null, ct) + 1;
 
     /* ------------------------------------------------------------ IK: imzaya gonder */
 
@@ -163,7 +164,7 @@ public class DocumentSignaturesController : ControllerBase
         await NotifyAsync(doc.EmployeeId, "InApp", null, "İmzanızı bekleyen bir belge var",
             "İK bir belgeyi basit elektronik imzanıza gönderdi. Belgeyi İmzalarım sayfasında inceleyip tek kullanımlık kodla imzalayabilirsiniz.",
             "document.sign.request", "/panel/imzalarim", ct);
-        return Ok(RequestView(sig, doc, null));
+        return Ok(RequestView(sig, doc, null, NoGov));
     }
 
     /// <summary>Dokumanin tum imza talepleri ve kanitlari (IK).</summary>
@@ -176,12 +177,13 @@ public class DocumentSignaturesController : ControllerBase
         var rows = await _db.DocumentSignatures.Where(s => s.DocumentId == id).OrderByDescending(s => s.CreatedAt).ToListAsync(ct);
         var ids = rows.Select(r => r.Id).ToList();
         var ev = await _db.SignatureEvidence.Where(e => ids.Contains(e.SignatureId)).ToDictionaryAsync(e => e.SignatureId, ct);
-        if (ev.Count > 0)
-            await AuditAsync("SignatureEvidence", id.ToString(), "SensitiveViewed", new { field = "signatureEvidence", count = ev.Count });
+        var gov = await GovEvidenceAsync(rows, ct);
+        if (ev.Count + gov.Count > 0)
+            await AuditAsync("SignatureEvidence", id.ToString(), "SensitiveViewed", new { field = "signatureEvidence", count = ev.Count + gov.Count });
         return Ok(new
         {
             document = DocView(doc),
-            items = rows.Select(r => RequestView(r, null, ev.GetValueOrDefault(r.Id))),
+            items = rows.Select(r => RequestView(r, null, ev.GetValueOrDefault(r.Id), gov)),
             disclaimer = SimpleSignature.Disclaimer,
         });
     }
@@ -210,7 +212,6 @@ public class DocumentSignaturesController : ControllerBase
         if (s.Status != SignatureStatus.Pending) return Fail(409, "Yalnızca bekleyen talepler iptal edilebilir");
         s.Status = SignatureStatus.Cancelled;
         s.CancelledAt = DateTimeOffset.UtcNow;
-        s.OtpHash = null;
         await _db.SaveChangesAsync(ct);
         return Ok(new { message = "İmza talebi iptal edildi", disclaimer = SimpleSignature.Disclaimer });
     }
@@ -238,10 +239,11 @@ public class DocumentSignaturesController : ControllerBase
         var docs = await _db.Documents.Where(d => docIds.Contains(d.Id)).ToDictionaryAsync(d => d.Id, ct);
         var sids = rows.Select(r => r.Id).ToList();
         var ev = await _db.SignatureEvidence.Where(e => sids.Contains(e.SignatureId)).ToDictionaryAsync(e => e.SignatureId, ct);
+        var gov = await GovEvidenceAsync(rows, ct);
         return Ok(new
         {
             items = rows.Where(r => docs.ContainsKey(r.DocumentId))
-                .Select(r => RequestView(r, docs[r.DocumentId], ev.GetValueOrDefault(r.Id))),
+                .Select(r => RequestView(r, docs[r.DocumentId], ev.GetValueOrDefault(r.Id), gov)),
             disclaimer = SimpleSignature.Disclaimer,
         });
     }
@@ -261,49 +263,38 @@ public class DocumentSignaturesController : ControllerBase
         if (s is null) return Fail(404, "İmza talebi bulunamadı");
         var doc = await _db.Documents.FirstOrDefaultAsync(d => d.Id == s.DocumentId, ct);
         var ev = await _db.SignatureEvidence.FirstOrDefaultAsync(e => e.SignatureId == s.Id, ct);
-        return Ok(RequestView(s, doc, ev));
+        return Ok(RequestView(s, doc, ev, await GovEvidenceAsync(new[] { s }, ct)));
     }
 
-    /// <summary>Tek kullanimlik kod gonderir (uygulama ici bildirim + e-posta kanali satiri).</summary>
+    /// <summary>
+    /// Tek kullanimlik kod: imza motoru uretir ve bildirimle gonderir (uygulama ici + kayitli
+    /// e-posta varsa e-posta; sablon 'signature.otp'). Kod yanitta DONMEZ.
+    /// </summary>
     [HttpPost("signature-requests/{sid:guid}/otp")]
     public async Task<IActionResult> SendOtp(Guid sid, CancellationToken ct)
     {
         var (s, err) = await MineAsync(sid, ct);
         if (err is not null) return err;
         if (s!.Status != SignatureStatus.Pending) return Fail(409, "Bu talep artık imzalanamaz", "not_pending");
-        var now = DateTimeOffset.UtcNow;
-        if (s.OtpSentCount >= SimpleSignature.MaxSends)
-            return Fail(429, "Bu talep için kod gönderme sınırına ulaşıldı; İK'dan yeni talep isteyin", "send_limit");
-        if (s.OtpLastSentAt is { } last && now - last < SimpleSignature.ResendCooldown)
-            return Fail(429, "Yeni kod için lütfen biraz bekleyin", "cooldown");
-
-        var code = SimpleSignature.NewOtp();
-        var email = await EmployeeEmailAsync(s.EmployeeId, ct);
-        s.OtpHash = SimpleSignature.HashOtp(s.Id, code);
-        s.OtpExpiresAt = now + SimpleSignature.OtpLifetime;
-        s.OtpAttempts = 0;
-        s.OtpSentCount++;
-        s.OtpLastSentAt = now;
-        s.OtpChannel = email is null ? "InApp" : "InApp+Email";
-        await _db.SaveChangesAsync(ct);
-
-        const string subject = "Belge imza doğrulama kodu";
-        var body = $"Belge imzalama kodunuz: {code}. Kod 10 dakika geçerlidir. Kodu kimseyle paylaşmayın; İK dahil kimse sizden bu kodu istemez.";
-        await NotifyAsync(s.EmployeeId, "InApp", null, subject, body, "document.sign.otp", "/panel/imzalarim", ct);
-        if (email is not null)
-            await NotifyAsync(s.EmployeeId, "Email", email, subject, body, "document.sign.otp", null, ct);
+        var doc = await _db.Documents.FirstOrDefaultAsync(d => d.Id == s.DocumentId, ct);
+        if (doc is null) return Fail(404, "Doküman bulunamadı");
+        var r = await _engine.RequestOtpAsync(Tenant, doc.Id, s.EmployeeId, doc.FileName, "InApp+Email", await NextVersionAsync(doc.Id, ct), ct);
+        if (!r.Ok) return Fail(r);
+        var otp = r.Value!;
         return Ok(new
         {
             message = "Doğrulama kodu bildirimlerinize gönderildi",
-            channel = s.OtpChannel,
-            expiresAt = s.OtpExpiresAt,
-            attemptsLeft = SimpleSignature.MaxAttempts,
-            sendsLeft = SimpleSignature.MaxSends - s.OtpSentCount,
+            otpId = otp.OtpId,
+            channel = otp.Channel,
+            expiresAt = otp.ExpiresAt,
+            attemptsLeft = otp.MaxAttempts,
+            maxAttempts = otp.MaxAttempts,
+            sendsLeft = otp.SendsLeft,
             disclaimer = SimpleSignature.Disclaimer,
         });
     }
 
-    public record SignInput(string? Code, bool Accept);
+    public record SignInput(string? Code, bool Accept, Guid? OtpId = null);
 
     [HttpPost("signature-requests/{sid:guid}/sign")]
     public async Task<IActionResult> Sign(Guid sid, [FromBody] SignInput body, CancellationToken ct)
@@ -312,58 +303,33 @@ public class DocumentSignaturesController : ControllerBase
         if (err is not null) return err;
         if (!body.Accept) return Fail(400, "İmzalamak için belgeyi okuduğunuzu ve basit elektronik imza açıklamasını onaylamalısınız");
         if (s!.Status != SignatureStatus.Pending) return Fail(409, "Bu talep artık imzalanamaz", "not_pending");
-        var now = DateTimeOffset.UtcNow;
-        switch (SimpleSignature.Check(s, body.Code, now))
-        {
-            case SimpleSignature.OtpCheck.NoCode:
-                return Fail(400, "Önce doğrulama kodu isteyin", "no_code");
-            case SimpleSignature.OtpCheck.TooManyAttempts:
-                return Fail(429, "Deneme hakkınız doldu; yeni kod isteyin", "too_many_attempts");
-            case SimpleSignature.OtpCheck.Expired:
-                s.OtpHash = null;
-                await _db.SaveChangesAsync(ct);
-                return Fail(410, "Kodun süresi doldu; yeni kod isteyin", "expired");
-            case SimpleSignature.OtpCheck.BadFormat:
-            case SimpleSignature.OtpCheck.Wrong:
-                s.OtpAttempts++;
-                if (s.OtpAttempts >= SimpleSignature.MaxAttempts) s.OtpHash = null;
-                await _db.SaveChangesAsync(ct);
-                await AuditAsync("DocumentSignature", s.Id.ToString(), "OtpFailed", new { attempts = s.OtpAttempts });
-                var left = Math.Max(0, SimpleSignature.MaxAttempts - s.OtpAttempts);
-                return left == 0
-                    ? Fail(429, "Kod hatalı. Deneme hakkınız doldu; yeni kod isteyin", "too_many_attempts")
-                    : Fail(400, $"Kod hatalı. Kalan deneme: {left}", "wrong_code");
-        }
 
         var doc = await _db.Documents.FirstOrDefaultAsync(d => d.Id == s.DocumentId, ct);
         if (doc is null) return Fail(404, "Doküman bulunamadı");
+        // Kod tuketilmeden ONCE: belge imzaya gonderildikten sonra degistiyse imza yok.
         var hash = SimpleSignature.DocumentHash(doc);
         if (hash != s.DocumentHash)
             return Fail(409, "Belge imzaya gönderildikten sonra değişti; İK'dan yeni talep isteyin", "document_changed");
 
-        var evidence = new SignatureEvidence
+        var r = await _engine.SignAsync(Tenant, doc.Id, s.EmployeeId, body.OtpId, body.Code, hash, await NextVersionAsync(doc.Id, ct),
+            ClientIp, UserId, UserName, doc.FileName, ct);
+        if (!r.Ok)
         {
-            TenantSlug = Tenant,
-            SignatureId = s.Id,
-            DocumentId = doc.Id,
-            SignerEmployeeId = s.EmployeeId,
-            SignedAt = DateTimeOffset.FromUnixTimeMilliseconds(now.ToUnixTimeMilliseconds()),
-            DocumentHash = hash,
-            IpMasked = SimpleSignature.MaskIp(ClientIp),
-            UserAgentHash = SimpleSignature.HashUserAgent(Request.Headers.UserAgent.ToString()),
-            OtpChannel = s.OtpChannel ?? "InApp",
-            EvidenceHash = "",
-        };
-        evidence.EvidenceHash = SimpleSignature.EvidenceHash(evidence);
-        _db.SignatureEvidence.Add(evidence);
+            if (r.Code is "otp_invalid" or "otp_locked")
+                await AuditAsync("DocumentSignature", s.Id.ToString(), "OtpFailed", new { attemptsLeft = r.AttemptsLeft });
+            return Fail(r);
+        }
+        var ev = r.Value!;
         s.Status = SignatureStatus.Signed;
-        s.SignedAt = evidence.SignedAt;
-        s.OtpHash = null;
+        s.SignedAt = ev.SignedAt;
+        s.EvidenceRef = ev.Id;
         // Ilk imza dokumani kilitler (sonraki yeniden imzalar kilidi degistirmez).
-        if (doc.SignedAt is null) doc.SignedAt = evidence.SignedAt;
+        if (doc.SignedAt is null) doc.SignedAt = ev.SignedAt;
         try { await _db.SaveChangesAsync(ct); }
-        catch (DbUpdateException)
+        catch (DbUpdateException ex)
         {
+            // Kanit governance'ta yazildi; talep durumu guncellenemedi (eszamanli iptal vb.).
+            _log.LogWarning("Imza talebi guncellenemedi ({Id}): {Message}", s.Id, ex.Message);
             return Fail(409, "Bu talep zaten imzalandı", "not_pending");
         }
 
@@ -371,6 +337,6 @@ public class DocumentSignaturesController : ControllerBase
             await NotifyAsync(hr, "InApp", null, "Belge imzalandı",
                 "İmzaya gönderdiğiniz bir belge çalışan tarafından basit elektronik imzayla imzalandı.",
                 "document.sign.done", "/panel/dokumanlar", ct);
-        return Ok(new { message = "Belge imzalandı", evidence = EvidenceView(evidence), disclaimer = SimpleSignature.Disclaimer });
+        return Ok(new { message = "Belge imzalandı", evidence = SignatureViews.Evidence(s.Id, ev), disclaimer = SimpleSignature.Disclaimer });
     }
 }

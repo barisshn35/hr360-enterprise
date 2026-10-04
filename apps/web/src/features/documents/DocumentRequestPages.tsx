@@ -10,6 +10,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge'
 import { EmptyState, InfoNote, RowsSkeleton } from '@/components/ui/States'
 import { governanceApi, type DocRequestStatus } from '@/api/governance'
 import { SignDocumentModal } from '@/features/documents/SignDocument'
+import { methodLabel } from '@/features/documents/OtpSignPanel'
 import { workflowApi } from '@/api/workflows'
 import { workflowTypeLabels } from '@/api/types'
 import { formatDate, formatDateTime } from '@/lib/format'
@@ -116,9 +117,9 @@ export function VerifyDocumentPage() {
               {q.data.signature?.signed && (
                 <div className="mt-2 space-y-0.5 border-t border-emerald-500/30 pt-2">
                   <p className="flex items-center gap-1.5 font-medium"><FileSignature className="size-4" /> {tx('Çalışan tarafından kodla imzalandı')} · {formatDateTime(q.data.signature.signedAt)}</p>
-                  <p className="text-[12px] text-muted-foreground">{q.data.signature.method === 'OTP-Email' ? tx('Yöntem: e-postayla tek kullanımlık kod') : tx('Yöntem: uygulama içi tek kullanımlık kod')}{q.data.signature.matchesDocument ? '' : ` · ${tx('UYARI: belge özeti eşleşmiyor')}`}</p>
+                  <p className="text-[12px] text-muted-foreground">{tx('Yöntem')}: {methodLabel(q.data.signature.method)}{q.data.signature.matchesDocument ? '' : ` · ${tx('UYARI: belge özeti eşleşmiyor')}`}</p>
                   <p className="break-all font-mono text-[11px] text-muted-foreground">SHA-256 {q.data.signature.documentSha256.slice(0, 32)}…</p>
-                  <p className="text-[11.5px] font-medium text-amber-700 dark:text-amber-400">{tx('Basit elektronik imza — 5070 sayılı Kanun kapsamında güvenli/nitelikli elektronik imza değildir')}</p>
+                  <p className="text-[11.5px] font-medium text-amber-700 dark:text-amber-400">{tx('Basit elektronik imza — 5070 sayılı Kanun kapsamında nitelikli (güvenli) elektronik imza değildir.')}</p>
                 </div>
               )}
             </div>

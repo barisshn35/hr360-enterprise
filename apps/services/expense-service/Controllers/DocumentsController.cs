@@ -81,6 +81,8 @@ public class DocumentsController : ControllerBase
                 message = "Bu doküman basit elektronik imzayla imzalanmış. Silme, imza kanıtlarını da imha eder; yalnızca saklama süresi dolduysa onaylayarak silin.",
                 code = "signed_document",
             });
+        // Eski kanitlar burada; yeni (governance_signatures, DocumentType 'HrDocument') kanitlar ve kodlar
+        // expense_documents silme tetikleyicisiyle birlikte silinir (scripts/sql/2026-10-11_signature_unify.sql).
         _db.SignatureEvidence.RemoveRange(evidence);
         _db.DocumentSignatures.RemoveRange(await _db.DocumentSignatures.Where(s => s.DocumentId == id).ToListAsync());
         _db.Documents.Remove(doc);

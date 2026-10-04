@@ -40,6 +40,7 @@ LDAP_ADMIN_PW = os.environ.get("LDAP_TEST_ADMIN_PASSWORD", "test-only-ldap-admin
 LDAP_BASE = "ou=people,dc=hr360test,dc=local"
 LDAP_BIND = "cn=admin,dc=hr360test,dc=local"
 SEED = os.path.join(os.path.dirname(__file__), "ldap", "seed.ldif")
+DISCLAIMER = "Basit elektronik imza — 5070 sayılı Kanun kapsamında nitelikli (güvenli) elektronik imza değildir."
 
 
 def psql(sql, db="hr360_operational"):
@@ -112,10 +113,14 @@ def cleanup():
     psql(f"""DELETE FROM tenant_scim_tokens WHERE "Name" LIKE 'TEST-scim-{RUN}%'""")
     psql(f"""DELETE FROM tenant_custom_domains WHERE "Domain" LIKE '%{RUN}.hr360-test.com.tr'""")
     for d in created["docs"]:
+        # expense_documents silme tetikleyicisi governance_signatures/otps (HrDocument) satırlarını da siler.
         psql(f"""DELETE FROM expense_signature_evidence WHERE "DocumentId" = '{d}'; DELETE FROM expense_document_signatures WHERE "DocumentId" = '{d}';
                  DELETE FROM expense_documents WHERE "Id" = '{d}'""")
     psql(f"""DELETE FROM notification_messages WHERE "CreatedAt" >= '{STARTS}' AND "TemplateCode" LIKE 'document.sign.%'
              AND "RecipientEmployeeId" IN ('{AYSE}', '{MEHMET}')""")
+    # İmza kodları governance'tan 'signature.otp' ile gelir (yalnızca bu testin belgesi).
+    psql(f"""DELETE FROM notification_messages WHERE "CreatedAt" >= '{STARTS}' AND "TemplateCode" = 'signature.otp'
+             AND "RecipientEmployeeId" = '{AYSE}' AND "Body" LIKE '%TEST-imza-{RUN}.pdf%'""")
     subprocess.run(["docker", "exec", "hr360-tenant-service-1", "sh", "-c", "echo '{}' > /tmp/hr360-dns-override.json"], capture_output=True)
     # LDAP test verisini tohum hâline döndür.
     ldap("ldapadd", seed_entry("testldap.bora"))
@@ -381,7 +386,7 @@ try:
     check("Y28 çalışan imzaya gönderemez", api("ayse", "POST", f"{EXP}/{DOC}/signature-requests", {})[0] == 403)
     code, req = api("admin", "POST", f"{EXP}/{DOC}/signature-requests", {"message": "TEST lütfen imzalayın"})
     check("Y28 İK imzaya gönderir; yasal açıklama yanıtta", code == 200 and req["status"] == "Pending"
-          and "5070 sayılı Kanun kapsamında nitelikli (güvenli) elektronik imza değildir" in req["disclaimer"], (code, req))
+          and req["disclaimer"] == DISCLAIMER, (code, req))
     SID = req["id"]
     check("Y28 aynı doküman için ikinci açık talep 409", api("admin", "POST", f"{EXP}/{DOC}/signature-requests", {})[0] == 409)
     check("Y28 çalışana uygulama içi bildirim", psql(f"""SELECT count(*) FROM notification_messages WHERE "RecipientEmployeeId" = '{AYSE}'
@@ -393,72 +398,115 @@ try:
     check("Y28 başkası talebi göremez/kod isteyemez", api("mehmet", "GET", f"{EXP}/signature-requests/{SID}")[0] == 404
           and api("mehmet", "POST", f"{EXP}/signature-requests/{SID}/otp")[0] == 404)
     code, r = api("ayse", "POST", f"{EXP}/signature-requests/{SID}/sign", {"code": "123456", "accept": True})
-    check("Y28 kod istemeden imza 400", code == 400 and r.get("code") == "no_code", (code, r))
+    check("Y28 kod istemeden imza yok (otp_not_found)", code == 404 and r.get("code") == "otp_not_found", (code, r))
 
+    # Kod, imza ve kanıt governance'taki tek imza motorunda (DocumentType 'HrDocument'); kod 'signature.otp' bildirimiyle gelir.
     def latest_otp():
-        body = psql(f"""SELECT "Body" FROM notification_messages WHERE "RecipientEmployeeId" = '{AYSE}' AND "TemplateCode" = 'document.sign.otp'
-                        AND "Channel" = 'InApp' AND "CreatedAt" >= '{STARTS}' ORDER BY "CreatedAt" DESC LIMIT 1""")
+        body = psql(f"""SELECT "Body" FROM notification_messages WHERE "RecipientEmployeeId" = '{AYSE}' AND "TemplateCode" = 'signature.otp'
+                        AND "Channel" = 'InApp' AND "CreatedAt" >= '{STARTS}' AND "Body" LIKE '%TEST-imza-{RUN}.pdf%' ORDER BY "CreatedAt" DESC LIMIT 1""")
         m = re.search(r"\b(\d{6})\b", body)
         return m.group(1) if m else None
 
     def allow_resend():
-        psql(f"""UPDATE expense_document_signatures SET "OtpLastSentAt" = now() - interval '1 minute' WHERE "Id" = '{SID}'""")
+        # 30 sn yeniden gönderme beklemesini atla (saatlik sayım değişmez).
+        psql(f"""UPDATE governance_signature_otps SET "CreatedAt" = "CreatedAt" - interval '1 minute'
+                 WHERE "DocumentType" = 'HrDocument' AND "DocumentId" = '{DOC}'""")
 
     code, r = api("ayse", "POST", f"{EXP}/signature-requests/{SID}/otp")
-    check("Y28 kod gönderilir (uygulama içi + e-posta)", code == 200 and r["channel"] == "InApp+Email" and r["attemptsLeft"] == 5, (code, r))
+    check("Y28 kod gönderilir (uygulama içi + e-posta)", code == 200 and r["channel"] == "InApp+Email" and r["attemptsLeft"] == 5
+          and r.get("otpId") and "5070" in r["disclaimer"], (code, r))
     OTP = latest_otp()
+    check("Y28 kod yanıtta yok", OTP and OTP not in json.dumps(r), r)
     check("Y28 e-posta kanalı satırı", psql(f"""SELECT "RecipientEmail" FROM notification_messages WHERE "RecipientEmployeeId" = '{AYSE}'
-                                              AND "TemplateCode" = 'document.sign.otp' AND "Channel" = 'Email' AND "CreatedAt" >= '{STARTS}' LIMIT 1""") == "ayse.yilmaz@demo.hr360")
-    srow = psql(f"""SELECT row_to_json(s)::text FROM expense_document_signatures s WHERE "Id" = '{SID}'""")
-    otp_hash = psql(f"""SELECT "OtpHash" FROM expense_document_signatures WHERE "Id" = '{SID}'""")
-    check("Y28 kod yalnızca özetiyle saklanır", OTP and OTP not in srow and len(otp_hash) == 64, srow)
-    exp_at = psql(f"""SELECT round(extract(epoch FROM "OtpExpiresAt" - now())) FROM expense_document_signatures WHERE "Id" = '{SID}'""")
+                                              AND "TemplateCode" = 'signature.otp' AND "Channel" = 'Email' AND "CreatedAt" >= '{STARTS}'
+                                              AND "Body" LIKE '%TEST-imza-{RUN}.pdf%' LIMIT 1""") == "ayse.yilmaz@demo.hr360")
+    orow = psql(f"""SELECT row_to_json(o)::text FROM governance_signature_otps o WHERE "DocumentType" = 'HrDocument' AND "DocumentId" = '{DOC}'
+                    ORDER BY "CreatedAt" DESC LIMIT 1""")
+    otp_hash = psql(f"""SELECT "CodeHash" FROM governance_signature_otps WHERE "Id" = '{r.get('otpId')}'""")
+    check("Y28 kod yalnızca özetiyle saklanır (imza motorunda)", OTP and OTP not in orow and len(otp_hash) == 64 and r.get("otpId") in orow, orow)
+    check("Y28 expense artık kod/özet yazmaz", psql(f"""SELECT coalesce("OtpHash",'NULL') || '|' || "OtpSentCount" FROM expense_document_signatures WHERE "Id" = '{SID}'""") == "NULL|0")
+    exp_at = psql(f"""SELECT round(extract(epoch FROM "ExpiresAt" - now())) FROM governance_signature_otps WHERE "Id" = '{r.get('otpId')}'""")
     check("Y28 kod 10 dakika geçerli", exp_at and 560 <= float(exp_at) <= 600, exp_at)
-    check("Y28 hemen yeniden kod istenemez (429)", api("ayse", "POST", f"{EXP}/signature-requests/{SID}/otp")[0] == 429)
+    code, r2 = api("ayse", "POST", f"{EXP}/signature-requests/{SID}/otp")
+    check("Y28 hemen yeniden kod istenemez (429 otp_cooldown)", code == 429 and r2.get("code") == "otp_cooldown", (code, r2))
     wrong = "000000" if OTP != "000000" else "111111"
     results = [api("ayse", "POST", f"{EXP}/signature-requests/{SID}/sign", {"code": wrong, "accept": True}) for _ in range(5)]
-    check("Y28 hatalı kod: kalan deneme azalır", [c for c, _ in results[:4]] == [400] * 4 and "Kalan deneme: 1" in results[3][1]["message"], results[:4])
-    check("Y28 5. hatalı denemede kilit", results[4][0] == 429 and results[4][1].get("code") == "too_many_attempts", results[4])
+    check("Y28 hatalı kod: kalan deneme azalır", [(c, x.get("code"), x.get("attemptsLeft")) for c, x in results[:4]]
+          == [(400, "otp_invalid", 4), (400, "otp_invalid", 3), (400, "otp_invalid", 2), (400, "otp_invalid", 1)]
+          and "Kalan deneme: 1" in results[3][1]["message"], results[:4])
+    check("Y28 5. hatalı denemede kilit", results[4][0] == 429 and results[4][1].get("code") == "otp_locked", results[4])
+    check("Y28 hatalı denemeler denetim kaydında", psql(f"""SELECT count(*) FROM audit_log WHERE "EntityType" = 'DocumentSignature' AND "EntityId" = '{SID}'
+                                                          AND "Action" = 'OtpFailed'""") == "5")
     code, r = api("ayse", "POST", f"{EXP}/signature-requests/{SID}/sign", {"code": OTP, "accept": True})
-    check("Y28 kilitten sonra doğru kod da geçmez", code in (400, 429), (code, r))
-
-    allow_resend()
-    api("ayse", "POST", f"{EXP}/signature-requests/{SID}/otp")
-    OTP2 = latest_otp()
-    psql(f"""UPDATE expense_document_signatures SET "OtpExpiresAt" = now() - interval '1 second' WHERE "Id" = '{SID}'""")
-    code, r = api("ayse", "POST", f"{EXP}/signature-requests/{SID}/sign", {"code": OTP2, "accept": True})
-    check("Y28 süresi dolan kod reddedilir (410)", code == 410 and r.get("code") == "expired", (code, r))
+    check("Y28 kilitten sonra doğru kod da geçmez", code == 429 and r.get("code") == "otp_locked", (code, r))
 
     allow_resend()
     code, r = api("ayse", "POST", f"{EXP}/signature-requests/{SID}/otp")
-    OTP3 = latest_otp()
-    check("Y28 yeni kod farklı ve deneme hakkı yenilenir", code == 200 and r["attemptsLeft"] == 5 and OTP3 and r["sendsLeft"] == 2, (code, r))
+    OTP2 = latest_otp()
+    psql(f"""UPDATE governance_signature_otps SET "ExpiresAt" = now() - interval '1 second' WHERE "Id" = '{r.get('otpId')}'""")
+    code, r = api("ayse", "POST", f"{EXP}/signature-requests/{SID}/sign", {"code": OTP2, "accept": True})
+    check("Y28 süresi dolan kod reddedilir (410 otp_expired)", code == 410 and r.get("code") == "otp_expired", (code, r))
+
+    allow_resend()
+    code, r = api("ayse", "POST", f"{EXP}/signature-requests/{SID}/otp")
+    OTP3, OTP3_ID = latest_otp(), r.get("otpId")
+    check("Y28 yeni kod farklı ve deneme hakkı yenilenir (saatte 5 kod)", code == 200 and r["attemptsLeft"] == 5 and OTP3 and r["sendsLeft"] == 2, (code, r))
     code, r = api("ayse", "POST", f"{EXP}/signature-requests/{SID}/sign", {"code": OTP3, "accept": False})
     check("Y28 açıklama onaylanmadan imza yok", code == 400, (code, r))
-    code, r = api("ayse", "POST", f"{EXP}/signature-requests/{SID}/sign", {"code": OTP3, "accept": True})
+    code, r = api("ayse", "POST", f"{EXP}/signature-requests/{SID}/sign", {"code": OTP3, "accept": True, "otpId": OTP3_ID})
     ev = (r or {}).get("evidence") or {}
-    check("Y28 doğru kodla imzalanır", code == 200 and "5070" in r["disclaimer"], (code, r))
-    check("Y28 kanıt: belge özeti, imzalayan, kanal, maskeli IP, UA özeti, bütünlük",
+    check("Y28 doğru kodla imzalanır", code == 200 and r["disclaimer"] == DISCLAIMER, (code, r))
+    check("Y28 kanıt: belge özeti, imzalayan, kanal, kısaltılmış IP, bütünlük (governance kanıtı)",
           ev.get("documentHash") == item["requestedDocumentHash"] and ev.get("signerEmployeeId") == AYSE and ev.get("otpChannel") == "InApp+Email"
-          and (ev.get("ipMasked") is None or ev["ipMasked"].endswith(".0") or ev["ipMasked"].endswith("::")) and len(ev.get("userAgentHash") or "") == 64
-          and len(ev.get("evidenceHash") or "") == 64 and ev.get("integrityOk") is True, ev)
-    db_ev = psql(f"""SELECT "SignerEmployeeId" || '|' || "DocumentHash" || '|' || coalesce("IpMasked",'-') FROM expense_signature_evidence WHERE "SignatureId" = '{SID}'""")
-    check("Y28 kanıt satırı yazıldı", db_ev.startswith(f"{AYSE}|{item['requestedDocumentHash']}|"), db_ev)
-    check("Y28 kanıtta kod/OTP özeti yok", psql(f"""SELECT row_to_json(e)::text FROM expense_signature_evidence e WHERE "SignatureId" = '{SID}'""").find(OTP3) == -1
+          and ev.get("method") == "OTP-InApp+Email" and ev.get("signatureId") == SID
+          and (ev.get("ipMasked") is None or ev["ipMasked"].endswith(".0/24") or ev["ipMasked"].endswith("/48"))
+          and len(ev.get("evidenceHash") or "") == 64 and ev.get("integrityOk") is True and ev.get("source") == "governance", ev)
+    db_ev = psql(f"""SELECT "SignerEmployeeId" || '|' || "DocumentSha256" || '|' || "Title" || '|' || "Disclaimer" FROM governance_signatures
+                     WHERE "DocumentType" = 'HrDocument' AND "DocumentId" = '{DOC}' AND "Id" = '{ev.get('id')}'""")
+    check("Y28 kanıt satırı imza motorunda (HrDocument, başlık, tek uyarı metni)",
+          db_ev == f"{AYSE}|{item['requestedDocumentHash']}|TEST-imza-{RUN}.pdf|{DISCLAIMER}", db_ev)
+    check("Y28 talep governance kanıtını gösterir (EvidenceRef)",
+          psql(f"""SELECT "EvidenceRef" FROM expense_document_signatures WHERE "Id" = '{SID}'""") == ev.get("id"))
+    check("Y28 eski kanıt tablosuna yazılmaz", psql(f"""SELECT count(*) FROM expense_signature_evidence WHERE "SignatureId" = '{SID}'""") == "0")
+    check("Y28 kanıtta kod/OTP özeti yok", psql(f"""SELECT row_to_json(e)::text FROM governance_signatures e WHERE "Id" = '{ev.get('id')}'""").find(OTP3) == -1
           and psql(f"""SELECT coalesce("OtpHash",'NULL') FROM expense_document_signatures WHERE "Id" = '{SID}'""") == "NULL")
+    check("Y28 imza denetim kaydı (HrDocument, Signed)", psql(f"""SELECT count(*) FROM audit_log WHERE "EntityType" = 'HrDocument' AND "EntityId" = '{DOC}'
+                                                              AND "Action" = 'Signed'""") == "1")
     check("Y28 aynı talep ikinci kez imzalanamaz", api("ayse", "POST", f"{EXP}/signature-requests/{SID}/sign", {"code": OTP3, "accept": True})[0] == 409)
-    err = psql(f"""UPDATE expense_signature_evidence SET "OtpChannel" = 'X' WHERE "SignatureId" = '{SID}'""")
+    err = psql(f"""UPDATE governance_signatures SET "Method" = 'X' WHERE "Id" = '{ev.get('id')}'""")
     check("Y28 kanıt değiştirilemez (tetikleyici)", "değiştirilemez" in err, err)
     err = psql(f"""UPDATE expense_documents SET "FileName" = 'degisti.pdf' WHERE "Id" = '{DOC}'""")
     check("Y28 imzalı doküman değiştirilemez", "İmzalanmış doküman değiştirilemez" in err, err)
     check("Y28 dokümanda imza zamanı", psql(f"""SELECT "SignedAt" IS NOT NULL FROM expense_documents WHERE "Id" = '{DOC}'""") == "t")
+    code, mine = api("ayse", "GET", f"{EXP}/signature-requests/mine")
+    it = next((i for i in (mine or {}).get("items", []) if i["id"] == SID), None)
+    check("Y28 çalışanın talep listesinde governance kanıtı", code == 200 and it and it["status"] == "Signed" and it["evidence"]["id"] == ev.get("id")
+          and it["evidence"]["integrityOk"], it)
+    code, gm = api("ayse", "GET", "/api/governance/documents/signatures/mine")
+    row = next((x for x in (gm or {}).get("items", []) if x["id"] == ev.get("id")), None)
+    check("Y28 İmzaladığım belgeler (governance): HrDocument satırı", code == 200 and row and row["documentType"] == "HrDocument"
+          and row["documentId"] == DOC and row["title"] == f"TEST-imza-{RUN}.pdf" and row["integrityOk"] is True
+          and row["evidenceSha256"] == ev.get("evidenceHash") and gm["disclaimer"] == DISCLAIMER, (code, row))
+    code, gm2 = api("mehmet", "GET", "/api/governance/documents/signatures/mine")
+    check("Y28 başkasının imzaladığı belge listede yok", code == 200 and all(x["id"] != ev.get("id") for x in gm2.get("items", [])), code)
+    code, _ = http("POST", "/api/governance/internal/signatures/evidence", {"tenantSlug": "demo", "documentType": "HrDocument", "documentId": DOC})
+    check("Y28 iç imza uçları dışarıdan kapalı", code in (403, 404), code)
 
     code, req2 = api("admin", "POST", f"{EXP}/{DOC}/signature-requests", {})
     check("Y28 yeniden imza yeni talep gerektirir (yeni talep açılır)", code == 200 and req2["id"] != SID and req2["status"] == "Pending", (code, req2))
+    # Belge başına saatte 5 kod sınırı talepler arasında da geçerli (bu belge için 3 kod istendi).
+    sends = []
+    for _ in range(3):
+        allow_resend()
+        c, x = api("ayse", "POST", f"{EXP}/signature-requests/{req2['id']}/otp")
+        sends.append((c, x.get("code") or x.get("sendsLeft")))
+    check("Y28 belge başına saatte en fazla 5 kod (otp_rate_limited)", sends == [(200, 1), (200, 0), (429, "otp_rate_limited")], sends)
     check("Y28 bekleyen talep iptal edilir", api("admin", "DELETE", f"{EXP}/signature-requests/{req2['id']}")[0] == 200)
+    code, r = api("ayse", "POST", f"{EXP}/signature-requests/{req2['id']}/sign", {"code": "123456", "accept": True})
+    check("Y28 iptal edilen talep imzalanamaz", code == 409, (code, r))
     code, hist = api("admin", "GET", f"{EXP}/{DOC}/signatures")
     check("Y28 İK imza geçmişi ve kanıt görünümü", code == 200 and len(hist["items"]) == 2
-          and any(i["status"] == "Signed" and i["evidence"]["integrityOk"] for i in hist["items"]), hist)
+          and any(i["status"] == "Signed" and i["evidence"]["integrityOk"] and i["evidence"]["source"] == "governance" for i in hist["items"]), hist)
     check("Y28 kanıt görüntüleme denetim kaydında", psql(f"""SELECT count(*) FROM audit_log WHERE "EntityType" = 'SignatureEvidence' AND "EntityId" = '{DOC}'
                                                            AND "Action" = 'SensitiveViewed'""") != "0")
     code, st = api("admin", "GET", f"{EXP}/signature-status")
@@ -467,14 +515,17 @@ try:
     code, r = api("admin", "DELETE", f"{EXP}/{DOC}")
     check("Y28 imzalı doküman onaysız silinemez", code == 409 and r.get("code") == "signed_document", (code, r))
     code, _ = api("admin", "DELETE", f"{EXP}/{DOC}?confirmSigned=true")
-    check("Y28 saklama sonu imha: doküman ve kanıt birlikte silinir", code == 204
-          and psql(f"""SELECT count(*) FROM expense_signature_evidence WHERE "DocumentId" = '{DOC}'""") == "0")
+    left = psql(f"""SELECT (SELECT count(*) FROM governance_signatures WHERE "DocumentType" = 'HrDocument' AND "DocumentId" = '{DOC}')
+                         + (SELECT count(*) FROM governance_signature_otps WHERE "DocumentType" = 'HrDocument' AND "DocumentId" = '{DOC}')
+                         + (SELECT count(*) FROM expense_signature_evidence WHERE "DocumentId" = '{DOC}')""")
+    check("Y28 saklama sonu imha: doküman, kodlar ve kanıt birlikte silinir", code == 204 and left == "0", (code, left))
 finally:
     cleanup()
 
 left = psql(f"""SELECT (SELECT count(*) FROM tenant_directory_users WHERE "Email" LIKE '%{RUN}@example.com' OR "UserName" LIKE 'testldap.%')
                + (SELECT count(*) FROM tenant_custom_domains WHERE "Domain" LIKE '%{RUN}.hr360-test.com.tr')
                + (SELECT count(*) FROM expense_documents WHERE "FileName" = 'TEST-imza-{RUN}.pdf')
+               + (SELECT count(*) FROM governance_signatures WHERE "DocumentType" = 'HrDocument' AND "Title" = 'TEST-imza-{RUN}.pdf')
                + (SELECT count(*) FROM employee_employees WHERE "Email" LIKE 'test.scim%{RUN}@example.com' OR "Email" LIKE 'testldap.%@example.com')""")
 check("temizlik: test satırı kalmadı", left == "0", left)
 check("temizlik: test Keycloak hesabı kalmadı",
