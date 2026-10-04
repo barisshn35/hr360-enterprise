@@ -44,7 +44,7 @@ iletişim **Türkçe**. Ürün belgeleri: `README.md`, `docs/` (mimari, güvenli
   - integration: 23 Python betiği (`tests/integration/test_*.py`), chatmock ve OpenLDAP'ı kendisi başlatır.
     Her betik `FAILS: n` yazar. Kullanıcılar `tests/credentials.json` (ayse=çalışan, mehmet=yönetici,
     admin=İK+şirket yöneticisi, platform=platform yöneticisi). Testler sabit demo verisine dayanır
-    (Ayşe `8c7dd608-46e2-4bee-900f-6a175b21d3b2`, Mühendislik departmanı) — bkz. "Demo verisi".
+    (Ayşe `0e879b9e-d72b-489f-aa5b-8291e0bcbefb`, Mühendislik departmanı; temiz kurulumda `tests/support/seed_demo.py`) — bkz. "Demo verisi".
   - e2e: Playwright (`tests/e2e`), `pip install pytest playwright && playwright install --with-deps chromium`.
 - Arayüz tip kontrolü: `cd apps/web && npx tsc -b --noEmit`
 - Çeviri: `cd apps/web && node scripts/i18n-check.mjs --missing` (eksik anahtarlar), ekledikten sonra

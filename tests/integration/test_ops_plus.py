@@ -24,7 +24,7 @@ from common import AYSE, FAIL, api, check  # noqa: E402
 ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
 FAIL.clear()
 RUN = uuid.uuid4().hex[:6].upper()
-MEHMET = "64acb636-275c-4519-a7e5-979f2e54f209"
+MEHMET = "3ab24e3e-cb06-40ab-934c-9ff7eab91fb6"
 ON = "/api/onboarding"
 EN = "/api/engagement"
 TS = "/api/timeshift"
@@ -307,17 +307,17 @@ try:
     acts = set(psql(f"""SELECT DISTINCT "Action" FROM audit_log WHERE "EntityType" = 'OffboardingCase' AND "EntityId" = '{C}'""").split())
     check("G15 her adım denetim kaydında", {"RetentionPlanned", "AssetOverride", "AssetsVerified", "AccountDisabled", "Completed"} <= acts, acts)
     wget = subprocess.run(["docker", "exec", "hr360-gateway-1", "wget", "-qO-", "--header", "X-Internal-Token: yanlis", "--header", "Content-Type: application/json",
-                           "--post-data", json.dumps({"tenantSlug": "demo", "keycloakUserId": "0a96ea10-6c3f-4e1e-8754-295d43d2e8fa"}),
+                           "--post-data", json.dumps({"tenantSlug": "demo", "keycloakUserId": "e093f5bb-67a4-4061-acdc-ce0c8860a48b"}),
                            "http://tenant-service:8080/internal/users/disable"], capture_output=True, text=True)
-    check("G15 iç uç yanlış jetonu reddeder (404)", "404" in wget.stderr and psql("SELECT enabled FROM user_entity WHERE id = '0a96ea10-6c3f-4e1e-8754-295d43d2e8fa'", db="keycloak") == "t",
+    check("G15 iç uç yanlış jetonu reddeder (404)", "404" in wget.stderr and psql("SELECT enabled FROM user_entity WHERE id = 'e093f5bb-67a4-4061-acdc-ce0c8860a48b'", db="keycloak") == "t",
           wget.stderr[:200])
     wget = subprocess.run(["docker", "exec", "hr360-gateway-1", "wget", "-qO-", "--header", "Content-Type: application/json", "--post-data",
-                           json.dumps({"tenantSlug": "demo", "keycloakUserId": "0a96ea10-6c3f-4e1e-8754-295d43d2e8fa"}),
+                           json.dumps({"tenantSlug": "demo", "keycloakUserId": "e093f5bb-67a4-4061-acdc-ce0c8860a48b"}),
                            "http://tenant-service:8080/internal/users/disable"], capture_output=True, text=True)
     check("G15 iç uç jetonsuz çağrıyı reddeder", "404" in wget.stderr, wget.stderr[:200])
-    code, body = api("admin", "POST", "/internal/users/disable", {"tenantSlug": "demo", "keycloakUserId": "0a96ea10-6c3f-4e1e-8754-295d43d2e8fa"})
+    code, body = api("admin", "POST", "/internal/users/disable", {"tenantSlug": "demo", "keycloakUserId": "e093f5bb-67a4-4061-acdc-ce0c8860a48b"})
     check("G15 iç uç ağ geçidinden erişilemez", not (isinstance(body, dict) and "disabled" in body)
-          and psql("SELECT enabled FROM user_entity WHERE id = '0a96ea10-6c3f-4e1e-8754-295d43d2e8fa'", db="keycloak") == "t", (code, str(body)[:100]))
+          and psql("SELECT enabled FROM user_entity WHERE id = 'e093f5bb-67a4-4061-acdc-ce0c8860a48b'", db="keycloak") == "t", (code, str(body)[:100]))
 
     # ================================================================== G18 anket anonimliği, eNPS, duygu
     def mk_survey(title, closes=None):

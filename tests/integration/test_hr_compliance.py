@@ -20,9 +20,9 @@ from common import AYSE, FAIL, api, check, http  # noqa: E402
 
 G = "/api/governance"
 ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
-MEHMET = "64acb636-275c-4519-a7e5-979f2e54f209"
-ZEYNEP = "62c6dc91-4ea5-40f0-a94c-67b6c4b07efd"
-ENG = "d425ab4e-ac69-46dc-a459-c96a886f0a99"  # Mühendislik (ayse + başı mehmet)
+MEHMET = "3ab24e3e-cb06-40ab-934c-9ff7eab91fb6"
+ZEYNEP = "7e5bd452-c36f-4555-9b23-06df398e73b6"
+ENG = "9d282a19-fe76-40c7-af56-757075718286"  # Mühendislik (ayse + başı mehmet)
 OTHER_DEPT = "00000000-0000-4000-8000-00000000d0d0"
 TOKEN = "tstkelime%05d" % random.randint(0, 99999)
 FAIL.clear()
