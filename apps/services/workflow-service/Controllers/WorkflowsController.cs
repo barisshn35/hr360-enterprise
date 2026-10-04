@@ -52,7 +52,40 @@ public class WorkflowsController : ControllerBase
         }
         if (status.HasValue) query = query.Where(w => w.Status == status.Value);
         if (requesterId.HasValue) query = query.Where(w => w.RequesterEmployeeId == requesterId.Value);
-        return Ok(await query.OrderByDescending(w => w.CreatedAt).ToListAsync());
+        var list = await query.AsNoTracking().OrderByDescending(w => w.CreatedAt).ToListAsync(ct);
+        await RedactHiddenFieldsAsync(list, ct);
+        return Ok(list);
+    }
+
+    /// <summary>
+    /// KVKK: akış tanımında onaycılardan gizlenen alanlar (ör. izin gerekçesi) talep sahibi ve
+    /// İK dışındakilere gösterilmez. Liste, ayrıntı ve geciken uçlarının hepsinde uygulanır
+    /// (önceden yalnızca ayrıntıda uygulanıyordu; liste ucu gizli alanı döndürüyordu).
+    /// Varlıklar izlenmeyen (AsNoTracking) olmalıdır.
+    /// </summary>
+    private async Task RedactHiddenFieldsAsync(IReadOnlyCollection<WorkflowRequest> items, CancellationToken ct)
+    {
+        if (IsHr || items.Count == 0 || items.All(w => string.IsNullOrEmpty(w.Payload))) return;
+        var me = await _employees.FindMyEmployeeIdAsync(ct);
+        var types = items.Select(w => w.Type).Distinct().ToList();
+        var defs = await _db.Definitions.AsNoTracking().Where(d => types.Contains(d.Type) && d.IsActive)
+            .Select(d => new { d.Type, d.HiddenFieldsJson }).ToListAsync(ct);
+        var hiddenByType = defs.GroupBy(d => d.Type).ToDictionary(g => g.Key,
+            g => JsonSerializer.Deserialize<List<string>>(g.First().HiddenFieldsJson) ?? new List<string>());
+        foreach (var wf in items)
+        {
+            if (wf.Payload is not { Length: > 0 } || me == wf.RequesterEmployeeId) continue;
+            if (!hiddenByType.TryGetValue(wf.Type, out var fields) || fields.Count == 0) continue;
+            try
+            {
+                var node = System.Text.Json.Nodes.JsonNode.Parse(wf.Payload)?.AsObject();
+                if (node is null) continue;
+                foreach (var k in node.Select(p => p.Key).ToList())
+                    if (fields.Any(f => string.Equals(f, k, StringComparison.OrdinalIgnoreCase))) node.Remove(k);
+                wf.Payload = node.ToJsonString();
+            }
+            catch (JsonException) { }
+        }
     }
 
     [HttpGet("{id}")]
@@ -67,27 +100,8 @@ public class WorkflowsController : ControllerBase
         }
         var wf = await q.AsNoTracking().FirstOrDefaultAsync(w => w.Id == id, ct);
         if (wf is null) return NotFound();
-        // KVKK: akış tanımında onaycılardan gizlenen alanlar (ör. izin gerekçesi) talep sahibi ve
-        // İK dışındakilere gösterilmez.
-        if (!IsHr && wf.Payload is { Length: > 0 } && await _employees.FindMyEmployeeIdAsync(ct) != wf.RequesterEmployeeId)
-        {
-            var hidden = await _db.Definitions.AsNoTracking().Where(d => d.Type == wf.Type && d.IsActive).Select(d => d.HiddenFieldsJson).FirstOrDefaultAsync(ct);
-            var fields = hidden is null ? new List<string>() : JsonSerializer.Deserialize<List<string>>(hidden) ?? new();
-            if (fields.Count > 0)
-            {
-                try
-                {
-                    var node = System.Text.Json.Nodes.JsonNode.Parse(wf.Payload)?.AsObject();
-                    if (node is not null)
-                    {
-                        foreach (var k in node.Select(p => p.Key).ToList())
-                            if (fields.Any(f => string.Equals(f, k, StringComparison.OrdinalIgnoreCase))) node.Remove(k);
-                        wf.Payload = node.ToJsonString();
-                    }
-                }
-                catch (JsonException) { }
-            }
-        }
+        // KVKK: akış tanımında onaycılardan gizlenen alanlar talep sahibi ve İK dışındakilere gösterilmez.
+        await RedactHiddenFieldsAsync(new[] { wf }, ct);
         return Ok(wf);
     }
 
@@ -544,7 +558,9 @@ public class WorkflowsController : ControllerBase
         var overdue = await q
             .Where(w => w.Status == WorkflowStatus.Pending && w.SlaDueAt != null && w.SlaDueAt < now)
             .Include(w => w.Steps)
-            .ToListAsync();
+            .AsNoTracking()
+            .ToListAsync(ct);
+        await RedactHiddenFieldsAsync(overdue, ct);
         return Ok(overdue);
     }
 }

@@ -44,11 +44,19 @@ public class ScormController : ControllerBase
         return Ok(await _db.ScormPackages.AsNoTracking().OrderByDescending(p => p.CreatedAt).ToListAsync(ct));
     }
 
+    /// <summary>Çok parçalı form: "file" (zip) ve "title". Swagger [FromForm] IFormFile'ı ancak bir DTO içinde belgeleyebilir.</summary>
+    public sealed class ScormUploadForm
+    {
+        public IFormFile? File { get; set; }
+        public string? Title { get; set; }
+    }
+
     [HttpPost("packages")]
     [RequestSizeLimit(ScormPackageReader.MaxUploadBytes + 1024 * 1024)]
     [RequestFormLimits(MultipartBodyLengthLimit = ScormPackageReader.MaxUploadBytes + 1024 * 1024)]
-    public async Task<IActionResult> Upload([FromForm] IFormFile? file, [FromForm] string? title, CancellationToken ct)
+    public async Task<IActionResult> Upload([FromForm] ScormUploadForm form, CancellationToken ct)
     {
+        var (file, title) = (form.File, form.Title);
         if (!IsHr) return Forbid();
         if (file is null || file.Length == 0) return BadRequest(new { message = "Zip dosyası seçin" });
         if (file.Length > ScormPackageReader.MaxUploadBytes) return BadRequest(new { message = "Paket en fazla 50 MB olabilir" });

@@ -137,27 +137,31 @@ public class DepartmentsController : ControllerBase
         if (department is null) return NotFound();
 
         var childDepartmentCount = await _db.Departments.CountAsync(d => d.ParentDepartmentId == id);
-        var teamCount = await _db.Teams.CountAsync(t => t.DepartmentId == id);
+        // Yalnızca AKTİF ekipler engeller; pasif ekipler (ve üyelik geçmişleri) FK ON DELETE CASCADE ile
+        // departmanla birlikte silinir.
+        var teamCount = await _db.Teams.CountAsync(t => t.DepartmentId == id && t.IsActive);
 
-        // employee_assignments ayri bir mikroservisin tablosu ama ayni
-        // fiziksel veritabanini paylasiyoruz - salt okunur bir sayim
-        // icin ayri bir HTTP servisi kurmaya gerek yok.
+        // employee_assignments employee-service'in tablosu; aynı fiziksel veritabanında
+        // yalnızca OKUNUR (salt sayım). Yalnızca bugün geçerli/gelecekteki atamalar engeller;
+        // kapanmış (EffectiveTo geçmişte) atamalar engellemez. Bu sütunda FK yoktur: geçmiş
+        // atama satırları değiştirilmez, departman kimliğini tarihçe olarak korur.
         var assignedEmployeeCount = await _db.Database
             .SqlQuery<int>($@"SELECT COUNT(*)::int AS ""Value"" FROM employee_assignments
-                               WHERE ""DepartmentId"" = {id}")
+                               WHERE ""DepartmentId"" = {id}
+                                 AND (""EffectiveTo"" IS NULL OR ""EffectiveTo"" >= CURRENT_DATE)")
             .FirstAsync();
 
         var blockers = new List<string>();
         if (childDepartmentCount > 0) blockers.Add($"{childDepartmentCount} alt departman");
-        if (teamCount > 0) blockers.Add($"{teamCount} ekip");
-        if (assignedEmployeeCount > 0) blockers.Add($"{assignedEmployeeCount} atanmis calisan");
+        if (teamCount > 0) blockers.Add($"{teamCount} aktif ekip");
+        if (assignedEmployeeCount > 0) blockers.Add($"{assignedEmployeeCount} aktif çalışan ataması");
 
         if (blockers.Count > 0)
         {
             return Conflict(new
             {
-                message = "Departman silinemedi: once su kayitlarin tasinmasi ya da " +
-                          $"kaldirilmasi gerekiyor: {string.Join(", ", blockers)}.",
+                message = "Departman silinemedi: önce şu kayıtların taşınması ya da " +
+                          $"kaldırılması gerekiyor: {string.Join(", ", blockers)}.",
                 childDepartmentCount,
                 teamCount,
                 assignedEmployeeCount,

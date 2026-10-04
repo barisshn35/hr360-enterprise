@@ -117,7 +117,8 @@
   --accent-foreground: 0 0% 96%;
 
   --destructive: 0 72% 60%;
-  --destructive-foreground: 0 0% 100%;
+  /* Koyu temada kırmızı üzerinde beyaz metin 3,8:1 kalıyordu (WCAG 4,5:1 altı); koyu metin ≈5:1. */
+  --destructive-foreground: 0 0% 6%;
 
   --success: 152 65% 52%;
   --warning: 38 92% 60%;

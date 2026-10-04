@@ -8,7 +8,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { TextField } from '@/components/ui/Field'
 import { InfoNote } from '@/components/ui/States'
 import { Tabs } from '@/components/ui/Tabs'
-import { formatMoney } from '@/lib/format'
+import { formatMoney, parseDecimal } from '@/lib/format'
 import { MONTHS_TR, PARAMS_2026, grossToNetYear, netToGrossYear } from '@/lib/payroll'
 import { cn } from '@/lib/utils'
 import { Metric, PlanGate } from '@/features/shared/kit'
@@ -22,8 +22,14 @@ export function PayrollSimPage() {
   const [amount, setAmount] = useState('75000')
   const [discount, setDiscount] = useState(true)
   const [minWage, setMinWage] = useState(String(PARAMS_2026.minWageGross))
-  const params = useMemo(() => ({ ...PARAMS_2026, minWageGross: Number(minWage) || PARAMS_2026.minWageGross, sgkCeiling: (Number(minWage) || PARAMS_2026.minWageGross) * 9 }), [minWage])
-  const value = Math.max(0, Number(amount.replace(/\./g, '').replace(',', '.')) || 0)
+  // Tutarlar tek yardımcıyla ayrıştırılır (58.080,27 ve 58080.27 ikisi de doğru); geçersiz/negatif giriş 0 sayılmaz, alan hatası gösterilir.
+  const parsedAmount = parseDecimal(amount)
+  const amountError = parsedAmount === null ? tx('Geçerli bir tutar girin.') : parsedAmount < 0 ? tx('Tutar negatif olamaz.') : undefined
+  const parsedMinWage = parseDecimal(minWage)
+  const minWageError = parsedMinWage === null || parsedMinWage <= 0 ? tx('Sıfırdan büyük geçerli bir tutar girin.') : undefined
+  const minWageValue = minWageError ? PARAMS_2026.minWageGross : parsedMinWage!
+  const params = useMemo(() => ({ ...PARAMS_2026, minWageGross: minWageValue, sgkCeiling: minWageValue * 9 }), [minWageValue])
+  const value = amountError ? 0 : parsedAmount!
   const rows = useMemo(() => (mode === 'brut' ? grossToNetYear(value, params, discount) : netToGrossYear(value, params, discount)), [mode, value, params, discount])
   const sum = (k: keyof (typeof rows)[number]) => rows.reduce((a, r) => a + (r[k] as number), 0)
   const jan = rows[0]
@@ -39,12 +45,12 @@ export function PayrollSimPage() {
             <PanelHead title={<span className="flex items-center gap-2"><Calculator className="size-4 text-primary" />{' '}{tx('Hesap')}</span>} />
             <PanelBody className="space-y-4">
               <Tabs label={tx('Yön')} value={mode} onChange={setMode} tabs={[{ key: 'brut', label: tx('Brütten nete') }, { key: 'net', label: tx('Netten brüte') }]} />
-              <TextField label={mode === 'brut' ? tx('Aylık brüt ücret (TL)') : tx('Hedef aylık net (TL)')} inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
+              <TextField label={mode === 'brut' ? tx('Aylık brüt ücret (TL)') : tx('Hedef aylık net (TL)')} inputMode="decimal" value={amount} error={amountError} onChange={(e) => setAmount(e.target.value)} />
               <label className="flex items-center gap-2 text-[13px]"><Checkbox checked={discount} onCheckedChange={(v) => setDiscount(v === true)} />{' '}{tx('İşverene 5 puanlık SGK teşviki')}</label>
               <details className="text-[12.5px]">
                 <summary className="cursor-pointer text-muted-foreground">{tx('Parametreler (2026)')}</summary>
                 <div className="mt-3 space-y-3">
-                  <TextField label={tx('Brüt asgari ücret')} value={minWage} onChange={(e) => setMinWage(e.target.value)} hint={tx('SGK tavanı = asgari ücret × 9')} />
+                  <TextField label={tx('Brüt asgari ücret')} inputMode="decimal" value={minWage} error={minWageError} onChange={(e) => setMinWage(e.target.value)} hint={tx('SGK tavanı = asgari ücret × 9')} />
                   <ul className="space-y-0.5 text-muted-foreground">
                     <li>{tx('SGK işçi %14 + işsizlik %1 · işveren %21,75 + %2')}</li>
                     <li>{tx('SGK tavanı {0}', [tl(params.sgkCeiling)])}</li>
@@ -57,7 +63,8 @@ export function PayrollSimPage() {
           </Panel>
           <InfoNote><Info className="mr-1 inline size-3.5" />{' '}{tx('Simülasyondur. Engellilik indirimi, BES, sendika aidatı, yan haklar ve kıst ay hesabı dahil değildir.')}</InfoNote>
         </div>
-        <div className="min-w-0 space-y-5">
+        {/* Geçersiz tutarda sonuçlar 0 TL gibi gerçekmiş görünmesin: soluk gösterilir. */}
+        <div className={cn('min-w-0 space-y-5', amountError && 'pointer-events-none opacity-40')} aria-hidden={amountError ? true : undefined}>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <Metric label={mode === 'brut' ? tx('Ocak net') : tx('Ocak brüt')} value={tl(mode === 'brut' ? jan.net : jan.gross)} />
             <Metric label={mode === 'brut' ? tx('Aralık net') : tx('Aralık brüt')} value={tl(mode === 'brut' ? dec.net : dec.gross)} hint={tx('Dilim %{0}', [Math.round(dec.bracketRate * 100)])} tone={mode === 'brut' && dec.net < jan.net ? 'warn' : undefined} />

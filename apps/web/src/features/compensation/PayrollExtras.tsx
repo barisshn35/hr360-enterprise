@@ -6,6 +6,7 @@ import { Panel, PanelBody, PanelHead } from '@/components/ui/Panel'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Modal } from '@/components/ui/Modal'
+import { useConfirm } from '@/components/ui/Confirm'
 import { SelectField, TextAreaField, TextField } from '@/components/ui/Field'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { EmptyState, InfoNote, RowsSkeleton } from '@/components/ui/States'
@@ -302,6 +303,8 @@ function Worksheet({ cycle }: { cycle: RaiseCycle }) {
   const decide = useAction((approve: boolean) => payrollExtrasApi.decideProposals(cycle.id, pending, approve), { success: (r) => tx('{0} öneri karara bağlandı', [r.decided]), invalidate: [['raise']] })
   const apply = useAction(() => payrollExtrasApi.applyCycle(cycle.id), { success: (r) => tx('{0} çalışanın ücreti güncellendi', [r.applied]), invalidate: [['raise']] })
   const status = useAction((s: RaiseCycle['status']) => payrollExtrasApi.setCycleStatus(cycle.id, s), { invalidate: [['raise']] })
+  const approved = useMemo(() => (q.data?.rows ?? []).filter((r) => r.proposal?.status === 'Approved').length, [q.data])
+  const confirm = useConfirm()
   if (q.isPending) return <RowsSkeleton />
   const d = q.data!
   const editable = cycle.status === 'Open'
@@ -317,7 +320,14 @@ function Worksheet({ cycle }: { cycle: RaiseCycle }) {
           {cycle.status === 'Draft' && <Button onClick={() => status.mutate('Open')}>{tx('Önerilere aç')}</Button>}
           {cycle.status === 'Open' && <Button variant="outline" disabled={!pending.length} onClick={() => decide.mutate(true)}><Check className="size-4" />{' '}{tx('Bekleyenleri onayla ({0})', [pending.length])}</Button>}
           {cycle.status === 'Open' && <Button variant="outline" disabled={!pending.length} onClick={() => decide.mutate(false)}><X className="size-4" />{' '}{tx('Bekleyenleri reddet')}</Button>}
-          {cycle.status !== 'Closed' && <Button onClick={() => apply.mutate(undefined)} disabled={apply.isPending}>{tx('Onaylıları uygula ve kapat')}</Button>}
+          {/* Yalnızca öneriye açık dönemde: onaylı öneriler ücret kaydına yazılır ve dönem kapanır (geri alınamaz). */}
+          {cycle.status === 'Open' && <Button disabled={apply.isPending} onClick={async () => {
+            if (await confirm({
+              title: tx('Onaylı öneriler uygulansın mı?'),
+              note: tx('{0} çalışanın ücret kaydı güncellenir ve "{1}" dönemi kapanır. Bu işlem geri alınamaz.', [approved, cycle.name]),
+              action: tx('Uygula ve kapat'),
+            })) apply.mutate(undefined)
+          }}>{tx('Onaylıları uygula ve kapat')}</Button>}
         </div>
       )}
       <InfoNote>{tx('Ücretler yalnızca İK ve ilgili bölüm yöneticisine görünür; bu ekranın her açılışı erişim kaydına yazılır.')}</InfoNote>

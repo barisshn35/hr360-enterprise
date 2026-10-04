@@ -68,6 +68,19 @@ function LlmCard() {
 }
 
 /* ------------------------------------------------------------------ CV */
+// Etkin sınır gateway'deki client_max_body_size 3m (ML servisi 5 MB'a izin verse de nginx 413 döner);
+// çok parçalı gövde ek yükü için küçük bir pay bırakılır.
+const CV_MAX_BYTES = 3 * 1024 * 1024 - 32 * 1024
+const CV_EXT = /\.(pdf|docx|txt)$/i
+
+/** Yüklemeden önce uzantı ve boyut denetimi; sorun yoksa null. */
+function cvFileProblem(f: File): string | null {
+  if (!CV_EXT.test(f.name)) return tx('Desteklenen biçimler: PDF, DOCX, TXT')
+  if (f.size > CV_MAX_BYTES) return tx('Dosya çok büyük (en fazla 3 MB).')
+  if (f.size === 0) return tx('Dosya boş.')
+  return null
+}
+
 function CvTool() {
   const toast = useToast()
   const [res, setRes] = useState<CvResult | null>(null)
@@ -78,6 +91,10 @@ function CvTool() {
     return recruitmentApi.createCandidate({ firstName: first, lastName: rest.join(' ') || '-', email: res!.email ?? '', phone: res!.phone ?? undefined, source: tx('CV yükleme') })
   }, { success: tx('Aday havuzuna eklendi'), invalidate: [['recruitment']] })
   const run = async (f: File) => {
+    // Başarısız yüklemede önceki CV'nin sonucu ekranda kalmasın (yanlış adaya kaydedilmesin).
+    setRes(null)
+    const problem = cvFileProblem(f)
+    if (problem) { toast.stop(problem); return }
     setBusy(true)
     try { setRes(await aiApi.parseCv(f)) } catch (e) { toast.stop(errMsg(e)) } finally { setBusy(false) }
   }
@@ -89,8 +106,8 @@ function CvTool() {
           {busy ? <ScanSearch className="size-6" /> : <FileUp className="size-6" />}
         </motion.span>
         <p className="text-[14px] font-medium">{busy ? tx('Okunuyor…') : tx('CV dosyasını bırakın veya seçin')}</p>
-        <p className="text-[12px] text-muted-foreground">{tx('PDF, DOCX veya TXT · en fazla 5 MB')}</p>
-        <input type="file" accept=".pdf,.docx,.txt" className="hidden" onChange={(e) => e.target.files?.[0] && void run(e.target.files[0])} />
+        <p className="text-[12px] text-muted-foreground">{tx('PDF, DOCX veya TXT · en fazla 3 MB')}</p>
+        <input type="file" accept=".pdf,.docx,.txt" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void run(f) }} />
       </label>
       <Panel>
         <PanelHead title={tx('Ayrıştırılan bilgiler')} action={res?.email && <Button size="sm" onClick={() => save.mutate(undefined)} disabled={save.isPending}>{tx('Aday olarak kaydet')}</Button>} />
@@ -212,6 +229,8 @@ function MatchTool() {
   const addFiles = async (files: FileList) => {
     setBusy(true)
     for (const f of Array.from(files).slice(0, 20)) {
+      const problem = cvFileProblem(f)
+      if (problem) { toast.stop(`${f.name}: ${problem}`); continue }
       try {
         const r = await aiApi.parseCv(f)
         setCvs((c) => [...c, { id: `${f.name}-${c.length}`, name: r.name ?? f.name, text: [r.summary, r.skills.join(' '), r.education, r.universities.join(' '), r.languages.join(' ')].join(' ') }])

@@ -19,6 +19,7 @@ import { useEmployees, useOnboardingPlans } from '@/api/queries'
 import { planStatusLabels, type OnboardingPlan, type PlanStatus } from '@/api/types'
 import { formatDate, fullName } from '@/lib/format'
 import { tx } from '@/lib/i18n'
+import { localISODate } from '@/lib/dates'
 import { PersonSelect } from '@/features/shared/kit'
 import { TemplatesPanel, WelcomeSettingsPanel } from './OnboardingOps'
 
@@ -76,6 +77,11 @@ function NewPlanModal({ open, onClose }: { open: boolean; onClose: () => void })
     e.preventDefault()
     if (!employeeId) return setError(tx('Çalışan seçilmeli.'))
     if (!startDate) return setError(tx('Başlangıç tarihi zorunlu.'))
+    // Sunucuyla aynı aralık: 01.01.1950 – bugün + 1 yıl.
+    const max = new Date()
+    max.setFullYear(max.getFullYear() + 1)
+    if (startDate < '1950-01-01' || startDate > localISODate(max))
+      return setError(tx('Başlangıç tarihi 01.01.1950 ile bugünden bir yıl sonrası arasında olmalı.'))
     setError(undefined)
     mutation.mutate()
   }

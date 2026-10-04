@@ -95,3 +95,36 @@ export function formatMoney(
     maximumFractionDigits: 2,
   }).format(value)
 }
+
+/**
+ * Kullanıcının yazdığı ondalık sayıyı ayrıştırır: "58.080,27", "58080,27",
+ * "58080.27", "58,080.27", "1.000.000" hepsi doğru okunur. Kural: hem '.' hem
+ * ',' varsa sonuncusu ondalıktır; yalnızca ',' varsa (tek) ondalıktır; yalnızca
+ * '.' varsa ve son noktadan sonra tam 3 hane yoksa ondalıktır. Sayı değilse null.
+ */
+export function parseDecimal(input: string): number | null {
+  let s = input.trim().replace(/[\s ₺]|TL/gi, '')
+  if (!s) return null
+  const neg = s.startsWith('-')
+  if (neg || s.startsWith('+')) s = s.slice(1)
+  if (!/^[\d.,]+$/.test(s) || !/\d/.test(s)) return null
+  const lastDot = s.lastIndexOf('.')
+  const lastComma = s.lastIndexOf(',')
+  let dec: '.' | ',' | null = null
+  if (lastDot >= 0 && lastComma >= 0) dec = lastDot > lastComma ? '.' : ','
+  else if (lastComma >= 0) dec = s.indexOf(',') === lastComma ? ',' : null
+  else if (lastDot >= 0) dec = s.indexOf('.') === lastDot && s.length - lastDot - 1 !== 3 ? '.' : null
+  let intPart = s
+  let frac = ''
+  if (dec) {
+    const at = s.lastIndexOf(dec)
+    intPart = s.slice(0, at)
+    frac = s.slice(at + 1)
+    if (/[.,]/.test(frac)) return null
+  }
+  intPart = intPart.replace(/[.,]/g, '')
+  if (!intPart && !frac) return null
+  const n = Number(`${intPart || '0'}.${frac || '0'}`)
+  if (!Number.isFinite(n)) return null
+  return neg ? -n : n
+}

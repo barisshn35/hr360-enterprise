@@ -199,7 +199,11 @@ function ModuleModal({ courseId, initial, onClose }: { courseId: string; initial
   })
   const save = useAction(
     () => {
-      const body: ModuleInput = { ...f, maxAttempts: f.maxAttempts ? Number(f.maxAttempts) : null, passMarkPercent: Number(f.passMarkPercent) }
+      // Sunucu ScormPackageId'yi Guid? bekler: boş metin JSON'da çözülemez ve tüm istek 400 olur.
+      const body: ModuleInput = {
+        ...f, maxAttempts: f.maxAttempts ? Number(f.maxAttempts) : null, passMarkPercent: Number(f.passMarkPercent),
+        scormPackageId: f.kind === 'Scorm' && f.scormPackageId ? f.scormPackageId : null,
+      }
       return initial ? learningContentApi.updateModule(courseId, initial.id, body) : learningContentApi.createModule(courseId, body)
     },
     { success: tx('Modül kaydedildi'), invalidate: [['learning', 'modules', courseId]], onDone: onClose },
@@ -287,7 +291,7 @@ function QuizEditor({ courseId, m, onClose }: { courseId: string; m: CourseModul
   )
 }
 
-function ManagePanel({ courseId, modules }: { courseId: string; modules: CourseModule[] }) {
+function ManagePanel({ courseId, modules, validityMonths }: { courseId: string; modules: CourseModule[]; validityMonths?: number | null }) {
   const [edit, setEdit] = useState<CourseModule | 'new' | null>(null)
   const [quizFor, setQuizFor] = useState<CourseModule | null>(null)
   const del = useAction((id: string) => learningContentApi.deleteModule(courseId, id), { success: tx('Modül silindi'), invalidate: [['learning', 'modules', courseId]] })
@@ -298,8 +302,12 @@ function ManagePanel({ courseId, modules }: { courseId: string; modules: CourseM
   const saveTags = useAction(() => learningContentApi.saveCourseTags(courseId, current), {
     success: tx('Yetkinlik etiketleri kaydedildi'), invalidate: [['learning', 'course-tags', courseId]], onDone: () => setDraft(null),
   })
-  const [validity, setValidity] = useState('')
-  const saveValidity = useAction(() => learningContentApi.courseSettings(courseId, validity ? Number(validity) : null), { success: tx('Sertifika geçerliliği kaydedildi') })
+  // Kullanıcı yazana kadar kurs verisindeki değer gösterilir (veri sonradan gelse de dolar).
+  const [validityDraft, setValidity] = useState<string | null>(null)
+  const validity = validityDraft ?? (validityMonths != null ? String(validityMonths) : '')
+  const saveValidity = useAction(() => learningContentApi.courseSettings(courseId, validity ? Number(validity) : null), {
+    success: tx('Sertifika geçerliliği kaydedildi'), invalidate: [['learning', 'courses', 'detail', courseId]], onDone: () => setValidity(null),
+  })
   return (
     <div className="space-y-5">
       <Panel>
@@ -499,7 +507,7 @@ export function CoursePlayerPage() {
       )}
 
       {tab === 'sonuclar' && isManager && <ResultsPanel courseId={courseId} />}
-      {tab === 'yonetim' && isHr && <ManagePanel courseId={courseId} modules={list} />}
+      {tab === 'yonetim' && isHr && <ManagePanel courseId={courseId} modules={list} validityMonths={course.data?.certificateValidityMonths} />}
     </div>
   )
 }

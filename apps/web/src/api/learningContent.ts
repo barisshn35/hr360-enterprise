@@ -115,7 +115,7 @@ export interface ModuleInput {
   textBody?: string
   passMarkPercent?: number
   maxAttempts?: number | null
-  scormPackageId?: string
+  scormPackageId?: string | null
 }
 
 export interface QuizOption {

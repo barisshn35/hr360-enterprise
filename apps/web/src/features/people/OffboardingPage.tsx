@@ -13,6 +13,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge'
 import { EmptyState, ErrorState, InfoNote, RowsSkeleton } from '@/components/ui/States'
 import { engagementApi, offboardingReasonLabels, type ExitInterview, type OffboardingReason } from '@/api/engagement'
 import { useAuth } from '@/auth/useAuth'
+import { useEmployee } from '@/api/queries'
 import { formatDate, formatMoney } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { Initials, PersonSelect, PlanGate, isoDate, useAction } from '@/features/shared/kit'
@@ -24,13 +25,23 @@ function StartModal({ onClose }: { onClose: () => void }) {
   const [day, setDay] = useState(isoDate(new Date(Date.now() + 14 * 86400000)))
   const [reason, setReason] = useState<OffboardingReason>('Resignation')
   const start = useAction(() => engagementApi.startOffboarding({ employeeId: emp, lastWorkingDay: day, reason }), { success: tx('Ayrılış süreci başlatıldı'), invalidate: [['offboarding']], onDone: onClose })
+  // Sunucuyla aynı kural: son iş günü ≥ işe giriş, ≤ bugün + 1 yıl (geçmiş tarih imha planını da geçmişe çeker).
+  const hire = useEmployee(emp || undefined).data?.hireDate?.slice(0, 10)
+  const maxDay = isoDate(new Date(new Date().setFullYear(new Date().getFullYear() + 1)))
+  const dayError = !day
+    ? tx('Son iş günü zorunlu.')
+    : hire && day < hire
+      ? tx('Son iş günü işe giriş tarihinden önce olamaz.')
+      : day > maxDay
+        ? tx('Son iş günü en fazla bir yıl sonrası olabilir.')
+        : undefined
   return (
     <Modal open onClose={onClose} title={tx('Ayrılış süreci başlat')} note={tx('Açık zimmetler iade listesine otomatik eklenir; süreç tamamlanınca giriş hesabı kapatılır.')}
-      footer={<><Button variant="outline" onClick={onClose}>{tx('Vazgeç')}</Button><Button disabled={!emp || start.isPending} onClick={() => start.mutate(undefined)}>{tx('Başlat')}</Button></>}>
+      footer={<><Button variant="outline" onClick={onClose}>{tx('Vazgeç')}</Button><Button disabled={!emp || !!dayError || start.isPending} onClick={() => start.mutate(undefined)}>{tx('Başlat')}</Button></>}>
       <div className="space-y-4">
         <PersonSelect label={tx('Çalışan')} value={emp} onChange={setEmp} />
         <div className="grid gap-4 sm:grid-cols-2">
-          <TextField label={tx('Son iş günü')} type="date" value={day} onChange={(e) => setDay(e.target.value)} />
+          <TextField label={tx('Son iş günü')} type="date" min={hire} max={maxDay} value={day} onChange={(e) => setDay(e.target.value)} error={dayError} />
           <SelectField label={tx('Ayrılış nedeni')} value={reason} onChange={(v) => setReason(v as OffboardingReason)} options={(Object.keys(offboardingReasonLabels) as OffboardingReason[]).map((k) => ({ value: k, label: offboardingReasonLabels[k] }))} />
         </div>
       </div>

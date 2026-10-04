@@ -84,6 +84,9 @@ export interface AnalyticsOverview {
   departments: Array<{ department: string; headcount: number }>
   tenure: Array<{ bucket: string; count: number }>
   expense: Array<{ month: string; amount: number; claims: number }>
+  /** KVKK: küçük grup gizlemesiyle gösterilmeyen kişi sayıları. */
+  hiddenPeople?: { departments: number; tenure: number }
+  minGroup?: number
   kpis: { headcount: number; hires: number; exits: number; turnoverPercent: number; leaveDays: number; overtimeHours: number; expenseTotal: number }
 }
 

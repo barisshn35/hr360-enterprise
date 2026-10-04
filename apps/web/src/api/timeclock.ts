@@ -28,7 +28,7 @@ export interface OvertimeSummary {
 }
 
 export const overtimeApi = {
-  list: (f: { employeeId?: string; year?: number; status?: OvertimeStatus } = {}, signal?: AbortSignal) =>
+  list: (f: { employeeId?: string; year?: number; status?: OvertimeStatus; mine?: boolean } = {}, signal?: AbortSignal) =>
     apiFetch<OvertimeRequest[]>(`${BASE}/overtime${qs(f)}`, { signal }),
   summary: (f: { employeeId?: string; year?: number } = {}, signal?: AbortSignal) =>
     apiFetch<OvertimeSummary>(`${BASE}/overtime/summary${qs(f)}`, { signal }),

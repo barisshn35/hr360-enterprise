@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { SelectField, TextField } from '@/components/ui/Field'
 import { useToast } from '@/components/ui/Toast'
 import { tx } from '@/lib/i18n'
+import { localISODate } from '@/lib/dates'
 
 interface Errors {
   departmentId?: string
@@ -18,10 +19,13 @@ export function NewAssignmentModal({
   open,
   onClose,
   employeeId,
+  hireDate,
 }: {
   open: boolean
   onClose: () => void
   employeeId: string
+  /** Çalışanın işe giriş tarihi; atama başlangıcı bundan önce olamaz. */
+  hireDate?: string
 }) {
   const toast = useToast()
   const queryClient = useQueryClient()
@@ -55,6 +59,16 @@ export function NewAssignmentModal({
     [companies.data],
   )
 
+  // Sunucuyla aynı kural: başlangıç ≥ işe giriş (ileri tarihli işe girişte en geç bugün), ≤ bugün + 1 yıl.
+  const today = localISODate()
+  const hire = hireDate?.slice(0, 10)
+  const minFrom = hire ? (hire > today ? today : hire) : undefined
+  const maxFrom = (() => {
+    const d = new Date()
+    d.setFullYear(d.getFullYear() + 1)
+    return localISODate(d)
+  })()
+
   const mutation = useMutation({
     mutationFn: () =>
       employeeApi.addAssignment(employeeId, {
@@ -77,6 +91,9 @@ export function NewAssignmentModal({
     const next: Errors = {}
     if (!departmentId) next.departmentId = tx('Departman seçilmeli.')
     if (!effectiveFrom) next.effectiveFrom = tx('Geçerlilik başlangıcı zorunlu.')
+    else if (minFrom && effectiveFrom < minFrom)
+      next.effectiveFrom = tx('Atama başlangıcı işe giriş tarihinden önce olamaz.')
+    else if (effectiveFrom > maxFrom) next.effectiveFrom = tx('Atama başlangıcı en fazla bir yıl sonrası olabilir.')
     return next
   }
 
@@ -165,6 +182,8 @@ export function NewAssignmentModal({
           label={tx('Geçerlilik başlangıcı')}
           type="date"
           required
+          min={minFrom}
+          max={maxFrom}
           value={effectiveFrom}
           onChange={(e) => setEffectiveFrom(e.target.value)}
           onBlur={() => submitted && setErrors(validate())}

@@ -20,4 +20,7 @@ public class JobPosting : ITenantOwned
     public DateTimeOffset? PublishedAt { get; set; }
     public DateTimeOffset? ClosedAt { get; set; }
     public List<Application> Applications { get; set; } = new();
+    /// <summary>Liste ucunda başvuru sayısı (yalnızca aday görme yetkisi olana); tabloda tutulmaz.</summary>
+    [System.ComponentModel.DataAnnotations.Schema.NotMapped]
+    public int? ApplicationCount { get; set; }
 }

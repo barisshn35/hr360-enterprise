@@ -29,7 +29,7 @@ export function OvertimePanel() {
   const year = new Date().getFullYear()
   const dir = useDirectory(isHr)
   const nameOf = (id: string) => dir.data?.find((d) => d.id === id)?.fullName ?? '—'
-  const mine = useQuery({ queryKey: ['overtime', 'mine', year], queryFn: ({ signal }) => overtimeApi.list({ year }, signal) })
+  const mine = useQuery({ queryKey: ['overtime', 'mine', year], queryFn: ({ signal }) => overtimeApi.list({ year, mine: true }, signal) })
   const summary = useQuery({ queryKey: ['overtime', 'summary', year], queryFn: ({ signal }) => overtimeApi.summary({ year }, signal) })
   const orphan = useQuery({
     queryKey: ['overtime', 'pending-all'], enabled: isHr,

@@ -5,7 +5,7 @@ import 'swagger-ui-react/swagger-ui.css'
 import { BookOpenText, Globe2, LoaderCircle } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Panel, PanelBody, PanelHead } from '@/components/ui/Panel'
-import { ErrorState, InfoNote } from '@/components/ui/States'
+import { EmptyState, ErrorState, InfoNote } from '@/components/ui/States'
 import { getValidToken } from '@/auth/keycloak'
 import { env } from '@/lib/env'
 import { cn } from '@/lib/utils'
@@ -51,13 +51,18 @@ async function loadSpec(doc: Doc): Promise<Spec> {
   const res = await fetch(`${env.apiBase}/api-docs/specs/${doc.id}.json`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   })
-  if (!res.ok) throw new Error(tx('API tanımı alınamadı (HTTP {0}).', [res.status]))
+  if (!res.ok)
+    throw new Error(
+      res.status >= 500
+        ? tx('Servis API tanımını üretemedi (HTTP {0}). Servis günlüğüne bakın ya da daha sonra yeniden deneyin.', [res.status])
+        : tx('API tanımı alınamadı (HTTP {0}).', [res.status]),
+    )
   return toGatewaySpec(doc.id, (await res.json()) as Spec)
 }
 
 export function ApiDocsPage() {
   const [active, setActive] = useState<Doc>(DOCS[0])
-  const spec = useQuery({ queryKey: ['api-docs', active.id], queryFn: () => loadSpec(active), staleTime: 5 * 60_000 })
+  const spec = useQuery({ queryKey: ['api-docs', active.id], queryFn: () => loadSpec(active), staleTime: 5 * 60_000, retry: false })
   const count = useMemo(() => Object.keys(spec.data?.paths ?? {}).length, [spec.data])
 
   return (
@@ -106,7 +111,10 @@ export function ApiDocsPage() {
                 </div>
               )}
               {spec.isError && <ErrorState title={tx('API tanımı alınamadı')} message={(spec.error as Error).message} onRetry={() => void spec.refetch()} />}
-              {spec.data && (
+              {spec.data && count === 0 && (
+                <EmptyState title={tx('Bu serviste gateway üzerinden erişilebilir uç yok')} detail={tx('Tanım yüklendi ancak listelenecek uç bulunamadı.')} />
+              )}
+              {spec.data && count > 0 && (
                 // Swagger UI kendi açık temasını kullanır; okunaklı kalması için beyaz zemin.
                 <div className="hr360-swagger rounded-b-2xl bg-white text-black">
                   <SwaggerUI

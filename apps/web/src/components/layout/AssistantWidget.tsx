@@ -25,7 +25,11 @@ export function AssistantWidget() {
   const [q, setQ] = useState('')
   const [busy, setBusy] = useState(false)
   const end = useRef<HTMLDivElement>(null)
-  useEffect(() => end.current?.scrollIntoView({ behavior: 'smooth' }), [msgs, open])
+  // Gövde süslü parantezde: yeni tarayıcılarda scrollIntoView bir Promise döndürür; ok fonksiyonu onu
+  // döndürürse React temizleme fonksiyonu sanıp çağırır ve tüm arayüz çöker.
+  useEffect(() => {
+    end.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [msgs, open])
   if (!hasFeature('assistant')) return null
 
   const ask = async (text: string) => {
@@ -82,7 +86,7 @@ export function AssistantWidget() {
                       <p className="mt-1.5 text-[10.5px] text-muted-foreground">{tx('Yapay zekâ yanıtı · bilgi bankasına dayanır{0}; hatalı olabilir.', [m.reply.related?.length ? ` (${m.reply.related.join(', ')})` : ''])}</p>
                     )}
                     {m.reply?.report?.understood && m.reply.report.rows.length > 0 && (
-                      <table className="mt-2 w-full text-[12px]"><tbody>{m.reply.report.rows.slice(0, 8).map((r, j) => <tr key={j} className="border-t border-border/50"><td className="py-1">{String(r[0])}</td><td className="tabular py-1 text-right font-medium">{String(r[1])}</td></tr>)}</tbody></table>
+                      <table className="mt-2 w-full text-[12px]"><tbody>{m.reply.report.rows.slice(0, 8).map((r, j) => <tr key={j} className="border-t border-border/50"><td className="py-1">{String(r[0])}</td><td className="tabular py-1 text-right font-medium">{r[1] == null ? tx('gizli') : String(r[1])}</td></tr>)}</tbody></table>
                     )}
                     {m.reply?.links && m.reply.links.length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-1.5">

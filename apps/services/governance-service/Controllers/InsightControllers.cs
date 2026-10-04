@@ -328,6 +328,17 @@ public class AnalyticsController : AppController
             $"{months}:{DateTime.UtcNow:yyyyMMdd}", TimeSpan.FromMinutes(2), c => BuildOverviewAsync(months, c), ct);
     }
 
+    /// <summary>Küçük grup gizleme: MinGroup altındaki gruplar "Diğer"de toplanır; toplam da küçükse
+    /// hiç döndürülmez. İkinci değer gizlenen kişi sayısıdır (arayüz not düşer).</summary>
+    internal static (List<(string name, long n)> groups, long hidden) SuppressSmallGroups(IEnumerable<(string name, long n)> rows)
+    {
+        var list = rows.ToList();
+        var shown = list.Where(r => r.n >= NlReport.MinGroup).ToList();
+        var small = list.Where(r => r.n > 0 && r.n < NlReport.MinGroup).Sum(r => r.n);
+        if (small >= NlReport.MinGroup) { shown.Add(("Diğer", small)); small = 0; }
+        return (shown, small);
+    }
+
     private async Task<object> BuildOverviewAsync(int months, CancellationToken ct)
     {
         var since = DateOnly.FromDateTime(DateTime.UtcNow).AddMonths(-(months - 1));
@@ -335,19 +346,24 @@ public class AnalyticsController : AppController
 
         var leave = await Db.QueryAsync("""
             SELECT month, leave_type, sum(days), sum(requests) FROM analytics_leave_monthly
-            WHERE tenant_slug = $1 AND month >= $2 AND status = 'Approved' GROUP BY 1, 2 ORDER BY 1
+            WHERE tenant_slug = $1 AND month >= $2 AND month <= date_trunc('month', now())::date AND status = 'Approved' GROUP BY 1, 2 ORDER BY 1
             """, r => new { month = r.GetFieldValue<DateOnly>(0), type = r.GetString(1), days = r.Dec(2) ?? 0, requests = r.GetInt64(3) }, ct, Tenant, since);
         var overtime = await Db.QueryAsync("""
             SELECT month, worked_minutes, overtime_minutes FROM analytics_overtime_monthly
             WHERE tenant_slug = $1 AND month >= $2 ORDER BY 1
             """, r => new { month = r.GetFieldValue<DateOnly>(0), workedHours = Math.Round(Convert.ToDouble(r.GetValue(1)) / 60, 1), overtimeHours = Math.Round(Convert.ToDouble(r.GetValue(2)) / 60, 1) }, ct, Tenant, since);
-        var departments = await Db.QueryAsync("SELECT department, headcount FROM analytics_department_headcount WHERE tenant_slug = $1 ORDER BY 2 DESC",
-            r => new { department = r.GetString(0), headcount = r.GetInt64(1) }, ct, Tenant);
-        var tenure = await Db.QueryAsync("""
+        var departmentRows = await Db.QueryAsync("SELECT department, headcount FROM analytics_department_headcount WHERE tenant_slug = $1 ORDER BY 2 DESC",
+            r => (name: r.GetString(0), n: r.GetInt64(1)), ct, Tenant);
+        var tenureRows = await Db.QueryAsync("""
             SELECT CASE WHEN age < 1 THEN '0-1 yıl' WHEN age < 3 THEN '1-3 yıl' WHEN age < 5 THEN '3-5 yıl' WHEN age < 10 THEN '5-10 yıl' ELSE '10+ yıl' END, count(*)
             FROM (SELECT extract(epoch FROM age(current_date, "HireDate")) / 31557600 AS age FROM employee_employees
                   WHERE "TenantSlug" = $1 AND "Status" <> 'Terminated') x GROUP BY 1 ORDER BY min(age)
-            """, r => new { bucket = r.GetString(0), count = r.GetInt64(1) }, ct, Tenant);
+            """, r => (name: r.GetString(0), n: r.GetInt64(1)), ct, Tenant);
+        // KVKK: 5 kişiden küçük gruplar tek tek gösterilmez; "Diğer" altında birleşir, o da küçükse gizlenir.
+        var (deptGroups, deptHidden) = SuppressSmallGroups(departmentRows);
+        var (tenureGroups, tenureHidden) = SuppressSmallGroups(tenureRows);
+        var departments = deptGroups.Select(g => new { department = g.name, headcount = g.n }).ToList();
+        var tenure = tenureGroups.Select(g => new { bucket = g.name, count = g.n }).ToList();
         var expense = await Db.QueryAsync("""
             SELECT date_trunc('month', coalesce("SubmittedAt", "CreatedAt"))::date, sum("TotalAmount"), count(*) FROM expense_claims
             WHERE "TenantSlug" = $1 AND "Status" IN ('Approved','Paid') AND coalesce("SubmittedAt", "CreatedAt") >= $2 GROUP BY 1 ORDER BY 1
@@ -366,6 +382,8 @@ public class AnalyticsController : AppController
         return new
         {
             months, timeline, leave, overtime, departments, tenure, expense,
+            hiddenPeople = new { departments = deptHidden, tenure = tenureHidden },
+            minGroup = NlReport.MinGroup,
             kpis = new
             {
                 headcount = timeline.LastOrDefault()?.headcount ?? 0,

@@ -49,16 +49,22 @@ async function toApiError(res: Response): Promise<ApiError> {
           // hiç ulaşmıyor, "İstek geçersiz" jenerik mesajına düşüyordu.
           message = detail
         } else {
-          const d = detail as Record<string, unknown>
+          const d = (detail ?? {}) as Record<string, unknown>
+          // FastAPI (ML servisi) doğrulama hatası: {"detail": [{"msg": "...", "loc": [...]}]}
+          const fastApiList = Array.isArray(d.detail)
+            ? (d.detail as Array<{ msg?: unknown }>).map((x) => (typeof x?.msg === 'string' ? x.msg : '')).filter(Boolean).join('; ')
+            : ''
           message =
             (typeof d.detail === 'string' && d.detail) ||
+            fastApiList ||
             (typeof d.title === 'string' && d.title) ||
             (typeof d.message === 'string' && d.message) ||
             (typeof d.error === 'string' && d.error) ||
             ''
         }
       } catch {
-        message = text.slice(0, 300)
+        // JSON değil: nginx'in HTML hata sayfası (413, 502…) kullanıcıya gösterilmez, durum koduna göre ileti seçilir.
+        if (!/^\s*</.test(text)) message = text.slice(0, 300)
       }
     }
   } catch {
@@ -72,6 +78,7 @@ async function toApiError(res: Response): Promise<ApiError> {
       403: tx('Bu işlem için yetkiniz yok.'),
       404: tx('Kayıt bulunamadı.'),
       409: tx('İşlem mevcut durumla çakışıyor.'),
+      413: tx('Dosya çok büyük. Daha küçük bir dosya seçin.'),
       500: tx('Sunucu hatası oluştu. Lütfen daha sonra tekrar deneyin.'),
       502: tx('Servise ulaşılamıyor (gateway).'),
       503: tx('Servis geçici olarak kullanılamıyor.'),
@@ -209,12 +216,13 @@ export async function apiUploadFile<T>(
     throw new ApiError(401, tx('Oturumunuzun süresi doldu. Lütfen yeniden giriş yapın.'))
   }
 
+  // Hata gövdesi JSON olmayabilir (nginx 413 HTML sayfası); ortak ayrıştırıcı güvenli okur.
+  if (!res.ok) throw await toApiError(res)
+
   const text = await res.text()
-  const data = text ? JSON.parse(text) : undefined
-
-  if (!res.ok) {
-    throw new ApiError(res.status, (data as { message?: string })?.message ?? tx('İstek başarısız'), data)
+  try {
+    return (text ? JSON.parse(text) : undefined) as T
+  } catch {
+    throw new ApiError(502, tx('Sunucudan beklenmeyen yanıt alındı.'))
   }
-
-  return data as T
 }

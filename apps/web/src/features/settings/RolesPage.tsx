@@ -9,6 +9,7 @@ import { SelectField } from '@/components/ui/Field'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip'
 import { useToast } from '@/components/ui/Toast'
+import { useConfirm } from '@/components/ui/Confirm'
 import { useAuth } from '@/auth/useAuth'
 import { useCompanies, useDepartmentList } from '@/api/queries'
 import { tenantApi } from '@/api/tenant'
@@ -221,8 +222,16 @@ export function RolesPage() {
 
   const pending = assignMutation.isPending || removeMutation.isPending
 
-  function toggleRole(row: RoleRow, role: Role, checked: boolean) {
+  const confirm = useConfirm()
+
+  // Rol vermek/almak yetkiyi hemen değiştirir: yanlış tıklama şirket yöneticiliği verebilirdi.
+  async function toggleRole(row: RoleRow, role: Role, checked: boolean) {
     if (!row.keycloakUserId) return
+    const who = `${row.firstName} ${row.lastName}`
+    const ok = await confirm(checked
+      ? { title: tx('Rol verilsin mi?'), note: tx('{0} kişisine "{1}" rolü verilecek; yetkiler bir sonraki girişte geçerli olur.', [who, roleLabels[role]]), action: tx('Rolü ver'), destructive: role === 'tenant-admin' }
+      : { title: tx('Rol kaldırılsın mı?'), note: tx('{0} kişisinden "{1}" rolü kaldırılacak.', [who, roleLabels[role]]), action: tx('Rolü kaldır') })
+    if (!ok) return
     if (checked) assignMutation.mutate({ userId: row.keycloakUserId, role })
     else removeMutation.mutate({ userId: row.keycloakUserId, role })
   }
@@ -285,7 +294,13 @@ export function RolesPage() {
           variant="outline"
           className="cursor-pointer"
           disabled={inviteMutation.isPending}
-          onClick={() => inviteMutation.mutate(r.employeeId)}
+          onClick={async () => {
+            if (await confirm({
+              title: tx('Giriş erişimi verilsin mi?'),
+              note: tx('{0} {1} için hesap açılır, Çalışan rolü verilir ve {2} adresine parola belirleme e-postası gönderilir.', [r.firstName, r.lastName, r.email]),
+              action: tx('Erişim ver'), destructive: false,
+            })) inviteMutation.mutate(r.employeeId)
+          }}
         >
           <Mail className="size-3.5" />
           {tx('Giriş erişimi ver')}

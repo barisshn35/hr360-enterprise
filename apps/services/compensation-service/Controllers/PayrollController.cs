@@ -214,12 +214,13 @@ public class PayrollController : ControllerBase
     public async Task<IActionResult> AddAdjustment(Guid id, [FromBody] AdjustmentInput body, CancellationToken ct)
     {
         if (!IsPayrollAdmin) return Forbid();
-        var (err, _) = await EditablePeriodAsync(id, ct);
+        var (err, period) = await EditablePeriodAsync(id, ct);
         if (err is not null) return err;
         if (body.Amount is <= 0 or > 100_000_000) return BadRequest(new { message = "Tutar sıfırdan büyük olmalı" });
         if (string.IsNullOrWhiteSpace(body.Description) || body.Description.Length > 200) return BadRequest(new { message = "Açıklama gerekli (en fazla 200 karakter)" });
         var a = new PayrollAdjustment { PeriodId = id, EmployeeId = body.EmployeeId, Kind = body.Kind, Amount = Math.Round(body.Amount, 2), Description = body.Description.Trim() };
         _db.PayrollAdjustments.Add(a);
+        RequireRecalculation(period!);
         await _db.SaveChangesAsync(ct);
         return Ok(a);
     }
@@ -228,13 +229,21 @@ public class PayrollController : ControllerBase
     public async Task<IActionResult> DeleteAdjustment(Guid id, Guid adjId, CancellationToken ct)
     {
         if (!IsPayrollAdmin) return Forbid();
-        var (err, _) = await EditablePeriodAsync(id, ct);
+        var (err, period) = await EditablePeriodAsync(id, ct);
         if (err is not null) return err;
         var a = await _db.PayrollAdjustments.FirstOrDefaultAsync(x => x.Id == adjId && x.PeriodId == id, ct);
         if (a is null) return NotFound();
         _db.PayrollAdjustments.Remove(a);
+        RequireRecalculation(period!);
         await _db.SaveChangesAsync(ct);
         return NoContent();
+    }
+
+    /// <summary>Hesaplanmış dönemde girdi değişirse pusulalar eskir: dönem "Açık"a döner, kapatmadan
+    /// önce yeniden hesaplanması gerekir (aksi halde silinen ek ödeme kesinleşen bordroda kalıyordu).</summary>
+    private static void RequireRecalculation(PayrollPeriod period)
+    {
+        if (period.Status == PayrollPeriodStatus.Calculated) period.Status = PayrollPeriodStatus.Open;
     }
 
     /// <summary>

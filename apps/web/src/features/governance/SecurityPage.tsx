@@ -9,6 +9,7 @@ import { Modal } from '@/components/ui/Modal'
 import { TextField } from '@/components/ui/Field'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { InfoNote, RowsSkeleton } from '@/components/ui/States'
+import { useConfirm } from '@/components/ui/Confirm'
 import { useToast } from '@/components/ui/Toast'
 import { securityApi, type SsoStatus } from '@/api/governance'
 import { Metric, PlanGate, useAction } from '@/features/shared/kit'
@@ -50,6 +51,7 @@ export function SecurityPage() {
   const [adding, setAdding] = useState<SsoStatus['supported'][number] | null>(null)
   const remove = useAction((alias: string) => securityApi.removeSso(alias), { success: tx('Sağlayıcı kaldırıldı'), invalidate: [['security']] })
   const enforce = useAction(() => securityApi.enforceMfa(), { success: (r) => tx('{0} kullanıcıya bir sonraki girişte doğrulayıcı kurulumu zorunlu kılındı', [r.required]), invalidate: [['security']] })
+  const confirm = useConfirm()
   const m = mfa.data
   const pct = m && m.members ? Math.round((100 * m.withOtp) / m.members) : 0
   return (
@@ -66,7 +68,9 @@ export function SecurityPage() {
                     <ShieldCheck className="size-5 text-[hsl(var(--success))]" />
                     <div className="min-w-0 flex-1"><p className="text-[13.5px] font-medium">{p.displayName ?? p.alias}</p><p className="truncate font-mono text-[11px] text-muted-foreground">{p.redirectUri}</p></div>
                     <StatusBadge tone={p.enabled ? 'success' : 'neutral'}>{p.enabled ? tx('Etkin') : tx('Kapalı')}</StatusBadge>
-                    <Button size="icon" variant="ghost" aria-label={tx('Kaldır')} onClick={() => remove.mutate(p.alias)}><Trash2 className="size-4" /></Button>
+                    <Button size="icon" variant="ghost" aria-label={tx('Kaldır')} onClick={async () => {
+                      if (await confirm({ title: tx('Sağlayıcı kaldırılsın mı?'), note: tx('{0} ile giriş kapanır; bu yolla giren kullanıcılar parola belirlemeden giriş yapamaz.', [p.displayName ?? p.alias]), action: tx('Kaldır') })) remove.mutate(p.alias)
+                    }}><Trash2 className="size-4" /></Button>
                   </motion.div>
                 ))}
                 <div className="flex flex-wrap gap-2">
@@ -91,7 +95,9 @@ export function SecurityPage() {
                 </div>
                 <div className="h-2.5 overflow-hidden rounded-full bg-muted"><motion.div initial={{ width: 0 }} animate={{ width: `${pct}%` }} className="h-full rounded-full bg-[hsl(var(--success))]" /></div>
                 <p className="text-[12.5px] text-muted-foreground">{tx('Şirket hesaplarının %{0}\'inde iki adımlı doğrulama açık.', [pct])}</p>
-                <Button onClick={() => enforce.mutate(undefined)} disabled={m.without === 0 || enforce.isPending}><Lock className="size-4" />{' '}{tx('Herkes için zorunlu kıl')}</Button>
+                <Button disabled={m.without === 0 || enforce.isPending} onClick={async () => {
+                  if (await confirm({ title: tx('İki adımlı doğrulama zorunlu kılınsın mı?'), note: tx('{0} kullanıcı bir sonraki girişinde doğrulayıcı uygulaması kurmadan devam edemez.', [m.without]), action: tx('Zorunlu kıl') })) enforce.mutate(undefined)
+                }}><Lock className="size-4" />{' '}{tx('Herkes için zorunlu kıl')}</Button>
                 <ul className="max-h-60 divide-y divide-border overflow-y-auto rounded-xl border border-border text-[12.5px]">
                   {m.users.map((u) => <li key={u.userId} className="flex items-center justify-between px-3 py-2"><span className="flex items-center gap-2"><KeyRound className="size-3.5 text-muted-foreground" /> {u.username}</span><StatusBadge tone={u.hasOtp ? 'success' : u.pendingSetup ? 'warning' : 'neutral'}>{u.hasOtp ? tx('Açık') : u.pendingSetup ? tx('Bekliyor') : tx('Kapalı')}</StatusBadge></li>)}
                 </ul>

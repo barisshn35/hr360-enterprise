@@ -175,8 +175,7 @@ public class WebhooksController : AppController
     [HttpPost]
     public async Task<IActionResult> Create(HookInput body, CancellationToken ct)
     {
-        if (!Uri.TryCreate(body.Url, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https"))
-            return BadRequest(new { message = "Geçerli bir http(s) adresi girin." });
+        if (WebhookTargetGuard.Validate(body.Url) is { } invalid) return BadRequest(new { message = invalid, code = "invalid_target" });
         if (body.Events.Count == 0) return BadRequest(new { message = "En az bir olay seçin." });
         if (await TransferLockAsync(body.Url, ct) is { } locked) return locked;
         var w = new Webhook { Name = body.Name.Trim(), Url = body.Url, Events = body.Events, IsEnabled = body.IsEnabled, Secret = NewSecret() };
@@ -204,7 +203,7 @@ public class WebhooksController : AppController
     {
         var w = await _db.Webhooks.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (w is null) return NotFound();
-        if (!Uri.TryCreate(body.Url, UriKind.Absolute, out _)) return BadRequest(new { message = "Adres geçersiz." });
+        if (WebhookTargetGuard.Validate(body.Url) is { } invalid) return BadRequest(new { message = invalid, code = "invalid_target" });
         if (await TransferLockAsync(body.Url, ct) is { } locked) return locked;
         w.Name = body.Name.Trim(); w.Url = body.Url; w.Events = body.Events; w.IsEnabled = body.IsEnabled;
         if (body.IsEnabled) w.FailureCount = 0;

@@ -133,7 +133,8 @@ function BookingBoard() {
   const desks = useQuery({ queryKey: ['desks'], queryFn: ({ signal }) => engagementApi.desks(signal) })
   const bookings = useQuery({ queryKey: ['bookings', date], queryFn: ({ signal }) => engagementApi.bookings(date, signal) })
   const sample = useAction(() => engagementApi.sampleDesks(), { success: tx('Örnek ofis planı oluşturuldu'), invalidate: [['desks']] })
-  const [booking, setBooking] = useState<Desk | null>(null)
+  // Oda çizelgesinde tıklanan saat diyaloğa başlangıç olarak iletilir.
+  const [booking, setBooking] = useState<{ desk: Desk; hour?: number } | null>(null)
   const cancel = useAction((id: string) => engagementApi.cancelBooking(id), { success: tx('Rezervasyon iptal edildi'), invalidate: [['bookings'], ['presence']] })
 
   const byDesk = useMemo(() => {
@@ -154,7 +155,7 @@ function BookingBoard() {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-end gap-3">
-        <div className="w-48"><TextField label={tx('Tarih')} type="date" value={date} min={isoDate()} onChange={(e) => setDate(e.target.value)} /></div>
+        <div className="w-48"><TextField label={tx('Tarih')} type="date" value={date} min={isoDate()} max={isoDate(new Date(Date.now() + 30 * 86400000))} onChange={(e) => setDate(e.target.value)} /></div>
         {myBookings.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {myBookings.map((b) => (
@@ -184,7 +185,7 @@ function BookingBoard() {
                     transition={{ delay: i * 0.03 }}
                     whileHover={{ y: -3 }}
                     disabled={taken && !mine}
-                    onClick={() => setBooking(d)}
+                    onClick={() => setBooking({ desk: d })}
                     title={taken ? bs.map((b) => `${b.personName} ${minutesToHHMM(b.startMinute)}–${minutesToHHMM(b.endMinute)}`).join('\n') : `${d.zone ?? ''} ${d.features.join(', ')}`}
                     className={cn(
                       'relative flex cursor-pointer flex-col items-center gap-1 rounded-2xl border p-3 text-center transition disabled:cursor-not-allowed',
@@ -201,19 +202,21 @@ function BookingBoard() {
           </Panel>
         ))}
         {rooms.length > 0 && (
-          <Panel>
+          <Panel className="min-w-0">
             <PanelHead title={<span className="flex items-center gap-2"><DoorOpen className="size-4 text-primary" />{' '}{tx('Toplantı odaları')}</span>} note={tx('Boş zaman dilimine tıklayın.')} />
-            <PanelBody className="space-y-4 overflow-x-auto">
-              <div className="ml-28 flex min-w-[520px] text-[10.5px] text-muted-foreground">{HOURS.map((h) => <span key={h} className="flex-1">{h}:00</span>)}</div>
+            {/* min-w-0: geniş çizelge ızgara sütununu büyütüp paneli taşırmasın; kaydırma panelin içinde olur. */}
+            <PanelBody className="overflow-x-auto">
+              <div className="min-w-[640px] space-y-4">
+              <div className="ml-28 flex text-[10.5px] text-muted-foreground">{HOURS.slice(0, -1).map((h) => <span key={h} className="flex-1">{h}:00</span>)}</div>
               {rooms.map((r) => (
-                <div key={r.id} className="flex min-w-[640px] items-center gap-3">
+                <div key={r.id} className="flex items-center gap-3">
                   <div className="w-25 shrink-0">
                     <p className="text-[13px] font-medium">{r.name}</p>
                     <p className="flex items-center gap-1 text-[11px] text-muted-foreground"><Users className="size-3" /> {r.capacity} · {r.floor}</p>
                   </div>
                   <div className="relative h-9 flex-1 rounded-xl bg-muted/40">
                     {HOURS.slice(0, -1).map((h, i) => (
-                      <button key={h} type="button" onClick={() => setBooking(r)} aria-label={`${r.name} ${h}:00`} className="absolute inset-y-0 cursor-pointer border-r border-border/40 hover:bg-primary/10" style={{ left: `${(i / 12) * 100}%`, width: `${100 / 12}%` }} />
+                      <button key={h} type="button" onClick={() => setBooking({ desk: r, hour: h })} aria-label={`${r.name} ${h}:00`} className="absolute inset-y-0 cursor-pointer border-r border-border/40 hover:bg-primary/10" style={{ left: `${(i / 12) * 100}%`, width: `${100 / 12}%` }} />
                     ))}
                     {(byDesk.get(r.id) ?? []).map((b) => (
                       <motion.div key={b.id} initial={{ scaleX: 0 }} animate={{ scaleX: 1 }} style={{ left: `${((b.startMinute - 480) / 720) * 100}%`, width: `${((b.endMinute - b.startMinute) / 720) * 100}%`, transformOrigin: 'left' }}
@@ -224,18 +227,20 @@ function BookingBoard() {
                   </div>
                 </div>
               ))}
+              </div>
             </PanelBody>
           </Panel>
         )}
       </div>
-      {booking && <BookModal desk={booking} date={date} onClose={() => setBooking(null)} />}
+      {booking && <BookModal desk={booking.desk} startHour={booking.hour} date={date} onClose={() => setBooking(null)} />}
     </div>
   )
 }
 
-function BookModal({ desk, date, onClose }: { desk: Desk; date: string; onClose: () => void }) {
-  const [start, setStart] = useState(desk.kind === 'Desk' ? '09:00' : '10:00')
-  const [end, setEnd] = useState(desk.kind === 'Desk' ? '18:00' : '11:00')
+function BookModal({ desk, date, startHour, onClose }: { desk: Desk; date: string; startHour?: number; onClose: () => void }) {
+  const hh = (h: number) => `${String(h).padStart(2, '0')}:00`
+  const [start, setStart] = useState(startHour !== undefined ? hh(startHour) : desk.kind === 'Desk' ? '09:00' : '10:00')
+  const [end, setEnd] = useState(startHour !== undefined ? hh(startHour + 1) : desk.kind === 'Desk' ? '18:00' : '11:00')
   const [title, setTitle] = useState('')
   const toMin = (s: string) => Number(s.slice(0, 2)) * 60 + Number(s.slice(3, 5))
   const book = useAction(() => engagementApi.book({ deskId: desk.id, date, startMinute: toMin(start), endMinute: toMin(end), title: title || undefined }), {

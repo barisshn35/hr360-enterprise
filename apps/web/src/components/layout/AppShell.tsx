@@ -1,6 +1,6 @@
 import { Suspense, lazy, useCallback, useLayoutEffect, useState } from 'react'
-import { useLocation, useOutlet } from 'react-router-dom'
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
+import { Outlet, useLocation } from 'react-router-dom'
+import { motion, useReducedMotion } from 'motion/react'
 import { TriangleAlert } from 'lucide-react'
 import { OfflineQueueWatcher } from '@/features/profile/DevicePanel'
 import { useMyEmployeeId, useUnreadCount } from '@/api/queries'
@@ -24,18 +24,8 @@ import { useServerLanguage } from '@/lib/languageSync'
  * canlı (aurora, ızgara, meteorlar, imleç ışığı); sayfalar bulanıklıktan
  * netleşerek geçer.
  */
-/**
- * Çıkış animasyonu sırasında eski sayfa görünmeye devam etsin: Outlet her
- * render'da GÜNCEL rotayı basar, bu yüzden ilk değer saklanır.
- */
 /** İK asistanı ayrı paket: ilk yükleme ağırlaşmasın. */
 const AssistantWidget = lazy(async () => ({ default: (await import('./AssistantWidget')).AssistantWidget }))
-
-function FrozenOutlet() {
-  const outlet = useOutlet()
-  const [frozen] = useState(outlet)
-  return frozen
-}
 
 export function AppShell() {
   const [paletteOpen, setPaletteOpen] = useState(false)
@@ -103,17 +93,19 @@ export function AppShell() {
         )}
 
         <main id="main-content" tabIndex={-1} className="mx-auto w-full outline-none max-w-[1480px] min-w-0 flex-1 px-4 pt-7 pb-32 sm:px-6 lg:px-8 lg:pt-9">
-          <AnimatePresence mode="wait" initial={false}>
-            <motion.div
-              key={location.pathname}
-              initial={reduced ? false : { opacity: 0, y: 14, filter: 'blur(8px)', scale: 0.995 }}
-              animate={{ opacity: 1, y: 0, filter: 'blur(0px)', scale: 1 }}
-              exit={reduced ? undefined : { opacity: 0, y: -8, filter: 'blur(6px)', transition: { duration: 0.16 } }}
-              transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
-            >
-              <FrozenOutlet />
-            </motion.div>
-          </AnimatePresence>
+          {/* Yalnızca giriş animasyonu: çıkış animasyonu (AnimatePresence) çıkan sayfa yeni adresi okuyup
+              içindeki "exit"li öğeleri (tablo satırları vb.) kaldırınca hiç tamamlanmıyor, yeni sayfa
+              bağlanmıyor ya da görünmez eski sayfa üstte kalıyordu (?durum= sekmeli listeler). */}
+          <motion.div
+            key={location.pathname}
+            initial={reduced ? false : { opacity: 0, y: 14, filter: 'blur(8px)', scale: 0.995 }}
+            // Animasyon bitince filter/transform kaldırılır: "blur(0px)" ya da transform kalırsa
+            // içerideki position:fixed öğeler (sunum modu, kaplamalar) bu kutuya hapsolur.
+            animate={{ opacity: 1, y: 0, filter: 'blur(0px)', scale: 1, transitionEnd: { filter: 'none', transform: 'none' } }}
+            transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+          >
+            <Outlet />
+          </motion.div>
         </main>
       </div>
 

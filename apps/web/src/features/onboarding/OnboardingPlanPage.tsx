@@ -24,6 +24,7 @@ import {
 import { formatDate, formatNumber, fullName } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { tx } from '@/lib/i18n'
+import { localISODate as isoLocal } from '@/lib/dates'
 import { BuddyPanel } from './OnboardingOps'
 
 const CATEGORY_ORDER: TaskCategory[] = ['IT', 'HR', 'Facility', 'Training', 'Legal', 'Other']
@@ -33,10 +34,13 @@ const UNASSIGNED = '__unassigned__'
 
 function NewTaskModal({
   planId,
+  planStart,
   open,
   onClose,
 }: {
   planId: string
+  /** Plan başlangıcı (YYYY-MM-DD); son tarih şablonlarla aynı aralıkta olmalı: -60 / +365 gün. */
+  planStart?: string
   open: boolean
   onClose: () => void
 }) {
@@ -48,6 +52,15 @@ function NewTaskModal({
   const [dueDate, setDueDate] = useState('')
   const [assignee, setAssignee] = useState(UNASSIGNED)
   const [error, setError] = useState<string | undefined>()
+  const [dueError, setDueError] = useState<string | undefined>()
+  const shift = (days: number) => {
+    if (!planStart) return undefined
+    const d = new Date(`${planStart.slice(0, 10)}T00:00:00`)
+    d.setDate(d.getDate() + days)
+    return isoLocal(d)
+  }
+  const dueMin = shift(-60)
+  const dueMax = shift(365)
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -69,8 +82,14 @@ function NewTaskModal({
 
   function submit(e: React.FormEvent) {
     e.preventDefault()
+    const dueErr =
+      dueDate && ((dueMin && dueDate < dueMin) || (dueMax && dueDate > dueMax))
+        ? tx('Son tarih, plan başlangıcından en fazla 60 gün önce ve 365 gün sonra olabilir.')
+        : undefined
+    setDueError(dueErr)
     if (title.trim().length < 3) return setError(tx('Görev başlığı en az 3 karakter olmalı.'))
     setError(undefined)
+    if (dueErr) return
     mutation.mutate()
   }
 
@@ -125,8 +144,11 @@ function NewTaskModal({
             label={tx('Son tarih')}
             type="date"
             hint={tx('İsteğe bağlı')}
+            min={dueMin}
+            max={dueMax}
             value={dueDate}
             onChange={(e) => setDueDate(e.target.value)}
+            error={dueError}
           />
           <SelectField
             id="task-assignee"
@@ -366,7 +388,7 @@ export function OnboardingPlanPage() {
       )}
 
       {planId && (
-        <NewTaskModal planId={planId} open={taskModal} onClose={() => setTaskModal(false)} />
+        <NewTaskModal planId={planId} planStart={data.startDate} open={taskModal} onClose={() => setTaskModal(false)} />
       )}
     </div>
   )

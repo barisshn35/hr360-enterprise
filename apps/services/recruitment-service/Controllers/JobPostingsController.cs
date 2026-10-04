@@ -28,9 +28,20 @@ public class JobPostingsController : ControllerBase
     {
         var q = _db.JobPostings.AsQueryable();
         // Taslak (yayinlanmamis, gizli olabilecek) ilanlar yalnizca yetkililere.
-        if (!await CanSeeCandidatesAsync()) q = q.Where(p => p.Status != JobPostingStatus.Draft);
+        var canSee = await CanSeeCandidatesAsync();
+        if (!canSee) q = q.Where(p => p.Status != JobPostingStatus.Draft);
         if (status.HasValue) q = q.Where(p => p.Status == status.Value);
-        return Ok(await q.OrderByDescending(p => p.CreatedAt).ToListAsync());
+        var list = await q.OrderByDescending(p => p.CreatedAt).ToListAsync();
+        if (canSee && list.Count > 0)
+        {
+            // Başvuru sayısı tek gruplanmış sorguyla (başvurular listeye yüklenmez).
+            var ids = list.Select(p => p.Id).ToList();
+            var counts = await _db.Applications.Where(a => ids.Contains(a.JobPostingId))
+                .GroupBy(a => a.JobPostingId).Select(g => new { g.Key, Count = g.Count() })
+                .ToDictionaryAsync(x => x.Key, x => x.Count);
+            foreach (var p in list) p.ApplicationCount = counts.GetValueOrDefault(p.Id);
+        }
+        return Ok(list);
     }
 
     /// <summary>

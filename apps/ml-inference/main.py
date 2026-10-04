@@ -1,9 +1,10 @@
 from fastapi import FastAPI, Depends, HTTPException, Header
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from prometheus_fastapi_instrumentator import Instrumentator
 import asyncio
 from contextlib import asynccontextmanager
 import httpx
+import math
 import os
 import mlflow
 import mlflow.sklearn
@@ -59,7 +60,8 @@ MODEL_STAGE = os.getenv("MODEL_STAGE", "1")  # version 1
 mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 
 class PredictRequest(BaseModel):
-    features: list[float]
+    # Sira attrition_ml.FEATURES'tir; deger sinirlari _features icinde FeatureSpec'ten uygulanir.
+    features: list[float] = Field(min_length=1, max_length=50)
 
 async def verify_token(authorization: str = Header(None)):
     if not authorization or not authorization.startswith("Bearer "):
@@ -91,6 +93,7 @@ app.include_router(ocr_router, dependencies=[Depends(verify_token)])
 # takma ad yoksa MODEL_STAGE surumu yuklenir. Kayitli model hic yoksa (yeni kurulum)
 # sentetik ureteciyle ilk surum egitilir (ATTRITION_BOOTSTRAP=false ile kapatilir).
 from model_routes import ModelService, build_router, tenant_of
+from attrition_ml import FEATURES, FEATURE_NAMES
 from model_store import MlflowModelStore
 
 model_service = ModelService(
@@ -115,7 +118,27 @@ def _features(req: PredictRequest, model) -> np.ndarray:
     expected = getattr(model, "n_features_in_", None)
     if expected is not None and len(req.features) != expected:
         raise HTTPException(status_code=422, detail=f"Model {expected} özellik bekliyor, {len(req.features)} geldi.")
+    # Deger sinirlari (model_routes._Features ile ayni kaynak: attrition_ml.FEATURES). Onceden
+    # kidem -5, performans 9 (1-5 olcek), fazla mesai -100 gibi degerler tahmine giriyordu.
+    names = list(model_service.state.meta.get("features") or []) if model_service.state.meta else []
+    if len(names) != len(req.features):
+        names = list(FEATURE_NAMES) if len(req.features) == len(FEATURE_NAMES) else []
+    specs = {f.name: f for f in FEATURES}
+    errors = []
+    for i, v in enumerate(req.features):
+        spec = specs.get(names[i]) if i < len(names) else None
+        if not math.isfinite(v):
+            errors.append(f"{spec.label if spec else i + 1}: geçersiz sayı")
+        elif spec is not None and not (spec.lo <= v <= spec.hi):
+            unit = f" {spec.unit}" if spec.unit in ("yıl", "ay", "saat") else ""
+            errors.append(f"{spec.label} {_num(spec.lo)} ile {_num(spec.hi)}{unit} arasında olmalı (gelen: {_num(v)})")
+    if errors:
+        raise HTTPException(status_code=422, detail="Geçersiz girdi: " + "; ".join(errors))
     return np.array(req.features, dtype=float).reshape(1, -1)
+
+
+def _num(x: float) -> str:
+    return f"{x:g}".replace(".", ",")
 
 
 @app.post("/predict")

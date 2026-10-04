@@ -54,8 +54,8 @@ public class CompensationController : ControllerBase
     [Authorize(Policy = "RequireCompensationWrite")]
     public async Task<IActionResult> CreateBand([FromBody] CreateBandRequest request)
     {
-        if (request.MinAmount > request.MidAmount || request.MidAmount > request.MaxAmount)
-            return BadRequest("Bant degerleri min <= mid <= max olmali");
+        if (request.MinAmount <= 0 || request.MinAmount > request.MidAmount || request.MidAmount > request.MaxAmount)
+            return BadRequest("Bant değerleri 0 < alt ≤ orta ≤ üst olmalı");
 
         if (await _db.SalaryBands.AnyAsync(b => b.Grade == request.Grade && b.Year == request.Year))
             return Conflict("Bu kademe ve yıl için bant zaten tanımlı");

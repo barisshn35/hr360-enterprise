@@ -76,11 +76,11 @@ export function AnalyticsPage() {
               </PanelBody>
             </Panel>
             <Panel>
-              <PanelHead title={tx('Departman dağılımı')} />
+              <PanelHead title={tx('Departman dağılımı')} note={smallGroupNote(q.data.hiddenPeople?.departments, q.data.minGroup)} />
               <PanelBody className="h-72">
                 <ResponsiveContainer>
                   <PieChart>
-                    <Pie data={q.data.departments} dataKey="headcount" nameKey="department" innerRadius={60} outerRadius={100} paddingAngle={3} animationDuration={1000}>
+                    <Pie data={q.data.departments.map((d) => ({ ...d, department: d.department === 'Diğer' ? tx('Diğer') : d.department }))} dataKey="headcount" nameKey="department" innerRadius={60} outerRadius={100} paddingAngle={3} animationDuration={1000}>
                       {q.data.departments.map((d, i) => (
                         // Recharts dilimi role="img" çizer: ekran okuyucu için ad (WCAG 1.1.1).
                         <Cell key={i} fill={COLORS[i % COLORS.length]} aria-label={`${d.department}: ${d.headcount}`} />
@@ -93,10 +93,10 @@ export function AnalyticsPage() {
               </PanelBody>
             </Panel>
             <Panel>
-              <PanelHead title={tx('Kıdem dağılımı')} />
+              <PanelHead title={tx('Kıdem dağılımı')} note={smallGroupNote(q.data.hiddenPeople?.tenure, q.data.minGroup)} />
               <PanelBody className="h-72">
                 <ResponsiveContainer>
-                  <BarChart data={q.data.tenure} layout="vertical">
+                  <BarChart data={q.data.tenure.map((t) => ({ ...t, bucket: tenureLabel(t.bucket) }))} layout="vertical">
                     <XAxis type="number" allowDecimals={false} fontSize={11} tickLine={false} axisLine={false} />
                     <YAxis type="category" dataKey="bucket" fontSize={11} width={70} tickLine={false} axisLine={false} />
                     <Tooltip contentStyle={TT} cursor={{ fill: 'hsl(var(--muted)/0.4)' }} />
@@ -140,4 +140,18 @@ export function AnalyticsPage() {
       )}
     </PlanGate>
   )
+}
+
+/** KVKK: küçük grupların gizlendiğini söyler (değer gösterilmez). */
+function smallGroupNote(hidden: number | undefined, min = 5): string | undefined {
+  return hidden ? tx('{0} kişi, {1} kişiden küçük gruplarda olduğu için gösterilmiyor (KVKK).', [String(hidden), String(min)]) : undefined
+}
+
+/** Sunucunun kıdem aralığı etiketleri (statik anahtar: çeviri denetimi bulabilsin). */
+function tenureLabel(bucket: string): string {
+  const labels: Record<string, string> = {
+    '0-1 yıl': tx('0-1 yıl'), '1-3 yıl': tx('1-3 yıl'), '3-5 yıl': tx('3-5 yıl'),
+    '5-10 yıl': tx('5-10 yıl'), '10+ yıl': tx('10+ yıl'), 'Diğer': tx('Diğer'),
+  }
+  return labels[bucket] ?? bucket
 }

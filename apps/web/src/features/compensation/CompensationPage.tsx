@@ -57,6 +57,8 @@ function NewBandModal({
   const [midAmount, setMid] = useState('')
   const [maxAmount, setMax] = useState('')
   const [error, setError] = useState<string | undefined>()
+  // Tutar alanlarının hataları alan yanında gösterilir (0 < alt ≤ orta ≤ üst).
+  const [amountErr, setAmountErr] = useState<{ min?: string; mid?: string; max?: string }>({})
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -78,17 +80,25 @@ function NewBandModal({
       setMin('')
       setMid('')
       setMax('')
+      setAmountErr({})
     },
     onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Bant eklenemedi.')),
   })
 
   function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (!grade.trim()) return setError(tx('Kademe zorunlu.'))
-    const [lo, mid, hi] = [Number(minAmount), Number(midAmount), Number(maxAmount)]
-    if (!lo || !mid || !hi) return setError(tx('Alt, orta ve üst tutar zorunlu.'))
-    if (!(lo <= mid && mid <= hi)) return setError(tx('Tutarlar alt ≤ orta ≤ üst sırasında olmalı.'))
-    setError(undefined)
+    const val = (s: string) => (s.trim() === '' ? null : Number(s))
+    const [lo, mid, hi] = [val(minAmount), val(midAmount), val(maxAmount)]
+    const need = tx('Sıfırdan büyük bir tutar girin.')
+    const bad = (n: number | null) => n === null || !Number.isFinite(n) || n <= 0
+    const errs: { min?: string; mid?: string; max?: string } = {
+      min: bad(lo) ? need : undefined,
+      mid: bad(mid) ? need : !bad(lo) && mid! < lo! ? tx('Orta tutar alt tutardan küçük olamaz.') : undefined,
+      max: bad(hi) ? need : !bad(mid) && hi! < mid! ? tx('Üst tutar orta tutardan küçük olamaz.') : !bad(lo) && hi! < lo! ? tx('Üst tutar alt tutardan küçük olamaz.') : undefined,
+    }
+    setAmountErr(errs)
+    setError(grade.trim() ? undefined : tx('Kademe zorunlu.'))
+    if (!grade.trim() || errs.min || errs.mid || errs.max) return
     mutation.mutate()
   }
 
@@ -129,7 +139,7 @@ function NewBandModal({
             required
             value={grade}
             onChange={(e) => setGrade(e.target.value)}
-            error={error?.includes('Kademe') ? error : undefined}
+            error={error}
           />
           <TextField
             id="band-title"
@@ -148,6 +158,7 @@ function NewBandModal({
             required
             className="tabular"
             value={minAmount}
+            error={amountErr.min}
             onChange={(e) => setMin(e.target.value)}
           />
           <TextField
@@ -158,6 +169,7 @@ function NewBandModal({
             required
             className="tabular"
             value={midAmount}
+            error={amountErr.mid}
             onChange={(e) => setMid(e.target.value)}
           />
           <TextField
@@ -168,8 +180,8 @@ function NewBandModal({
             required
             className="tabular"
             value={maxAmount}
+            error={amountErr.max}
             onChange={(e) => setMax(e.target.value)}
-            error={error?.includes('tutar') || error?.includes('sırasında') ? error : undefined}
           />
         </div>
       </form>

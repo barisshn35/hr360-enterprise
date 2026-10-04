@@ -41,9 +41,17 @@ public class OvertimeController : ControllerBase
             .SumAsync(o => o.Hours, ct);
 
     [HttpGet]
-    public async Task<IActionResult> List([FromQuery] Guid? employeeId, [FromQuery] int? year, [FromQuery] string? status, CancellationToken ct)
+    public async Task<IActionResult> List([FromQuery] Guid? employeeId, [FromQuery] int? year, [FromQuery] string? status,
+        [FromQuery] bool mine, CancellationToken ct)
     {
-        if (!IsTimekeeper)
+        // mine=true: "Taleplerim" — İK/yönetici için de yalnızca kendi kayıtları (çalışan kaydı yoksa boş).
+        if (mine)
+        {
+            var me = await _employees.FindMyEmployeeIdAsync(ct);
+            if (me is null) return Ok(Array.Empty<OvertimeRequest>());
+            employeeId = me;
+        }
+        else if (!IsTimekeeper)
         {
             var me = await _employees.FindMyEmployeeIdAsync(ct);
             if (me is null) return Forbid();
@@ -81,7 +89,7 @@ public class OvertimeController : ControllerBase
     {
         var me = await _employees.FindMyEmployeeIdAsync(ct);
         var employeeId = body.EmployeeId ?? me;
-        if (employeeId is null) return Forbid();
+        if (employeeId is null) return BadRequest(new { message = "Hesabınıza bağlı çalışan kaydı yok", code = "no_employee_record" });
         var onBehalf = employeeId != me;
         if (onBehalf && !IsTimekeeper)
             return StatusCode(403, new { message = "Yalnızca kendi adınıza fazla mesai talebi oluşturabilirsiniz" });
@@ -132,6 +140,9 @@ public class OvertimeController : ControllerBase
         o.Status = OvertimeStatus.Cancelled;
         o.DecidedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);
+        // İzin iptaliyle aynı: açık onay akışı kapatılır, yoksa onaycının kutusunda "Beklemede" kalır.
+        // İç uç talep sahibi adına çağrılır; İK başkasının talebini iptal ettiğinde de çalışır.
+        if (o.WorkflowRequestId is { } wf) await _approvals.CancelAsync(o.TenantSlug, wf, o.EmployeeId, ct);
         return Ok(o);
     }
 

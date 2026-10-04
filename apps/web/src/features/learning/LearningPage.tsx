@@ -29,7 +29,7 @@ import {
   type Course,
   type CourseCategory,
 } from '@/api/types'
-import { formatDate, formatNumber } from '@/lib/format'
+import { formatDate, formatNumber, parseDecimal } from '@/lib/format'
 import { useEmployeeName } from '@/lib/useEmployeeName'
 import { cn } from '@/lib/utils'
 import { tx } from '@/lib/i18n'
@@ -48,6 +48,7 @@ function NewCourseModal({ open, onClose }: { open: boolean; onClose: () => void 
   const [category, setCategory] = useState<CourseCategory>('Technical')
   const [isMandatory, setMandatory] = useState(false)
   const [error, setError] = useState<string | undefined>()
+  const [durationError, setDurationError] = useState<string | undefined>()
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -55,7 +56,7 @@ function NewCourseModal({ open, onClose }: { open: boolean; onClose: () => void 
         title: title.trim(),
         description: description.trim() || undefined,
         provider: provider.trim() || undefined,
-        durationHours: Number(durationHours) || 1,
+        durationHours: parseDecimal(durationHours) ?? 1,
         category,
         isMandatory,
       }),
@@ -72,8 +73,13 @@ function NewCourseModal({ open, onClose }: { open: boolean; onClose: () => void 
 
   function submit(e: React.FormEvent) {
     e.preventDefault()
+    const hours = parseDecimal(durationHours)
+    // Sunucu kuralıyla aynı: 0 < süre ≤ 1000 saat.
+    const dErr = hours === null || hours <= 0 || hours > 1000 ? tx('Süre 0’dan büyük ve en fazla 1000 saat olmalı.') : undefined
+    setDurationError(dErr)
     if (title.trim().length < 3) return setError(tx('Eğitim adı en az 3 karakter olmalı.'))
     setError(undefined)
+    if (dErr) return
     mutation.mutate()
   }
 
@@ -139,9 +145,11 @@ function NewCourseModal({ open, onClose }: { open: boolean; onClose: () => void 
             id="course-duration"
             label={tx('Süre (saat)')}
             type="number"
-            min={1}
+            min={0.5}
+            step={0.5}
             className="tabular"
             value={durationHours}
+            error={durationError}
             onChange={(e) => setDuration(e.target.value)}
           />
           <TextField

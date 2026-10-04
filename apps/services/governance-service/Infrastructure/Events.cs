@@ -336,8 +336,15 @@ public sealed class Dispatcher
             req.Headers.Add("X-HR360-Event", type);
             req.Headers.Add("X-HR360-Delivery", eventId.ToString());
             req.Headers.Add("X-HR360-Signature", signature);
-            var client = _http.CreateClient();
-            client.Timeout = TimeSpan.FromSeconds(5);
+            // SSRF: İK ekranından açılan webhook'lar bağlantı anında iç ağ IP'sine gidemez (DNS rebinding dahil);
+            // REST hook (kiracının kendi n8n'i) ve servisin kendi test alıcısı serbest.
+            HttpClient client;
+            if (hook.Source == "rest-hook" || WebhookTargetGuard.IsSelfInbox(hook.Url))
+            {
+                client = _http.CreateClient();
+                client.Timeout = TimeSpan.FromSeconds(5);
+            }
+            else client = WebhookTargetGuard.Client;
             using var res = await client.SendAsync(req, ct);
             status = (int)res.StatusCode;
             if (!res.IsSuccessStatusCode) error = $"HTTP {status}";

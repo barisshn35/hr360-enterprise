@@ -257,14 +257,21 @@ public class LeaveRequestsController : ControllerBase
         // Departman basina onay workflow'u ac - bulunamazsa (bas atanmamis,
         // cross-service cagri hatasi) talep yine de Submitted olarak kalir
         // ve mevcut /resolve ucuyla elle sonuclandirilabilir.
+        // Başlıkta İngilizce enum adı ("Annual talebi") yerine Türkçe izin türü.
+        var typeName = TypeLabel(leave.Type);
         var subject = hours is { } sh
-            ? $"{sh:0.#} saatlik {leave.Type} talebi ({leave.StartDate:dd.MM.yyyy})"
-            : $"{days} günlük {leave.Type} talebi ({leave.StartDate:dd.MM.yyyy} - {leave.EndDate:dd.MM.yyyy})";
+            ? $"{sh:0.#} saatlik {typeName} talebi ({leave.StartDate:dd.MM.yyyy})"
+            : $"{days:0.#} günlük {typeName} talebi ({leave.StartDate:dd.MM.yyyy} - {leave.EndDate:dd.MM.yyyy})";
         // Onay mesajlarında (web, e-posta, sohbet) tarih ve gün sayısı gösterilebilsin diye.
+        // Gerekçe ("reason") izin formunda "onaycıya görünür" diye belirtilir: onay ayrıntısında
+        // onaycıya ve İK'ya gösterilir. KVKK: akış tanımında "reason" gizli alan seçilmişse
+        // workflow-service onu talep sahibi ve İK dışındakilere döndürmez. Sohbet kartları ve
+        // e-posta bildirimleri yük içeriğini (gerekçeyi) taşımaz.
         var payload = System.Text.Json.JsonSerializer.Serialize(new
         {
             leaveRequestId = leave.Id, type = leave.Type.ToString(), startDate = leave.StartDate.ToString("yyyy-MM-dd"),
             endDate = leave.EndDate.ToString("yyyy-MM-dd"), days = leave.Days, hours = leave.Hours,
+            reason = string.IsNullOrWhiteSpace(leave.Reason) ? null : leave.Reason.Trim(),
         });
         var workflowId = internalCall
             ? await _approvals.StartLeaveApprovalInternalAsync(_db, leave.EmployeeId, subject, ct, payload)
@@ -277,6 +284,19 @@ public class LeaveRequestsController : ControllerBase
 
         return (null, leave);
     }
+
+    /// <summary>Izin turunun Turkce adi (onay basliklari icin; arayuzdeki leaveTypeLabels ile ayni).</summary>
+    public static string TypeLabel(LeaveType type) => type switch
+    {
+        LeaveType.Annual => "yıllık izin",
+        LeaveType.Sick => "hastalık izni",
+        LeaveType.Unpaid => "ücretsiz izin",
+        LeaveType.Maternity => "doğum izni",
+        LeaveType.Paternity => "babalık izni",
+        LeaveType.Marriage => "evlilik izni",
+        LeaveType.Bereavement => "vefat izni",
+        _ => "izin",
+    };
 
     /// <summary>
     /// Onay akisi OLMAYAN bir talebi (orn. departman basinin kendi izni, basi atanmamis

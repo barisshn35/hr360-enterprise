@@ -20,6 +20,8 @@ const FEATURE_COUNT = 6
 /** Model girişi (sıra model kartındaki gibi): kıdem, ücret/bant ortası, son puan,
  * son terfiden bu yana (ay), aylık fazla mesai (saat), yıllık eğitim (saat). */
 const TYPICAL = [0, 1, 3, 12, 8, 20]
+/** Değer sınırları (ml-inference attrition_ml.FeatureSpec ile aynı; model kartı yüklenince oradaki min/max kullanılır). */
+const BOUNDS: Array<[number, number]> = [[0, 45], [0.3, 2], [1, 5], [0, 360], [0, 200], [0, 500]]
 
 /** Kıdem kayıttan hesaplanır; diğer alanlar tipik değerle başlar ve elle düzeltilir. */
 function defaultFeatures(employee: Employee): number[] {
@@ -28,7 +30,7 @@ function defaultFeatures(employee: Employee): number[] {
     (Date.now() - new Date(employee.hireDate).getTime()) / (365.25 * 24 * 3600 * 1000),
   )
   const values = [...TYPICAL].slice(0, FEATURE_COUNT)
-  values[0] = Number(tenureYears.toFixed(1))
+  values[0] = Number(Math.min(tenureYears, BOUNDS[0][1]).toFixed(1))
   return values
 }
 
@@ -87,6 +89,19 @@ export function AttritionRiskPanel({ employee }: { employee: Employee }) {
     return result.probability[result.probability.length - 1]
   }, [result])
 
+  const boundsAt = (i: number): [number, number] | undefined => {
+    const f = card.data?.features[i]
+    return f && typeof f.min === 'number' && typeof f.max === 'number' ? [f.min, f.max] : BOUNDS[i]
+  }
+  const fieldErrors = features.map((v, i) => {
+    if (!Number.isFinite(v)) return tx('Değer girin.')
+    const b = boundsAt(i)
+    return b && (v < b[0] || v > b[1])
+      ? tx('{0} ile {1} arasında olmalı.', [String(b[0]).replace('.', ','), String(b[1]).replace('.', ',')])
+      : undefined
+  })
+  const hasFieldError = fieldErrors.some(Boolean)
+
   const contributions = useMemo(() => (explain ? toContributions(explain, labels) : []), [explain, labels])
   const maxAbs = contributions[0] ? Math.abs(contributions[0].contribution) : 1
 
@@ -137,21 +152,30 @@ export function AttritionRiskPanel({ employee }: { employee: Employee }) {
               <Input
                 type="number"
                 step="any"
-                value={value}
+                min={boundsAt(i)?.[0]}
+                max={boundsAt(i)?.[1]}
+                value={Number.isFinite(value) ? value : ''}
+                aria-invalid={fieldErrors[i] ? true : undefined}
+                aria-describedby={fieldErrors[i] ? `attrition-f${i}-error` : undefined}
                 onChange={(e) => {
                   const next = [...features]
-                  next[i] = Number(e.target.value)
+                  next[i] = e.target.value === '' ? Number.NaN : Number(e.target.value)
                   setFeatures(next)
                 }}
                 className="tabular h-9 px-2 text-[13px]"
               />
+              {fieldErrors[i] && (
+                <span id={`attrition-f${i}-error`} role="alert" className="text-[11px] leading-snug text-destructive">
+                  {fieldErrors[i]}
+                </span>
+              )}
             </label>
           ))}
         </fieldset>
 
         <Button
           className="w-full cursor-pointer"
-          disabled={mutation.isPending || blocked || objection.isPending}
+          disabled={mutation.isPending || blocked || objection.isPending || hasFieldError}
           onClick={() => mutation.mutate()}
         >
           {mutation.isPending && <LoaderCircle className="size-4 animate-spin" />}

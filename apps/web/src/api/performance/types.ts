@@ -374,8 +374,8 @@ export interface GoalBreakdown {
   goalId: string
   title: string
   weight: number
-  /** Gerçekleşme yüzdesi (0–100, aşım kırpılmış). */
-  progress: number | null
+  /** Gerçekleşme yüzdesi (0–100, aşım kırpılmış). Sunucu alanı: GoalBreakdown.Achievement → "achievement". */
+  achievement: number | null
   status?: GoalStatus | null
 }
 

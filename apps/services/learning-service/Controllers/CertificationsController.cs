@@ -64,7 +64,7 @@ public class CertificationsController : ControllerBase
         if (string.IsNullOrWhiteSpace(request.Name) || request.Name.Length > 200)
             return BadRequest("Sertifika adı zorunlu ve en fazla 200 karakter olabilir");
         if (request.ExpiresOn.HasValue && request.ExpiresOn < request.IssuedOn)
-            return BadRequest("Gecerlilik bitisi, veril tarihinden once olamaz");
+            return BadRequest("Geçerlilik bitiş tarihi, veriliş tarihinden önce olamaz");
 
         var cert = new Certification
         {

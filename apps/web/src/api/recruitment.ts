@@ -76,6 +76,8 @@ export interface JobPosting {
   createdAt: string
   publishedAt?: string | null
   applications?: Application[]
+  /** Liste ucunda başvuru sayısı (yalnızca aday görme yetkisi olana). */
+  applicationCount?: number | null
 }
 
 export interface Candidate {

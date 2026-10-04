@@ -68,6 +68,8 @@ public class CoursesController : ControllerBase
     [Authorize(Policy = "RequireHrAdmin")]
     public async Task<IActionResult> Create([FromBody] CreateCourseRequest request)
     {
+        if (request.DurationHours is <= 0 or > 1000)
+            return BadRequest(new { message = "Eğitim süresi 0'dan büyük ve en fazla 1000 saat olmalı" });
         var course = new Course
         {
             Title = request.Title,

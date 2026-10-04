@@ -124,7 +124,8 @@ builder.Services.AddControllers()
             new System.Text.Json.Serialization.JsonStringEnumConverter());
     });
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+// İç içe aynı adlı kayıtlar (ör. iki denetleyicide DecideInput) çakışmasın diye tam ad.
+builder.Services.AddSwaggerGen(c => c.CustomSchemaIds(t => (t.FullName ?? t.Name).Replace('+', '.')));
 
 var app = builder.Build();
 

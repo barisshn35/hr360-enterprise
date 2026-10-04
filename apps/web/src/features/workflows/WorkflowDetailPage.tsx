@@ -14,12 +14,66 @@ import { isHr } from '@/auth/roles'
 import { workflowApi } from '@/api/workflows'
 import { qk, useEmployees, useWorkflow, useMyEmployeeId } from '@/api/queries'
 import { workflowTypeLabels, type ApprovalStep } from '@/api/types'
-import { formatDateTime, formatRelativeToNow, fullName } from '@/lib/format'
+import { formatDate, formatDateTime, formatNumber, formatRelativeToNow, fullName } from '@/lib/format'
+import { leaveTypeLabels, type LeaveType } from '@/api/leave'
 import { cn } from '@/lib/utils'
 import { ApprovalChain, activeStepId } from './ApprovalChain'
 import { DecisionModal } from './DecisionModal'
 import { DelegateModal } from './DelegateModal'
 import { tx } from '@/lib/i18n'
+
+/** Talep yükündeki bilinen anahtarların okunur adları (İK'nın "Ek veri" listesi için). */
+const PAYLOAD_LABELS: Record<string, string> = {
+  type: tx('Tür'),
+  startDate: tx('Başlangıç'),
+  endDate: tx('Bitiş'),
+  date: tx('Tarih'),
+  days: tx('Gün'),
+  hours: tx('Saat'),
+  amount: tx('Tutar'),
+  totalAmount: tx('Toplam tutar'),
+  currency: tx('Para birimi'),
+  category: tx('Kategori'),
+  position: tx('Pozisyon'),
+  candidate: tx('Aday'),
+  grossSalary: tx('Brüt ücret'),
+  expiresAt: tx('Geçerlilik sonu'),
+  reason: tx('Gerekçe'),
+}
+const GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}(T[\d:.]+(Z|[+-]\d{2}:\d{2})?)?$/
+
+function parsePayload(payload: string | null | undefined): Record<string, unknown> | null {
+  if (!payload) return null
+  try {
+    const v: unknown = JSON.parse(payload)
+    return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null
+  } catch {
+    return null
+  }
+}
+
+/** Yükü okunur anahtar-değer listesine çevirir; kimlikler (…Id, GUID) gösterilmez. */
+function payloadRows(p: Record<string, unknown>, skip: string[]): Array<{ key: string; label: string; value: string }> {
+  const rows: Array<{ key: string; label: string; value: string }> = []
+  for (const [key, raw] of Object.entries(p)) {
+    if (skip.includes(key) || raw === null || raw === undefined || raw === '') continue
+    if (/id$/i.test(key) || (typeof raw === 'string' && GUID_RE.test(raw))) continue
+    let value: string
+    if (typeof raw === 'number') value = formatNumber(raw)
+    else if (typeof raw === 'boolean') value = raw ? tx('Evet') : tx('Hayır')
+    else if (typeof raw === 'string')
+      value =
+        key === 'type' && raw in leaveTypeLabels
+          ? leaveTypeLabels[raw as LeaveType]
+          : ISO_DATE_RE.test(raw)
+            ? raw.length > 10 ? formatDateTime(raw) : formatDate(raw)
+            : raw
+    else value = JSON.stringify(raw)
+    rows.push({ key, label: PAYLOAD_LABELS[key] ?? key, value })
+  }
+  return rows
+}
 
 export function WorkflowDetailPage() {
   const { workflowId } = useParams<{ workflowId: string }>()
@@ -118,6 +172,10 @@ export function WorkflowDetailPage() {
   const canDelegate =
     can('workflow:decide') && isOpen && (hr || (Boolean(myEmployeeId) && currentStep?.approverEmployeeId === myEmployeeId))
   const title = data.subject || workflowTypeLabels[data.type]
+  // Gerekçe onaycıya ve İK'ya gösterilir; akış tanımında gizlenmişse sunucu onaycıya döndürmez.
+  const payload = parsePayload(data.payload)
+  const reason = typeof payload?.reason === 'string' && payload.reason.trim() ? payload.reason.trim() : null
+  const extraRows = hr && payload ? payloadRows(payload, ['reason']) : []
 
   return (
     <div className="space-y-5">
@@ -197,7 +255,7 @@ export function WorkflowDetailPage() {
                     {formatDateTime(data.createdAt)}
                   </dd>
                 </div>
-                <div className="flex items-baseline justify-between gap-4 pt-2.5">
+                <div className={cn('flex items-baseline justify-between gap-4', reason ? 'py-2.5' : 'pt-2.5')}>
                   <dt className="text-[12px] text-muted-foreground">{tx('SLA hedefi')}</dt>
                   <dd
                     className={cn(
@@ -208,6 +266,12 @@ export function WorkflowDetailPage() {
                     {data.slaDueAt ? formatDateTime(data.slaDueAt) : tx('Tanımlanmamış')}
                   </dd>
                 </div>
+                {reason && (
+                  <div className="pt-2.5">
+                    <dt className="text-[12px] text-muted-foreground">{tx('Gerekçe')}</dt>
+                    <dd className="mt-1 text-[13px] leading-relaxed break-words whitespace-pre-wrap">{reason}</dd>
+                  </div>
+                )}
               </dl>
 
               {data.slaDueAt && isOpen && (
@@ -220,13 +284,19 @@ export function WorkflowDetailPage() {
             </PanelBody>
           </Panel>
 
-          {data.payload && (
+          {/* Ham yük (JSON) çalışana gösterilmez; İK okunur liste görür, kimlikler gizlenir. */}
+          {extraRows.length > 0 && (
             <Panel>
               <PanelHead title={tx('Ek veri')} />
               <PanelBody>
-                <pre className="overflow-x-auto rounded-md bg-muted p-3 font-mono text-[11px] whitespace-pre-wrap">
-                  {data.payload}
-                </pre>
+                <dl className="divide-y divide-border">
+                  {extraRows.map((r) => (
+                    <div key={r.key} className="flex items-baseline justify-between gap-4 py-2 first:pt-0 last:pb-0">
+                      <dt className="text-[12px] text-muted-foreground">{r.label}</dt>
+                      <dd className="tabular text-right text-[13px] break-words">{r.value}</dd>
+                    </div>
+                  ))}
+                </dl>
               </PanelBody>
             </Panel>
           )}

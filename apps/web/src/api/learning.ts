@@ -50,6 +50,8 @@ export interface Course {
   durationHours: number
   category: CourseCategory
   isMandatory: boolean
+  /** Sertifika geçerlilik süresi (ay); null = süresiz. */
+  certificateValidityMonths?: number | null
   enrollments?: Enrollment[]
 }
 

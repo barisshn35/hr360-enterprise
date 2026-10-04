@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { AnimatePresence, motion } from 'motion/react'
@@ -75,7 +76,8 @@ export function OrgPresentationPage() {
 
   if (depts.isPending || people.isPending) return <CenteredSpinner label={tx('Sunum hazırlanıyor')} />
   const s = slides[i]
-  return (
+  // Portal: sayfa geçiş animasyonunun filtre/transform sarmalayıcısı "fixed" katmanı içine hapsetmesin.
+  return createPortal(
     <div className="fixed inset-0 z-[70] overflow-hidden bg-background text-foreground">
       <AmbientBackground />
       <div className="absolute top-4 right-4 z-10 flex gap-2">
@@ -124,6 +126,7 @@ export function OrgPresentationPage() {
         <span className="tabular text-[13px] text-muted-foreground">{i + 1}/{slides.length}</span>
         <Button size="icon" variant="outline" aria-label={tx('Sonraki')} onClick={() => go(1)} disabled={i === slides.length - 1}><ChevronRight className="size-4" /></Button>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

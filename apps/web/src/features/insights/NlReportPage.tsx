@@ -25,14 +25,19 @@ export function ReportView({ r }: { r: NlReport }) {
   const [showSql, setShowSql] = useState(false)
   // İşe alım hunisi (tek satır): her aşama bir çubuk.
   const funnel = r.chart === 'funnel' && r.rows.length === 1
-  const data = funnel
-    ? r.columns.slice(1).map((c, i) => ({ k: c, v: Number(r.rows[0]![i + 1] ?? 0) }))
-    : r.rows.map((row) => ({ k: String(row[0] ?? '—'), v: Number(row[1] ?? 0) }))
+  // KVKK: küçük grupların değeri sunucuda null'a çevrilir; 0 sayılmaz, "gizli" olarak işaretlenir ve grafikte çizilmez.
+  const num = (c: string | number | null | undefined) => (c === null || c === undefined || c === '' ? null : Number(c))
+  const hiddenLabel = tx('gizli')
+  const raw = funnel
+    ? r.columns.slice(1).map((c, i) => ({ k: c, v: num(r.rows[0]![i + 1]) }))
+    : r.rows.map((row) => ({ k: String(row[0] ?? '—'), v: num(row[1]) }))
+  const data = raw.map((d) => (d.v === null ? { k: `${d.k} (${hiddenLabel})`, v: null } : d))
+  const cell = (c: string | number | null, j: number) => (c !== null ? c : j > 0 && (r.suppressed ?? 0) > 0 ? hiddenLabel : '—')
   return (
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
       <p className="text-[15px] font-semibold">{r.interpretation}</p>
       {!r.understood ? null : !funnel && (r.chart === 'number' || data.length === 1) ? (
-        <motion.p initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="tabular text-[56px] font-semibold tracking-tight text-primary">{data[0]?.v.toLocaleString(appLocale) ?? 0}</motion.p>
+        <motion.p initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="tabular text-[56px] font-semibold tracking-tight text-primary">{data[0]?.v === null || data[0]?.v === undefined ? <span className="text-[28px] text-muted-foreground">{data[0] ? tx('Gizli (KVKK)') : '—'}</span> : data[0].v.toLocaleString(appLocale)}</motion.p>
       ) : data.length === 0 ? (
         <p className="text-[13px] text-muted-foreground">{tx('Bu aralıkta kayıt yok.')}</p>
       ) : (
@@ -61,7 +66,7 @@ export function ReportView({ r }: { r: NlReport }) {
       {r.understood && data.length > 0 && (
         <table className="w-full max-w-lg text-[13px]">
           <thead><tr className="text-left text-muted-foreground">{r.columns.map((c) => <th key={c} className="py-1.5 font-medium">{c}</th>)}</tr></thead>
-          <tbody>{r.rows.map((row, i) => <tr key={i} className="border-t border-border">{row.map((c, j) => <td key={j} className="tabular py-1.5">{c ?? '—'}</td>)}</tr>)}</tbody>
+          <tbody>{r.rows.map((row, i) => <tr key={i} className="border-t border-border">{row.map((c, j) => <td key={j} className={c === null && j > 0 ? 'py-1.5 text-muted-foreground italic' : 'tabular py-1.5'}>{cell(c, j)}</td>)}</tr>)}</tbody>
         </table>
       )}
       {r.understood && r.note && <p className="text-[12px] text-muted-foreground">{r.note}</p>}

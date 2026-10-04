@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { TextField, SelectField } from '@/components/ui/Field'
 import { useToast } from '@/components/ui/Toast'
 import { tx } from '@/lib/i18n'
+import { localISODate } from '@/lib/dates'
 
 interface DepartmentOption {
   id: string
@@ -29,6 +30,12 @@ type Errors = Partial<Record<keyof Form, string>>
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
 const PHONE_RE = /^[0-9+()\s-]{7,20}$/
+const HIRE_MIN = '1950-01-01'
+function hireMax(): string {
+  const d = new Date()
+  d.setFullYear(d.getFullYear() + 1)
+  return localISODate(d)
+}
 
 function validate(form: Form): Errors {
   const errors: Errors = {}
@@ -38,6 +45,9 @@ function validate(form: Form): Errors {
   if (form.phone && !PHONE_RE.test(form.phone.trim()))
     errors.phone = tx('Telefon numarası geçerli görünmüyor.')
   if (!form.hireDate) errors.hireDate = tx('İşe giriş tarihi zorunlu.')
+  // Sunucuyla aynı aralık: 01.01.1950 – bugün + 1 yıl.
+  else if (form.hireDate < HIRE_MIN) errors.hireDate = tx("İşe giriş tarihi 01.01.1950'den önce olamaz.")
+  else if (form.hireDate > hireMax()) errors.hireDate = tx('İşe giriş tarihi en fazla bir yıl sonrası olabilir.')
   return errors
 }
 
@@ -233,6 +243,8 @@ export function NewEmployeeModal({
             label={tx('İşe giriş tarihi')}
             type="date"
             required
+            min={HIRE_MIN}
+            max={hireMax()}
             value={form.hireDate}
             onChange={set('hireDate')}
             onBlur={revalidate}

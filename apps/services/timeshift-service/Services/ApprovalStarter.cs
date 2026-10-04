@@ -62,4 +62,31 @@ public class ApprovalStarter
             return null;
         }
     }
+
+    /// <summary>
+    /// Talep iptal edilince onay akışını workflow-service'in iç ucuyla kapatır (talep sahibi adına).
+    /// Başarısızsa false — kayıt yine iptal edilmiş kalır.
+    /// </summary>
+    public async Task<bool> CancelAsync(string tenant, Guid workflowId, Guid requesterEmployeeId, CancellationToken ct)
+    {
+        var token = Environment.GetEnvironmentVariable("INTERNAL_SERVICE_TOKEN");
+        if (string.IsNullOrEmpty(token) || string.IsNullOrEmpty(tenant)) return false;
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Post, $"{_workflowUrl}/api/internal/workflows/{workflowId}/cancel")
+            {
+                Content = new StringContent(JsonSerializer.Serialize(new { tenantSlug = tenant, actorEmployeeId = requesterEmployeeId }),
+                    Encoding.UTF8, "application/json"),
+            };
+            req.Headers.Add("X-Internal-Token", token);
+            using var resp = await _http.SendAsync(req, ct);
+            if (!resp.IsSuccessStatusCode) _log.LogWarning("Onay akışı kapatılamadı: {Status}", resp.StatusCode);
+            return resp.IsSuccessStatusCode;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _log.LogWarning(ex, "Onay akışı kapatılamadı");
+            return false;
+        }
+    }
 }

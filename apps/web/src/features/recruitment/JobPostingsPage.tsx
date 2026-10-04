@@ -251,9 +251,9 @@ export function JobPostingsPage() {
       header: tx('Başvuru'),
       align: 'right',
       hideBelow: 'md',
-      sortValue: (p) => p.applications?.length ?? 0,
-      exportText: (p) => String(p.applications?.length ?? 0),
-      cell: (p) => formatNumber(p.applications?.length ?? 0),
+      sortValue: (p) => p.applicationCount ?? p.applications?.length ?? 0,
+      exportText: (p) => String(p.applicationCount ?? p.applications?.length ?? 0),
+      cell: (p) => formatNumber(p.applicationCount ?? p.applications?.length ?? 0),
     },
     {
       id: 'createdAt',

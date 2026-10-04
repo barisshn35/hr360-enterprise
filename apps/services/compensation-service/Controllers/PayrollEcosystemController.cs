@@ -498,6 +498,7 @@ public class PayrollEcosystemController : ControllerBase
         var c = await _db.RaiseCycles.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (c is null) return NotFound();
         if (c.AppliedAt is not null) return Conflict(new { message = "Zam dönemi zaten uygulandı" });
+        if (c.Status != RaiseCycleStatus.Open) return Conflict(new { message = "Yalnızca önerilere açık zam dönemi uygulanabilir" });
         var approved = await _db.RaiseProposals.Where(p => p.CycleId == id && p.Status == RaiseProposalStatus.Approved).ToListAsync(ct);
         foreach (var p in approved)
         {

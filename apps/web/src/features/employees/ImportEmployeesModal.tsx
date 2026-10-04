@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import { useEmployees } from '@/api/queries'
 import { LoaderCircle, Upload, FileSpreadsheet, CheckCircle2, XCircle } from 'lucide-react'
 import { headerField, readSpreadsheet, SpreadsheetError } from '@/lib/spreadsheet'
 import { employeeApi } from '@/api/employees'
@@ -49,8 +50,16 @@ const HEADER_ALIASES: Record<string, keyof Omit<ParsedRow, 'rowNumber' | 'error'
   departman: 'departmentLabel',
 }
 
+/** Takvimde gerçekten var olan bir gün mü (32.13.2026 ya da 30.02.2026 değil)? */
+function isRealDate(y: number, m: number, d: number): boolean {
+  if (y < 1900 || y > 2100 || m < 1 || m > 12 || d < 1) return false
+  const dt = new Date(Date.UTC(y, m - 1, d))
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d
+}
+
 function excelDateToIso(value: unknown): string {
   if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return ''
     const y = value.getFullYear()
     const m = String(value.getMonth() + 1).padStart(2, '0')
     const d = String(value.getDate()).padStart(2, '0')
@@ -59,14 +68,16 @@ function excelDateToIso(value: unknown): string {
   const s = String(value ?? '').trim()
   // gg.aa.yyyy veya gg/aa/yyyy
   const m1 = s.match(/^(\d{1,2})[./](\d{1,2})[./](\d{4})$/)
-  if (m1) return `${m1[3]}-${m1[2].padStart(2, '0')}-${m1[1].padStart(2, '0')}`
+  if (m1) return isRealDate(+m1[3], +m1[2], +m1[1]) ? `${m1[3]}-${m1[2].padStart(2, '0')}-${m1[1].padStart(2, '0')}` : ''
   // zaten yyyy-aa-gg
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
+  const m2 = s.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (m2) return isRealDate(+m2[1], +m2[2], +m2[3]) ? s : ''
   return ''
 }
 
-function parseWorkbook(raw: Record<string, unknown>[], departments: DepartmentOption[]): ParsedRow[] {
-
+function parseWorkbook(raw: Record<string, unknown>[], departments: DepartmentOption[], existingEmails: Set<string>): ParsedRow[] {
+  // Dosya içinde aynı e-posta ikinci kez geçerse o satır da hatalı sayılır.
+  const seen = new Set<string>()
   const deptByLabel = new Map(departments.map((d) => [d.label.trim().toLowerCase(), d.id]))
 
   return raw.map((record, idx) => {
@@ -84,12 +95,16 @@ function parseWorkbook(raw: Record<string, unknown>[], departments: DepartmentOp
     const departmentLabel = String(mapped.departmentLabel ?? '').trim()
 
     let error: string | undefined
-    if (!firstName || !lastName) error = 'Ad/Soyad eksik'
+    const emailKey = email.toLowerCase()
+    if (!firstName || !lastName) error = tx('Ad/Soyad eksik')
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) error = tx('E-posta geçersiz')
-    else if (!hireDate) error = tx('İşe giriş tarihi okunamadı')
+    else if (existingEmails.has(emailKey)) error = tx('Bu e-postayla kayıtlı çalışan var')
+    else if (seen.has(emailKey)) error = tx('E-posta dosyada birden fazla kez geçiyor')
+    else if (!hireDate) error = tx('İşe giriş tarihi okunamadı ya da geçersiz')
     else if (departmentLabel && !deptByLabel.has(departmentLabel.toLowerCase()))
       error = tx('Departman bulunamadı: "{0}"', [departmentLabel])
 
+    if (email) seen.add(emailKey)
     return {
       rowNumber: idx + 2, // Excel'de 1. satır başlık
       firstName,
@@ -114,6 +129,8 @@ export function ImportEmployeesModal({
 }) {
   const toast = useToast()
   const queryClient = useQueryClient()
+  // Mevcut çalışanların e-postaları (çalışan listesi sorgusu; çoğu zaman önbellekte).
+  const employees = useEmployees({ enabled: open })
 
   const [rows, setRows] = useState<ParsedRow[]>([])
   const [fileName, setFileName] = useState('')
@@ -142,7 +159,9 @@ export function ImportEmployeesModal({
     setResults(null)
     setParsing(true)
     try {
-      setRows(parseWorkbook(await readSpreadsheet(file), departments))
+      const list = employees.data ?? (await employees.refetch()).data ?? []
+      const existing = new Set(list.map((x) => (x.email ?? '').trim().toLowerCase()).filter(Boolean))
+      setRows(parseWorkbook(await readSpreadsheet(file), departments, existing))
     } catch (err) {
       toast.stop(err instanceof SpreadsheetError ? err.message : tx('Dosya okunamadı. Geçerli bir .xlsx ya da .csv dosyası seçin.'))
       setRows([])
@@ -234,7 +253,9 @@ export function ImportEmployeesModal({
               {importing && <LoaderCircle className="size-4 animate-spin" />}
               {importing
                 ? tx('İçe aktarılıyor ({0}/{1})', [progress, validRows.length])
-                : tx('{0} kaydı içe aktar', [validRows.length || ''])}
+                : validRows.length === 0
+                  ? tx('İçe aktarılacak geçerli kayıt yok')
+                  : tx('{0} kaydı içe aktar', [validRows.length])}
             </Button>
           )}
         </>

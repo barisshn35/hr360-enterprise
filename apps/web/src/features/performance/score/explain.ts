@@ -92,7 +92,7 @@ export function explain(s: ScoreResult, cfg: Pick<ScoringConfig, 'goalWeightPerc
 
   const goals: ExplainedGoal[] = s.breakdown.goals.map((g) => {
     const share = goalsW ? g.weight / goalsW : 0
-    return { ...g, share: share * 100, contribution: hasGoals && g.progress !== null ? g.progress * share * (effGoalPct / 100) : null }
+    return { ...g, share: share * 100, contribution: hasGoals && g.achievement !== null ? g.achievement * share * (effGoalPct / 100) : null }
   })
 
   return {

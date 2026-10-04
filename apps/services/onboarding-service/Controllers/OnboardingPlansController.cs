@@ -94,6 +94,9 @@ public class OnboardingPlansController : ControllerBase
             return BadRequest(new { message = "Yeni çalışan kendi yol arkadaşı olamaz" });
         if (request.Location is { Length: > 200 })
             return BadRequest(new { message = "Buluşma yeri en fazla 200 karakter olabilir" });
+        // Tarih mantık doğrulaması: başlangıç, işe giriş tarihiyle aynı makul aralıkta olmalı.
+        if (request.StartDate < new DateOnly(1950, 1, 1) || request.StartDate > DateOnly.FromDateTime(DateTime.UtcNow).AddYears(1))
+            return BadRequest(new { message = "Başlangıç tarihi 01.01.1950 ile bugünden bir yıl sonrası arasında olmalı" });
         var person = await People.FindAsync(_sql, Tenant, request.EmployeeId, ct);
         if (person is null) return NotFound(new { message = "Çalışan bulunamadı" });
         if (request.BuddyEmployeeId is { } bid && await People.FindAsync(_sql, Tenant, bid, ct) is null)
@@ -267,6 +270,10 @@ public class OnboardingPlansController : ControllerBase
     {
         var plan = await _db.Plans.Include(p => p.Tasks).FirstOrDefaultAsync(p => p.Id == id);
         if (plan is null) return NotFound();
+        // Son tarih plan başlangıcına göre şablonlarla aynı aralıkta olmalı (-60 / +365 gün);
+        // 1999 gibi değerler kabul ediliyordu.
+        if (request.DueDate is { } due && (due < plan.StartDate.AddDays(-60) || due > plan.StartDate.AddDays(365)))
+            return BadRequest(new { message = "Son tarih, plan başlangıcından en fazla 60 gün önce ve 365 gün sonra olabilir" });
 
         var task = new OnboardingTask
         {

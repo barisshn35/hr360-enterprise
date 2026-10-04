@@ -20,6 +20,9 @@ import { Metric, PlanGate, useAction } from '@/features/shared/kit'
 import { tx, pct } from '@/lib/i18n'
 import { EnpsTrendPanel, SentimentSummary } from './SurveyInsights'
 
+/** Sunucudaki anket anonimlik eşiği (engagement-service HrControllers.AnonymityThreshold = 5, KVKK). */
+const SURVEY_ANONYMITY_THRESHOLD = 5
+
 const SCALE_FACES = ['😞', '🙁', '😐', '🙂', '😄']
 const statusTone = { Draft: 'neutral', Open: 'success', Closed: 'info' } as const
 const statusLabel = { Draft: tx('Taslak'), Open: tx('Açık'), Closed: tx('Kapandı') }
@@ -35,7 +38,7 @@ function AnswerModal({ survey, onClose }: { survey: Survey; onClose: () => void 
       onClose={onClose}
       size="lg"
       title={survey.title}
-      note={survey.isAnonymous ? tx('Anonim anket: yanıtınız kimliğinizle eşleştirilmez; 3’ten az yanıtlı kırılımlar gizlenir.') : survey.description ?? undefined}
+      note={survey.isAnonymous ? tx('Anonim anket: yanıtınız kimliğinizle eşleştirilmez; {0} yanıtın altındaki kırılımlar ve serbest metinler gizlenir.', [SURVEY_ANONYMITY_THRESHOLD]) : survey.description ?? undefined}
       footer={
         <>
           <Button variant="outline" onClick={onClose}>{tx('Vazgeç')}</Button>
@@ -112,7 +115,7 @@ function ResultsModal({ survey, onClose }: { survey: Survey; onClose: () => void
   const r = q.data
   const nps = r?.questions.find((x) => x.type === 'Nps')
   return (
-    <Modal open onClose={onClose} size="xl" title={tx('Sonuçlar — {0}', [survey.title])} note={tx('Anonimlik eşiği: {0} yanıtın altındaki kırılımlar ve serbest metinler gizlenir.', [r?.anonymityThreshold ?? 5])}>
+    <Modal open onClose={onClose} size="xl" title={tx('Sonuçlar — {0}', [survey.title])} note={tx('Anonimlik eşiği: {0} yanıtın altındaki kırılımlar ve serbest metinler gizlenir.', [r?.anonymityThreshold ?? SURVEY_ANONYMITY_THRESHOLD])}>
       {q.isPending ? <RowsSkeleton /> : q.isError ? <ErrorState message={(q.error as Error).message} /> : r?.hidden ? (
         <div className="space-y-3">
           <Metric label={tx('Yanıt')} value={r.responseCount} hint={tx('{0} kişiden', [r.eligible])} />
@@ -193,13 +196,18 @@ function BuilderModal({ onClose }: { onClose: () => void }) {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [questions, setQuestions] = useState<SurveyQuestion[]>([{ id: 'q1', text: '', type: 'Scale', options: [], required: true }])
-  const create = useAction(() => engagementApi.createSurvey({ title, description, kind: 'Custom', isAnonymous: true, questions: questions.map((q) => ({ ...q, options: q.type === 'Choice' ? q.options : [] })) }), {
+  // Seçenekler ham metin olarak tutulur (her tuşta ayrıştırılırsa virgül yazılamaz); kaydederken bölünür.
+  const [optionText, setOptionText] = useState<Record<string, string>>({})
+  const optionsOf = (id: string) => [...new Set((optionText[id] ?? '').split(',').map((x) => x.trim()).filter(Boolean))]
+  const optionError = (q: SurveyQuestion) => (q.type === 'Choice' && optionsOf(q.id).length < 2 ? tx('Seçenekli soruda en az 2 farklı seçenek olmalı.') : undefined)
+  const invalid = questions.some((q) => !q.text.trim() || optionError(q))
+  const create = useAction(() => engagementApi.createSurvey({ title, description, kind: 'Custom', isAnonymous: true, questions: questions.map((q) => ({ ...q, options: q.type === 'Choice' ? optionsOf(q.id) : [] })) }), {
     success: tx('Anket taslağı oluşturuldu'), invalidate: [['surveys']], onDone: onClose,
   })
   const upd = (i: number, patch: Partial<SurveyQuestion>) => setQuestions((qs) => qs.map((q, j) => (j === i ? { ...q, ...patch } : q)))
   return (
     <Modal open onClose={onClose} size="lg" title={tx('Yeni anket')} note={tx('Anketler anonim oluşturulur. Taslak olarak kaydedilir; yayınlamak için listeden açın.')}
-      footer={<><Button variant="outline" onClick={onClose}>{tx('Vazgeç')}</Button><Button disabled={!title.trim() || questions.some((q) => !q.text.trim()) || create.isPending} onClick={() => create.mutate(undefined)}>{tx('Kaydet')}</Button></>}>
+      footer={<><Button variant="outline" onClick={onClose}>{tx('Vazgeç')}</Button><Button disabled={!title.trim() || invalid || create.isPending} onClick={() => create.mutate(undefined)}>{tx('Kaydet')}</Button></>}>
       <div className="space-y-4">
         <TextField label={tx('Başlık')} value={title} onChange={(e) => setTitle(e.target.value)} required />
         <TextAreaField label={tx('Açıklama')} rows={2} value={description} onChange={(e) => setDescription(e.target.value)} />
@@ -212,7 +220,7 @@ function BuilderModal({ onClose }: { onClose: () => void }) {
               </div>
               <Button variant="ghost" size="icon" aria-label={tx('Soruyu sil')} onClick={() => setQuestions((qs) => qs.filter((_, j) => j !== i))} disabled={questions.length === 1}><Trash2 className="size-4" /></Button>
             </div>
-            {q.type === 'Choice' && <TextField label={tx('Seçenekler (virgülle)')} value={q.options.join(', ')} onChange={(e) => upd(i, { options: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })} />}
+            {q.type === 'Choice' && <TextField label={tx('Seçenekler (virgülle)')} value={optionText[q.id] ?? ''} error={optionError(q)} onChange={(e) => setOptionText((m) => ({ ...m, [q.id]: e.target.value }))} />}
           </div>
         ))}
         <Button variant="outline" onClick={() => setQuestions((qs) => [...qs, { id: `q${Date.now().toString(36)}`, text: '', type: 'Scale', options: [], required: true }])}><Plus className="size-4" />{' '}{tx('Soru ekle')}</Button>

@@ -170,8 +170,8 @@ export function ScoreTree({ score, ex, thresholds }: { score: ScoreResult; ex: E
                 depth={2}
                 label={g.title}
                 meta={tx('ağırlık {0} · hedeflerin {1}', [formatWeight(g.weight), formatShare(g.share)])}
-                score={g.progress}
-                scoreText={g.progress === null ? '—' : pct(Math.round(g.progress))}
+                score={g.achievement}
+                scoreText={g.achievement === null ? '—' : pct(Math.round(g.achievement))}
                 color="hsl(var(--foreground) / 0.6)"
                 contribution={g.contribution}
               />

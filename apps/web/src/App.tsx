@@ -9,6 +9,7 @@ import { RequirePermission } from '@/auth/RequirePermission'
 import type { Permission, Role } from '@/auth/roles'
 import { AppShell } from '@/components/layout/AppShell'
 import { ToastProvider } from '@/components/ui/Toast'
+import { ConfirmProvider } from '@/components/ui/Confirm'
 import { CenteredSpinner, EmptyState, FullPageSpinner } from '@/components/ui/States'
 import { useAuth } from '@/auth/useAuth'
 import { Building2 } from 'lucide-react'
@@ -179,6 +180,7 @@ export function App() {
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
           <ToastProvider>
+          <ConfirmProvider>
             <BrowserRouter>
               <Routes>
                 {/* ------------------------------ Herkese açık ------------------------------ */}
@@ -441,6 +443,7 @@ export function App() {
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </BrowserRouter>
+          </ConfirmProvider>
           </ToastProvider>
         </AuthProvider>
       </QueryClientProvider>

@@ -172,13 +172,30 @@ function Kiosk({ site, onClose }: { site: ClockSite; onClose: () => void }) {
 function SiteModal({ site, onClose }: { site?: ClockSite; onClose: () => void }) {
   const [f, setF] = useState<SiteInput>({
     name: site?.name ?? '', allowQr: site?.allowQr ?? true, allowTerminal: site?.allowTerminal ?? true, checkLocation: site?.checkLocation ?? false,
-    latitude: site?.latitude ?? null, longitude: site?.longitude ?? null, radiusMeters: site?.radiusMeters ?? 200, isActive: site?.isActive ?? true,
+    isActive: site?.isActive ?? true,
   })
-  const save = useAction(() => (site ? timeClockApi.updateSite(site.id, f) : timeClockApi.createSite(f)), { success: tx('Nokta kaydedildi'), invalidate: [['timeclock']], onDone: onClose })
-  const num = (s: string) => (s.trim() === '' ? null : Number(s.replace(',', '.')))
+  // Konum alanları ham metin olarak tutulur (her tuşta sayıya çevrilirse "41.0082" yazılamaz); kaydederken ayrıştırılır.
+  const [lat, setLat] = useState(site?.latitude?.toString() ?? '')
+  const [lon, setLon] = useState(site?.longitude?.toString() ?? '')
+  const [radius, setRadius] = useState(String(site?.radiusMeters ?? 200))
+  // Koordinatta binlik ayıracı olmaz: virgül ondalık noktaya çevrilir ("41,008" = 41.008).
+  const coord = (s: string) => { const t = s.trim().replace(',', '.'); return /^[-+]?\d+(\.\d+)?$/.test(t) ? Number(t) : null }
+  const latV = coord(lat)
+  const lonV = coord(lon)
+  const radiusV = /^\d+$/.test(radius.trim()) ? Number(radius.trim()) : null
+  const latErr = !f.checkLocation ? undefined : lat.trim() === '' ? tx('Enlem gerekli.') : latV === null || latV < -90 || latV > 90 ? tx('Enlem -90 ile 90 arasında olmalı.') : undefined
+  const lonErr = !f.checkLocation ? undefined : lon.trim() === '' ? tx('Boylam gerekli.') : lonV === null || lonV < -180 || lonV > 180 ? tx('Boylam -180 ile 180 arasında olmalı.') : undefined
+  const radiusErr = !f.checkLocation ? undefined : radiusV === null || radiusV < 20 || radiusV > 5000 ? tx('Yarıçap 20 ile 5000 metre arasında olmalı.') : undefined
+  const invalid = !!(latErr || lonErr || radiusErr)
+  const body = (): SiteInput => ({
+    ...f,
+    latitude: latV ?? site?.latitude ?? null, longitude: lonV ?? site?.longitude ?? null,
+    radiusMeters: radiusV !== null && radiusV >= 20 && radiusV <= 5000 ? radiusV : site?.radiusMeters,
+  })
+  const save = useAction(() => (site ? timeClockApi.updateSite(site.id, body()) : timeClockApi.createSite(body())), { success: tx('Nokta kaydedildi'), invalidate: [['timeclock']], onDone: onClose })
   return (
     <Modal open onClose={onClose} title={site ? tx('Noktayı düzenle') : tx('Yeni giriş-çıkış noktası')}
-      footer={<><Button variant="outline" onClick={onClose}>{tx('Vazgeç')}</Button><Button disabled={!f.name.trim() || save.isPending} onClick={() => save.mutate(undefined)}>{tx('Kaydet')}</Button></>}>
+      footer={<><Button variant="outline" onClick={onClose}>{tx('Vazgeç')}</Button><Button disabled={!f.name.trim() || invalid || save.isPending} onClick={() => save.mutate(undefined)}>{tx('Kaydet')}</Button></>}>
       <div className="space-y-3">
         <TextField label={tx('Ad')} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder={tx('Ör. Merkez ofis giriş')} />
         <label className="flex items-center gap-2 text-[13px]"><Checkbox checked={f.allowQr} onCheckedChange={(v) => setF({ ...f, allowQr: v === true })} /> {tx('QR kod ile giriş-çıkış')}</label>
@@ -186,9 +203,9 @@ function SiteModal({ site, onClose }: { site?: ClockSite; onClose: () => void })
         <label className="flex items-center gap-2 text-[13px]"><Checkbox checked={f.checkLocation} onCheckedChange={(v) => setF({ ...f, checkLocation: v === true })} /> {tx('Web/mobil girişte konum denetimi (isteğe bağlı)')}</label>
         {f.checkLocation && (
           <div className="grid gap-3 sm:grid-cols-3">
-            <TextField label={tx('Enlem')} inputMode="decimal" value={f.latitude?.toString() ?? ''} onChange={(e) => setF({ ...f, latitude: num(e.target.value) })} />
-            <TextField label={tx('Boylam')} inputMode="decimal" value={f.longitude?.toString() ?? ''} onChange={(e) => setF({ ...f, longitude: num(e.target.value) })} />
-            <TextField label={tx('Yarıçap (m)')} inputMode="numeric" value={String(f.radiusMeters ?? 200)} onChange={(e) => setF({ ...f, radiusMeters: Number(e.target.value) || 200 })} />
+            <TextField label={tx('Enlem')} inputMode="decimal" placeholder="41.0082" value={lat} error={latErr} onChange={(e) => setLat(e.target.value)} />
+            <TextField label={tx('Boylam')} inputMode="decimal" placeholder="28.9784" value={lon} error={lonErr} onChange={(e) => setLon(e.target.value)} />
+            <TextField label={tx('Yarıçap (m)')} inputMode="numeric" value={radius} error={radiusErr} onChange={(e) => setRadius(e.target.value)} />
           </div>
         )}
         <InfoNote>{KVKK_NOTE}</InfoNote>

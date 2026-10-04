@@ -443,14 +443,16 @@ public class MobilityController : AppController
         var existing = await _db.InternalApplications.FirstOrDefaultAsync(a => a.JobPostingId == body.JobPostingId && a.UserId == Me.UserId, ct);
         if (existing is not null && existing.Status != "Withdrawn") return Conflict(new { message = "Bu ilana zaten başvurdunuz." });
         var me = await MyPersonAsync(ct);
+        // İç ilan yalnızca çalışanlar içindir: kayıtsız hesap (ör. yalnızca yönetici) başvuramaz.
+        if (me is null) return BadRequest(new { message = "Hesabınıza bağlı çalışan kaydı yok", code = "no_employee_record" });
         if (existing is null)
         {
             existing = new InternalApplication { JobPostingId = body.JobPostingId, UserId = Me.UserId };
             _db.InternalApplications.Add(existing);
         }
         existing.JobTitle = title;
-        existing.EmployeeId = me?.Id;
-        existing.PersonName = me?.Name ?? Me.Name;
+        existing.EmployeeId = me.Id;
+        existing.PersonName = me.Name;
         existing.Motivation = body.Motivation?.Trim();
         existing.Status = "Submitted";
         existing.UpdatedAt = DateTime.UtcNow;

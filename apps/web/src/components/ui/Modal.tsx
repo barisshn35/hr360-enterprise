@@ -51,7 +51,7 @@ export function Modal({
           )}
         </DialogHeader>
 
-        <div className="max-h-[70dvh] overflow-y-auto px-5 py-5">{children}</div>
+        {children != null && <div className="max-h-[70dvh] overflow-y-auto px-5 py-5">{children}</div>}
 
         {footer && (
           <DialogFooter className="gap-2 border-t border-border bg-muted/30 px-5 py-4">{footer}</DialogFooter>

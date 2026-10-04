@@ -7,6 +7,7 @@ import { Panel, PanelBody, PanelHead } from '@/components/ui/Panel'
 import { Button } from '@/components/ui/button'
 import { DataTable, type Column } from '@/components/ui/DataTable'
 import { Modal } from '@/components/ui/Modal'
+import { useConfirm } from '@/components/ui/Confirm'
 import { SelectField, TextField } from '@/components/ui/Field'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { ErrorState, InfoNote, RowsSkeleton } from '@/components/ui/States'
@@ -161,9 +162,11 @@ function AdjustmentsPanel({ period, editable }: { period: PayrollPeriod; editabl
   const [amount, setAmount] = useState('')
   const [desc, setDesc] = useState('')
   const add = useAction(() => payrollApi.addAdjustment(period.id, { employeeId: emp, kind, amount: Number(amount.replace(',', '.')), description: desc }), {
-    success: tx('Eklendi; dönemi yeniden hesaplayın'), invalidate: [['payroll', 'adj', period.id]], onDone: () => { setAmount(''); setDesc('') },
+    // Ek ödeme değişince dönem "Açık"a döner (yeniden hesaplanmalı); dönem listesi de tazelenir.
+    success: tx('Eklendi; dönemi yeniden hesaplayın'), invalidate: [['payroll']], onDone: () => { setAmount(''); setDesc('') },
   })
-  const del = useAction((id: string) => payrollApi.deleteAdjustment(period.id, id), { invalidate: [['payroll', 'adj', period.id]] })
+  const del = useAction((id: string) => payrollApi.deleteAdjustment(period.id, id), { success: tx('Silindi; dönemi yeniden hesaplayın'), invalidate: [['payroll']] })
+  const confirm = useConfirm()
   return (
     <Panel>
       <PanelHead title={tx('Ek ödeme ve kesintiler')} note={tx('Prim, ikramiye (brüte eklenir, vergilendirilir) ya da avans taksiti gibi netten kesintiler.')} />
@@ -184,7 +187,9 @@ function AdjustmentsPanel({ period, editable }: { period: PayrollPeriod; editabl
                 <span className="min-w-0 flex-1">{nameOf(a.employeeId)} · {a.description}</span>
                 <StatusBadge tone={a.kind === 'Addition' ? 'success' : 'warning'}>{a.kind === 'Addition' ? tx('Ek ödeme') : tx('Kesinti')}</StatusBadge>
                 <span className="w-28 text-right tabular-nums">{formatMoney(a.amount)}</span>
-                {editable && <Button size="icon" variant="ghost" aria-label={tx('Sil')} onClick={() => del.mutate(a.id)}><Trash2 className="size-4" /></Button>}
+                {editable && <Button size="icon" variant="ghost" aria-label={tx('Sil')} onClick={async () => {
+                  if (await confirm({ title: tx('Kayıt silinsin mi?'), note: `${nameOf(a.employeeId)} · ${a.description} · ${formatMoney(a.amount)}`, action: tx('Sil') })) del.mutate(a.id)
+                }}><Trash2 className="size-4" /></Button>}
               </li>
             ))}
           </ul>
@@ -243,6 +248,7 @@ export function PayrollPeriodPage() {
   const close = useAction(() => payrollApi.close(id), { success: tx('Dönem kapatıldı; pusulalar çalışanlara açıldı'), invalidate: inv })
   const reopen = useAction(() => payrollApi.reopen(id, reason), { success: tx('Dönem yeniden açıldı'), invalidate: inv, onDone: () => setReopening(false) })
   const remove = useAction(() => payrollApi.deletePeriod(id), { success: tx('Dönem silindi'), invalidate: inv, onDone: () => nav('/panel/bordro') })
+  const confirm = useConfirm()
   const totals = useMemo(() => (slips.data ?? []).reduce((a, s) => ({ gross: a.gross + s.gross, net: a.net + s.net, cost: a.cost + s.employerCost, tax: a.tax + s.incomeTax - s.incomeTaxExemption }), { gross: 0, net: 0, cost: 0, tax: 0 }), [slips.data])
 
   if (periods.isPending) return <RowsSkeleton rows={4} />
@@ -264,9 +270,13 @@ export function PayrollPeriodPage() {
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" asChild><Link to="/panel/bordro">{tx('Dönemler')}</Link></Button>
             {admin && !closed && <Button onClick={() => calc.mutate(undefined)} disabled={calc.isPending}><Calculator className="size-4" /> {period.status === 'Open' ? tx('Hesapla') : tx('Yeniden hesapla')}</Button>}
-            {admin && period.status === 'Calculated' && <Button variant="outline" onClick={() => close.mutate(undefined)} disabled={close.isPending}><Lock className="size-4" /> {tx('Dönemi kapat')}</Button>}
+            {admin && period.status === 'Calculated' && <Button variant="outline" disabled={close.isPending} onClick={async () => {
+              if (await confirm({ title: tx('Dönem kapatılsın mı?'), note: tx('{0} bordrosu kesinleşir; pusulalar çalışanlara açılır ve dönem bir daha değiştirilemez (yalnızca şirket yöneticisi gerekçeyle yeniden açabilir).', [periodLabel(period)]), action: tx('Dönemi kapat') })) close.mutate(undefined)
+            }}><Lock className="size-4" /> {tx('Dönemi kapat')}</Button>}
             {closed && (hasRole('tenant-admin') || hasRole('platform-admin')) && <Button variant="outline" onClick={() => setReopening(true)}><LockOpen className="size-4" /> {tx('Yeniden aç')}</Button>}
-            {admin && !closed && <Button variant="ghost" onClick={() => remove.mutate(undefined)}><Trash2 className="size-4" /> {tx('Sil')}</Button>}
+            {admin && !closed && <Button variant="ghost" onClick={async () => {
+              if (await confirm({ title: tx('Dönem silinsin mi?'), note: tx('{0} dönemi, hesaplanmış pusulaları ve ek ödeme/kesintileriyle birlikte silinir.', [periodLabel(period)]), action: tx('Sil') })) remove.mutate(undefined)
+            }}><Trash2 className="size-4" /> {tx('Sil')}</Button>}
           </div>
         } />
       <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

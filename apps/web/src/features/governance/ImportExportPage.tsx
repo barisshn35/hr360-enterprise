@@ -11,8 +11,9 @@ import { useToast } from '@/components/ui/Toast'
 import { employeeApi } from '@/api/employees'
 import { organizationApi } from '@/api/organization'
 import { leaveApi, leaveStatusLabels, leaveTypeLabels } from '@/api/leave'
-import { expenseApi } from '@/api/expense'
-import { learningApi } from '@/api/learning'
+import { claimStatusLabels, expenseApi } from '@/api/expense'
+import { enrollmentStatusLabels, learningApi } from '@/api/learning'
+import { employeeStatusLabels } from '@/api/types'
 import { useDirectory } from '@/api/directory'
 import { ImportEmployeesModal } from '@/features/employees/ImportEmployeesModal'
 import { PlanGate, errMsg } from '@/features/shared/kit'
@@ -21,6 +22,23 @@ import { tx } from '@/lib/i18n'
 type Dataset = { id: string; title: string; detail: string; icon: React.ElementType; load: () => Promise<Record<string, unknown>[]> }
 
 const download = downloadWorkbook
+
+/**
+ * İçe aktarma şablonu (CSV, Türkçe Excel için ';' ayırıcılı, UTF-8 BOM'lu). Başlıklar
+ * ImportEmployeesModal'daki takma adlarla eşleşir; dil ne olursa olsun Türkçe kalır.
+ */
+function downloadImportTemplate() {
+  const lines = ['Ad;Soyad;E-posta;Telefon;İşe giriş tarihi;Departman', 'Ayşe;Yılmaz;ayse.yilmaz@ornek.com;05551234567;01.09.2026;Mühendislik']
+  const blob = new Blob(['\ufeff' + lines.join('\r\n') + '\r\n'], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'hr360-calisan-sablonu.csv'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
 
 export function ImportExportPage() {
   const toast = useToast()
@@ -34,12 +52,12 @@ export function ImportExportPage() {
   const datasets: Dataset[] = [
     { id: 'employees', title: tx('Çalışanlar'), detail: tx('Ad, e-posta, işe giriş, durum, güncel departman ve pozisyon'), icon: Users, load: async () => (await employeeApi.list()).map((e) => {
       const a = [...(e.assignments ?? [])].sort((x, y) => (y.effectiveFrom ?? '').localeCompare(x.effectiveFrom ?? ''))[0]
-      return { Ad: e.firstName, Soyad: e.lastName, 'E-posta': e.email, Telefon: e.phone ?? '', 'İşe giriş': e.hireDate, Durum: e.status, Departman: deptName(a?.departmentId), Pozisyon: a?.positionTitle ?? '' }
+      return { [tx('Ad')]: e.firstName, [tx('Soyad')]: e.lastName, [tx('E-posta')]: e.email, [tx('Telefon')]: e.phone ?? '', [tx('İşe giriş')]: e.hireDate, [tx('Durum')]: employeeStatusLabels[e.status] ?? String(e.status), [tx('Departman')]: deptName(a?.departmentId), [tx('Pozisyon')]: a?.positionTitle ?? '' }
     }) },
-    { id: 'departments', title: tx('Departmanlar'), detail: tx('Ad, üst departman ve departman başı'), icon: Building2, load: async () => (await organizationApi.listDepartments()).map((d) => ({ Ad: d.name, 'Üst departman': deptName(d.parentDepartmentId), 'Departman başı': d.headEmployeeId ? name(d.headEmployeeId) : '' })) },
-    { id: 'leave', title: tx('İzin talepleri'), detail: tx('Tüm izin talepleri ve durumları'), icon: CalendarDays, load: async () => (await leaveApi.listRequests()).map((l) => ({ Çalışan: name(l.employeeId), Tür: leaveTypeLabels[l.type] ?? l.type, Başlangıç: l.startDate, Bitiş: l.endDate, Gün: l.days, Durum: leaveStatusLabels[l.status] ?? l.status, Açıklama: l.reason ?? '' })) },
-    { id: 'expense', title: tx('Masraflar'), detail: tx('Beyanlar, tutar ve durum'), icon: Wallet, load: async () => (await expenseApi.listClaims()).map((c) => ({ Çalışan: name(c.employeeId), Başlık: c.title, Tutar: c.totalAmount, 'Para birimi': c.currency, Durum: c.status, Oluşturma: c.createdAt?.slice(0, 10) })) },
-    { id: 'learning', title: tx('Eğitim kayıtları'), detail: tx('Kurs bazında katılım ve tamamlama'), icon: GraduationCap, load: async () => (await learningApi.listCourses()).flatMap((c) => (c.enrollments ?? []).map((e) => ({ Eğitim: c.title, Kategori: c.category, Zorunlu: c.isMandatory ? 'Evet' : tx('Hayır'), Çalışan: name(e.employeeId), Durum: e.status, Puan: e.score ?? '', Tamamlama: e.completedAt?.slice(0, 10) ?? '' }))) },
+    { id: 'departments', title: tx('Departmanlar'), detail: tx('Ad, üst departman ve departman başı'), icon: Building2, load: async () => (await organizationApi.listDepartments()).map((d) => ({ [tx('Ad')]: d.name, [tx('Üst departman')]: deptName(d.parentDepartmentId), [tx('Departman başı')]: d.headEmployeeId ? name(d.headEmployeeId) : '' })) },
+    { id: 'leave', title: tx('İzin talepleri'), detail: tx('Tüm izin talepleri ve durumları'), icon: CalendarDays, load: async () => (await leaveApi.listRequests()).map((l) => ({ [tx('Çalışan')]: name(l.employeeId), [tx('Tür')]: leaveTypeLabels[l.type] ?? l.type, [tx('Başlangıç')]: l.startDate, [tx('Bitiş')]: l.endDate, [tx('Gün')]: l.days, [tx('Durum')]: leaveStatusLabels[l.status] ?? l.status, [tx('Açıklama')]: l.reason ?? '' })) },
+    { id: 'expense', title: tx('Masraflar'), detail: tx('Beyanlar, tutar ve durum'), icon: Wallet, load: async () => (await expenseApi.listClaims()).map((c) => ({ [tx('Çalışan')]: name(c.employeeId), [tx('Başlık')]: c.title, [tx('Tutar')]: c.totalAmount, [tx('Para birimi')]: c.currency, [tx('Durum')]: claimStatusLabels[c.status] ?? c.status, [tx('Oluşturma')]: c.createdAt?.slice(0, 10) })) },
+    { id: 'learning', title: tx('Eğitim kayıtları'), detail: tx('Kurs bazında katılım ve tamamlama'), icon: GraduationCap, load: async () => (await learningApi.listCourses()).flatMap((c) => (c.enrollments ?? []).map((e) => ({ [tx('Eğitim')]: c.title, [tx('Kategori')]: c.category, [tx('Zorunlu')]: c.isMandatory ? tx('Evet') : tx('Hayır'), [tx('Çalışan')]: name(e.employeeId), [tx('Durum')]: enrollmentStatusLabels[e.status] ?? e.status, [tx('Puan')]: e.score ?? '', [tx('Tamamlama')]: e.completedAt?.slice(0, 10) ?? '' }))) },
   ]
 
   const exportOne = async (d: Dataset) => {
@@ -85,6 +103,7 @@ export function ImportExportPage() {
               <FileSpreadsheet className="mt-0.5 size-5 text-primary" />
               <div className="text-[13px]"><p className="font-medium">{tx('Çalışanlar (Excel)')}</p><p className="text-muted-foreground">{tx('Şablonu indirin, doldurun, yükleyin. Satırlar tek tek doğrulanır; hatalı satırlar atlanır ve raporlanır.')}</p></div>
             </div>
+            <Button variant="outline" className="w-full" onClick={downloadImportTemplate}><Download className="size-4" />{' '}{tx('Şablonu indir (CSV)')}</Button>
             <Button className="w-full" onClick={() => setImporting(true)}><Upload className="size-4" />{' '}{tx('Çalışan içe aktar')}</Button>
             <InfoNote>{tx('Toplu içe aktarım çalışan kotanızı aşamaz; her eklenen çalışan için “işe alındı” olayı üretilir (bildirim, kural motoru ve webhook’lar tetiklenir).')}</InfoNote>
           </PanelBody>

@@ -201,6 +201,7 @@ export function EmployeeDetailPage() {
           open={assignOpen}
           onClose={() => setAssignOpen(false)}
           employeeId={employeeId}
+          hireDate={employee.data?.hireDate}
         />
       )}
     </div>

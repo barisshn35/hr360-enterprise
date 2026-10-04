@@ -292,7 +292,7 @@ function toGoalBreakdown(v: unknown): GoalBreakdown {
     goalId: str0(pick(r, 'goalId', 'id')),
     title: str0(r.title),
     weight: num0(r.weight),
-    progress: num(pick(r, 'progress', 'progressPercent', 'normalizedScore', 'score')),
+    achievement: num(pick(r, 'achievement', 'progress', 'progressPercent', 'normalizedScore', 'score')),
     status: (str(r.status) ?? null) as GoalBreakdown['status'],
   }
 }

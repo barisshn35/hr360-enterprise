@@ -230,6 +230,16 @@ public class EmployeesController : ControllerBase
         return Ok(new { employeeId = id, keycloakUserId = employee.KeycloakUserId });
     }
 
+    /// <summary>Ise giris tarihi makul aralikta olmali: 1950-01-01 ile bugun+1 yil.</summary>
+    public static string? ValidateHireDate(DateOnly hireDate)
+    {
+        if (hireDate < new DateOnly(1950, 1, 1))
+            return "İşe giriş tarihi 01.01.1950'den önce olamaz";
+        if (hireDate > DateOnly.FromDateTime(DateTime.UtcNow).AddYears(1))
+            return "İşe giriş tarihi en fazla bir yıl sonrası olabilir";
+        return null;
+    }
+
     [HttpPost]
     [Authorize(Policy = "RequireManagerOrAbove")]
     public async Task<IActionResult> Create([FromBody] CreateEmployeeRequest request)
@@ -239,6 +249,9 @@ public class EmployeesController : ControllerBase
         if (string.IsNullOrWhiteSpace(request.Email)
             || !System.Text.RegularExpressions.Regex.IsMatch(request.Email.Trim(), @"^[^@\s]+@[^@\s]+\.[^@\s]+$"))
             return BadRequest(new { message = "Geçerli bir e-posta adresi girin" });
+        // Tarih mantik dogrulamasi: 01.01.1800 gibi degerler kabul ediliyordu.
+        var hireError = ValidateHireDate(request.HireDate);
+        if (hireError is not null) return BadRequest(new { message = hireError });
         var normalizedEmail = request.Email.Trim().ToLowerInvariant();
         // NOT: Ayni kiracida ayni e-posta tekrar eklenemez (onceden veritabani
         // kisitina carpip 500 donuyordu). Kontrol kiraci filtresiyle yapilir; baska
@@ -306,6 +319,11 @@ public class EmployeesController : ControllerBase
             return BadRequest(new { message = "Durum Active, OnLeave veya Terminated olmali" });
         var employee = await _db.Employees.FirstOrDefaultAsync(e => e.Id == id, ct);
         if (employee is null) return NotFound();
+        // Ayrilis tarihi atamalarin bitisi olur; saklama (anonimlestirme) isi bu tarihe
+        // bakar. Ise giristen onceki ya da cok ileri bir tarih kabul edilmez.
+        if (status == EmployeeStatus.Terminated && request.EffectiveDate is { } eff
+            && (eff < employee.HireDate || eff > DateOnly.FromDateTime(DateTime.UtcNow).AddYears(1)))
+            return BadRequest(new { message = "Ayrılış tarihi işe giriş tarihinden önce ya da bir yıldan ileri olamaz" });
         var old = employee.Status;
         if (old == status) return Ok(employee);
         employee.Status = status;
@@ -382,6 +400,15 @@ public class EmployeesController : ControllerBase
                 new { message = "Mevcut bir atamayı yalnızca İK değiştirebilir" });
         if (request.DepartmentId == Guid.Empty)
             return BadRequest(new { message = "Departman zorunlu" });
+
+        // Atama baslangici ise giristen once olamaz (01.01.1700 kabul ediliyordu).
+        // Istisna: ise girisi ileri tarihli calisan organizasyon semasinda "bugun"
+        // ile yerlestirilebilir (surukle-birak bugunu gonderir).
+        var todayUtc = DateOnly.FromDateTime(DateTime.UtcNow);
+        if (request.EffectiveFrom < employee.HireDate && request.EffectiveFrom < todayUtc)
+            return BadRequest(new { message = "Atama başlangıcı işe giriş tarihinden önce olamaz" });
+        if (request.EffectiveFrom > todayUtc.AddYears(1))
+            return BadRequest(new { message = "Atama başlangıcı en fazla bir yıl sonrası olabilir" });
 
         if (currentActive is not null && request.EffectiveFrom < currentActive.EffectiveFrom)
             return BadRequest(new

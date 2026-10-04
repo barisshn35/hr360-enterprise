@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { LoaderCircle } from 'lucide-react'
 import { Modal, ErrorSummary, type SummaryItem } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/button'
@@ -7,6 +7,7 @@ import { SelectField, TextAreaField, TextField } from '@/components/ui/Field'
 import { EmployeePicker } from '@/components/ui/EmployeePicker'
 import { useToast } from '@/components/ui/Toast'
 import { leaveApi } from '@/api/leave'
+import { apiFetch } from '@/api/client'
 import { useLeaveBalances, useLeaveHolidays, useMyEmployeeId } from '@/api/queries'
 import { useAuth } from '@/auth/useAuth'
 import { leaveTypeLabels, type LeaveType } from '@/api/types'
@@ -48,6 +49,16 @@ export function NewLeaveRequestModal({
   defaultEmployeeId?: string
 }) {
   const toast = useToast()
+  // Onay akışı tanımında gerekçe onaycıdan gizlenmişse form metni buna göre değişir
+  // (workflow-service gizli alanı onaycıya döndürmez).
+  const reasonHidden = useQuery({
+    queryKey: ['workflow', 'hidden-fields', 'LeaveRequest'],
+    queryFn: ({ signal }) =>
+      apiFetch<string[]>('/api/workflow/workflows/definitions/hidden-fields?type=LeaveRequest', { signal }),
+    select: (fields) => fields.some((f) => f.toLowerCase() === 'reason'),
+    enabled: open,
+    staleTime: 5 * 60_000,
+  })
   const queryClient = useQueryClient()
 
   // İK dışındakiler yalnızca kendi adlarına talep açabilir (backend 403 döner);
@@ -292,7 +303,11 @@ export function NewLeaveRequestModal({
           rows={3}
           value={reason}
           maxLength={500}
-          hint={tx('İsteğe bağlı. Onaycıya görünür.')}
+          hint={
+            reasonHidden.data
+              ? tx('İsteğe bağlı. Onaycıdan gizlenir; yalnızca İK görür. Sağlık bilgisi (tanı) yazmayın.')
+              : tx('İsteğe bağlı. Onaycınız ve İK görür. Sağlık bilgisi (tanı) yazmayın.')
+          }
           onChange={(e) => setReason(e.target.value)}
         />
       </form>

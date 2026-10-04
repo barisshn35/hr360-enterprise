@@ -157,6 +157,9 @@ public class SurveysController : AppController
             return RuleError.Bad("Başlık ve en az bir soru gerekli.", "invalid");
         if (questions.Any(q => q.Type is not ("Nps" or "Scale" or "Choice" or "Text")))
             return RuleError.Bad("Soru tipi Nps, Scale, Choice veya Text olmalı.", "invalid");
+        // Seçeneksiz seçenekli soru zorunluysa anket hiç yanıtlanamıyordu.
+        if (questions.Any(q => q.Type == "Choice" && (q.Options ?? new()).Select(o => o.Trim()).Where(o => o.Length > 0).Distinct().Count() < 2))
+            return RuleError.Bad("Seçenekli soruda en az 2 farklı seçenek olmalı.", "invalid");
         return null;
     }
 
@@ -425,6 +428,14 @@ public class OffboardingController : AppController
 
     public static DateOnly PlannedAnonymization(DateOnly lastWorkingDay, int months) => lastWorkingDay.AddMonths(months);
 
+    /// <summary>Son iş günü: işe giriş tarihinden önce olamaz, bugünden en fazla bir yıl sonra olabilir.</summary>
+    public static string? ValidateLastWorkingDay(DateOnly lastWorkingDay, DateOnly hireDate, DateOnly today)
+    {
+        if (lastWorkingDay < hireDate) return "Son iş günü işe giriş tarihinden önce olamaz.";
+        if (lastWorkingDay > today.AddYears(1)) return "Son iş günü en fazla bir yıl sonrası olabilir.";
+        return null;
+    }
+
     /// <summary>
     /// Zimmet listesini onboarding tablolarından yeniler: yeni açık zimmetler eklenir, iade
     /// edilenler "Returned" olur; İK istisnası (Lost/WrittenOff) korunur. Değiştiyse true.
@@ -588,6 +599,11 @@ public class OffboardingController : AppController
             return BadRequest(new { message = "Geçersiz ayrılış nedeni." });
         var emp = await People.FindAsync(Tenant, body.EmployeeId, ct);
         if (emp is null) return NotFound(new { message = "Çalışan bulunamadı." });
+        // Tarih mantık doğrulaması: son iş günü 01.01.1700 kabul ediliyordu; imha planı
+        // (son iş günü + saklama süresi) geçmişte kalıp saklama işi kaydı hemen
+        // anonimleştirebiliyordu. Son iş günü işe girişten önce ve bir yıldan ileri olamaz.
+        var lwdError = ValidateLastWorkingDay(body.LastWorkingDay, emp.HireDate, DateOnly.FromDateTime(DateTime.UtcNow));
+        if (lwdError is not null) return BadRequest(new { message = lwdError });
         if (await _db.OffboardingCases.AnyAsync(c => c.EmployeeId == emp.Id && c.Status == "Open", ct))
             return Conflict(new { message = "Bu çalışan için açık bir ayrılış süreci var." });
 
