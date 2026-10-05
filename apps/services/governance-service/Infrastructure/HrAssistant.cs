@@ -39,6 +39,14 @@ public sealed class HrAssistant(Sql db, PeopleDirectory people, GovernanceDbCont
                 (a.IsManager ? L(", ya da *\"son 6 ayda departmanlara göre izin günleri\"* gibi rapor soruları.", ", or report questions like *\"leave days by department in the last 6 months\"*.")
                               : L(". Şirket politikalarını da sorabilirsiniz (ör. *uzaktan çalışma*).", ". You can also ask about company policies (e.g. *remote work*).")), "help");
 
+        // KVKK: kişisel veri soruları yalnızca soranın kendisi için yanıtlanır. "Ayşe'nin izin bakiyesi"
+        // gibi başka birine ait soru kendi verisiyle yanıtlanmaz; ilgili ekrana yönlendirilir.
+        var personalTopic = PersonalTopic(q);
+        if (personalTopic is not null && await AboutSomeoneElseAsync(a, raw, q, ct))
+            return Reply(L("Başka çalışanların bilgilerini asistan paylaşmaz. Yöneticiyseniz ekibinizin bilgilerini ilgili ekranda görebilirsiniz.",
+                    "The assistant does not share other employees' information. If you are a manager, you can see your team's information on the relevant screen."),
+                "help", (L(personalTopic.Value.Label.Tr, personalTopic.Value.Label.En), personalTopic.Value.Path));
+
         if ((Has(q, "izin") && Has(q, "bakiye", "kac gun", "kalan", "hakkim", "ne kadar")) || (Has(q, " leave", "time off", "vacation") && Has(q, "balance", "how many days", " left", "remaining")))
         {
             if (me is null) return Reply(L("Hesabınız bir çalışan kaydına bağlı olmadığı için izin bakiyesi yok.", "Your account is not linked to an employee record, so there is no leave balance."), "data");
@@ -56,6 +64,10 @@ public sealed class HrAssistant(Sql db, PeopleDirectory people, GovernanceDbCont
         if (Has(q, "bekleyen", "onay bekleyen", "taleplerim", "talebim", "pending", "my request", "awaiting"))
         {
             if (me is null) return Reply(L("Hesabınız bir çalışan kaydına bağlı değil.", "Your account is not linked to an employee record."), "data");
+            // Sayı gerçek toplamdır (COUNT); liste yalnızca en yeni 10 talebi gösterir.
+            var mineTotal = Convert.ToInt64(await db.ScalarAsync("""
+                SELECT count(*) FROM workflow_requests WHERE "TenantSlug" = $1 AND "RequesterEmployeeId" = $2 AND "Status" = 'Pending'
+                """, ct, a.Tenant, me.Id));
             var mine = await db.QueryAsync("""
                 SELECT "Subject", "CreatedAt" FROM workflow_requests WHERE "TenantSlug" = $1 AND "RequesterEmployeeId" = $2 AND "Status" = 'Pending' ORDER BY 2 DESC LIMIT 10
                 """, r => (S: r.GetString(0), At: r.GetFieldValue<DateTime>(1)), ct, a.Tenant, me.Id);
@@ -63,8 +75,10 @@ public sealed class HrAssistant(Sql db, PeopleDirectory people, GovernanceDbCont
                 SELECT count(DISTINCT s."WorkflowRequestId") FROM workflow_approval_steps s JOIN workflow_requests w ON w."Id" = s."WorkflowRequestId"
                 WHERE s."TenantSlug" = $1 AND w."Status" = 'Pending' AND s."Decision" = 'Pending' AND coalesce(s."DelegatedToEmployeeId", s."ApproverEmployeeId") = $2
                 """, ct, a.Tenant, me.Id));
-            var text = mine.Count == 0 ? L("Onay bekleyen talebiniz yok.", "You have no requests awaiting approval.")
-                : L($"Onay bekleyen **{mine.Count}** talebiniz var:\n", $"You have **{mine.Count}** request(s) awaiting approval:\n") + string.Join("\n", mine.Select(m => $"• {m.S} ({m.At.AddHours(3):dd.MM})"));
+            var text = mineTotal == 0 ? L("Onay bekleyen talebiniz yok.", "You have no requests awaiting approval.")
+                : L($"Onay bekleyen **{mineTotal}** talebiniz var", $"You have **{mineTotal}** request(s) awaiting approval")
+                  + (mineTotal > mine.Count ? L($" (en yeni {mine.Count} tanesi):\n", $" (latest {mine.Count}):\n") : ":\n")
+                  + string.Join("\n", mine.Select(m => $"• {m.S} ({m.At.AddHours(3):dd.MM})"));
             if (waiting > 0) text += L($"\n\nAyrıca **sizin kararınızı bekleyen {waiting} talep** var.", $"\n\nThere are also **{waiting} request(s) awaiting your decision**.");
             return Reply(text, "data", (L("Onay kutusu", "Approvals"), "/panel/onaylar"));
         }
@@ -111,6 +125,20 @@ public sealed class HrAssistant(Sql db, PeopleDirectory people, GovernanceDbCont
                     L("Son masraflarınız:\n", "Your recent expenses:\n") + string.Join("\n", rows.Select(r => $"• {r.T}: {r.A.ToString("N2", tr)} {r.C} — {ExpenseLabel(r.S, a.En)}")), "data", (L("Masraf ekranı", "Expenses"), "/panel/masraf"));
         }
 
+        // "Maaş ne zaman yatar?" → bilgi bankasındaki ödeme günü makalesi (simülasyon değil).
+        if (Has(q, "maas", "bordro", "salary", "payroll", " pay ") && Has(q, "ne zaman", "hangi gun", "yatar", "yatiyor", "yatacak", "odenir", "odeniyor", "odenecek", "odeme gunu",
+                " when ", "pay day", "payday", "paid"))
+        {
+            var kb = await gdb.KbArticles.AsNoTracking().ToListAsync(ct);
+            var payDay = kb.FirstOrDefault(x => NlReport.Norm(x.Title).Contains("maas odeme"))
+                ?? kb.FirstOrDefault(x => x.Tags.Select(NlReport.Norm).Contains("odeme") && x.Tags.Select(NlReport.Norm).Any(t => t is "maas" or "bordro"));
+            if (payDay is not null)
+                return new($"**{payDay.Title}**\n\n{payDay.Body}", "kb", Array.Empty<AssistantLink>());
+            return Reply(L("Maaş ödeme günü bilgi bankasında tanımlı değil. Sorunuzu İK'ya bir **İK vakası** olarak iletebilirsiniz.",
+                    "The salary payment day is not defined in the knowledge base. You can send your question to HR as an **HR case**."),
+                "fallback", (L("İK vakası aç", "Open an HR case"), "/panel/ik-vakalari"));
+        }
+
         // İK'nın "maaş dağılımı" sorusu rapor motoruna gider (G3); diğerleri bordro simülasyonuna.
         var salaryReport = a.IsHr && Has(q, "dagilim", "distribution", "bant", "band", "medyan", "median", "ceyrek", "quartile");
         if (!salaryReport && Has(q, "maas", "bordro", "net ucret", "brut", "salary", "payroll", "gross", "net pay"))
@@ -154,6 +182,44 @@ public sealed class HrAssistant(Sql db, PeopleDirectory people, GovernanceDbCont
     }
 
     private static bool Has(string q, params string[] words) => words.Any(q.Contains);
+
+    /// <summary>Soru kişisel veri konusu mu (izin bakiyesi, talepler, masraf, maaş)? Öyleyse yönlendirme ekranı.</summary>
+    private static ((string Tr, string En) Label, string Path)? PersonalTopic(string q)
+    {
+        if (Has(q, "izin", " leave", "time off", "vacation") && Has(q, "bakiye", "kac gun", "kalan", "hakki", "ne kadar", "balance", "how many days", " left", "remaining"))
+            return (("İzin ekranı", "Leave"), "/panel/izin");
+        if (Has(q, "masraf", "expense")) return (("Masraf ekranı", "Expenses"), "/panel/masraf");
+        if (Has(q, "maas", "bordro", "ucret", "salary", "payroll", "payslip")) return (("Çalışanlar", "Employees"), "/panel/calisanlar");
+        if (Has(q, "talep", "request")) return (("Onay kutusu", "Approvals"), "/panel/onaylar");
+        return null;
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex Possessive = new(
+        @"(?<![\p{L}])(\p{Lu}[\p{L}]+)\s*['’`]\s*(n[ıiuü]n|[ıiuü]n|s)(?![\p{L}])", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    private static readonly HashSet<string> SelfWords = new() { "ben", "benim", "kendi", "kendim", "my", "i", "me", "hr", "ik", "sgk", "sirket", "sirketin", "company", "turkiye" };
+
+    /// <summary>
+    /// Soru başka bir kişiye mi ait? "Ayşe'nin…", "Mehmet's…" gibi iyelik eki almış özel ad ya da
+    /// kiracıdaki başka bir çalışanın adının iyelik ekiyle (ayşenin) geçmesi. Soranın kendi adı sayılmaz.
+    /// </summary>
+    private async Task<bool> AboutSomeoneElseAsync(AssistantAsker a, string raw, string q, CancellationToken ct)
+    {
+        var ownFirst = a.Me is null ? null : NlReport.Norm(a.Me.Name.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "");
+        foreach (System.Text.RegularExpressions.Match m in Possessive.Matches(raw))
+        {
+            var name = NlReport.Norm(m.Groups[1].Value);
+            if (!SelfWords.Contains(name) && name != ownFirst) return true;
+        }
+        // Kesme işaretsiz yazım (ör. "aysenin izin bakiyesi"): yalnızca kiracıdaki gerçek ad + iyelik eki.
+        var names = await db.QueryAsync("""
+            SELECT DISTINCT lower("FirstName") FROM employee_employees WHERE "TenantSlug" = $1 AND "FirstName" IS NOT NULL
+            """, r => NlReport.Norm(r.GetString(0)), ct, a.Tenant);
+        var tokens = q.Split(new[] { ' ', ',', '.', '?', '!', ':', ';' }, StringSplitOptions.RemoveEmptyEntries);
+        foreach (var n in names.Where(n => n.Length >= 3 && n != ownFirst))
+            if (tokens.Any(t => t.Length > n.Length && t.StartsWith(n) && t[n.Length..] is "nin" or "in" or "un" or "nun" or "s")) return true;
+        return false;
+    }
 
     public static string LeaveLabel(string t, bool en = false) => en ? t switch
     {

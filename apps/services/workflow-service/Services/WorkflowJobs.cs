@@ -20,7 +20,7 @@ public static class DelegationSweep
 /// <summary>
 /// Arka plan işleri (5 dakikada bir, tüm kiracılar):
 ///  - Süresi dolan vekâletlerde adımları asıl onaycıya döndürür (vekilin erişimi kapanır).
-///  - SLA'sı aşılan bekleyen adımı onaycının üst yöneticisine iletir (G10); bir adım bir kez iletilir.
+///  - SLA'sı aşılan bekleyen adımı onaycının üst yöneticisine (yoksa İK onaycısına) iletir (G10); bir adım bir kez iletilir.
 /// </summary>
 public class WorkflowJobsWorker : BackgroundService
 {
@@ -77,7 +77,11 @@ public class WorkflowJobsWorker : BackgroundService
             var upper = await routing.HeadOfAsync(wf.TenantSlug, step.ApproverEmployeeId, parent: false, ct);
             if (upper is null || upper == step.ApproverEmployeeId || upper == wf.RequesterEmployeeId)
                 upper = await routing.HeadOfAsync(wf.TenantSlug, step.ApproverEmployeeId, parent: true, ct);
+            // Üst yönetici yoksa (ör. onaycı en üst departmanın başı) İK onaycısına iletilir.
             if (upper is null || upper == step.ApproverEmployeeId || upper == wf.RequesterEmployeeId)
+                upper = await routing.HrApproverAsync(wf.TenantSlug, ct);
+            if (upper is null || upper == step.ApproverEmployeeId || upper == wf.RequesterEmployeeId
+                || upper == step.DelegatedToEmployeeId)
             {
                 step.EscalatedAt = now; // iletilecek kimse yok; bir daha denenmez
                 continue;

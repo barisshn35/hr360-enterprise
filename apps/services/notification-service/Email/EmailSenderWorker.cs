@@ -354,10 +354,14 @@ public class EmailSenderWorker : BackgroundService
         message.To.Add(MailboxAddress.Parse(notification.RecipientEmail!));
         message.Subject = notification.Subject ?? (notification.Language == "en" ? "HR360 Enterprise notification" : "HR360 Enterprise Bildirimi");
 
+        var safeUrl = notification.ActionUrl is { } au && Uri.TryCreate(au, UriKind.Absolute, out var u) && u.Scheme is "http" or "https" ? au : null;
+        // Düğme açıklaması yalnızca e-postada (uygulama içi bildirimde düğme yok).
+        var hint = safeUrl is null ? null : Messaging.NotificationTexts.EmailActionHint(notification.TemplateCode, notification.Language);
+        var body = hint is null ? notification.Body : $"{notification.Body}\n\n{hint}";
         var html = EmailTemplateRenderer.Render(
             subject: message.Subject,
-            bodyPlainText: notification.Body,
-            actionUrl: notification.ActionUrl is { } au && Uri.TryCreate(au, UriKind.Absolute, out var u) && u.Scheme is "http" or "https" ? System.Net.WebUtility.HtmlEncode(au) : null,
+            bodyPlainText: body,
+            actionUrl: safeUrl is null ? null : System.Net.WebUtility.HtmlEncode(safeUrl),
             actionLabel: notification.ActionLabel,
             logoUrl: plan.LogoUrl,
             companyName: plan.CompanyName,
@@ -366,7 +370,7 @@ public class EmailSenderWorker : BackgroundService
         message.Body = new BodyBuilder
         {
             HtmlBody = html,
-            TextBody = notification.Body,
+            TextBody = safeUrl is null ? body : $"{body}\n{safeUrl}",
         }.ToMessageBody();
 
         return message;

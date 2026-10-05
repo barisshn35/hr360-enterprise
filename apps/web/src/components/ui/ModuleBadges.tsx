@@ -127,6 +127,7 @@ const interviewTone: Record<InterviewResult, StatusTone> = {
   Pass: 'success',
   Fail: 'danger',
   NoShow: 'neutral',
+  Cancelled: 'neutral',
 }
 export const InterviewResultBadge = ({ result }: { result: InterviewResult }) => (
   <StatusBadge tone={interviewTone[result] ?? 'neutral'}>{interviewResultLabels[result] ?? result}</StatusBadge>

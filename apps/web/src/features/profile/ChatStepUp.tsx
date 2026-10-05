@@ -5,7 +5,8 @@ import { PageHeader } from '@/components/layout/PageHeader'
 import { Panel, PanelBody, PanelHead } from '@/components/ui/Panel'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
-import { ErrorState, InfoNote, RowsSkeleton } from '@/components/ui/States'
+import { EmptyState, ErrorState, InfoNote, RowsSkeleton } from '@/components/ui/States'
+import { useAuth } from '@/auth/useAuth'
 import { chatbotApi } from '@/api/chatbot'
 import { formatDateTime } from '@/lib/format'
 import { errMsg, useAction } from '@/features/shared/kit'
@@ -19,14 +20,20 @@ import { tx } from '@/lib/i18n'
 export function ChatStepUpPage() {
   const [params] = useSearchParams()
   const code = params.get('kod') ?? ''
-  const q = useQuery({ queryKey: ['chat-stepup', code], queryFn: ({ signal }) => chatbotApi.stepUpPreview(code, signal), enabled: !!code, retry: false })
-  const otps = useQuery({ queryKey: ['chat-stepup', 'otp'], queryFn: ({ signal }) => chatbotApi.stepUpOtps(signal), enabled: !code, refetchOnWindowFocus: false })
+  // Sohbet hesapları şirkete bağlıdır: kiracısız oturumda (platform yöneticisi) istek atılmaz.
+  const { tenantSlug } = useAuth()
+  const hasTenant = Boolean(tenantSlug)
+  const q = useQuery({ queryKey: ['chat-stepup', code], queryFn: ({ signal }) => chatbotApi.stepUpPreview(code, signal), enabled: hasTenant && !!code, retry: false })
+  const otps = useQuery({ queryKey: ['chat-stepup', 'otp'], queryFn: ({ signal }) => chatbotApi.stepUpOtps(signal), enabled: hasTenant && !code, refetchOnWindowFocus: false })
   const confirm = useAction(() => chatbotApi.stepUpConfirm(code), { invalidate: [['chat-stepup']] })
   return (
     <>
       <PageHeader title={tx('Sohbet doğrulaması')} description={tx('Sohbet botundan istenen hassas bir işlemi burada onaylayın. Sonuç sohbete gönderilir.')} />
       <div className="max-w-xl space-y-4">
-        {code ? (
+        {!hasTenant ? (
+          <EmptyState icon={ShieldCheck} title={tx('Sohbet doğrulaması şirket hesabıyla kullanılır')}
+            detail={tx('Sohbet botu bir şirketin çalışanları içindir. Hesabınız bir şirkete bağlı olmadığından bekleyen doğrulama ya da kutlama tercihi yok.')} />
+        ) : code ? (
           <Panel>
             <PanelBody className="space-y-4">
               {q.isPending ? <RowsSkeleton rows={2} /> : q.isError ? <ErrorState title={tx('Doğrulama geçersiz')} message={errMsg(q.error)} />
@@ -74,7 +81,7 @@ export function ChatStepUpPage() {
             </PanelBody>
           </Panel>
         )}
-        <ChatOptInsPanel />
+        {hasTenant && <ChatOptInsPanel />}
       </div>
     </>
   )

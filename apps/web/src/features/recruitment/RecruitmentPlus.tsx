@@ -549,15 +549,21 @@ export function MyInterviewsPage() {
                         {interviewTypeLabels[i.type]} · {formatDateTime(i.scheduledAt)} · {tx('{0} dk', [i.durationMinutes])}{i.location ? ` · ${i.location}` : ''}
                       </p>
                     </div>
-                    {i.meetingUrl && new Date(i.scheduledAt).getTime() + i.durationMinutes * 60e3 > now && (
+                    {i.result !== 'Cancelled' && i.meetingUrl && new Date(i.scheduledAt).getTime() + i.durationMinutes * 60e3 > now && (
                       <Button size="sm" variant="outline" asChild><a href={i.meetingUrl} target="_blank" rel="noreferrer noopener"><Video className="size-4" /> {tx('Katıl')}</a></Button>
                     )}
-                    {i.myScorecard
-                      ? <StatusBadge tone="success">{tx('Puan kartı: {0}', [i.myScorecard.overallScore?.toFixed(2) ?? '—'])}</StatusBadge>
-                      : <StatusBadge tone="warning">{tx('Puan kartı bekliyor')}</StatusBadge>}
-                    <Button size="sm" onClick={() => setOpen({ id: i.id, title: `${i.candidateName ?? ''} · ${i.posting ?? ''}` })}>
-                      <ClipboardCheck className="size-4" /> {i.myScorecard ? tx('Düzenle') : tx('Doldur')}
-                    </Button>
+                    {i.result === 'Cancelled' ? (
+                      <StatusBadge tone="neutral">{tx('İptal edildi')}</StatusBadge>
+                    ) : (
+                      <>
+                        {i.myScorecard
+                          ? <StatusBadge tone="success">{tx('Puan kartı: {0}', [i.myScorecard.overallScore?.toFixed(2) ?? '—'])}</StatusBadge>
+                          : <StatusBadge tone="warning">{tx('Puan kartı bekliyor')}</StatusBadge>}
+                        <Button size="sm" onClick={() => setOpen({ id: i.id, title: `${i.candidateName ?? ''} · ${i.posting ?? ''}` })}>
+                          <ClipboardCheck className="size-4" /> {i.myScorecard ? tx('Düzenle') : tx('Doldur')}
+                        </Button>
+                      </>
+                    )}
                   </li>
                 ))}
               </ul>

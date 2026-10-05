@@ -179,6 +179,26 @@ check("Toplu onay: 2 talep onaylandı, karar verilmiş olan atlandı", br["done"
 _, w3c = api("ayse", "GET", f"{W}/{w3['id']}")
 check("Toplu onaydan sonra ikinci adım (Zeynep) sırada", w3c["status"] == "Pending" and w3c["steps"][0]["decision"] == "Approved" and "(toplu karar)" in w3c["steps"][0]["comment"], w3c["steps"])
 
+# Dalga 5: toplu ret gerekçe ister (tekil retteki kural); modül türleri genel uçtan açılamaz;
+# serbest talepte onaycı giriş hesabı olan aktif çalışan olmalı.
+code, r = api("mehmet", "POST", f"{W}/bulk-decide", {"items": items, "decision": "Rejected"})
+check("Toplu ret: gerekçesiz reddedilir (400)", code == 400, (code, r))
+code, r = api("ayse", "POST", W, {"type": "LeaveRequest", "requesterEmployeeId": AYSE, "subject": "test-modul", "approverEmployeeIds": [ZEYNEP]})
+check("Modül türü (izin) genel 'Yeni talep' ucundan açılamaz", code == 400 and "kendi ekranından" in (r or {}).get("message", ""), (code, r))
+code, r = api("ayse", "POST", W, {"type": "Other", "requesterEmployeeId": AYSE, "subject": "test-hesapsiz", "approverEmployeeIds": ["00000000-0000-0000-0000-000000000001"]})
+check("Serbest talep: giriş hesabı olmayan onaycı reddedilir", code == 400, (code, r))
+code, cands = api("ayse", "GET", f"{W}/approver-candidates")
+check("Onaycı adayları: talep eden hariç, giriş hesabı olanlar", code == 200 and AYSE not in {c["id"] for c in cands} and MEHMET in {c["id"] for c in cands}, (code, cands))
+
+# Dalga 5: olay radarı yalnızca İK; saklanan olaylarda e-posta karar jetonu ve onaycı e-postası yok.
+code, _ = api("mehmet", "GET", f"{G}/events/recent?limit=5")
+check("Olay radarı: yönetici erişemez (yalnızca İK)", code == 403, code)
+code, evs = api("admin", "GET", f"{G}/events/recent?limit=50&type=workflow.submitted")
+check("Olay radarı: workflow.submitted yükünde jeton/onaycı e-postası yok",
+      code == 200 and all("ActionToken" not in json.dumps(e.get("payload")) and "ApproverEmail" not in json.dumps(e.get("payload")) for e in evs), code)
+leaked = psql("SELECT count(*) FROM governance_events WHERE \"Payload\" ? 'ActionToken' AND \"OccurredAt\" > now() - interval '10 minutes'")
+check("KVKK/güvenlik: yeni olaylar jetonsuz saklanıyor", leaked == "0", leaked)
+
 # ====================================================================== G10 süre aşımında iletme
 code, ox = api("ayse", "POST", f"{T}/overtime", {"date": d4.isoformat(), "hours": 1, "reason": "test-wf-sla"})
 wfx = ox["workflowRequestId"]

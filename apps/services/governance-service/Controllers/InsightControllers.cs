@@ -147,8 +147,10 @@ public class AuditController : AppController
  * Tarayıcı EventSource başlık gönderemediği için istemci fetch akışı
  * kullanır (Authorization başlığıyla); nginx tamponlamayı kapatır.
  * ==================================================================== */
+// GÜVENLİK/KVKK: olay yükleri kiracı genelinde kişisel veri taşır (işe alım, görev, izin,
+// onay talepleri); önceden yöneticilere açıktı. Yalnızca İK.
 [Route("api/events")]
-[Authorize(Policy = "RequireManagerOrAbove")]
+[Authorize(Policy = "RequireHrAdmin")]
 [RequiresPlan("Enterprise")]
 public class EventsController : AppController
 {
@@ -177,7 +179,9 @@ public class EventsController : AppController
             $"SELECT \"Id\", \"TenantSlug\", \"Topic\", \"EventType\", \"Payload\"::text, \"OccurredAt\" FROM governance_events {w} ORDER BY \"OccurredAt\" DESC LIMIT {limit}",
             r =>
             {
-                JsonElement? p = r.IsDBNull(4) ? null : JsonDocument.Parse(r.GetString(4)).RootElement.Clone();
+                // Eski kayıtlar için de (göç öncesi) gizli alanlar okurken ayıklanır.
+                JsonElement? p = r.IsDBNull(4) ? null
+                    : EventHub.Sanitize(JsonDocument.Parse(r.GetString(4)).RootElement.Clone(), EventHub.RadarPersonalFields);
                 var type = r.GetString(3);
                 return new RadarEvent(r.GetGuid(0), r.Str(1), r.GetString(2), type, p, r.GetFieldValue<DateTime>(5), EventHub.Describe(type, p));
             }, ct, args.ToArray());

@@ -148,8 +148,8 @@ public class DocumentRequestsController : AppController
         await _notifier.LocalizedAsync(Tenant, r.EmployeeId,
             body.Approve ? $"Belgeniz hazır: {r.TemplateName}" : $"Belge talebiniz reddedildi: {r.TemplateName}",
             body.Approve ? $"Your document is ready: {r.TemplateName}" : $"Your document request was rejected: {r.TemplateName}",
-            body.Approve ? "Profilim › Belge talepleri'nden indirebilir, OTP ile imzalayabilirsiniz." : (r.DecisionNote ?? "Ayrıntı için İK ile görüşün."),
-            body.Approve ? "You can download it, and sign it with a one-time code, under My profile › Document requests." : (r.DecisionNote ?? "Please contact HR for details."),
+            body.Approve ? "Günlük iş › Belge talebi ekranından indirebilir, tek kullanımlık kodla imzalayabilirsiniz." : (r.DecisionNote ?? "Ayrıntı için İK ile görüşün."),
+            body.Approve ? "You can download it, and sign it with a one-time code, under Daily work › Document request." : (r.DecisionNote ?? "Please contact HR for details."),
             "document.request", ct);
         return Ok(Dto(r));
     }

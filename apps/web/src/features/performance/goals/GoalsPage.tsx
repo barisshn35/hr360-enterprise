@@ -153,7 +153,7 @@ export function GoalsPage() {
 
       {!cyclesPending && !cycles.length && (
         <Panel>
-          <EmptyState icon={Crosshair} title={tx('Önce bir dönem gerekiyor')} detail={tx('Hedefler bir döneme bağlıdır. Dönemler ekranından ilk dönemi oluşturun.')} />
+          <EmptyState icon={Crosshair} title={tx('Önce bir dönem gerekiyor')} detail={manager ? tx('Hedefler bir döneme bağlıdır. Dönemler ekranından ilk dönemi oluşturun.') : tx('Hedefler bir döneme bağlıdır. İK bir performans dönemi açtığında hedeflerinizi buradan girebilirsiniz.')} />
         </Panel>
       )}
 

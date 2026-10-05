@@ -149,6 +149,45 @@ function Editor({ initial, onDone }: { initial: WorkflowDefinition | null; onDon
   )
 }
 
+/**
+ * İK onaycısı: üst onaycısı bulunamayan talepler (ör. departman başının kendi izni) ve süre
+ * aşımında iletilecek üst yöneticisi olmayan adımlar bu kişiye gider. Tanımlı değilse bu
+ * talepler kimsenin kutusuna düşmez.
+ */
+function HrApproverPanel() {
+  const settings = useQuery({ queryKey: ['wf-settings'], queryFn: ({ signal }) => workflowApi.settings(signal) })
+  const candidates = useQuery({ queryKey: ['workflows', 'approver-candidates'], queryFn: ({ signal }) => workflowApi.approverCandidates(signal) })
+  const [value, setValue] = useState<string | null>(null)
+  const current = value ?? settings.data?.hrApproverEmployeeId ?? ''
+  const save = useAction((id: string) => workflowApi.saveSettings({ hrApproverEmployeeId: id || null }), {
+    success: tx('İK onaycısı kaydedildi'), invalidate: [['wf-settings']], onDone: () => setValue(null),
+  })
+  const options = useMemo(() => {
+    const list = (candidates.data ?? []).map((c) => ({ value: c.id, label: c.fullName }))
+    // Kaydedilen kişi çağıranın kendisiyse aday listesinde yoktur; yine de görünsün.
+    const saved = settings.data?.hrApproverEmployeeId
+    if (saved && !list.some((o) => o.value === saved)) list.unshift({ value: saved, label: tx('Siz') })
+    return [{ value: '', label: tx('Tanımlı değil') }, ...list]
+  }, [candidates.data, settings.data])
+  return (
+    <Panel>
+      <PanelHead title={tx('İK onaycısı')} note={tx('Üst onaycısı bulunamayan talepler (ör. bölüm başının kendi izni) ve süre aşımında iletilecek üst yöneticisi olmayan adımlar bu kişiye gider.')} />
+      <PanelBody>
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="min-w-60 flex-1">
+            <SelectField label={tx('Kişi')} value={current} onChange={setValue} options={options}
+              hint={tx('Yalnızca HR360 giriş hesabı olan, aktif çalışanlar seçilebilir.')} />
+          </div>
+          <Button disabled={save.isPending || value === null || value === (settings.data?.hrApproverEmployeeId ?? '')} onClick={() => save.mutate(current)}>{tx('Kaydet')}</Button>
+        </div>
+        {!settings.isPending && !settings.data?.hrApproverEmployeeId && (
+          <div className="mt-3"><InfoNote>{tx('İK onaycısı tanımlı değil: bölüm başının kendi talepleri kimsenin onay kutusuna düşmez.')}</InfoNote></div>
+        )}
+      </PanelBody>
+    </Panel>
+  )
+}
+
 /** /panel/onay-akislari — görsel onay akışı tasarımcısı (İK). */
 export function WorkflowDesignerPage() {
   const q = useQuery({ queryKey: ['wf-definitions'], queryFn: ({ signal }) => workflowApi.definitions(signal) })
@@ -164,6 +203,7 @@ export function WorkflowDesignerPage() {
     <>
       <PageHeader title={tx('Onay akışları')} description={tx('Talep türüne göre çok adımlı onay zinciri: bölüm başı, üst yönetici, belirli kişi; gün/tutar koşulları ve karar süreleri.')}
         actions={<div className="flex gap-2"><Button variant="outline" onClick={() => setDelegations(true)}><UserRoundCog className="size-4" /> {tx('Tüm vekâletler')}</Button><Button onClick={() => setEditing('new')}><Plus className="size-4" /> {tx('Yeni akış')}</Button></div>} />
+      {!editing && <div className="mb-4"><HrApproverPanel /></div>}
       {editing ? <Editor initial={editing === 'new' ? null : editing} onDone={() => setEditing(null)} /> : q.isPending ? <RowsSkeleton rows={3} /> : !grouped.length ? (
         <EmptyState icon={GitBranch} title={tx('Henüz akış tanımı yok')} detail={tx('Tanım yoksa talepler bölüm başına gider. Örneğin "3 günü aşan izinlerde üst yönetici de onaylasın" gibi kurallar ekleyebilirsiniz.')} />
       ) : (

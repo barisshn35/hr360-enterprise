@@ -387,7 +387,7 @@ public class EmployeesController : ControllerBase
         if (me is null) return NotFound();
         var phone = request.Phone?.Trim();
         if (!string.IsNullOrEmpty(phone) && !System.Text.RegularExpressions.Regex.IsMatch(phone, @"^\+?[0-9 ()-]{7,20}$"))
-            return BadRequest(new { message = "Telefon numarasi gecersiz" });
+            return BadRequest(new { message = "Telefon numarası geçersiz" });
         me.Phone = string.IsNullOrEmpty(phone) ? null : phone;
         await _db.SaveChangesAsync(ct);
         return Ok(me);

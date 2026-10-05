@@ -59,6 +59,43 @@ public class WorkflowRouting
         return head;
     }
 
+    /// <summary>
+    /// Giriş hesabı olan ve işten ayrılmamış çalışanlar (verilen kimlikler arasından). Onaycı,
+    /// kararı ancak HR360'a girerek verebilir: hesabı olmayan ya da ayrılmış kişiye giden adım
+    /// sonsuza dek askıda kalırdı.
+    /// </summary>
+    public async Task<HashSet<Guid>> ActiveLoginEmployeesAsync(string tenant, IReadOnlyCollection<Guid> ids, CancellationToken ct)
+    {
+        if (ids.Count == 0) return new();
+        var arr = ids.Distinct().ToArray();
+        var rows = await _db.Database.SqlQueryRaw<Guid>(
+            "SELECT \"Id\" AS \"Value\" FROM employee_employees WHERE \"TenantSlug\" = {0} AND \"Id\" = ANY({1}) " +
+            "AND \"Status\" <> 'Terminated' AND \"KeycloakUserId\" IS NOT NULL",
+            tenant, arr).ToListAsync(ct);
+        return rows.ToHashSet();
+    }
+
+    /// <summary>Kiracının İK onaycısı (onay ayarları); tanımlı değilse null.</summary>
+    public Task<Guid?> HrApproverAsync(string tenant, CancellationToken ct) =>
+        _db.Settings.IgnoreQueryFilters().AsNoTracking().Where(s => s.TenantSlug == tenant)
+            .Select(s => s.HrApproverEmployeeId).FirstOrDefaultAsync(ct);
+
+    /// <summary>
+    /// Modül talebinde onaycı belirlenemediğinde (departman başı yok ya da talep eden departman
+    /// başı ve üst departman yok) kim onaylar: bölüm başı → üst bölüm başı → İK onaycısı.
+    /// Kimse yoksa null (talep açılamaz; çağıran servis kendi kaydını elle sonuçlandırmaya bırakır).
+    /// </summary>
+    public async Task<Guid?> FallbackApproverAsync(string tenant, Guid requester, CancellationToken ct)
+    {
+        var head = await HeadOfAsync(tenant, requester, parent: false, ct);
+        if (head is { } h && h != Guid.Empty && h != requester && (await ActiveLoginEmployeesAsync(tenant, new[] { h }, ct)).Contains(h))
+            return h;
+        var hr = await HrApproverAsync(tenant, ct);
+        if (hr is { } x && x != Guid.Empty && x != requester && (await ActiveLoginEmployeesAsync(tenant, new[] { x }, ct)).Contains(x))
+            return x;
+        return null;
+    }
+
     public static decimal? PayloadNumber(string? payload, ConditionField field)
     {
         if (string.IsNullOrWhiteSpace(payload)) return null;

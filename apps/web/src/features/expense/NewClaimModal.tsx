@@ -13,7 +13,7 @@ import { useMyEmployeeId } from '@/api/queries'
 import { useAuth } from '@/auth/useAuth'
 import { expenseCategoryLabels, type ExpenseCategory, type ExpenseItem } from '@/api/types'
 import type { ExpenseClaim } from '@/api/expense'
-import { formatMoney } from '@/lib/format'
+import { formatMoney, parseDecimal } from '@/lib/format'
 import { localISODate } from '@/lib/dates'
 import { tx } from '@/lib/i18n'
 
@@ -34,6 +34,23 @@ interface DraftItem {
 
 const CURRENCIES = ['TRY', 'USD', 'EUR', 'GBP', 'CHF']
 
+/**
+ * Tutar/km metin olarak girilir ve parseDecimal ile okunur: `type=number` tr-TR'de "123,45"
+ * yazımındaki virgülü düşürüp 12345 yapıyordu. Kayıtlı değer forma ondalık virgülle yazılır
+ * (aksi hâlde "1.234" binlik ayırıcı sanılırdı).
+ */
+const toInput = (n: number | null | undefined) => (n == null ? '' : String(n).replace('.', ','))
+const num = (s: string) => parseDecimal(s)
+
+/** Kalem tutarı/km alanının hatası (boşsa ve gönderilmemişse yok). */
+function amountError(raw: string, required: boolean): string | undefined {
+  if (!raw.trim()) return required ? tx('Tutar girilmeli.') : undefined
+  const v = num(raw)
+  if (v === null) return tx('Geçerli bir sayı girin (ör. 123,45).')
+  if (v <= 0) return tx('Değer 0\'dan büyük olmalı.')
+  return undefined
+}
+
 let nextKey = 1
 function emptyItem(): DraftItem {
   return {
@@ -53,11 +70,11 @@ function draftFromItem(i: ExpenseItem): DraftItem {
   return {
     key: nextKey++,
     category: i.category,
-    amount: i.category === 'Mileage' ? '' : String(foreign ? i.originalAmount : i.amount),
+    amount: i.category === 'Mileage' ? '' : toInput(foreign ? i.originalAmount : i.amount),
     expenseDate: i.expenseDate,
     description: i.description ?? '',
     currency: foreign ? i.originalCurrency! : 'TRY',
-    km: i.km != null ? String(i.km) : '',
+    km: toInput(i.km),
     receiptStorageKey: i.receiptStorageKey,
     travelRequestId: i.travelRequestId,
   }
@@ -107,14 +124,14 @@ async function parseItemsFromFile(file: File): Promise<DraftItem[]> {
       const field = headerField(ITEM_HEADER_ALIASES, key)
       if (field) mapped[field] = value
     }
-    const amount = Number(mapped.amount)
+    const amount = typeof mapped.amount === 'number' ? mapped.amount : num(String(mapped.amount ?? ''))
     if (!amount || amount <= 0) continue
 
     const categoryRaw = String(mapped.category ?? '').trim().toLowerCase()
     drafts.push({
       key: nextKey++,
       category: CATEGORY_BY_LABEL[categoryRaw] ?? 'Other',
-      amount: String(amount),
+      amount: toInput(amount),
       expenseDate: excelDateToIso(mapped.expenseDate),
       description: String(mapped.description ?? '').trim(),
       currency: 'TRY',
@@ -180,15 +197,15 @@ export function NewClaimModal({ open, onClose, claim }: {
       expenseApi.fx(i.currency, i.expenseDate).then((r) => setRates((p) => ({ ...p, [k]: r.rate })), () => setRates((p) => ({ ...p, [k]: 0 })))
     }
   }, [items, rates])
-  const tlOf = (i: DraftItem) => i.category === 'Mileage' ? (Number(i.km) || 0) * kmRate
-    : i.currency === 'TRY' ? Number(i.amount) || 0 : (Number(i.amount) || 0) * (rates[rateKey(i)] || 0)
+  const tlOf = (i: DraftItem) => i.category === 'Mileage' ? (num(i.km) || 0) * kmRate
+    : i.currency === 'TRY' ? num(i.amount) || 0 : (num(i.amount) || 0) * (rates[rateKey(i)] || 0)
   const total = items.reduce((sum, i) => sum + tlOf(i), 0)
   const [ocrBusy, setOcrBusy] = useState<number | null>(null)
   async function readReceipt(key: number, file: File) {
     setOcrBusy(key)
     try {
       const r = await expenseApi.ocr(file)
-      patch(key, { ...(r.amount ? { amount: String(r.amount) } : {}), ...(r.date ? { expenseDate: r.date } : {}) })
+      patch(key, { ...(r.amount ? { amount: toInput(r.amount) } : {}), ...(r.date ? { expenseDate: r.date } : {}) })
       toast.ok(r.amount ? tx('Fişten okundu; tutarı ve tarihi kontrol edin.') : tx('Tutar okunamadı; elle girin.'))
     } catch (e) {
       toast.stop(e instanceof Error ? e.message : tx('Fiş okunamadı'))
@@ -236,7 +253,7 @@ export function NewClaimModal({ open, onClose, claim }: {
     if (title.trim().length < 3) next.title = tx('Başlık en az 3 karakter olmalı.')
     if (items.length === 0) {
       next.items = tx('En az bir kalem eklenmeli.')
-    } else if (items.some((i) => (i.category === 'Mileage' ? !(Number(i.km) > 0) : !i.amount || Number(i.amount) <= 0))) {
+    } else if (items.some((i) => amountError(i.category === 'Mileage' ? i.km : i.amount, true))) {
       // GUVENLIK/VERI BUTUNLUGU: onceki hali yalnizca "!Number(i.amount)"
       // kontrol ediyordu - bu, negatif tutarlari (orn. -50) YAKALAMIYORDU,
       // cunku Number('-50') JavaScript'te "truthy". Form negatif tutari
@@ -253,13 +270,13 @@ export function NewClaimModal({ open, onClose, claim }: {
     mutationFn: () => {
       const payload: ExpenseItem[] = items.map((i) => ({
         category: i.category,
-        amount: i.category === 'Mileage' ? 0 : Number(i.amount),
+        amount: i.category === 'Mileage' ? 0 : num(i.amount) ?? 0,
         expenseDate: i.expenseDate,
         description: i.description.trim() || undefined,
         receiptStorageKey: i.receiptStorageKey ?? undefined,
         travelRequestId: i.travelRequestId ?? undefined,
-        ...(i.category === 'Mileage' ? { km: Number(i.km) } : {}),
-        ...(i.category !== 'Mileage' && i.currency !== 'TRY' ? { originalCurrency: i.currency, originalAmount: Number(i.amount) } : {}),
+        ...(i.category === 'Mileage' ? { km: num(i.km) ?? 0 } : {}),
+        ...(i.category !== 'Mileage' && i.currency !== 'TRY' ? { originalCurrency: i.currency, originalAmount: num(i.amount) ?? 0 } : {}),
       }))
       if (claim) return expenseApi.updateClaim(claim.id, { title: title.trim(), currency: 'TRY', items: payload })
       return expenseApi.createClaim({
@@ -430,11 +447,11 @@ export function NewClaimModal({ open, onClose, claim }: {
                         <TextField
                           id={`item-amount-${item.key}`}
                           label={tx('Kilometre')}
-                          type="number"
-                          min={0}
-                          step="0.1"
+                          inputMode="decimal"
+                          autoComplete="off"
                           className="tabular"
                           value={item.km}
+                          error={amountError(item.km, submitted)}
                           hint={tx('km × {0} = {1}', [formatMoney(kmRate), formatMoney(tlOf(item))])}
                           onChange={(e) => patch(item.key, { km: e.target.value })}
                         />
@@ -442,11 +459,11 @@ export function NewClaimModal({ open, onClose, claim }: {
                         <TextField
                           id={`item-amount-${item.key}`}
                           label={item.currency === 'TRY' ? tx('Tutar') : tx('Tutar ({0})', [item.currency])}
-                          type="number"
-                          min={0}
-                          step="0.01"
+                          inputMode="decimal"
+                          autoComplete="off"
                           className="tabular"
                           value={item.amount}
+                          error={amountError(item.amount, submitted)}
                           hint={item.currency !== 'TRY' ? (rates[rateKey(item)] ? tx('TCMB kuru {0} → {1}', [rates[rateKey(item)], formatMoney(tlOf(item))]) : tx('Kur alınıyor…')) : undefined}
                           onChange={(e) => patch(item.key, { amount: e.target.value })}
                           onBlur={() => submitted && setErrors(validate())}

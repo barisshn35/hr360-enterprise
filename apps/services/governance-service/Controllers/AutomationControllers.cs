@@ -525,8 +525,9 @@ public class PublicApiController : ControllerBase
         var rows = await _sql.QueryAsync("""
             SELECT "Id", "EventType", "Payload"::text, "OccurredAt" FROM governance_events
             WHERE "TenantSlug" = $1 AND "OccurredAt" > $2 ORDER BY "OccurredAt" LIMIT 500
-            """, r => new { id = r.GetGuid(0), type = r.GetString(1), data = r.IsDBNull(2) ? (JsonElement?)null : JsonDocument.Parse(r.GetString(2)).RootElement.Clone(), occurredAt = r.GetFieldValue<DateTime>(3) },
+            """, r => new { id = r.GetGuid(0), type = r.GetString(1), data = r.IsDBNull(2) ? (JsonElement?)null : EventHub.Sanitize(JsonDocument.Parse(r.GetString(2)).RootElement.Clone()), occurredAt = r.GetFieldValue<DateTime>(3) },
             ct, tenant, s);
+        // Gizli alanlar (onay jetonu vb.) açık API'ye de verilmez; eski kayıtlar göçle de temizlendi.
         return Ok(new { data = rows });
     }
 

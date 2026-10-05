@@ -11,13 +11,27 @@ import { apiFetch } from '@/api/client'
 import { useLeaveBalances, useLeaveHolidays, useMyEmployeeId } from '@/api/queries'
 import { useAuth } from '@/auth/useAuth'
 import { leaveTypeLabels, type LeaveType } from '@/api/types'
-import { formatNumber } from '@/lib/format'
+import { formatNumber, parseDecimal } from '@/lib/format'
 import { tx, appLocale } from '@/lib/i18n'
 
 interface Errors {
   employeeId?: string
   dates?: string
   days?: string
+  hours?: string
+}
+
+/**
+ * Saatlik izin alanı (tek gün): boşsa tam gün. Önceden "-1"/"abc" sessizce tam güne
+ * dönüyordu; artık alan hatası verilir. Kural sunucuyla aynı: 0,5 saatlik adımlarla, 7,5'ten az.
+ */
+function hoursError(raw: string): string | undefined {
+  if (!raw.trim()) return undefined
+  const v = parseDecimal(raw)
+  if (v === null) return tx('Geçerli bir saat girin (ör. 2,5).')
+  if (v <= 0 || v >= 7.5) return tx('Saat 0’dan büyük ve 7,5’ten küçük olmalı.')
+  if (!Number.isInteger(v * 2)) return tx('Saat 0,5’lik adımlarla girilmeli.')
+  return undefined
 }
 
 /**
@@ -100,7 +114,8 @@ export function NewLeaveRequestModal({
   const holidays = useLeaveHolidays(year, open)
   const holidaySet = useMemo(() => new Set((holidays.data ?? []).map((h) => h.date.slice(0, 10))), [holidays.data])
   const singleDay = !!startDate && startDate === endDate
-  const hourValue = singleDay && hours ? Number(hours.replace(',', '.')) : 0
+  const hoursInvalid = singleDay ? hoursError(hours) : undefined
+  const hourValue = singleDay && hours.trim() && !hoursInvalid ? parseDecimal(hours) ?? 0 : 0
   // Saatlik izin (tek gün): gün = saat / 7,5 (backend aynı kuralı uygular, LEAVE_DAY_HOURS).
   const days = useMemo(() => (hourValue > 0 ? Math.round((hourValue / 7.5) * 100) / 100 : daysBetween(startDate, endDate, holidaySet)), [startDate, endDate, holidaySet, hourValue])
   const balance = balances.data?.find((b) => b.type === type)
@@ -146,6 +161,7 @@ export function NewLeaveRequestModal({
       // Tarihler geçerli ama aralıkta yalnızca hafta sonu/resmî tatil var.
       next.days = tx('Seçilen aralıkta iş günü yok.')
     }
+    if (hoursInvalid) next.hours = hoursInvalid
     return next
   }
 
@@ -171,6 +187,7 @@ export function NewLeaveRequestModal({
         errors.employeeId && { fieldId: 'leave-employee', message: errors.employeeId },
         errors.dates && { fieldId: 'leave-start', message: errors.dates },
         errors.days && { fieldId: 'leave-start', message: errors.days },
+        errors.hours && { fieldId: 'leave-hours', message: errors.hours },
       ].filter(Boolean) as SummaryItem[])
     : []
 
@@ -262,6 +279,7 @@ export function NewLeaveRequestModal({
             inputMode="decimal"
             value={hours}
             onChange={(e) => setHours(e.target.value)}
+            error={hoursInvalid}
             hint={tx('Günün bir kısmı için: 0,5 saatlik adımlarla, 7,5 saatten az. Boş bırakırsanız tam gün.')}
           />
         )}

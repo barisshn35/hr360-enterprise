@@ -48,7 +48,8 @@ public class ScoringConfigController : ControllerBase
     /// olan ayarla aciklanabilir kalir.
     /// </summary>
     [HttpPut]
-    [Authorize(Policy = "RequireManagerOrAbove")]
+    // Şirket geneli puanlama ayarı yalnızca İK (önceden her yönetici değiştirebiliyordu).
+    [Authorize(Policy = "RequireHrAdmin")]
     public async Task<IActionResult> Update([FromBody] UpdateScoringConfigRequest r)
     {
         if (r.GoalWeightPercent is < 0 or > 100 || r.MetricWeightPercent is < 0 or > 100)

@@ -45,9 +45,48 @@ const VARS = [
   '--tenant-primary-dark-foreground',
 ] as const
 
-/** Orta parlaklıktan koyusu beyaz metin ister, açık renkler koyu metin. */
-function foregroundFor(l: number) {
-  return l > 60 ? '160 50% 4%' : '0 0% 100%'
+function hslToRgb(h: number, s: number, l: number): [number, number, number] {
+  const S = s / 100
+  const L = l / 100
+  const k = (n: number) => (n + h / 30) % 12
+  const a = S * Math.min(L, 1 - L)
+  const f = (n: number) => L - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)))
+  return [f(0), f(8), f(4)]
+}
+
+/** WCAG göreli parlaklık (0-1). */
+function luminance([r, g, b]: [number, number, number]) {
+  const c = (v: number) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)
+  return 0.2126 * c(r) + 0.7152 * c(g) + 0.0722 * c(b)
+}
+
+function contrast(a: number, b: number) {
+  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
+}
+
+// Zeminler: index.css --background (açık 99%, koyu 240 8% 3.5%). Metin, birincil rengin
+// %10'luk tonlu zemini (bg-primary/10) üzerinde de durabildiği için hedefte küçük pay var.
+const LIGHT_BG = luminance(hslToRgb(0, 0, 99))
+const DARK_BG = luminance(hslToRgb(240, 8, 3.5))
+const TARGET = 4.8
+const WHITE = 1
+const NEAR_BLACK = luminance(hslToRgb(160, 50, 4))
+
+/**
+ * Rengin tonunu ve doygunluğunu koruyup açıklığını, zemine karşı WCAG AA (4,5:1) metin
+ * kontrastı sağlanana kadar kaydırır: koyu temada açar, açık temada koyulaştırır. Şirket
+ * rengini tanır kalır ama "text-primary" metinleri her iki temada okunur.
+ */
+function readableLightness(h: number, s: number, l: number, bg: number, direction: 1 | -1) {
+  let x = l
+  while (x >= 0 && x <= 100 && contrast(luminance(hslToRgb(h, s, x)), bg) < TARGET) x += direction
+  return Math.max(0, Math.min(100, x))
+}
+
+/** Birincil renkli düğme üzerindeki metin: beyaz ya da koyu, hangisi daha kontrastlıysa. */
+function foregroundFor(h: number, s: number, l: number) {
+  const lum = luminance(hslToRgb(h, s, l))
+  return contrast(lum, WHITE) >= contrast(lum, NEAR_BLACK) ? '0 0% 100%' : '160 50% 4%'
 }
 
 /**
@@ -56,9 +95,22 @@ function foregroundFor(l: number) {
  *
  * index.css --primary'yi bu değişkenlerden okur. Açık ve koyu tema için ayrı
  * değer yazılır: koyu temada çok koyu bir marka rengi (ör. lacivert) obsidyen
- * zeminde kaybolacağı için parlaklığı en az %45'e çekilir; ton (hue) ve
- * doygunluk aynı kalır, şirket rengini tanır.
+ * zeminde kaybolacağı için parlaklık kontrast hedefine kadar açılır (açık temada
+ * çok açık renkler koyulaştırılır); ton (hue) ve doygunluk aynı kalır.
  */
+/** Marka renginden açık/koyu tema CSS değişkenlerini (HSL bileşenleri) üretir; DOM'a dokunmaz. */
+export function brandPalette(primaryColorHex: string): Record<(typeof VARS)[number], string> {
+  const { h, s, l } = hexToHsl(primaryColorHex)
+  const lightL = readableLightness(h, s, l, LIGHT_BG, -1)
+  const darkL = readableLightness(h, s, Math.max(l, 45), DARK_BG, 1)
+  return {
+    '--tenant-primary': `${h} ${s}% ${lightL}%`,
+    '--tenant-primary-foreground': foregroundFor(h, s, lightL),
+    '--tenant-primary-dark': `${h} ${s}% ${darkL}%`,
+    '--tenant-primary-dark-foreground': foregroundFor(h, s, darkL),
+  }
+}
+
 export function applyTenantBrandColor(primaryColorHex: string | null | undefined) {
   const root = document.documentElement
 
@@ -67,10 +119,5 @@ export function applyTenantBrandColor(primaryColorHex: string | null | undefined
     return
   }
 
-  const { h, s, l } = hexToHsl(primaryColorHex)
-  const darkL = Math.min(Math.max(l, 45), 70)
-  root.style.setProperty('--tenant-primary', `${h} ${s}% ${l}%`)
-  root.style.setProperty('--tenant-primary-foreground', foregroundFor(l))
-  root.style.setProperty('--tenant-primary-dark', `${h} ${s}% ${darkL}%`)
-  root.style.setProperty('--tenant-primary-dark-foreground', foregroundFor(darkL))
+  for (const [name, value] of Object.entries(brandPalette(primaryColorHex))) root.style.setProperty(name, value)
 }

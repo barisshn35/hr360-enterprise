@@ -11,6 +11,7 @@ import { Modal } from '@/components/ui/Modal'
 import { SelectField, TextAreaField, TextField } from '@/components/ui/Field'
 import { EmployeePicker } from '@/components/ui/EmployeePicker'
 import { useToast } from '@/components/ui/Toast'
+import { useConfirm } from '@/components/ui/Confirm'
 import { useAuth } from '@/auth/useAuth'
 import { onboardingApi } from '@/api/onboarding'
 import { useAssets, useEmployees } from '@/api/queries'
@@ -138,6 +139,142 @@ function NewAssetModal({ open, onClose }: { open: boolean; onClose: () => void }
           />
         </div>
       </form>
+    </Modal>
+  )
+}
+
+/** Demirbaş bilgisini düzeltme (etiket, tür, model, seri no). Durum ayrı pencereden değişir. */
+function EditAssetModal({ asset, onClose }: { asset: Asset; onClose: () => void }) {
+  const toast = useToast()
+  const queryClient = useQueryClient()
+  const [assetTag, setAssetTag] = useState(asset.assetTag)
+  const [type, setType] = useState<AssetType>(asset.type)
+  const [model, setModel] = useState(asset.model ?? '')
+  const [serialNumber, setSerial] = useState(asset.serialNumber ?? '')
+  const [error, setError] = useState<string | undefined>()
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      onboardingApi.updateAsset(asset.id, {
+        assetTag: assetTag.trim(),
+        type,
+        model: model.trim() || undefined,
+        serialNumber: serialNumber.trim() || undefined,
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['onboarding'] })
+      toast.ok(tx('Demirbaş güncellendi'))
+      onClose()
+    },
+    // Etiket çakışması (409) alanın altında gösterilir; pencere açık kalır.
+    onError: (e: unknown) => setError(e instanceof Error ? e.message : tx('Kaydedilemedi.')),
+  })
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault()
+    if (assetTag.trim().length < 2) return setError(tx('Demirbaş no en az 2 karakter olmalı.'))
+    setError(undefined)
+    mutation.mutate()
+  }
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={tx('Demirbaşı düzenle')}
+      note={`${asset.assetTag}, ${assetStatusLabels[asset.status]}`}
+      footer={
+        <>
+          <Button variant="outline" className="cursor-pointer" onClick={onClose} disabled={mutation.isPending}>
+            {tx('Vazgeç')}
+          </Button>
+          <Button type="submit" form="edit-asset" className="cursor-pointer" disabled={mutation.isPending}>
+            {mutation.isPending && <LoaderCircle className="size-4 animate-spin" />}
+            {tx('Kaydet')}
+          </Button>
+        </>
+      }
+    >
+      <form id="edit-asset" onSubmit={submit} noValidate className="space-y-4">
+        <TextField id="edit-asset-tag" label={tx('Demirbaş no')} required value={assetTag} onChange={(e) => setAssetTag(e.target.value)} error={error} />
+        <SelectField
+          id="edit-asset-type"
+          label={tx('Tür')}
+          value={type}
+          onChange={(v) => setType(v as AssetType)}
+          options={(Object.keys(assetTypeLabels) as AssetType[]).map((t) => ({ value: t, label: assetTypeLabels[t] }))}
+        />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <TextField id="edit-asset-model" label={tx('Model')} hint={tx('İsteğe bağlı')} value={model} onChange={(e) => setModel(e.target.value)} />
+          <TextField id="edit-asset-serial" label={tx('Seri no')} hint={tx('İsteğe bağlı')} className="tabular" value={serialNumber} onChange={(e) => setSerial(e.target.value)} />
+        </div>
+      </form>
+    </Modal>
+  )
+}
+
+type ManualStatus = Exclude<AssetStatus, 'Assigned'>
+const MANUAL_STATUSES: ManualStatus[] = ['Available', 'Maintenance', 'Retired', 'Lost']
+
+/**
+ * Elle durum değişikliği: Boşta ↔ Bakımda / Hurda / Kayıp. Zimmetli demirbaşta menüde görünmez
+ * (önce iade alınır); sunucu da 409 ile engeller.
+ */
+function StatusModal({ asset, onClose }: { asset: Asset; onClose: () => void }) {
+  const toast = useToast()
+  const queryClient = useQueryClient()
+  const options = MANUAL_STATUSES.filter((s) => s !== asset.status)
+  const [status, setStatus] = useState<ManualStatus>(options[0])
+  const [note, setNote] = useState('')
+  const [error, setError] = useState<string | undefined>()
+
+  const mutation = useMutation({
+    mutationFn: () => onboardingApi.setAssetStatus(asset.id, status, note.trim() || undefined),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['onboarding'] })
+      toast.ok(tx('Durum değiştirildi: {0}', [assetStatusLabels[status]]))
+      onClose()
+    },
+    onError: (e: unknown) => setError(e instanceof Error ? e.message : tx('Durum değiştirilemedi.')),
+  })
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={tx('Durum değiştir')}
+      note={tx('{0} · şu an {1}', [asset.assetTag, assetStatusLabels[asset.status]])}
+      footer={
+        <>
+          <Button variant="outline" className="cursor-pointer" onClick={onClose} disabled={mutation.isPending}>
+            {tx('Vazgeç')}
+          </Button>
+          <Button className="cursor-pointer" disabled={mutation.isPending || note.length > 500} onClick={() => mutation.mutate()}>
+            {mutation.isPending && <LoaderCircle className="size-4 animate-spin" />}
+            {tx('Kaydet')}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <SelectField
+          id="asset-status"
+          label={tx('Yeni durum')}
+          value={status}
+          onChange={(v) => setStatus(v as ManualStatus)}
+          options={options.map((s) => ({ value: s, label: assetStatusLabels[s] }))}
+        />
+        <TextAreaField
+          id="asset-status-note"
+          label={tx('Açıklama')}
+          rows={2}
+          hint={tx('İsteğe bağlı; denetim kaydına yazılır.')}
+          value={note}
+          maxLength={500}
+          onChange={(e) => setNote(e.target.value)}
+        />
+        {error && <p role="alert" className="text-[13px] text-destructive">{error}</p>}
+      </div>
     </Modal>
   )
 }
@@ -339,6 +476,28 @@ export function AssetsPage() {
   const [labelsFor, setLabelsFor] = useState<Asset[] | null>(null)
   const [maintFor, setMaintFor] = useState<Asset | null>(null)
   const [expFor, setExpFor] = useState<Asset | null>(null)
+  const [editFor, setEditFor] = useState<Asset | null>(null)
+  const [statusFor, setStatusFor] = useState<Asset | null>(null)
+  const toast = useToast()
+  const confirm = useConfirm()
+  const queryClient = useQueryClient()
+  const remove = useMutation({
+    mutationFn: (a: Asset) => onboardingApi.deleteAsset(a.id),
+    onSuccess: (_, a) => {
+      void queryClient.invalidateQueries({ queryKey: ['onboarding'] })
+      toast.ok(tx('{0} silindi', [a.assetTag]))
+    },
+    // 409: zimmet/bakım geçmişi var — sunucu "hurdaya ayırın" önerir.
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Demirbaş silinemedi.')),
+  })
+  const askDelete = async (a: Asset) => {
+    const ok = await confirm({
+      title: tx('{0} silinsin mi?', [a.assetTag]),
+      note: tx('Yalnızca hiç zimmetlenmemiş ve bakım kaydı olmayan (ör. yanlış açılmış) demirbaş silinebilir. Geçmişi olan demirbaşı hurdaya ayırın. Silme geri alınamaz.'),
+      action: tx('Sil'),
+    })
+    if (ok) remove.mutate(a)
+  }
 
   const assets = useAssets({ status: tab === 'all' ? undefined : tab })
   const employees = useEmployees({ enabled: can('employee:viewAll') })
@@ -454,7 +613,7 @@ export function AssetsPage() {
         exportFileName="zimmet-envanteri"
         pageSize={12}
         emptyTitle={tx('Bu durumda demirbaş yok')}
-        emptyDetail={tx('Başka bir durum sekmesi seçin ya da yeni bir demirbaş ekleyin.')}
+        emptyDetail={canManage ? tx('Başka bir durum sekmesi seçin ya da yeni bir demirbaş ekleyin.') : tx('Başka bir durum sekmesi seçin.')}
         emptyAction={
           canManage ? (
             <Button size="sm" className="cursor-pointer" onClick={() => setNewOpen(true)}>
@@ -482,6 +641,18 @@ export function AssetsPage() {
                 },
                 { label: tx('QR etiketi'), onSelect: (a) => setLabelsFor([a]) },
                 { label: tx('Bakım kayıtları'), onSelect: (a) => setMaintFor(a) },
+                { label: tx('Düzenle'), onSelect: (a) => setEditFor(a) },
+                {
+                  label: tx('Durum değiştir'),
+                  hidden: (a) => a.status === 'Assigned',
+                  onSelect: (a) => setStatusFor(a),
+                },
+                {
+                  label: tx('Sil'),
+                  destructive: true,
+                  hidden: (a) => a.status === 'Assigned',
+                  onSelect: (a) => void askDelete(a),
+                },
               ]
             : undefined
         }
@@ -493,6 +664,8 @@ export function AssetsPage() {
       {labelsFor && <QrLabelsModal assets={labelsFor} onClose={() => setLabelsFor(null)} />}
       {maintFor && <MaintenanceModal asset={maintFor} onClose={() => setMaintFor(null)} />}
       {expFor && <ExpectedReturnModal asset={expFor} onClose={() => setExpFor(null)} />}
+      {editFor && <EditAssetModal key={editFor.id} asset={editFor} onClose={() => setEditFor(null)} />}
+      {statusFor && <StatusModal key={statusFor.id} asset={statusFor} onClose={() => setStatusFor(null)} />}
       <AssignModal asset={assignFor} onClose={() => setAssignFor(null)} />
       <ReturnModal asset={returnFor} onClose={() => setReturnFor(null)} />
     </div>

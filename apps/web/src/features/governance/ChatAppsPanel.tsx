@@ -9,6 +9,7 @@ import { SelectField, TextField } from '@/components/ui/Field'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { EmptyState, InfoNote, RowsSkeleton } from '@/components/ui/States'
 import { useToast } from '@/components/ui/Toast'
+import { useConfirm } from '@/components/ui/Confirm'
 import { governanceApi, type ChatApp, type ChatAppInput, type ChatPlatform } from '@/api/governance'
 import { formatRelativeToNow } from '@/lib/format'
 import { useAction } from '@/features/shared/kit'
@@ -206,6 +207,14 @@ export function ChatAppsPanel() {
   const test = useAction((id: string) => governanceApi.testChatApp(id), { success: tx('Deneme mesajı size gönderildi'), invalidate: [['chat-apps']] })
   const digest = useAction((id: string) => governanceApi.sendChatDigest(id), { success: (r) => tx('{0} kişiye sabah özeti gönderildi', [r.sent]) })
   const del = useAction((id: string) => governanceApi.deleteChatApp(id), { success: tx('Kaldırıldı'), invalidate: [['chat-apps']] })
+  const confirm = useConfirm()
+  const askDelete = async (a: ChatApp) => {
+    if (await confirm({
+      title: tx('“{0}” sohbet uygulaması silinsin mi?', [a.name]),
+      note: tx('Bot artık bildirim ve onay mesajı göndermez; {0} eşleşmiş kullanıcı bu uygulamadan mesaj alamaz. Bu işlem geri alınamaz.', [a.linkedUsers]),
+      action: tx('Sil'),
+    })) del.mutate(a.id)
+  }
   const httpsMissing = list.data?.some((a) => !a.publicOriginIsHttps) ?? false
   return (
     <div className="space-y-5">
@@ -259,7 +268,7 @@ export function ChatAppsPanel() {
                 {a.platform === 'Slack' && <Button size="sm" variant="outline" onClick={async () => saveJson(await governanceApi.slackManifest(a.id), 'hr360-slack-manifest.json')}><Download className="size-4" />{' '}{tx('Manifest')}</Button>}
                 {a.platform === 'Teams' && <Button size="sm" variant="outline" onClick={() => governanceApi.teamsPackage(a.id)}><Download className="size-4" />{' '}{tx('Teams paketi')}</Button>}
                 <Button size="sm" variant="ghost" aria-label={tx('Düzenle')} onClick={() => setSetup({ editing: a, input: { ...empty(a.platform), name: a.name, isEnabled: a.isEnabled, notifyApprovals: a.notifyApprovals, notifyRequesters: a.notifyRequesters, teamsAppId: a.teamsAppId ?? '', teamsAzureTenantId: a.teamsAzureTenantId ?? '', requireVerifiedIdentity: a.requireVerifiedIdentity, messageDetail: a.messageDetail, dailyDigest: a.dailyDigest, serverUrl: a.serverUrl ?? '', botUserId: a.botUserId ?? '', channelId: a.channelId ?? '', celebrationsEnabled: a.celebrationsEnabled ?? false, respectQuietHours: a.respectQuietHours ?? true, buttonTtlDays: a.buttonTtlDays ?? 7 } })}><Pencil className="size-4" /></Button>
-                <Button size="sm" variant="ghost" aria-label={tx('Sil')} onClick={() => del.mutate(a.id)}><Trash2 className="size-4" /></Button>
+                <Button size="sm" variant="ghost" aria-label={tx('Sil')} onClick={() => askDelete(a)}><Trash2 className="size-4" /></Button>
               </div>
             </motion.div>
           ))}

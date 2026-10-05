@@ -156,6 +156,9 @@ public class WorkplaceController : AppController
     {
         var me = Me;
         var status = await CancelCoreAsync(_db, id, b => b.UserId == me.UserId || me.IsHr, ct);
+        // Oda/masa çizelgesi ve "kim nerede" aynı önbelleği paylaşır; iptal de görünümü tazelemeli.
+        if (status == StatusCodes.Status204NoContent)
+            await HttpContext.RequestServices.GetRequiredService<AppCache>().BumpAsync("presence", Tenant);
         return status switch { StatusCodes.Status404NotFound => NotFound(), StatusCodes.Status403Forbidden => Forbid(), _ => NoContent() };
     }
 
@@ -225,9 +228,20 @@ public class WorkplaceController : AppController
     [HttpPut("presence")]
     public async Task<IActionResult> SetPresence(PresenceInput body, CancellationToken ct)
     {
-        if (!Modes.Contains(body.Mode)) return BadRequest(new { message = "Geçersiz çalışma yeri." });
+        // "Unknown" = bildirimi geri al (ör. masa iptalinden sonra otomatik "Ofiste" kaydını kaldırmak).
+        if (body.Mode != "Unknown" && !Modes.Contains(body.Mode)) return BadRequest(new { message = "Geçersiz çalışma yeri." });
         var me = await MyPersonAsync(ct);
         var e = await _db.Presence.FirstOrDefaultAsync(p => p.UserId == Me.UserId && p.Date == body.Date, ct);
+        if (body.Mode == "Unknown")
+        {
+            if (e is not null)
+            {
+                _db.Presence.Remove(e);
+                await _db.SaveChangesAsync(ct);
+                await HttpContext.RequestServices.GetRequiredService<AppCache>().BumpAsync("presence", Tenant);
+            }
+            return Ok(new { body.Date, Mode = "Unknown", Note = (string?)null });
+        }
         if (e is null)
         {
             e = new Presence { UserId = Me.UserId, EmployeeId = me?.Id, PersonName = me?.Name ?? Me.Name, Date = body.Date };

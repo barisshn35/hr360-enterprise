@@ -14,7 +14,7 @@ import { useToast } from '@/components/ui/Toast'
 import { useAuth } from '@/auth/useAuth'
 import { useDirectory } from '@/api/directory'
 import { payrollExtrasApi, type AdvanceStatus, type BenefitOption, type ExportKind, type RaiseCycle, type SalaryAdvance, type WorksheetRow } from '@/api/payrollExtras'
-import { formatDate, formatDateTime, formatMoney, parseDecimal } from '@/lib/format'
+import { formatDate, formatDateTime, formatMoney, formatNumber, parseDecimal } from '@/lib/format'
 import { Metric, errMsg, isoDate, useAction } from '@/features/shared/kit'
 import { tx } from '@/lib/i18n'
 
@@ -292,7 +292,7 @@ function ProposalCell({ cycleId, row, editable }: { cycleId: string; row: Worksh
   const [pct, setPct] = useState(row.proposal ? String(row.proposal.proposedPercent) : '')
   const save = useAction(() => payrollExtrasApi.propose(cycleId, { employeeId: row.employeeId, proposedPercent: Number(pct) }), { success: tx('Öneri kaydedildi'), invalidate: [['raise']] })
   if (!editable || (row.proposal && row.proposal.status !== 'Proposed' && row.proposal.status !== 'Rejected'))
-    return <span>{row.proposal ? `%${row.proposal.proposedPercent} → ${formatMoney(row.proposal.proposedSalary, row.currency)}` : '—'}</span>
+    return <span>{row.proposal ? `%${formatNumber(row.proposal.proposedPercent)} → ${formatMoney(row.proposal.proposedSalary, row.currency)}` : '—'}</span>
   return (
     <span className="flex items-center gap-2">
       <input aria-label={tx('Zam oranı')} className="h-8 w-20 rounded-md border border-border bg-background px-2 text-right text-[13px]" type="number" min={0} max={100} step={0.5} value={pct} onChange={(e) => setPct(e.target.value)} />
@@ -317,7 +317,7 @@ function Worksheet({ cycle }: { cycle: RaiseCycle }) {
   return (
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-3">
-        <Metric label={tx('Bütçe')} value={formatMoney(d.budget)} hint={tx('bütçe oranı: %{0} (aylık brüt toplam üzerinden)', [cycle.budgetPercent])} />
+        <Metric label={tx('Bütçe')} value={formatMoney(d.budget)} hint={tx('bütçe oranı: %{0} (aylık brüt toplam üzerinden)', [formatNumber(cycle.budgetPercent)])} />
         <Metric label={tx('Önerilen artış')} value={formatMoney(d.used)} tone={d.used > d.budget ? 'bad' : 'good'} />
         <Metric label={tx('Kişi')} value={d.rows.length} />
       </div>
@@ -358,7 +358,7 @@ function Worksheet({ cycle }: { cycle: RaiseCycle }) {
         <Panel>
           <PanelHead title={tx('Bölüm özeti')} note={tx('5 kişiden az gruplar gizlenir.')} />
           <PanelBody className="p-0"><ul className="divide-y divide-border text-[13px]">
-            {summary.data.groups.map((g) => <li key={g.department} className="flex justify-between px-5 py-2"><span>{g.department}</span><span className="text-muted-foreground">{g.hidden ? tx('gizli ({0} kişi)', [g.count]) : tx('ortalama %{0} · {1} kişi', [g.avgPercent ?? 0, g.count])}</span></li>)}
+            {summary.data.groups.map((g) => <li key={g.department} className="flex justify-between px-5 py-2"><span>{g.department}</span><span className="text-muted-foreground">{g.hidden ? tx('gizli ({0} kişi)', [g.count]) : tx('ortalama %{0} · {1} kişi', [formatNumber(g.avgPercent ?? 0), g.count])}</span></li>)}
           </ul></PanelBody>
         </Panel>
       )}

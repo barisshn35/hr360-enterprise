@@ -16,7 +16,7 @@ export type ApplicationStatus =
   | 'Rejected'
   | 'Withdrawn'
 export type InterviewType = 'Phone' | 'Technical' | 'HR' | 'Final'
-export type InterviewResult = 'Pending' | 'Pass' | 'Fail' | 'NoShow'
+export type InterviewResult = 'Pending' | 'Pass' | 'Fail' | 'NoShow' | 'Cancelled'
 
 export const jobPostingStatusLabels: Record<JobPostingStatus, string> = {
   Draft: tx('Taslak'),
@@ -54,6 +54,7 @@ export const interviewResultLabels: Record<InterviewResult, string> = {
   Pass: tx('Geçti'),
   Fail: tx('Kaldı'),
   NoShow: tx('Katılmadı'),
+  Cancelled: tx('İptal edildi'),
 }
 
 /** Huni sırası — aday bu aşamalardan geçer, sıralama anlamlıdır. */
@@ -419,6 +420,11 @@ export const recruitmentApi = {
     apiFetch<{ id: string; status: ApplicationStatus }>(`${BASE}/applications/${id}/move`, { method: 'POST', body: { status } }),
   scheduleInterviewPlus: (applicationId: string, input: ScheduleInterviewInput) =>
     apiFetch<ScheduledInterview>(`${BASE}/applications/${applicationId}/interviews`, { method: 'POST', body: input }),
+  /** Planlanan mülakatı iptal eder; görüşmecilere bildirim gider (aday davet edildiyse isteğe bağlı e-posta). */
+  cancelInterview: (applicationId: string, interviewId: string, body: { reason?: string; notifyCandidate?: boolean } = {}) =>
+    apiFetch<{ id: string; result: InterviewResult }>(`${BASE}/applications/${applicationId}/interviews/${interviewId}/cancel`, { method: 'POST', body }),
+  rescheduleInterview: (applicationId: string, interviewId: string, body: { scheduledAt: string; durationMinutes?: number; notifyCandidate?: boolean }) =>
+    apiFetch<ScheduledInterview>(`${BASE}/applications/${applicationId}/interviews/${interviewId}/reschedule`, { method: 'POST', body }),
 
   scorecardTemplate: (postingId: string, signal?: AbortSignal) =>
     apiFetch<{ criteria: ScorecardCriterion[]; isDefault: boolean }>(`${BASE}/job-postings/${postingId}/scorecard-template`, { signal }),

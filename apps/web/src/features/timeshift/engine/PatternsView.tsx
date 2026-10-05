@@ -26,6 +26,15 @@ import {
 import type { ShiftDayType, ShiftPattern, ShiftPatternDayInput } from '@/api/timeshift'
 import { useAuth } from '@/auth/useAuth'
 import { Modal } from '@/components/ui/Modal'
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Panel, PanelBody, PanelHead } from '@/components/ui/Panel'
 import { EmptyState, ErrorState, InfoNote, RowsSkeleton } from '@/components/ui/States'
 import { StatusBadge } from '@/components/ui/StatusBadge'
@@ -470,17 +479,47 @@ function DeletePatternDialog({
   const del = useDeleteShiftPattern()
   const conflict = del.error instanceof ApiError && del.error.status === 409
 
+  // role="alertdialog": dışarı tıklamak kapatmaz, odak "Vazgeç"te başlar, Esc = Vazgeç.
+  // "Sil" AlertDialogAction değildir: hata (409) iletisi pencerede kalsın diye kapanmayı onSuccess yönetir.
   return (
-    <Modal
-      open
-      onClose={onClose}
-      title={tx('Desen silinsin mi?')}
-      note={tx('"{0}" kalıcı olarak silinir.', [pattern.name])}
-      footer={
-        <>
-          <Button variant="outline" onClick={onClose}>
-            {tx('Vazgeç')}
-          </Button>
+    <AlertDialog open onOpenChange={(o) => { if (!o) onClose() }}>
+      <AlertDialogContent className="sm:max-w-lg">
+        <AlertDialogHeader>
+          <AlertDialogTitle>{tx('Desen silinsin mi?')}</AlertDialogTitle>
+          <AlertDialogDescription>{tx('"{0}" kalıcı olarak silinir.', [pattern.name])}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <div className="space-y-3 text-[13px]">
+          <PatternStrip days={sortedDays(pattern)} size="sm" />
+          {usedBy.length > 0 ? (
+            <div className="space-y-2 rounded-lg border border-[hsl(var(--warning))]/30 bg-[hsl(var(--warning))]/8 px-3 py-2.5">
+              <p>{tx('Bu deseni kullanan ekip var. Silmek için önce her ekibi düzenleyip başka bir desene taşıyın (Ekipler › ekip › Düzenle › Desen) ya da üyesi kalmayan ekibi silin.')}</p>
+              <ul className="flex flex-wrap gap-2">
+                {usedBy.map((t) => (
+                  <li key={t.id}>
+                    {onOpenTeam ? (
+                      <Button size="sm" variant="outline" onClick={() => { onClose(); onOpenTeam(t.id) }}>
+                        {tx('{0} ekibini aç', [t.name])}
+                      </Button>
+                    ) : (
+                      <strong>{t.name}</strong>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <p className="text-muted-foreground">{tx('Deseni kullanan ekip yok; silmek mevcut takvimleri etkilemez.')}</p>
+          )}
+          {del.isError && (
+            <p role="alert" className="text-destructive">
+              {conflict
+                ? tx('Bu desen hâlâ bir ekip tarafından kullanılıyor, silinemedi.')
+                : errorText(del.error, tx('Desen silinemedi.'))}
+            </p>
+          )}
+        </div>
+        <AlertDialogFooter>
+          <AlertDialogCancel>{tx('Vazgeç')}</AlertDialogCancel>
           <Button
             variant="destructive"
             disabled={del.isPending || usedBy.length > 0}
@@ -496,40 +535,9 @@ function DeletePatternDialog({
             {del.isPending && <LoaderCircle className="size-4 animate-spin" />}
             {tx('Sil')}
           </Button>
-        </>
-      }
-    >
-      <div className="space-y-3 text-[13px]">
-        <PatternStrip days={sortedDays(pattern)} size="sm" />
-        {usedBy.length > 0 ? (
-          <div className="space-y-2 rounded-lg border border-[hsl(var(--warning))]/30 bg-[hsl(var(--warning))]/8 px-3 py-2.5">
-            <p>{tx('Bu deseni kullanan ekip var. Silmek için önce her ekibi düzenleyip başka bir desene taşıyın (Ekipler › ekip › Düzenle › Desen) ya da üyesi kalmayan ekibi silin.')}</p>
-            <ul className="flex flex-wrap gap-2">
-              {usedBy.map((t) => (
-                <li key={t.id}>
-                  {onOpenTeam ? (
-                    <Button size="sm" variant="outline" onClick={() => { onClose(); onOpenTeam(t.id) }}>
-                      {tx('{0} ekibini aç', [t.name])}
-                    </Button>
-                  ) : (
-                    <strong>{t.name}</strong>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : (
-          <p className="text-muted-foreground">{tx('Deseni kullanan ekip yok; silmek mevcut takvimleri etkilemez.')}</p>
-        )}
-        {del.isError && (
-          <p role="alert" className="text-destructive">
-            {conflict
-              ? tx('Bu desen hâlâ bir ekip tarafından kullanılıyor, silinemedi.')
-              : errorText(del.error, tx('Desen silinemedi.'))}
-          </p>
-        )}
-      </div>
-    </Modal>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   )
 }
 

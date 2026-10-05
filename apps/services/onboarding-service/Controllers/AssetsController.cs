@@ -160,6 +160,90 @@ public class AssetsController : ControllerBase
         return Ok(open);
     }
 
+    /// <summary>
+    /// Demirbaş bilgisini düzeltir (etiket, tür, model, seri no). Etiket kiracı içinde tekildir (409).
+    /// Durum bu uçla değişmez: zimmet/iade/durum uçları ayrıdır.
+    /// </summary>
+    [HttpPut("{id:guid}")]
+    [Authorize(Policy = "RequireAssetManage")]
+    public async Task<IActionResult> Update(Guid id, [FromBody] UpdateAssetRequest request, CancellationToken ct)
+    {
+        var tag = request.AssetTag?.Trim() ?? "";
+        if (tag.Length is < 2 or > 100) return BadRequest(new { message = "Demirbaş no 2-100 karakter olmalı" });
+        if (request.Model?.Length > 200 || request.SerialNumber?.Length > 200)
+            return BadRequest(new { message = "Model ve seri no en fazla 200 karakter olabilir" });
+        var asset = await _db.Assets.FirstOrDefaultAsync(a => a.Id == id, ct);
+        if (asset is null) return NotFound();
+        if (tag != asset.AssetTag && await _db.Assets.AnyAsync(a => a.AssetTag == tag && a.Id != id, ct))
+            return Conflict(new { message = "Bu zimmet etiketi zaten kayıtlı" });
+
+        var before = new { asset.AssetTag, Type = asset.Type.ToString(), asset.Model, asset.SerialNumber };
+        asset.AssetTag = tag;
+        asset.Type = request.Type;
+        asset.Model = string.IsNullOrWhiteSpace(request.Model) ? null : request.Model.Trim();
+        asset.SerialNumber = string.IsNullOrWhiteSpace(request.SerialNumber) ? null : request.SerialNumber.Trim();
+        try
+        {
+            await _db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException)
+        {
+            // Eşzamanlı aynı etiket: tekil dizin (IX_onboarding_assets_TenantSlug_AssetTag).
+            return Conflict(new { message = "Bu zimmet etiketi zaten kayıtlı" });
+        }
+        await Audit.WriteAsync(_sql, HttpContext, Tenant, "Asset", id.ToString(), "Updated",
+            new { before, after = new { asset.AssetTag, Type = asset.Type.ToString(), asset.Model, asset.SerialNumber } });
+        return Ok(new { asset.Id, asset.AssetTag, asset.Type, asset.Model, asset.SerialNumber, asset.Status, asset.CreatedAt, asset.QrCode });
+    }
+
+    /// <summary>
+    /// Elle durum değişikliği: Boşta ↔ Bakımda / Hurda / Kayıp. Zimmetli demirbaşın durumu buradan
+    /// değişmez (409): önce iade alınır ya da işten ayrılmada kayıp/kayıttan düşme (write-off) kullanılır.
+    /// "Zimmetli" durumuna yalnızca zimmet atama ucuyla geçilir.
+    /// </summary>
+    [HttpPut("{id:guid}/status")]
+    [Authorize(Policy = "RequireAssetManage")]
+    public async Task<IActionResult> SetStatus(Guid id, [FromBody] SetAssetStatusRequest request, CancellationToken ct)
+    {
+        if (request.Status == AssetStatus.Assigned)
+            return BadRequest(new { message = "Zimmetli durumuna yalnızca zimmet atayarak geçilir" });
+        if (request.Note?.Length > 500) return BadRequest(new { message = "Açıklama en fazla 500 karakter olabilir" });
+        var asset = await _db.Assets.FirstOrDefaultAsync(a => a.Id == id, ct);
+        if (asset is null) return NotFound();
+        if (asset.Status == AssetStatus.Assigned
+            || await _db.AssetAssignments.AnyAsync(a => a.AssetId == id && a.ReturnedOn == null, ct))
+            return Conflict(new { message = "Zimmetli demirbaşın durumu değiştirilemez; önce iade alın" });
+        if (asset.Status == request.Status) return Ok(new { asset.Id, asset.Status });
+
+        var from = asset.Status;
+        asset.Status = request.Status;
+        await _db.SaveChangesAsync(ct);
+        await Audit.WriteAsync(_sql, HttpContext, Tenant, "Asset", id.ToString(), "StatusChanged",
+            new { asset.AssetTag, from = from.ToString(), to = asset.Status.ToString(), note = request.Note?.Trim() });
+        return Ok(new { asset.Id, asset.Status });
+    }
+
+    /// <summary>
+    /// Yanlış açılmış demirbaşı siler. Zimmet ya da bakım geçmişi olan kayıt silinmez (409): geçmiş
+    /// denetim için korunur; kullanılmayacaksa hurdaya ayrılır.
+    /// </summary>
+    [HttpDelete("{id:guid}")]
+    [Authorize(Policy = "RequireAssetManage")]
+    public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
+    {
+        var asset = await _db.Assets.FirstOrDefaultAsync(a => a.Id == id, ct);
+        if (asset is null) return NotFound();
+        if (await _db.AssetAssignments.AnyAsync(a => a.AssetId == id, ct)
+            || await _db.AssetMaintenance.AnyAsync(m => m.AssetId == id, ct))
+            return Conflict(new { message = "Bu demirbaşın zimmet ya da bakım geçmişi var; silinemez. Kullanılmayacaksa hurdaya ayırın" });
+
+        _db.Assets.Remove(asset);
+        await _db.SaveChangesAsync(ct);
+        await Audit.WriteAsync(_sql, HttpContext, Tenant, "Asset", id.ToString(), "Deleted",
+            new { asset.AssetTag, Type = asset.Type.ToString(), asset.Model, asset.SerialNumber });
+        return NoContent();
+    }
+
     [HttpGet("by-employee/{employeeId}")]
     public async Task<IActionResult> GetByEmployee(Guid employeeId)
     {
@@ -172,6 +256,8 @@ public class AssetsController : ControllerBase
     }
 }
 
+public record UpdateAssetRequest(string AssetTag, AssetType Type, string? Model, string? SerialNumber);
+public record SetAssetStatusRequest(AssetStatus Status, string? Note);
 public record CreateAssetRequest(string AssetTag, AssetType Type, string? Model, string? SerialNumber);
 public record AssignAssetRequest(Guid EmployeeId, DateOnly AssignedOn, string? Notes, DateOnly? ExpectedReturnOn = null);
 public record ReturnAssetRequest(DateOnly ReturnedOn, string? Condition, bool MarkAsRetired = false);

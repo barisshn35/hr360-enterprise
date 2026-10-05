@@ -26,6 +26,7 @@ export const auditActionLabels: Record<string, string> = {
   Published: tx('Yayımlama'),
   Signed: tx('İmzalama'),
   Received: tx('Başvuru alındı'),
+  Withdrawn: tx('Geri çekme'),
   Replied: tx('Yanıtlama'),
   ReportedToBoard: tx('Kurul bildirimi'),
   SubjectsNotified: tx('İlgili kişileri bilgilendirme'),

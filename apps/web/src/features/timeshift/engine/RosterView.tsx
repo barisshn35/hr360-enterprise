@@ -48,6 +48,7 @@ import {
 } from './shared'
 import { YearView } from './YearView'
 import { tx } from '@/lib/i18n'
+import { useAuth } from '@/auth/useAuth'
 
 export const ALL_TEAMS = 'tumu'
 
@@ -135,6 +136,7 @@ function Cell({ day, date, name }: { day: RosterDay | undefined; date: string; n
 export function RosterView({ teamId, onTeamChange }: { teamId: string | null; onTeamChange: (id: string) => void }) {
   const teams = useShiftTeams()
   const people = usePeople()
+  const manage = useAuth().can('timeshift:manage')
   const [span, setSpan] = useState<Span>('hafta2')
   const today = todayIso()
   const [cursor, setCursor] = useState(today)
@@ -198,7 +200,11 @@ export function RosterView({ teamId, onTeamChange }: { teamId: string | null; on
         <EmptyState
           icon={CalendarRange}
           title={tx('Takvim için önce bir vardiya ekibi gerekli')}
-          detail={tx('Ekipler sekmesinden bir ekip kurup üye ekleyin; takvim desenden kendiliğinden hesaplanır.')}
+          detail={
+            manage
+              ? tx('Ekipler sekmesinden bir ekip kurup üye ekleyin; takvim desenden kendiliğinden hesaplanır.')
+              : tx('Henüz bir vardiya ekibine eklenmediniz. Vardiya ekiplerini İK yöneticisi kurar.')
+          }
         />
       </Panel>
     )
@@ -272,7 +278,7 @@ export function RosterView({ teamId, onTeamChange }: { teamId: string | null; on
         ) : totalRows === 0 ? (
           <EmptyState
             title={tx('Ekipte üye yok')}
-            detail={tx('Takvimde gösterilecek kimse yok. Ekipler sekmesinden üye ekleyin.')}
+            detail={manage ? tx('Takvimde gösterilecek kimse yok. Ekipler sekmesinden üye ekleyin.') : tx('Takvimde gösterilecek kimse yok. Üyeleri İK yöneticisi ekler.')}
           />
         ) : (
           <div className={cn('overflow-x-auto transition-opacity', fetching && !pending && 'opacity-70')}>

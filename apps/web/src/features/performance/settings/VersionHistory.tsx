@@ -28,7 +28,8 @@ export function VersionHistory({
   isPending: boolean
   error: unknown
   currentVersion: number | null
-  onLoad: (v: ScoringConfig) => void
+  /** Verilmezse (salt okunur görünüm) "forma yükle" düğmesi gösterilmez. */
+  onLoad?: (v: ScoringConfig) => void
 }) {
   const [open, setOpen] = useState<number | null>(null)
   const list = [...(versions ?? [])].sort((a, b) => b.version - a.version)
@@ -114,7 +115,7 @@ export function VersionHistory({
                   {expanded ? tx('Daha az') : changes.length > 3 ? tx('+{0} değişiklik · tüm değerler', [changes.length - 3]) : tx('Tüm değerler')}
                   <ChevronDown className={cn('size-3 transition-transform', expanded && 'rotate-180')} aria-hidden />
                 </button>
-                {!isCurrent && (
+                {!isCurrent && onLoad && (
                   <Button size="xs" variant="ghost" onClick={() => onLoad(v)} className="h-5 px-1.5 text-[11px]">
                     <Upload aria-hidden />
                     {tx('Forma yükle')}

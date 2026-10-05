@@ -4,6 +4,7 @@ import { AlertTriangle, CheckCircle2, Download, Globe2, Info, Printer, XCircle }
 import { Panel, PanelBody, PanelHead } from '@/components/ui/Panel'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/Modal'
+import { useConfirm } from '@/components/ui/Confirm'
 import { SelectField, TextAreaField, TextField } from '@/components/ui/Field'
 import { StatusBadge, type StatusTone } from '@/components/ui/StatusBadge'
 import { EmptyState, InfoNote, RowsSkeleton } from '@/components/ui/States'
@@ -140,6 +141,7 @@ export function TransfersPanel() {
   const q = useQuery({ queryKey: ['privacy', 'transfers'], queryFn: ({ signal }) => governanceApi.transfers(signal) })
   const [edit, setEdit] = useState<TransferProviderInfo | null>(null)
   const remove = useAction((key: string) => governanceApi.deleteTransfer(key), { success: tx('Kayıt silindi'), invalidate: [['privacy']] })
+  const confirm = useConfirm()
   if (q.isPending) return <RowsSkeleton />
   const d = q.data!
   return (
@@ -159,7 +161,9 @@ export function TransfersPanel() {
                 </div>
                 <StatusBadge tone={p.status === 'Missing' && !p.inUse ? 'neutral' : transferTone[p.status]}>{transferLabel(p.status)}</StatusBadge>
                 <Button size="sm" variant={p.agreement ? 'outline' : 'default'} onClick={() => setEdit(p)}>{p.agreement ? tx('Düzenle') : tx('Dayanak ekle')}</Button>
-                {p.agreement && !p.inUse && <Button size="sm" variant="ghost" onClick={() => remove.mutate(p.key)}>{tx('Sil')}</Button>}
+                {p.agreement && !p.inUse && <Button size="sm" variant="ghost" onClick={async () => {
+                  if (await confirm({ title: tx('Aktarım dayanağı silinsin mi?'), note: tx('{0} için kayıtlı sözleşme/dayanak bilgisi silinir; bu hizmet yeniden açılmadan önce dayanak eklenmesi gerekir.', [p.name]), action: tx('Sil') })) remove.mutate(p.key)
+                }}>{tx('Sil')}</Button>}
               </li>
             ))}
           </ul>

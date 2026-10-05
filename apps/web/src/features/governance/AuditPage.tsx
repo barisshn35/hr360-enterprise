@@ -60,11 +60,12 @@ export function AuditPage() {
   const [open, setOpen] = useState<number | null>(null)
   const [corr, setCorr] = useState<string | null>(null)
   const facets = useQuery({ queryKey: ['audit', 'facets'], queryFn: ({ signal }) => governanceApi.auditFacets(signal) })
-  const list = useQuery({ queryKey: ['audit', f], queryFn: ({ signal }) => governanceApi.audit(f, signal), placeholderData: keepPreviousData })
+  // Ters tarih aralığında sunucuya istek atılmaz; önceki sonuç da gösterilmez (aşağıda uyarı).
+  const rangeError = f.from && f.to && f.from > f.to ? tx('Bitiş tarihi başlangıçtan önce olamaz.') : undefined
+  const list = useQuery({ queryKey: ['audit', f], queryFn: ({ signal }) => governanceApi.audit(f, signal), placeholderData: keepPreviousData, enabled: !rangeError })
   const chain = useQuery({ queryKey: ['audit', 'corr', corr], enabled: !!corr, queryFn: ({ signal }) => governanceApi.auditCorrelation(corr!, signal) })
   const set = (patch: Partial<AuditFilter>) => setF((x) => ({ ...x, ...patch, page: 1 }))
   const pages = list.data ? Math.max(1, Math.ceil(list.data.total / list.data.pageSize)) : 1
-  const rangeError = f.from && f.to && f.from > f.to ? tx('Bitiş tarihi başlangıçtan önce olamaz.') : undefined
   // Aynı adı taşıyan farklı kullanıcılar (ör. her kanal için "Sohbet (Slack)" bot kullanıcısı) kimliğin kısa
   // ön ekiyle ayırt edilir; aksi hâlde filtrede aynı etiket defalarca görünür.
   const userOptions = useMemo(() => {
@@ -78,7 +79,7 @@ export function AuditPage() {
   }, [facets.data])
   return (
     <PlanGate feature="audit">
-      <PageHeader title={tx('Denetim kaydı')} description={tx('Kim, neyi, ne zaman, hangi istekle değiştirdi? Tüm servislerdeki ekleme/güncelleme/silme işlemleri eski → yeni değerleriyle.')} actions={<Button variant="outline" onClick={() => governanceApi.auditExport(f).catch((e) => toast.stop(errMsg(e)))}><Download className="size-4" />{' '}{tx('CSV')}</Button>} />
+      <PageHeader title={tx('Denetim kaydı')} description={tx('Kim, neyi, ne zaman, hangi istekle değiştirdi? Tüm servislerdeki ekleme/güncelleme/silme işlemleri eski → yeni değerleriyle.')} actions={<Button variant="outline" disabled={!!rangeError} onClick={() => governanceApi.auditExport(f).catch((e) => toast.stop(errMsg(e)))}><Download className="size-4" />{' '}{tx('CSV')}</Button>} />
       <div className="mb-6"><AuditIntegrityPanel /></div>
       <div className="grid gap-6 xl:grid-cols-[300px_1fr]">
         <div className="space-y-5">
@@ -94,14 +95,15 @@ export function AuditPage() {
               <SelectField label={tx('Kullanıcı')} value={f.userId ?? ALL} onChange={(v) => set({ userId: v === ALL ? undefined : v })} options={[{ value: ALL, label: tx('Tümü') }, ...userOptions]} />
               <SelectField label={tx('İşlem')} value={f.action ?? ALL} onChange={(v) => set({ action: v === ALL ? undefined : v })} options={[{ value: ALL, label: tx('Tümü') }, ...Object.entries(actionLabel).map(([k, v]) => ({ value: k, label: v }))]} />
               <div className="grid grid-cols-2 gap-2">
-                <TextField label={tx('Başlangıç')} type="date" value={f.from ?? ''} onChange={(e) => set({ from: e.target.value || undefined })} />
+                <TextField label={tx('Başlangıç')} type="date" value={f.from ?? ''} max={f.to} onChange={(e) => set({ from: e.target.value || undefined })} />
                 <TextField label={tx('Bitiş')} type="date" value={f.to ?? ''} min={f.from} onChange={(e) => set({ to: e.target.value || undefined })} error={rangeError} />
               </div>
               <Button variant="ghost" size="sm" onClick={() => { setQ(''); setF({ page: 1, pageSize: 50 }) }}>{tx('Temizle')}</Button>
             </PanelBody>
           </Panel>
           <Panel>
-            <PanelHead title={tx('Son 90 gün')} />
+            {/* Grafik her zaman son 90 günün genel dağılımıdır; tarih filtresi seçiliyken bunu açıkça söyle. */}
+            <PanelHead title={tx('Son 90 gün')} note={f.from || f.to ? tx('Genel etkinlik; tarih filtresinden bağımsız.') : undefined} />
             <PanelBody className="h-28 p-2">
               <ResponsiveContainer>
                 <AreaChart data={facets.data?.daily ?? []}>
@@ -114,9 +116,9 @@ export function AuditPage() {
           </Panel>
         </div>
         <Panel>
-          <PanelHead title={tx('{0} kayıt', [list.data?.total ?? 0])} note={tx('Satıra tıklayın: alan bazında eski → yeni değer. Hassas alanlar *** olarak tutulur.')} />
+          <PanelHead title={rangeError ? tx('Tarih aralığı geçersiz') : tx('{0} kayıt', [list.data?.total ?? 0])} note={tx('Satıra tıklayın: alan bazında eski → yeni değer. Hassas alanlar *** olarak tutulur.')} />
           <PanelBody className="p-0">
-            {list.isPending ? <div className="p-5"><RowsSkeleton /></div> : list.isError ? <ErrorState message={(list.error as Error).message} /> : list.data.items.length === 0 ? <EmptyState icon={ScrollText} title={tx('Kayıt yok')} /> : (
+            {rangeError ? <EmptyState icon={ScrollText} title={tx('Tarih aralığı geçersiz')} detail={tx('Bitiş tarihi başlangıçtan önce olamaz. Tarihleri düzeltin ya da filtreyi temizleyin.')} /> : list.isPending ? <div className="p-5"><RowsSkeleton /></div> : list.isError ? <ErrorState message={(list.error as Error).message} /> : list.data.items.length === 0 ? <EmptyState icon={ScrollText} title={tx('Kayıt yok')} /> : (
               <ul className="divide-y divide-border">
                 {list.data.items.map((e) => (
                   <li key={e.id}>

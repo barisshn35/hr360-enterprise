@@ -10,6 +10,7 @@ import { SelectField, TextField } from '@/components/ui/Field'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { InfoNote, RowsSkeleton } from '@/components/ui/States'
 import { useToast } from '@/components/ui/Toast'
+import { useConfirm } from '@/components/ui/Confirm'
 import {
   identityDirectoryApi, type CreatedScimToken, type DirectorySettings, type LdapSettingsInput, type SyncResult,
 } from '@/api/identityDirectory'
@@ -45,6 +46,14 @@ function ScimPanel() {
     onDone: (r) => { setCreated(r); setName('') },
   })
   const revoke = useAction((id: string) => identityDirectoryApi.revokeToken(id), { success: tx('Jeton iptal edildi'), invalidate: [['identity-dir', 'tokens']] })
+  const confirm = useConfirm()
+  const askRevoke = async (t: { id: string; name: string }) => {
+    if (await confirm({
+      title: tx('“{0}” SCIM jetonu iptal edilsin mi?', [t.name]),
+      note: tx('Bu jetonu kullanan kimlik sağlayıcı (ör. Entra ID, Okta) hesap eşitleyemez. İptal geri alınamaz; yeni jeton oluşturup sağlayıcıya girmeniz gerekir.'),
+      action: tx('İptal et'),
+    })) revoke.mutate(t.id)
+  }
   const copy = (text: string) => void navigator.clipboard?.writeText(text).then(() => toast.ok(tx('Panoya kopyalandı')))
 
   return (
@@ -77,7 +86,7 @@ function ScimPanel() {
                       <span className="block text-muted-foreground">{tx('Son kullanım: {0}', [formatDateTime(t.lastUsedAt)])}</span>
                     </span>
                     <StatusBadge tone={t.active ? 'success' : 'neutral'}>{t.active ? tx('Etkin') : tx('İptal edildi')}</StatusBadge>
-                    {t.active && <Button size="icon" variant="ghost" aria-label={tx('İptal et')} onClick={() => revoke.mutate(t.id)}><Trash2 className="size-4" /></Button>}
+                    {t.active && <Button size="icon" variant="ghost" aria-label={tx('İptal et')} onClick={() => askRevoke(t)}><Trash2 className="size-4" /></Button>}
                   </li>
                 ))}
               </ul>
@@ -209,6 +218,14 @@ function CustomDomainPanel() {
   const add = useAction(() => identityDirectoryApi.addDomain(domain.trim()), { success: tx('Alan adı eklendi; DNS kaydını oluşturup doğrulayın'), invalidate: [['identity-dir', 'domains']], onDone: () => setDomain('') })
   const verify = useAction((id: string) => identityDirectoryApi.verifyDomain(id), { success: (r) => r.warning ?? tx('Alan adı doğrulandı'), invalidate: [['identity-dir', 'domains']] })
   const remove = useAction((id: string) => identityDirectoryApi.removeDomain(id), { success: tx('Alan adı kaldırıldı'), invalidate: [['identity-dir', 'domains']] })
+  const confirm = useConfirm()
+  const askRemove = async (d: { id: string; domain: string }) => {
+    if (await confirm({
+      title: tx('“{0}” alan adı kaldırılsın mı?', [d.domain]),
+      note: tx('Çalışanlar bu adresten giriş yapamaz. Yeniden eklerseniz DNS doğrulamasını tekrarlamanız gerekir.'),
+      action: tx('Kaldır'),
+    })) remove.mutate(d.id)
+  }
   const copy = (text: string) => void navigator.clipboard?.writeText(text).then(() => toast.ok(tx('Panoya kopyalandı')))
   return (
     <Panel>
@@ -230,7 +247,7 @@ function CustomDomainPanel() {
                   <span className="min-w-0 flex-1 truncate font-medium">{d.domain}</span>
                   <StatusBadge tone={d.status === 'Verified' ? 'success' : 'warning'}>{d.status === 'Verified' ? tx('Doğrulandı') : tx('Doğrulama bekliyor')}</StatusBadge>
                   {d.status !== 'Verified' && <Button size="sm" variant="outline" onClick={() => verify.mutate(d.id)} disabled={verify.isPending}>{tx('Doğrula')}</Button>}
-                  <Button size="icon" variant="ghost" aria-label={tx('Kaldır')} onClick={() => remove.mutate(d.id)}><Trash2 className="size-4" /></Button>
+                  <Button size="icon" variant="ghost" aria-label={tx('Kaldır')} onClick={() => askRemove(d)}><Trash2 className="size-4" /></Button>
                 </div>
                 {d.status !== 'Verified' && (
                   <div className="space-y-1 text-[12px]">

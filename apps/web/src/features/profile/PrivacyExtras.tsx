@@ -10,6 +10,7 @@ import { governanceApi, type AccessLogRow, type AnalysisObjection } from '@/api/
 import { formatDate, formatDateTime } from '@/lib/format'
 import { useAction } from '@/features/shared/kit'
 import { appLocale, tx } from '@/lib/i18n'
+import { auditActionLabel } from '@/features/governance/auditLabels'
 
 /** Erişim kaydındaki teknik alan adlarının okunur karşılıkları (anahtar küçük harfle). */
 const FIELD_LABELS: Record<string, string> = {
@@ -41,6 +42,8 @@ const FIELD_LABELS: Record<string, string> = {
   surveycomments: tx('anket yorumları'),
   assetholder: tx('zimmet sahibi bilgisi'),
   healthnotes: tx('sağlık notları'),
+  employeerecord: tx('çalışan kaydı'),
+  employeelist: tx('çalışan listesi'),
 }
 
 /** Alan adını okunur hâle getirir; "custom:<ad>" → "Özel alan: <ad>". */
@@ -60,7 +63,8 @@ export function accessLabel(r: AccessLogRow): string {
       case 'SensitiveViewed': return tx('{0} görüntülendi', [field])
       case 'Exported': return r.field ? tx('{0} dışa aktarıldı', [field]) : tx('Kişisel veri dökümü indirildi')
       case 'AutomatedAnalysis': return tx('Otomatik analiz yapıldı: {0}', [field])
-      default: return field ? `${String(r.action)}: ${field}` : String(r.action)
+      // Diğer işlemler denetim ekranıyla aynı etiketle (ör. "Platform yöneticisi erişimi: çalışan kaydı").
+      default: return field ? `${auditActionLabel(String(r.action))}: ${field}` : auditActionLabel(String(r.action))
     }
   })()
   return text.charAt(0).toLocaleUpperCase(appLocale) + text.slice(1)
@@ -82,7 +86,7 @@ export function MyAccessLog() {
                     <span>{accessLabel(r)}</span>
                     <span className="text-[11.5px] text-muted-foreground">{formatDateTime(r.at)}</span>
                   </div>
-                  <p className="text-[12px] text-muted-foreground">{tx('Erişen: {0}', [r.viewer])}{r.reason ? tx(' · Gerekçe: {0}', [r.reason]) : ''}</p>
+                  <p className="text-[12px] text-muted-foreground">{tx('Erişen: {0}', [String(r.action) === 'PlatformAccess' ? tx('Platform yöneticisi (destek)') : r.viewer])}{r.reason ? tx(' · Gerekçe: {0}', [r.reason]) : ''}</p>
                 </li>
               ))}
             </ul>

@@ -18,11 +18,58 @@ public class WorkflowsController : ControllerBase
     private readonly EmployeeDirectoryClient _employees;
     private readonly WorkflowRouting _routing;
 
-    public WorkflowsController(WorkflowDbContext db, EmployeeDirectoryClient employees, WorkflowRouting routing)
+    private readonly Tenancy.ITenantContext _tenant;
+
+    public WorkflowsController(WorkflowDbContext db, EmployeeDirectoryClient employees, WorkflowRouting routing, Tenancy.ITenantContext tenant)
     {
         _db = db;
         _employees = employees;
         _routing = routing;
+        _tenant = tenant;
+    }
+
+    /// <summary>
+    /// Kendi modülünde açılan talep türleri: izin (leave-service), masraf ve seyahat
+    /// (expense-service), fazla mesai (timeshift-service), teklif onayı (recruitment-service).
+    /// Bu türler modül kurallarından (bakiye, masraf politikası, gerçek yönetici) geçer ve onaycı
+    /// zincirini sunucu kurar. Genel "Yeni talep" ucundan açılırsa bu kurallar atlanıyor, talep
+    /// eden onaycısını kendi seçebiliyordu; artık tarayıcıdan gelen istekte reddedilir.
+    /// </summary>
+    public static readonly HashSet<WorkflowType> ModuleTypes = new()
+    {
+        WorkflowType.LeaveRequest, WorkflowType.ExpenseClaim, WorkflowType.Travel,
+        WorkflowType.Overtime, WorkflowType.OfferApproval,
+    };
+
+    /// <summary>
+    /// İstek bir servisten mi geldi (tarayıcıdan değil)? Modül servisleri bu uca kullanıcının
+    /// jetonuyla doğrudan (konteyner ağından) gelir; tarayıcı istekleri her zaman nginx
+    /// gateway'inden geçer ve gateway X-Real-IP / X-Forwarded-For başlıklarını kendisi yazar
+    /// (istemci bunları kaldıramaz). Ek olarak geçerli X-Internal-Token da servis sayılır.
+    /// </summary>
+    private bool FromService
+    {
+        get
+        {
+            var expected = Environment.GetEnvironmentVariable("INTERNAL_SERVICE_TOKEN");
+            var given = Request.Headers["X-Internal-Token"].FirstOrDefault();
+            if (!string.IsNullOrEmpty(expected) && !string.IsNullOrEmpty(given)
+                && System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+                    System.Text.Encoding.UTF8.GetBytes(expected), System.Text.Encoding.UTF8.GetBytes(given)))
+                return true;
+            return !Request.Headers.ContainsKey("X-Real-IP") && !Request.Headers.ContainsKey("X-Forwarded-For");
+        }
+    }
+
+    /// <summary>Platform yöneticisinin (kiracısı olmadan) okuduğu kiracı talepleri denetim kaydına yazılır.</summary>
+    private Task AuditPlatformListAsync(IEnumerable<WorkflowRequest> items, string entityType, CancellationToken ct)
+    {
+        if (!_tenant.IsPlatformAdmin) return Task.CompletedTask;
+        var perTenant = items
+            .Where(w => Auditing.PlatformAccessAudit.ShouldLog(true, _tenant.TenantSlug, w.TenantSlug))
+            .GroupBy(w => w.TenantSlug)
+            .Select(g => (g.Key, (object)new { count = g.Count() }));
+        return Auditing.PlatformAccessAudit.WriteAsync(_db, HttpContext, entityType, "list", perTenant, ct);
     }
 
     /// <summary>Tum is akislarini gorebilen/yonetebilen roller.</summary>
@@ -54,6 +101,7 @@ public class WorkflowsController : ControllerBase
         if (requesterId.HasValue) query = query.Where(w => w.RequesterEmployeeId == requesterId.Value);
         var list = await query.AsNoTracking().OrderByDescending(w => w.CreatedAt).ToListAsync(ct);
         await RedactHiddenFieldsAsync(list, ct);
+        await AuditPlatformListAsync(list, "WorkflowRequestList", ct);
         return Ok(list);
     }
 
@@ -102,7 +150,86 @@ public class WorkflowsController : ControllerBase
         if (wf is null) return NotFound();
         // KVKK: akış tanımında onaycılardan gizlenen alanlar talep sahibi ve İK dışındakilere gösterilmez.
         await RedactHiddenFieldsAsync(new[] { wf }, ct);
+        if (Auditing.PlatformAccessAudit.ShouldLog(_tenant.IsPlatformAdmin, _tenant.TenantSlug, wf.TenantSlug))
+            await Auditing.PlatformAccessAudit.WriteAsync(_db, HttpContext, "WorkflowRequest", wf.Id.ToString(),
+                new[] { (wf.TenantSlug, (object)new { type = wf.Type.ToString() }) }, ct);
         return Ok(wf);
+    }
+
+    public sealed class LeaveRow
+    {
+        public Guid EmployeeId { get; set; }
+        public string Type { get; set; } = "";
+        public DateOnly StartDate { get; set; }
+        public decimal Days { get; set; }
+        public string Status { get; set; } = "";
+    }
+
+    public sealed class BalanceRow
+    {
+        public decimal EntitledDays { get; set; }
+        public decimal UsedDays { get; set; }
+        public decimal PendingDays { get; set; }
+    }
+
+    /// <summary>
+    /// İzin talebinin onayında çalışanın o tür ve yıl için güncel bakiyesi: onaycı bilgi olmadan
+    /// karar vermesin. Talebi görebilen herkes (talep sahibi, onaycı/vekil, İK) okuyabilir; yalnızca
+    /// sayılar döner. Kayıtlar aynı veritabanından kiracı filtresiyle salt okunur (çalışan
+    /// tablosundaki desenle aynı); izin kaydı talep sahibine ait değilse boş döner.
+    /// </summary>
+    [HttpGet("{id:guid}/leave-balance")]
+    public async Task<IActionResult> LeaveBalance(Guid id, CancellationToken ct)
+    {
+        var q = _db.WorkflowRequests.AsQueryable();
+        Guid? me = null;
+        if (!IsHr)
+        {
+            me = await _employees.FindMyEmployeeIdAsync(ct);
+            if (me is null) return Forbid();
+            q = VisibleTo(q, me.Value);
+        }
+        var wf = await q.AsNoTracking().FirstOrDefaultAsync(w => w.Id == id, ct);
+        if (wf is null || wf.Type != WorkflowType.LeaveRequest) return NotFound();
+        var none = new { available = false };
+        // KVKK: akış tanımı gün sayısını onaycılardan gizliyorsa bakiye de gösterilmez.
+        if (!IsHr && me != wf.RequesterEmployeeId)
+        {
+            var hidden = await _db.Definitions.AsNoTracking().Where(d => d.Type == WorkflowType.LeaveRequest && d.IsActive)
+                .Select(d => d.HiddenFieldsJson).FirstOrDefaultAsync(ct);
+            if (hidden is not null && (JsonSerializer.Deserialize<List<string>>(hidden) ?? new()).Any(f => f.Equals("days", StringComparison.OrdinalIgnoreCase)))
+                return Ok(none);
+        }
+        Guid leaveId;
+        try
+        {
+            using var doc = JsonDocument.Parse(wf.Payload ?? "{}");
+            if (!doc.RootElement.TryGetProperty("leaveRequestId", out var lid) || !lid.TryGetGuid(out leaveId)) return Ok(none);
+        }
+        catch (JsonException) { return Ok(none); }
+        var leave = await _db.Database.SqlQueryRaw<LeaveRow>(
+            "SELECT \"EmployeeId\", \"Type\", \"StartDate\", \"Days\", \"Status\" FROM leave_requests WHERE \"TenantSlug\" = {0} AND \"Id\" = {1}",
+            wf.TenantSlug, leaveId).FirstOrDefaultAsync(ct);
+        if (leave is null || leave.EmployeeId != wf.RequesterEmployeeId) return Ok(none);
+        var bal = await _db.Database.SqlQueryRaw<BalanceRow>(
+            "SELECT \"EntitledDays\", \"UsedDays\", \"PendingDays\" FROM leave_balances WHERE \"TenantSlug\" = {0} AND \"EmployeeId\" = {1} AND \"Year\" = {2} AND \"Type\" = {3}",
+            wf.TenantSlug, leave.EmployeeId, leave.StartDate.Year, leave.Type).FirstOrDefaultAsync(ct);
+        if (Auditing.PlatformAccessAudit.ShouldLog(_tenant.IsPlatformAdmin, _tenant.TenantSlug, wf.TenantSlug))
+            await Auditing.PlatformAccessAudit.WriteAsync(_db, HttpContext, "WorkflowLeaveBalance", wf.Id.ToString(),
+                new[] { (wf.TenantSlug, (object)new { type = leave.Type }) }, ct);
+        return Ok(new
+        {
+            available = bal is not null,
+            leaveType = leave.Type,
+            year = leave.StartDate.Year,
+            requestDays = leave.Days,
+            requestStatus = leave.Status,
+            entitledDays = bal?.EntitledDays,
+            usedDays = bal?.UsedDays,
+            pendingDays = bal?.PendingDays,
+            // Bekleyen talepler (bu talep dahil) düşülmüş kalan.
+            remainingDays = bal is null ? (decimal?)null : bal.EntitledDays - bal.UsedDays - bal.PendingDays,
+        });
     }
 
     [HttpPost]
@@ -121,7 +248,10 @@ public class WorkflowsController : ControllerBase
                 return StatusCode(StatusCodes.Status403Forbidden,
                     new { message = "Yalnızca kendi adınıza talep oluşturabilirsiniz" });
         }
-        var (error, wf) = await CreateCoreAsync(request, ct);
+        var fromService = FromService;
+        if (!fromService && ModuleTypes.Contains(request.Type))
+            return BadRequest(new { message = "Bu talep türü kendi ekranından açılır", code = "module_type" });
+        var (error, wf) = await CreateCoreAsync(request, fromService, ct);
         return error ?? CreatedAtAction(nameof(GetById), new { id = wf!.Id }, wf);
     }
 
@@ -145,16 +275,27 @@ public class WorkflowsController : ControllerBase
         tenant.TenantSlug = request.TenantSlug;
         tenant.IsPlatformAdmin = false;
         var (error, wf) = await CreateCoreAsync(new CreateWorkflowRequest(request.Type, request.RequesterEmployeeId, request.Subject,
-            request.Payload, request.ApproverEmployeeIds ?? new List<Guid>(), request.SlaHours), ct);
+            request.Payload, request.ApproverEmployeeIds ?? new List<Guid>(), request.SlaHours), fromService: true, ct);
         return error ?? Ok(new { wf!.Id });
     }
 
-    private async Task<(IActionResult? Error, WorkflowRequest? Wf)> CreateCoreAsync(CreateWorkflowRequest request, CancellationToken ct)
+    /// <param name="fromService">
+    /// Servisten (modülden) gelen istek: onaycı listesi boşsa sunucu belirler (bölüm başı → üst
+    /// bölüm başı → İK onaycısı). Tarayıcıdan gelen serbest talepte onaycılar kullanıcı seçer ve
+    /// her biri giriş hesabı olan, ayrılmamış bir çalışan olmalıdır.
+    /// </param>
+    private async Task<(IActionResult? Error, WorkflowRequest? Wf)> CreateCoreAsync(CreateWorkflowRequest request, bool fromService, CancellationToken ct)
     {
         var tenant = _db.CurrentTenantSlug ?? "";
         // Kiracının bu tür için etkin akış tanımı varsa onaycı zinciri ondan kurulur (Y22).
         var chain = await _routing.ResolveAsync(tenant, request.Type, request.RequesterEmployeeId, request.Payload, ct);
         var approvers = chain?.Select(c => c.Approver).ToList() ?? request.ApproverEmployeeIds ?? new List<Guid>();
+        // Üst onaycısı bulunamayan modül talebi (ör. departman başının kendi izni) önceden hiç
+        // açılmıyor, kimsenin kutusuna düşmeden askıda kalıyordu: üst bölüm başına, o da yoksa
+        // İK onaycısına gider.
+        if (approvers.Count == 0 && fromService
+            && await _routing.FallbackApproverAsync(tenant, request.RequesterEmployeeId, ct) is { } fallback)
+            approvers = new List<Guid> { fallback };
         if (approvers.Count == 0 || approvers.Count > 10)
             return (BadRequest(new { message = "En az 1, en fazla 10 onaycı gerekli" }), null);
         if (approvers.Contains(Guid.Empty) || approvers.Distinct().Count() != approvers.Count)
@@ -165,6 +306,12 @@ public class WorkflowsController : ControllerBase
             return (BadRequest(new { message = "SLA 1 saat ile 90 gün arasında olmalı" }), null);
         if (request.Subject is { Length: > 300 })
             return (BadRequest(new { message = "Konu en fazla 300 karakter olabilir" }), null);
+        if (!fromService && chain is null)
+        {
+            var valid = await _routing.ActiveLoginEmployeesAsync(tenant, approvers, ct);
+            if (approvers.Any(a => !valid.Contains(a)))
+                return (BadRequest(new { message = "Onaycılar HR360 giriş hesabı olan, aktif çalışanlar olmalı" }), null);
+        }
 
         var wf = new WorkflowRequest
         {
@@ -394,6 +541,12 @@ public class WorkflowsController : ControllerBase
             return BadRequest(new { message = "Karar yalnızca Approved ya da Rejected olabilir" });
         if (request.Items is null || request.Items.Count is 0 or > 50)
             return BadRequest(new { message = "1-50 talep seçin" });
+        // Tekil retteki kuralla aynı: ret gerekçesi zorunlu (en az 3 karakter); talep sahibi görür.
+        var bulkComment = request.Comment?.Trim();
+        if (bulkComment is { Length: > 1000 })
+            return BadRequest(new { message = "Gerekçe en fazla 1000 karakter olabilir" });
+        if (request.Decision == StepDecision.Rejected && (bulkComment is null || bulkComment.Length < 3))
+            return BadRequest(new { message = "Ret gerekçesi zorunlu (en az 3 karakter)" });
         var me = await _employees.FindMyEmployeeIdAsync(ct);
         if (me is null) return Forbid();
         var results = new List<object>();
@@ -409,7 +562,7 @@ public class WorkflowsController : ControllerBase
             else if (me != step.ApproverEmployeeId && me != step.DelegatedToEmployeeId) error = "Bu adımın onaycısı siz değilsiniz";
             else
             {
-                var comment = string.IsNullOrWhiteSpace(request.Comment) ? "(toplu karar)" : $"{request.Comment.Trim()} (toplu karar)";
+                var comment = string.IsNullOrEmpty(bulkComment) ? "(toplu karar)" : $"{bulkComment} (toplu karar)";
                 error = await ApplyDecisionAsync(wf, step, request.Decision, comment, me.Value, ct);
                 if (error is not null) error = "Önceki onay adımları henüz tamamlanmadı";
             }
@@ -544,6 +697,22 @@ public class WorkflowsController : ControllerBase
         return Ok(step);
     }
 
+    /// <summary>
+    /// Serbest talepte seçilebilecek onaycılar: HR360 giriş hesabı olan, ayrılmamış çalışanlar
+    /// (çağıran hariç). Yalnızca kimlik ve ad döner (dizinle aynı veri).
+    /// </summary>
+    [HttpGet("approver-candidates")]
+    public async Task<IActionResult> ApproverCandidates(CancellationToken ct)
+    {
+        var tenant = _db.CurrentTenantSlug;
+        if (string.IsNullOrEmpty(tenant)) return Ok(Array.Empty<object>());
+        var me = await _employees.FindMyEmployeeIdAsync(ct);
+        var rows = await _db.Database.SqlQueryRaw<WorkflowRouting.Emp>(
+            "SELECT \"Id\", \"FirstName\", \"LastName\", '' AS \"Email\" FROM employee_employees WHERE \"TenantSlug\" = {0} " +
+            "AND \"Status\" <> 'Terminated' AND \"KeycloakUserId\" IS NOT NULL ORDER BY \"FirstName\", \"LastName\"", tenant).ToListAsync(ct);
+        return Ok(rows.Where(r => r.Id != me).Select(r => new { r.Id, r.FirstName, r.LastName, fullName = $"{r.FirstName} {r.LastName}" }));
+    }
+
     [HttpGet("overdue")]
     public async Task<IActionResult> GetOverdue(CancellationToken ct)
     {
@@ -561,6 +730,7 @@ public class WorkflowsController : ControllerBase
             .AsNoTracking()
             .ToListAsync(ct);
         await RedactHiddenFieldsAsync(overdue, ct);
+        await AuditPlatformListAsync(overdue, "WorkflowRequestList", ct);
         return Ok(overdue);
     }
 }

@@ -85,7 +85,10 @@ function DriftTable({ report }: { report: DriftReport }) {
 }
 
 export function ModelCardPage() {
-  const { roles } = useAuth()
+  const { roles, tenantSlug } = useAuth()
+  // Model kiracılar arası paylaşımlıdır; veri kayması ise şirket başına ölçülür. Kiracısız oturumda
+  // (platform yöneticisi) kayma istekleri atılmaz.
+  const noTenant = !tenantSlug
   const [confirm, setConfirm] = useState(false)
   const [lastRun, setLastRun] = useState<RetrainResult | null>(null)
   // Paylaşılan modeli yayımlama yalnızca platform yöneticisinde; şirket İK'sı yalnızca deneme eğitimi yapar.
@@ -98,11 +101,11 @@ export function ModelCardPage() {
     queryFn: ({ signal }) => mlModelApi.importance(signal),
     enabled: Boolean(card.data?.serving),
   })
-  const recent = useQuery({ queryKey: ['ml-model', 'drift', 'recent'], queryFn: ({ signal }) => mlModelApi.recentDrift(signal) })
+  const recent = useQuery({ queryKey: ['ml-model', 'drift', 'recent'], queryFn: ({ signal }) => mlModelApi.recentDrift(signal), enabled: !noTenant })
   const last = useQuery({
     queryKey: ['ml-model', 'drift', 'last'],
     queryFn: ({ signal }) => mlModelApi.lastDrift(signal),
-    enabled: recent.isSuccess && !recent.data.available,
+    enabled: !noTenant && recent.isSuccess && !recent.data.available,
   })
   const retrain = useAction(() => mlModelApi.retrainSynthetic(effectiveDryRun), {
     success: (r) => (r.promoted ? tx('Yeni sürüm yayımlandı: v{0}', [r.candidate_version])
@@ -237,7 +240,12 @@ export function ModelCardPage() {
               note={tx('Güncel girdilerin dağılımı eğitim verisiyle karşılaştırılır. PSI {0} üstü orta, {1} üstü belirgin kaymadır. Yalnızca toplu kova sayıları tutulur.', [dec(c.drift_thresholds.moderate), dec(c.drift_thresholds.significant)])}
             />
             <PanelBody>
-              {recent.isPending ? (
+              {noTenant ? (
+                <EmptyState
+                  title={tx('Veri kayması şirket bazında ölçülür')}
+                  detail={tx('Platform görünümünde kayma gösterilmez; her şirketin İK yöneticisi kendi şirketinin ölçümünü bu ekranda görür.')}
+                />
+              ) : recent.isPending ? (
                 <RowsSkeleton rows={4} columns={4} />
               ) : drift ? (
                 <DriftTable report={drift} />

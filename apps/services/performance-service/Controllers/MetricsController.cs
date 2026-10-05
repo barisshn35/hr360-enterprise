@@ -8,7 +8,8 @@ namespace PerformanceService.Controllers;
 
 /// <summary>
 /// Sirketin kendi degerlendirme metriklerini tanimladigi yer.
-/// Yalnizca yonetici ve ustu - calisan metrik tanimlayamaz.
+/// Metrik tanımları şirket geneli ayardır: yazma uçları yalnızca İK (RequireHrAdmin);
+/// okuma herkese açık.
 /// </summary>
 [ApiController]
 [Route("api/metrics")]
@@ -44,7 +45,7 @@ public class MetricsController : ControllerBase
     }
 
     [HttpPost]
-    [Authorize(Policy = "RequireManagerOrAbove")]
+    [Authorize(Policy = "RequireHrAdmin")]
     public async Task<IActionResult> Create([FromBody] CreateMetricRequest request)
     {
         var code = Slugify(request.Code ?? request.Name);
@@ -76,7 +77,7 @@ public class MetricsController : ControllerBase
     }
 
     [HttpPut("{id}")]
-    [Authorize(Policy = "RequireManagerOrAbove")]
+    [Authorize(Policy = "RequireHrAdmin")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateMetricRequest request)
     {
         var m = await _db.Metrics.FirstOrDefaultAsync(x => x.Id == id);
@@ -113,7 +114,7 @@ public class MetricsController : ControllerBase
     /// bu tanima bagli, silinirse eski donemler okunamaz hale gelir.
     /// </summary>
     [HttpDelete("{id}")]
-    [Authorize(Policy = "RequireManagerOrAbove")]
+    [Authorize(Policy = "RequireHrAdmin")]
     public async Task<IActionResult> Archive(Guid id)
     {
         var m = await _db.Metrics.FirstOrDefaultAsync(x => x.Id == id);
@@ -145,7 +146,7 @@ public class MetricsController : ControllerBase
     /// eksik kalanlari sablondan tamamlamak istiyor olabilir).
     /// </summary>
     [HttpPost("apply-template")]
-    [Authorize(Policy = "RequireManagerOrAbove")]
+    [Authorize(Policy = "RequireHrAdmin")]
     public async Task<IActionResult> ApplyTemplate([FromQuery] string template = "genel")
     {
         var set = template.ToLowerInvariant() switch

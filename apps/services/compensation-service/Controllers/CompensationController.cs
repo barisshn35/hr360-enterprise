@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using CompensationService.Data;
 using CompensationService.Models;
 using CompensationService.Tenancy;
+using CompensationService.Auditing;
 using System.Security.Claims;
 
 namespace CompensationService.Controllers;
@@ -22,9 +23,16 @@ public class CompensationController : ControllerBase
     private readonly ITenantContext _tenant;
     public CompensationController(CompensationDbContext db, ITenantContext tenant) { _db = db; _tenant = tenant; }
 
-    /// <summary>KVKK m.12: ücret görüntülemesi hassas veri erişim kaydına yazılır (KVKK › Erişim kayıtları).</summary>
+    /// <summary>
+    /// KVKK m.12: ücret görüntülemesi hassas veri erişim kaydına yazılır (KVKK › Erişim kayıtları).
+    /// Kiracısız (platform yöneticisi) çağrıda yazılmaz — o okumalar <see cref="PlatformAccessAudit"/>
+    /// ile okunan kaydın kiracısına "PlatformAccess" olarak yazılır. Önceden kiracı null iken
+    /// INSERT'e tipsiz DBNull gidiyor, hata catch {} ile yutuluyordu: platform yöneticisinin
+    /// maaş görüntülemesi hiçbir yere kaydedilmiyordu.
+    /// </summary>
     private async Task LogViewAsync(string entityId, string field)
     {
+        if (string.IsNullOrEmpty(_tenant.TenantSlug)) return;
         try
         {
             var user = HttpContext.User;
@@ -37,7 +45,12 @@ public class CompensationController : ControllerBase
                 (object?)(Request.Headers["X-Correlation-Id"].FirstOrDefault() ?? HttpContext.TraceIdentifier) ?? DBNull.Value,
                 (object?)Request.Headers["X-Real-IP"].FirstOrDefault() ?? DBNull.Value);
         }
-        catch (Exception) { /* denetim yazılamazsa iş akışı bozulmaz */ }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Denetim yazılamazsa iş akışı bozulmaz; ama sessizce yutulmaz.
+            HttpContext.RequestServices.GetRequiredService<ILogger<CompensationController>>()
+                .LogWarning(ex, "Ücret görüntüleme kaydı yazılamadı ({EntityId})", entityId);
+        }
     }
 
     // ---- Ucret bantlari ----
@@ -161,6 +174,13 @@ public class CompensationController : ControllerBase
         var rows = await q.OrderByDescending(r => r.EffectiveFrom).ToListAsync();
         // Kişi bazında görüntüleme o kişinin erişim kaydına; toplu liste tek satır olarak yazılır.
         await LogViewAsync(employeeId?.ToString() ?? "list", employeeId.HasValue ? "salary" : "salaryList");
+        // Platform yöneticisi (başka kiracının ya da kiracısız) okuması: okunan kaydın kiracısına,
+        // kiracı başına tek satır ve yalnızca kayıt sayısı.
+        var perTenant = PlatformAccessAudit.PerTenant(_tenant.IsPlatformAdmin, _tenant.TenantSlug, rows.Select(r => r.TenantSlug));
+        if (perTenant.Count > 0)
+            await PlatformAccessAudit.WriteAsync(_db, HttpContext, "CompensationRecord", employeeId?.ToString() ?? "list",
+                perTenant.Select(x => (x.Tenant, (object)new { field = employeeId.HasValue ? "salary" : "salaryList", count = x.Count })),
+                HttpContext.RequestAborted);
         return Ok(rows);
     }
 

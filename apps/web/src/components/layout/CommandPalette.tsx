@@ -15,7 +15,8 @@ import { workflowTypeLabels } from '@/api/types'
 import { useAuth } from '@/auth/useAuth'
 import { overviewItem, type NavItemData } from './nav-config'
 import { useNavGroups } from './use-nav'
-import { tx, appLocale } from '@/lib/i18n'
+import { tx } from '@/lib/i18n'
+import { normalizeSearch } from '@/lib/format'
 
 /**
  * ⌘K paleti — dört kaynağı tek arama kutusunda birleştirir:
@@ -64,9 +65,10 @@ export function CommandPalette({
       id: 'go',
       label: tx('Git'),
       fetch: (q) => {
-        const needle = q.toLocaleLowerCase(appLocale)
+        // Türkçe harf katlama: "izin" → "İzin", "ise alim" → "İşe alım" (dil seçiminden bağımsız).
+        const needle = normalizeSearch(q)
         return needle
-          ? goItems.filter((i) => i.label.toLocaleLowerCase(appLocale).includes(needle))
+          ? goItems.filter((i) => normalizeSearch(i.label).includes(needle))
           : goItems
       },
       emptyHint: tx('Eşleşen modül yok.'),
@@ -85,10 +87,10 @@ export function CommandPalette({
             queryFn: ({ signal }) => employeeApi.list(signal),
             staleTime: 60_000,
           })
-          const needle = q.toLocaleLowerCase(appLocale)
+          const needle = normalizeSearch(q)
           return employees
             .filter((e) =>
-              `${e.firstName} ${e.lastName} ${e.email}`.toLocaleLowerCase(appLocale).includes(needle),
+              normalizeSearch(`${e.firstName} ${e.lastName} ${e.email}`).includes(needle),
             )
             .slice(0, 8)
             .map<OmniItem>((e) => ({
@@ -116,9 +118,9 @@ export function CommandPalette({
             queryFn: ({ signal }) => organizationApi.listCompanies(signal),
             staleTime: 60_000,
           })
-          const needle = q.toLocaleLowerCase(appLocale)
+          const needle = normalizeSearch(q)
           return companies
-            .filter((c) => c.name.toLocaleLowerCase(appLocale).includes(needle))
+            .filter((c) => normalizeSearch(c.name).includes(needle))
             .slice(0, 6)
             .map<OmniItem>((c) => ({
               id: `co:${c.id}`,
@@ -145,13 +147,9 @@ export function CommandPalette({
             queryFn: ({ signal }) => workflowApi.list({}, signal),
             staleTime: 30_000,
           })
-          const needle = q.toLocaleLowerCase(appLocale)
+          const needle = normalizeSearch(q)
           return workflows
-            .filter((w) =>
-              `${w.subject ?? ''} ${workflowTypeLabels[w.type]}`
-                .toLocaleLowerCase(appLocale)
-                .includes(needle),
-            )
+            .filter((w) => normalizeSearch(`${w.subject ?? ''} ${workflowTypeLabels[w.type]}`).includes(needle))
             .slice(0, 6)
             .map<OmniItem>((w) => ({
               id: `wf:${w.id}`,

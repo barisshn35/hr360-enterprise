@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { ArrowDown, LoaderCircle, Plus, X } from 'lucide-react'
-import { workflowApi } from '@/api/workflows'
+import { MODULE_WORKFLOW_TYPES, workflowApi } from '@/api/workflows'
 import { useEmployees, useMyEmployeeId } from '@/api/queries'
 import { useDirectory } from '@/api/directory'
 import { useAuth } from '@/auth/useAuth'
@@ -46,7 +46,11 @@ export function NewWorkflowModal({
   const employees = useEmployees({ enabled: canSeeAll })
   const directory = useDirectory(!canSeeAll)
 
-  const [type, setType] = useState<WorkflowType>(defaultType ?? 'LeaveRequest')
+  // İzin, masraf, seyahat, fazla mesai ve teklif onayı kendi ekranlarından açılır (modül kuralları:
+  // bakiye, politika, gerçek yönetici); burada yalnızca serbest türler seçilebilir (sunucu da reddeder).
+  const freeTypes = (Object.keys(workflowTypeLabels) as WorkflowType[]).filter((t) => !MODULE_WORKFLOW_TYPES.includes(t))
+  const initialType: WorkflowType = defaultType && freeTypes.includes(defaultType) ? defaultType : 'Other'
+  const [type, setType] = useState<WorkflowType>(initialType)
   // İK dışındakiler yalnızca kendi adlarına talep açabilir (backend 403 döner).
   const { roles } = useAuth()
   const isHr = roles.some((r) => r === 'hr-admin' || r === 'tenant-admin' || r === 'platform-admin')
@@ -62,7 +66,7 @@ export function NewWorkflowModal({
 
   useEffect(() => {
     if (!open) {
-      setType(defaultType ?? 'LeaveRequest')
+      setType(initialType)
       setRequester('')
       setSubject('')
       setPayload('')
@@ -71,7 +75,7 @@ export function NewWorkflowModal({
       setErrors({})
       setSubmitted(false)
     }
-  }, [open, defaultType])
+  }, [open, defaultType, initialType])
 
   const people = useMemo(
     () =>
@@ -80,15 +84,24 @@ export function NewWorkflowModal({
         : (directory.data ?? []).map((d) => ({ id: d.id, firstName: d.firstName, lastName: d.lastName, email: '' })),
     [canSeeAll, employees.data, directory.data],
   )
+  // Onaycı adayları: HR360 giriş hesabı olan, ayrılmamış çalışanlar (sunucu aynı kuralla denetler;
+  // hesabı olmayan kişiye giden adım askıda kalırdı).
+  const candidates = useQuery({
+    queryKey: ['workflows', 'approver-candidates'],
+    queryFn: ({ signal }) => workflowApi.approverCandidates(signal),
+    enabled: open,
+    staleTime: 5 * 60_000,
+  })
   const nameOf = useMemo(() => {
     const map = new Map<string, string>()
     for (const e of people) map.set(e.id, fullName(e))
+    for (const c of candidates.data ?? []) if (!map.has(c.id)) map.set(c.id, c.fullName)
     return map
-  }, [people])
+  }, [people, candidates.data])
 
-  // Talep eden kendi talebinin onaycısı olamaz (backend 400). İK dışı kullanıcıda
-  // talep eden "ben"dir; kimlik henüz yüklenmemişken de kendini seçemesin.
-  const availableApprovers = people.filter(
+  // Talep eden kendi talebinin onaycısı olamaz; İK dışı kullanıcıda talep eden "ben"dir,
+  // kimlik henüz yüklenmemişken de kendini seçemesin.
+  const availableApprovers = (candidates.data ?? []).filter(
     (e) => e.id !== requester && e.id !== me.employeeId && !approvers.includes(e.id),
   )
 
@@ -177,10 +190,11 @@ export function NewWorkflowModal({
             required
             value={type}
             onChange={(v) => setType(v as WorkflowType)}
-            options={(Object.keys(workflowTypeLabels) as WorkflowType[]).map((t) => ({
+            options={freeTypes.map((t) => ({
               value: t,
               label: workflowTypeLabels[t],
             }))}
+            hint={tx('İzin, masraf, seyahat ve fazla mesai talepleri kendi ekranlarından açılır.')}
           />
 
           <TextField

@@ -117,7 +117,8 @@ export interface DataRequest {
   employeeId: string | null
   kind: DataRequestKind
   details: string | null
-  status: 'Received' | 'InProgress' | 'Completed' | 'Rejected'
+  /** Withdrawn: başvurucu yanıtlanmadan geri çekti. */
+  status: 'Received' | 'InProgress' | 'Completed' | 'Rejected' | 'Withdrawn'
   response: string | null
   dueAt: string
   createdAt: string
@@ -516,7 +517,7 @@ export interface AccessLogRow {
   service: string
   entity: string
   employeeId: string | null
-  action: 'Revealed' | 'SensitiveViewed' | 'Exported' | 'AutomatedAnalysis'
+  action: 'Revealed' | 'SensitiveViewed' | 'Exported' | 'AutomatedAnalysis' | 'PlatformAccess'
   field: string | null
   reason: string | null
   viewer: string
@@ -577,6 +578,8 @@ export const governanceApi = {
   dataRequests: (signal?: AbortSignal) => apiFetch<DataRequest[]>(`${BASE}/privacy/requests`, { signal }),
   createDataRequest: (kind: DataRequestKind, details?: string) =>
     apiFetch<DataRequest>(`${BASE}/privacy/requests`, { method: 'POST', body: { kind, details } }),
+  withdrawDataRequest: (id: string) =>
+    apiFetch<{ id: string; status: DataRequest['status'] }>(`${BASE}/privacy/requests/${id}/withdraw`, { method: 'POST' }),
   updateDataRequest: (id: string, status: DataRequest['status'], response?: string) =>
     apiFetch<DataRequest>(`${BASE}/privacy/requests/${id}`, { method: 'PATCH', body: { status, response } }),
   exportPersonalData: (employeeId: string) => downloadAuthed(`${BASE}/privacy/export/${employeeId}`, `kisisel-veri-${employeeId.slice(0, 8)}.json`),

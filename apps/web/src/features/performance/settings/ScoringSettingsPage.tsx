@@ -29,7 +29,9 @@ import {
 import { Button } from '@/components/ui/button'
 import { Panel } from '@/components/ui/Panel'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ErrorState } from '@/components/ui/States'
+import { ErrorState, InfoNote } from '@/components/ui/States'
+import { useAuth } from '@/auth/useAuth'
+import { isHr } from '@/auth/roles'
 import { useToast } from '@/components/ui/Toast'
 import { formatDateTime } from '@/lib/format'
 import { EASE } from '@/motion/primitives'
@@ -61,6 +63,9 @@ export function ScoringSettingsPage() {
   const people = usePeople()
   const { current: cycle } = useCurrentCycle()
   const result = useCycleResult(cycle?.id)
+  // Şirket geneli puanlama ayarı yalnızca İK; yönetici salt okunur görür (sunucu da 403 döner).
+  const { roles } = useAuth()
+  const canEdit = isHr(roles, 'ext-performance-manage')
 
   const [draft, setDraft] = useState<ScoringConfigInput | null>(null)
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -85,6 +90,7 @@ export function ScoringSettingsPage() {
   }, [dirty])
 
   const set = <K extends keyof ScoringConfigInput>(key: K, value: ScoringConfigInput[K]) => {
+    if (!canEdit) return
     setSaveError(null)
     setDraft((d) => (d ? { ...d, [key]: value } : d))
   }
@@ -153,6 +159,12 @@ export function ScoringSettingsPage() {
         </div>
       </PerfPageHeader>
 
+      {!canEdit && (
+        <div className="mb-4">
+          <InfoNote>{tx('Puanlama ayarı şirket geneli ayardır; yalnızca İK değiştirebilir. Bu sayfayı salt okunur görüyorsunuz.')}</InfoNote>
+        </div>
+      )}
+
       {config.isError && (
         <Panel>
           <ErrorState title={tx('Puanlama ayarı alınamadı')} message={errorText(config.error)} onRetry={() => void config.refetch()} />
@@ -180,7 +192,7 @@ export function ScoringSettingsPage() {
 
       {draft && saved && (
         <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="flex min-w-0 flex-col gap-5">
+          <fieldset disabled={!canEdit} className="m-0 flex min-w-0 flex-col gap-5 border-0 p-0">
             <SettingsSection
               id="pay"
               index={0}
@@ -192,7 +204,7 @@ export function ScoringSettingsPage() {
             >
               <SplitSlider
                 value={draft.goalWeightPercent}
-                onChange={(v) => setDraft((d) => (d ? { ...d, goalWeightPercent: v, metricWeightPercent: 100 - v } : d))}
+                onChange={(v) => canEdit && setDraft((d) => (d ? { ...d, goalWeightPercent: v, metricWeightPercent: 100 - v } : d))}
                 left="Hedefler"
                 right="Metrikler"
                 leftColor={GOAL_COLOR}
@@ -243,7 +255,7 @@ export function ScoringSettingsPage() {
 
             {/* --------------------------- kaydetme çubuğu --------------------------- */}
             <AnimatePresence>
-              {dirty && (
+              {dirty && canEdit && (
                 <motion.div
                   initial={{ opacity: 0, y: 24 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -285,7 +297,7 @@ export function ScoringSettingsPage() {
                 </motion.div>
               )}
             </AnimatePresence>
-          </div>
+          </fieldset>
 
           {/* ------------------------------- yan sütun ------------------------------- */}
           <aside className="flex flex-col gap-5 xl:sticky xl:top-20">
@@ -303,7 +315,7 @@ export function ScoringSettingsPage() {
                   isPending={history.isPending}
                   error={history.error}
                   currentVersion={config.data?.version ?? null}
-                  onLoad={loadVersion}
+                  onLoad={canEdit ? loadVersion : undefined}
                 />
               </Panel>
             </motion.div>

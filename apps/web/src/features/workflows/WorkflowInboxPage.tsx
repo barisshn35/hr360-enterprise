@@ -9,7 +9,11 @@ import { WorkflowStatusBadge } from '@/components/ui/ModuleBadges'
 import { Tabs, useTabParam, type TabDef } from '@/components/ui/Tabs'
 import { InfoNote } from '@/components/ui/States'
 import { useAuth } from '@/auth/useAuth'
-import { useEmployees, useMyEmployeeId, useOverdueWorkflows, useWorkflows } from '@/api/queries'
+import { useMyEmployeeId, useOverdueWorkflows, useWorkflows } from '@/api/queries'
+import { useDirectory } from '@/api/directory'
+import { useConfirm } from '@/components/ui/Confirm'
+import { Modal } from '@/components/ui/Modal'
+import { TextAreaField } from '@/components/ui/Field'
 import { workflowApi } from '@/api/workflows'
 import { useAction } from '@/features/shared/kit'
 import { DelegationsModal } from './DelegationsModal'
@@ -19,7 +23,7 @@ import {
   type Workflow,
   type WorkflowStatus,
 } from '@/api/types'
-import { formatDate, formatRelativeToNow, fullName } from '@/lib/format'
+import { formatDate, formatRelativeToNow } from '@/lib/format'
 import { NewWorkflowModal } from './NewWorkflowModal'
 import { tx } from '@/lib/i18n'
 
@@ -41,15 +45,16 @@ export function WorkflowInboxPage() {
     enabled: !isOverdueTab,
   })
   const overdue = useOverdueWorkflows({ enabled: isOverdueTab })
-  const employees = useEmployees({ enabled: can('employee:viewAll') })
+  // Ad çözümlemesi herkesin erişebildiği dizinden (tam çalışan listesi çalışan rolüne 403 döner).
+  const directory = useDirectory()
 
   const query = isOverdueTab ? overdue : list
 
   const employeeNames = useMemo(() => {
     const map = new Map<string, string>()
-    for (const e of employees.data ?? []) map.set(e.id, fullName(e))
+    for (const e of directory.data ?? []) map.set(e.id, e.fullName)
     return map
-  }, [employees.data])
+  }, [directory.data])
 
   const nameOf = (id: string) => employeeNames.get(id) ?? `${id.slice(0, 8)}…`
 
@@ -67,13 +72,38 @@ export function WorkflowInboxPage() {
     return step && me.employeeId && w.requesterEmployeeId !== me.employeeId
       && (step.approverEmployeeId === me.employeeId || step.delegatedToEmployeeId === me.employeeId) ? step : undefined
   }
-  const bulk = useAction(({ ids, approve }: { ids: string[]; approve: boolean }) => {
+  const bulk = useAction(({ ids, approve, comment }: { ids: string[]; approve: boolean; comment?: string }) => {
     const items = rows.filter((w) => ids.includes(w.id)).flatMap((w) => { const st = myStep(w); return st ? [{ workflowId: w.id, stepId: st.id }] : [] })
-    return workflowApi.bulkDecide(items, approve ? 'Approved' : 'Rejected')
+    return workflowApi.bulkDecide(items, approve ? 'Approved' : 'Rejected', comment)
   }, {
     success: (r) => tx('{0} talep karara bağlandı', [r.done]) + (r.results.length > r.done ? ' · ' + tx('{0} talep atlandı', [r.results.length - r.done]) : ''),
     invalidate: [['workflows']],
   })
+  // Toplu karar geri alınamaz: onayda kaç talep olduğu sorulur; rette (tekil retteki gibi)
+  // talep sahiplerinin göreceği gerekçe zorunludur.
+  const confirm = useConfirm()
+  const [rejecting, setRejecting] = useState<{ ids: string[]; n: number } | null>(null)
+  const [rejectReason, setRejectReason] = useState('')
+  const [rejectError, setRejectError] = useState<string | undefined>()
+  const askBulkApprove = async (ids: string[], n: number) => {
+    if (await confirm({
+      title: tx('{0} talep onaylansın mı?', [n]),
+      note: tx('Seçtiğiniz taleplerde sırası size gelmiş adımlar onaylanır. Bu işlem geri alınamaz.'),
+      action: tx('Toplu onayla'),
+      destructive: false,
+    })) bulk.mutate({ ids, approve: true })
+  }
+  const submitBulkReject = () => {
+    if (!rejecting) return
+    const reason = rejectReason.trim()
+    if (reason.length < 3) {
+      setRejectError(tx('Ret gerekçesi zorunlu (en az 3 karakter).'))
+      return
+    }
+    bulk.mutate({ ids: rejecting.ids, approve: false, comment: reason }, {
+      onSuccess: () => { setRejecting(null); setRejectReason(''); setRejectError(undefined) },
+    })
+  }
 
   const tabs: Array<TabDef<TabKey>> = [
     { key: 'Pending', label: workflowStatusLabels.Pending },
@@ -97,6 +127,11 @@ export function WorkflowInboxPage() {
           <p className="mt-0.5 truncate text-[12px] text-muted-foreground">
             {workflowTypeLabels[w.type]}
           </p>
+          {/* Dar ekranda (390px) talep eden ve durum sütunları sığmıyor: burada gösterilir. */}
+          <div className="mt-1 flex flex-wrap items-center gap-2 md:hidden">
+            <WorkflowStatusBadge status={w.status} />
+            <span className="truncate text-[12px] text-muted-foreground">{nameOf(w.requesterEmployeeId)}</span>
+          </div>
         </div>
       ),
     },
@@ -122,8 +157,8 @@ export function WorkflowInboxPage() {
       header: tx('SLA'),
       hideBelow: 'sm',
       sortValue: (w) => (w.slaDueAt ? new Date(w.slaDueAt).getTime() : Number.MAX_SAFE_INTEGER),
-      exportText: (w) =>
-        w.slaDueAt ? formatDate(w.slaDueAt) : tx('Tanımsız'),
+      // Ekranla aynı: SLA'sız talepte "—".
+      exportText: (w) => (w.slaDueAt ? formatDate(w.slaDueAt) : '—'),
       cell: (w) => {
         if (!w.slaDueAt) return <span className="text-muted-foreground">—</span>
         const late = new Date(w.slaDueAt).getTime() < Date.now()
@@ -140,6 +175,7 @@ export function WorkflowInboxPage() {
       id: 'status',
       header: tx('Durum'),
       align: 'right',
+      hideBelow: 'md',
       sortValue: (w) => workflowStatusLabels[w.status],
       exportText: (w) => workflowStatusLabels[w.status],
       cell: (w) => <WorkflowStatusBadge status={w.status} />,
@@ -188,8 +224,8 @@ export function WorkflowInboxPage() {
           return (
             <>
               <span className="text-[12.5px] text-muted-foreground">{tx('Kararınızı bekleyen: {0}', [n])}</span>
-              <Button size="sm" disabled={!n || bulk.isPending} onClick={() => bulk.mutate({ ids, approve: true })}><Check className="size-4" /> {tx('Toplu onayla')}</Button>
-              <Button size="sm" variant="outline" disabled={!n || bulk.isPending} onClick={() => bulk.mutate({ ids, approve: false })}><X className="size-4" /> {tx('Toplu reddet')}</Button>
+              <Button size="sm" disabled={!n || bulk.isPending} onClick={() => void askBulkApprove(ids, n)}><Check className="size-4" /> {tx('Toplu onayla')}</Button>
+              <Button size="sm" variant="outline" disabled={!n || bulk.isPending} onClick={() => { setRejectReason(''); setRejectError(undefined); setRejecting({ ids, n }) }}><X className="size-4" /> {tx('Toplu reddet')}</Button>
             </>
           )
         }}
@@ -201,10 +237,39 @@ export function WorkflowInboxPage() {
         }
         notice={
           <InfoNote>
-            {tx('Kararı talebin sayfasındaki onay zincirinden ya da birden çok talebi seçip toplu olarak verebilirsiniz. Bir izin talebi onaylandığında izin kaydı ve bakiye kendiliğinden güncellenir.')}
+            {can('workflow:decide')
+              ? tx('Kararı talebin sayfasındaki onay zincirinden ya da birden çok talebi seçip toplu olarak verebilirsiniz. Bir izin talebi onaylandığında izin kaydı ve bakiye kendiliğinden güncellenir.')
+              : tx('Açtığınız ve onaycısı olduğunuz talepler burada listelenir. Ayrıntı ve onay zinciri için talebe tıklayın.')}
           </InfoNote>
         }
       />
+
+      <Modal
+        open={rejecting !== null}
+        onClose={() => !bulk.isPending && setRejecting(null)}
+        title={tx('{0} talep reddedilsin mi?', [rejecting?.n ?? 0])}
+        note={tx('Gerekçe tüm talep sahiplerine gösterilir ve onay geçmişine yazılır.')}
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setRejecting(null)} disabled={bulk.isPending}>{tx('Vazgeç')}</Button>
+            <Button type="submit" form="bulk-reject-form" variant="destructive" disabled={bulk.isPending}>{tx('Toplu reddet')}</Button>
+          </>
+        }
+      >
+        <form id="bulk-reject-form" noValidate onSubmit={(e) => { e.preventDefault(); submitBulkReject() }}>
+          <TextAreaField
+            id="bulk-reject-reason"
+            label={tx('Gerekçe')}
+            required
+            rows={4}
+            value={rejectReason}
+            maxLength={1000}
+            hint={tx('Zorunlu. Talep sahibi bu gerekçeyi görür.')}
+            onChange={(e) => setRejectReason(e.target.value)}
+            error={rejectError}
+          />
+        </form>
+      </Modal>
 
       <NewWorkflowModal open={modalOpen} onClose={() => setModalOpen(false)} />
       {delegating && <DelegationsModal onClose={() => setDelegating(false)} myId={me.employeeId} />}

@@ -258,7 +258,7 @@ export function NotificationsPage() {
     <div className="space-y-5">
       <PageHeader
         title={tx('Bildirimler')}
-        description={tx('Size gönderilen bildirimler ve İK yönetimi için bildirim şablonları.')}
+        description={canManage ? tx('Size gönderilen bildirimler ve İK yönetimi için bildirim şablonları.') : tx('Size gönderilen bildirimler.')}
         actions={
           tab === 'gelen'
             ? unreadItems.length > 0 && (

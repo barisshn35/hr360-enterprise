@@ -27,6 +27,9 @@ const MODE_STYLE: Record<PresenceMode, { cls: string; icon: React.ElementType }>
 }
 const DAY = new Intl.DateTimeFormat(appLocale, { weekday: 'short', day: 'numeric', month: 'short' })
 
+/** Masa her yerde aynı adla görünür (kutucuk, pencere, çip): kod (K1-M06); oda kendi adıyla. */
+const deskLabel = (d: Desk) => (d.kind === 'Desk' ? d.code : d.name)
+
 function startOfWeek(d: Date) {
   const x = new Date(d)
   x.setDate(x.getDate() - ((x.getDay() + 6) % 7))
@@ -70,6 +73,12 @@ function PresenceBoard() {
                           </button>
                         )
                       })}
+                      {cur !== 'Unknown' && (
+                        <button type="button" onClick={() => set.mutate({ date: d, mode: 'Unknown' })}
+                          className="col-span-2 mt-0.5 cursor-pointer rounded-lg px-1.5 py-1 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground">
+                          {tx('Bildirimi kaldır')}
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
@@ -135,7 +144,8 @@ function BookingBoard() {
   const sample = useAction(() => engagementApi.sampleDesks(), { success: tx('Örnek ofis planı oluşturuldu'), invalidate: [['desks']] })
   // Oda çizelgesinde tıklanan saat diyaloğa başlangıç olarak iletilir.
   const [booking, setBooking] = useState<{ desk: Desk; hour?: number } | null>(null)
-  const cancel = useAction((id: string) => engagementApi.cancelBooking(id), { success: tx('Rezervasyon iptal edildi'), invalidate: [['bookings'], ['presence']] })
+  // Kendi rezervasyonuna tıklayınca: ayrıntı + iptal penceresi.
+  const [managing, setManaging] = useState<Desk | null>(null)
 
   const byDesk = useMemo(() => {
     const m = new Map<string, Booking[]>()
@@ -160,8 +170,8 @@ function BookingBoard() {
           <div className="flex flex-wrap gap-2">
             {myBookings.map((b) => (
               <span key={b.id} className="inline-flex items-center gap-2 rounded-full border border-primary/40 bg-primary/10 px-3 py-1.5 text-[12.5px]">
-                {desks.data.find((d) => d.id === b.deskId)?.name} · {minutesToHHMM(b.startMinute)}–{minutesToHHMM(b.endMinute)}
-                <button className="cursor-pointer text-muted-foreground hover:text-destructive" onClick={() => cancel.mutate(b.id)} aria-label={tx('İptal')}><Trash2 className="size-3.5" /></button>
+                {(() => { const d = desks.data.find((x) => x.id === b.deskId); return d ? deskLabel(d) : '—' })()} · {minutesToHHMM(b.startMinute)}–{minutesToHHMM(b.endMinute)}
+                <button className="cursor-pointer text-muted-foreground hover:text-destructive" onClick={() => { const d = desks.data.find((x) => x.id === b.deskId); if (d) setManaging(d) }} aria-label={tx('İptal')}><Trash2 className="size-3.5" /></button>
               </span>
             ))}
           </div>
@@ -185,7 +195,7 @@ function BookingBoard() {
                     transition={{ delay: i * 0.03 }}
                     whileHover={{ y: -3 }}
                     disabled={taken && !mine}
-                    onClick={() => setBooking({ desk: d })}
+                    onClick={() => (mine ? setManaging(d) : setBooking({ desk: d }))}
                     title={taken ? bs.map((b) => `${b.personName} ${minutesToHHMM(b.startMinute)}–${minutesToHHMM(b.endMinute)}`).join('\n') : `${d.zone ?? ''} ${d.features.join(', ')}`}
                     className={cn(
                       'relative flex cursor-pointer flex-col items-center gap-1 rounded-2xl border p-3 text-center transition disabled:cursor-not-allowed',
@@ -193,7 +203,7 @@ function BookingBoard() {
                     )}
                   >
                     <Armchair className={cn('size-5', mine ? 'text-sky-400' : taken ? 'text-rose-400' : 'text-emerald-400')} />
-                    <span className="text-[12px] font-medium">{d.code}</span>
+                    <span className="text-[12px] font-medium">{deskLabel(d)}</span>
                     <span className="max-w-full truncate text-[10.5px] text-muted-foreground">{taken ? bs[0].personName.split(' ')[0] : d.zone}</span>
                   </motion.button>
                 )
@@ -220,7 +230,8 @@ function BookingBoard() {
                     ))}
                     {(byDesk.get(r.id) ?? []).map((b) => (
                       <motion.div key={b.id} initial={{ scaleX: 0 }} animate={{ scaleX: 1 }} style={{ left: `${((b.startMinute - 480) / 720) * 100}%`, width: `${((b.endMinute - b.startMinute) / 720) * 100}%`, transformOrigin: 'left' }}
-                        className={cn('absolute inset-y-1 truncate rounded-lg px-2 text-[11px] leading-7', b.mine ? 'bg-sky-500/80 text-white' : 'bg-rose-500/70 text-white')} title={`${b.title ?? ''} — ${b.personName}`}>
+                        className={cn('absolute inset-y-1 truncate rounded-lg px-2 text-[11px] leading-7', b.mine ? 'cursor-pointer bg-sky-500/80 text-white' : 'bg-rose-500/70 text-white')} title={`${b.title ?? ''} — ${b.personName}`}
+                        onClick={b.mine ? () => setManaging(r) : undefined}>
                         {b.title ?? b.personName}
                       </motion.div>
                     ))}
@@ -233,7 +244,57 @@ function BookingBoard() {
         )}
       </div>
       {booking && <BookModal desk={booking.desk} startHour={booking.hour} date={date} onClose={() => setBooking(null)} />}
+      {managing && (
+        <MyBookingModal
+          desk={managing}
+          date={date}
+          bookings={myBookings.filter((b) => b.deskId === managing.id)}
+          otherDeskToday={myBookings.some((b) => b.deskId !== managing.id && desks.data.find((x) => x.id === b.deskId)?.kind === 'Desk')}
+          onBookAnother={() => { setBooking({ desk: managing }); setManaging(null) }}
+          onClose={() => setManaging(null)}
+        />
+      )}
     </div>
+  )
+}
+
+/**
+ * Kendi rezervasyonunun ayrıntısı ve iptali. Masa ayırmak o günü otomatik "Ofiste" yaptığı için
+ * masa iptalinde bu bildirimi de kaldırma ("Bildirmedi"ye dönüş) seçeneği sunulur.
+ */
+function MyBookingModal({ desk, date, bookings, otherDeskToday, onBookAnother, onClose }: {
+  desk: Desk; date: string; bookings: Booking[]; otherDeskToday: boolean; onBookAnother: () => void; onClose: () => void
+}) {
+  const isDesk = desk.kind === 'Desk'
+  const [clearPresence, setClearPresence] = useState(isDesk && !otherDeskToday)
+  const cancel = useAction(
+    async (id: string) => {
+      await engagementApi.cancelBooking(id)
+      // Aynı masada başka saat kalmadıysa ve kullanıcı istediyse günün "Ofiste" bildirimi kaldırılır.
+      if (isDesk && clearPresence && bookings.length <= 1) await engagementApi.setPresence({ date, mode: 'Unknown' })
+    },
+    { success: tx('Rezervasyon iptal edildi'), invalidate: [['bookings'], ['presence']], onDone: () => { if (bookings.length <= 1) onClose() } },
+  )
+  return (
+    <Modal open onClose={onClose} title={tx('{0} — rezervasyonunuz', [deskLabel(desk)])} note={[desk.kind === 'Desk' ? desk.name : null, desk.floor, desk.zone].filter(Boolean).join(' · ')}
+      footer={<><Button variant="outline" onClick={onClose}>{tx('Kapat')}</Button><Button variant="outline" onClick={onBookAnother}>{tx('Başka saat ayır')}</Button></>}>
+      <div className="space-y-3">
+        {bookings.length === 0 ? <p className="text-[13px] text-muted-foreground">{tx('Bu gün için rezervasyonunuz yok.')}</p> : bookings.map((b) => (
+          <div key={b.id} className="flex items-center justify-between gap-3 rounded-xl border border-border px-3 py-2.5 text-[13px]">
+            <span>{minutesToHHMM(b.startMinute)}–{minutesToHHMM(b.endMinute)}{b.title ? ` · ${b.title}` : ''}</span>
+            <Button size="sm" variant="outline" className="text-destructive" disabled={cancel.isPending} onClick={() => cancel.mutate(b.id)}>
+              <Trash2 className="size-3.5" aria-hidden />{' '}{tx('Rezervasyonu iptal et')}
+            </Button>
+          </div>
+        ))}
+        {isDesk && bookings.length === 1 && (
+          <label className="flex cursor-pointer items-start gap-2 text-[12.5px] text-muted-foreground">
+            <input type="checkbox" className="mt-0.5" checked={clearPresence} onChange={(e) => setClearPresence(e.target.checked)} />
+            <span>{tx('İptal edince o günkü “Ofiste” bildirimimi de kaldır (“Bildirmedi”ye dön).')}</span>
+          </label>
+        )}
+      </div>
+    </Modal>
   )
 }
 
@@ -244,10 +305,10 @@ function BookModal({ desk, date, startHour, onClose }: { desk: Desk; date: strin
   const [title, setTitle] = useState('')
   const toMin = (s: string) => Number(s.slice(0, 2)) * 60 + Number(s.slice(3, 5))
   const book = useAction(() => engagementApi.book({ deskId: desk.id, date, startMinute: toMin(start), endMinute: toMin(end), title: title || undefined }), {
-    success: tx('{0} ayrıldı', [desk.name]), invalidate: [['bookings'], ['presence']], onDone: onClose,
+    success: tx('{0} ayrıldı', [deskLabel(desk)]), invalidate: [['bookings'], ['presence']], onDone: onClose,
   })
   return (
-    <Modal open onClose={onClose} title={tx('{0} — {1} ayır', [desk.name, desk.kind === 'Desk' ? tx('masa') : tx('oda')])} note={[desk.floor, desk.zone, ...desk.features].filter(Boolean).join(' · ')}
+    <Modal open onClose={onClose} title={tx('{0} — {1} ayır', [deskLabel(desk), desk.kind === 'Desk' ? tx('masa') : tx('oda')])} note={[desk.floor, desk.zone, ...desk.features].filter(Boolean).join(' · ')}
       footer={<><Button variant="outline" onClick={onClose}>{tx('Vazgeç')}</Button><Button onClick={() => book.mutate(undefined)} disabled={book.isPending}>{tx('Ayır')}</Button></>}>
       <div className="grid gap-4 sm:grid-cols-2">
         <TextField label={tx('Başlangıç')} type="time" value={start} onChange={(e) => setStart(e.target.value)} />

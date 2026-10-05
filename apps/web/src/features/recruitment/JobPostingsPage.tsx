@@ -39,7 +39,7 @@ interface Errors {
   headcount?: string
 }
 
-function NewPostingModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+function NewPostingModal({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated?: () => void }) {
   const toast = useToast()
   const queryClient = useQueryClient()
   const companies = useCompanies()
@@ -86,7 +86,9 @@ function NewPostingModal({ open, onClose }: { open: boolean; onClose: () => void
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['recruitment'] })
-      toast.ok(tx('İlan oluşturuldu'))
+      // Yeni ilan taslak olarak açılır; kullanıcı onu Taslak sekmesinde bulur.
+      toast.ok(tx('İlan taslak olarak oluşturuldu; Taslak sekmesinde görebilirsiniz.'))
+      onCreated?.()
       onClose()
       setTitle('')
       setDescription('')
@@ -328,7 +330,7 @@ export function JobPostingsPage() {
         }
       />
 
-      <NewPostingModal open={modalOpen} onClose={() => setModalOpen(false)} />
+      <NewPostingModal open={modalOpen} onClose={() => setModalOpen(false)} onCreated={() => setTab('Draft')} />
     </div>
   )
 }

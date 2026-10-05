@@ -378,10 +378,42 @@ public class OffboardingController : AppController
     private readonly IHttpClientFactory _http;
     public OffboardingController(EngagementDbContext db, IHttpClientFactory http) { _db = db; _http = http; }
 
+    /// <summary>Kontrol listesinde yöneticinin işaretleyebildiği maddelerin sorumlu değeri.</summary>
+    public const string ManagerOwner = "Yönetici";
+
+    /// <summary>
+    /// Yetki modeli: süreci başlatma, tamamlama, iptal, hesap kapatma, çıkış görüşmesi ve
+    /// zimmet istisnası YALNIZCA İK. Yönetici yalnızca ekibinin (başı olduğu departmanların
+    /// aktif çalışanları) süreçlerini görür ve sorumlusu "Yönetici" olan maddeleri işaretler.
+    /// İK için null (kısıt yok) döner.
+    /// </summary>
+    private async Task<HashSet<Guid>?> ManagerScopeAsync(CancellationToken ct)
+    {
+        if (Me.IsHr) return null;
+        var me = await MyPersonAsync(ct);
+        if (me is null) return new HashSet<Guid>();
+        return (await People.ListAsync(Tenant, ct))
+            .Where(p => p.Id != me.Id && p.DepartmentHeadId == me.Id).Select(p => p.Id).ToHashSet();
+    }
+
+    /// <summary>Kayıt kapsam dışındaysa 404 (varlığı sızdırılmaz).</summary>
+    private async Task<OffboardingCase?> FindScopedAsync(Guid id, CancellationToken ct)
+    {
+        var c = await _db.OffboardingCases.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (c is null) return null;
+        var scope = await ManagerScopeAsync(ct);
+        return scope is null || scope.Contains(c.EmployeeId) ? c : null;
+    }
+
+    private ObjectResult HrOnly() => StatusCode(403, new { message = "Bu işlemi yalnızca İK yapabilir." });
+
     [HttpGet]
     public async Task<IActionResult> List(CancellationToken ct)
     {
-        var cases = await _db.OffboardingCases.OrderByDescending(c => c.CreatedAt).ToListAsync(ct);
+        var scope = await ManagerScopeAsync(ct);
+        var q = _db.OffboardingCases.AsQueryable();
+        if (scope is not null) q = q.Where(c => scope.Contains(c.EmployeeId));
+        var cases = await q.OrderByDescending(c => c.CreatedAt).ToListAsync(ct);
         // Açık süreçlerin zimmet durumu listede de tazelenir: iade ayrıntı açılmadan yapılınca
         // "n zimmet bekliyor" eski kalıyordu. Açık süreç sayısı küçüktür (ayrılmakta olanlar).
         var changed = false;
@@ -400,7 +432,7 @@ public class OffboardingController : AppController
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> Get(Guid id, CancellationToken ct)
     {
-        var c = await _db.OffboardingCases.FirstOrDefaultAsync(x => x.Id == id, ct);
+        var c = await FindScopedAsync(id, ct);
         if (c is null) return NotFound();
         if (c.Status == "Open" && await RefreshAssetsAsync(c, ct)) await _db.SaveChangesAsync(ct);
         return Ok(c);
@@ -590,7 +622,7 @@ public class OffboardingController : AppController
     [HttpPost("{id:guid}/disable-account")]
     public async Task<IActionResult> RetryDisable(Guid id, CancellationToken ct)
     {
-        if (!Me.IsHr) return Forbid();
+        if (!Me.IsHr) return HrOnly();
         var c = await _db.OffboardingCases.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (c is null) return NotFound();
         if (c.Status != "Completed") return BadRequest(new { message = "Hesap, süreç tamamlanınca kapatılır." });
@@ -604,6 +636,7 @@ public class OffboardingController : AppController
     [HttpPost]
     public async Task<IActionResult> Create(CreateInput body, CancellationToken ct)
     {
+        if (!Me.IsHr) return HrOnly();
         if (body.Reason is not ("Resignation" or "Termination" or "Retirement" or "ContractEnd" or "Other"))
             return BadRequest(new { message = "Geçersiz ayrılış nedeni." });
         var emp = await People.FindAsync(Tenant, body.EmployeeId, ct);
@@ -618,7 +651,7 @@ public class OffboardingController : AppController
 
         var checklist = new List<ChecklistItem>
         {
-            new() { Key = "handover", Title = "Devir-teslim planı ve dokümantasyon", Owner = "Yönetici" },
+            new() { Key = "handover", Title = "Devir-teslim planı ve dokümantasyon", Owner = ManagerOwner },
             new() { Key = "sgk", Title = "SGK işten ayrılış bildirgesi", Owner = "İK", Hint = "Ayrılış tarihinden itibaren 10 gün içinde verilmeli." },
             new() { Key = "payroll", Title = "Son maaş, kıdem/ihbar ve kullanılmayan izin hesabı", Owner = "Bordro" },
             new() { Key = "accounts", Title = "E-posta ve sistem erişimlerinin kapatılması", Owner = "BT", Hint = "Son iş günü mesai bitiminde." },
@@ -646,9 +679,13 @@ public class OffboardingController : AppController
     [HttpPatch("{id:guid}/checklist/{key}")]
     public async Task<IActionResult> Toggle(Guid id, string key, ToggleInput body, CancellationToken ct)
     {
-        var c = await _db.OffboardingCases.FirstOrDefaultAsync(x => x.Id == id, ct);
+        var c = await FindScopedAsync(id, ct);
         if (c is null) return NotFound();
         if (c.Status != "Open") return BadRequest(new { message = "Süreç kapalı." });
+        var target = c.Checklist.FirstOrDefault(i => i.Key == key);
+        if (target is null) return NotFound(new { message = "Adım bulunamadı." });
+        if (!Me.IsHr && target.Owner != ManagerOwner)
+            return StatusCode(403, new { message = "Yönetici yalnızca sorumlusu yönetici olan adımları işaretleyebilir." });
         var list = c.Checklist.Select(i => i.Key == key
             ? new ChecklistItem { Key = i.Key, Title = i.Title, Owner = i.Owner, Hint = i.Hint, Done = body.Done, DoneAt = body.Done ? DateTime.UtcNow : null, DoneBy = body.Done ? Me.Name : null }
             : i).ToList();
@@ -663,6 +700,7 @@ public class OffboardingController : AppController
     [HttpPut("{id:guid}/exit-interview")]
     public async Task<IActionResult> Interview(Guid id, InterviewInput body, CancellationToken ct)
     {
+        if (!Me.IsHr) return HrOnly();
         var c = await _db.OffboardingCases.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (c is null) return NotFound();
         c.RehireEligible = body.RehireEligible;
@@ -708,6 +746,8 @@ public class OffboardingController : AppController
     [HttpPost("{id:guid}/complete")]
     public async Task<IActionResult> Complete(Guid id, [FromQuery] bool terminate = true, [FromQuery] bool disableAccount = true, CancellationToken ct = default)
     {
+        // Tamamlama hesap kapatmayı da tetiklediği için (disableAccount varsayılan true) yalnızca İK.
+        if (!Me.IsHr) return HrOnly();
         var c = await _db.OffboardingCases.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (c is null) return NotFound();
         if (c.Status != "Open") return BadRequest(new { message = "Süreç zaten kapalı." });
@@ -768,10 +808,13 @@ public class OffboardingController : AppController
     [HttpPost("{id:guid}/cancel")]
     public async Task<IActionResult> Cancel(Guid id, CancellationToken ct)
     {
+        if (!Me.IsHr) return HrOnly();
         var c = await _db.OffboardingCases.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (c is null) return NotFound();
+        if (c.Status != "Open") return BadRequest(new { message = "Süreç zaten kapalı." });
         c.Status = "Cancelled";
         await _db.SaveChangesAsync(ct);
+        await AuditAsync(c.Id.ToString(), "Cancelled", new { });
         return Ok(new { c.Status });
     }
 
@@ -782,6 +825,7 @@ public class OffboardingController : AppController
         if (!Me.IsHr && !Me.Roles.Contains("ext-compensation-view")) return Forbid();
         var c = await _db.OffboardingCases.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
         if (c is null) return NotFound();
+        if (await ManagerScopeAsync(ct) is { } scope && !scope.Contains(c.EmployeeId)) return NotFound();
         var emp = await People.FindAsync(Tenant, c.EmployeeId, ct);
         if (emp is null) return NotFound();
         var gross = await Db.ScalarAsync(

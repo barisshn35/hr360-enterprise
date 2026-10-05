@@ -32,7 +32,9 @@ import { Modal } from '@/components/ui/Modal'
 import { Panel } from '@/components/ui/Panel'
 import { SelectField } from '@/components/ui/Field'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ErrorState } from '@/components/ui/States'
+import { ErrorState, InfoNote } from '@/components/ui/States'
+import { useAuth } from '@/auth/useAuth'
+import { isHr } from '@/auth/roles'
 import { useToast } from '@/components/ui/Toast'
 import { CountUp, EASE } from '@/motion/primitives'
 import { Switch, errorText } from '../components/controls'
@@ -55,6 +57,9 @@ export function MetricsPage() {
   const applyTemplate = useApplyTemplate()
   const archiveMetric = useArchiveMetric()
   const createMetric = useCreateMetric()
+  // Metrikler şirket geneli ayardır: yalnızca İK düzenler, yönetici salt okunur görür.
+  const { roles } = useAuth()
+  const canEdit = isHr(roles, 'ext-performance-manage')
 
   const [scope, setScope] = useState<Scope>('all')
   const [showArchived, setShowArchived] = useState(false)
@@ -160,7 +165,7 @@ export function MetricsPage() {
           </>
         }
         actions={
-          !noMetrics && !metrics.isError && (
+          canEdit && !noMetrics && !metrics.isError && (
             <>
               <Button variant="outline" onClick={() => setTemplateOpen(true)} disabled={loading}>
                 <LayoutTemplate aria-hidden />
@@ -190,6 +195,12 @@ export function MetricsPage() {
           )}
         </div>
       </PerfPageHeader>
+
+      {!canEdit && (
+        <div className="mb-4">
+          <InfoNote>{tx('Metrikler şirket geneli ayardır; yalnızca İK düzenleyebilir. Bu sayfayı salt okunur görüyorsunuz.')}</InfoNote>
+        </div>
+      )}
 
       {/* ----------------------------------- hata ----------------------------------- */}
       {metrics.isError && (
@@ -247,7 +258,7 @@ export function MetricsPage() {
                 {tx('{0} arşivlenmiş metrik var; geçmiş değerlendirmelerde puanları korunuyor.', [archived.length])}</p>
             )}
           </div>
-          <TemplatePicker onApply={runTemplate} pending={pendingTemplate} onStartBlank={() => setDialog({ kind: 'create' })} />
+          {canEdit && <TemplatePicker onApply={runTemplate} pending={pendingTemplate} onStartBlank={() => setDialog({ kind: 'create' })} />}
         </motion.section>
       )}
 
@@ -355,13 +366,14 @@ export function MetricsPage() {
                     onArchive={setArchiveTarget}
                     onAdd={(category) => setDialog({ kind: 'create', preset: { category, departmentId: scope !== 'all' && scope !== 'global' ? scope : null } })}
                     onScope={setScope}
+                    readOnly={!canEdit}
                   />
                 )
               })}
             </div>
           )}
 
-          {emptyCategories.length > 0 && !query && (
+          {canEdit && emptyCategories.length > 0 && !query && (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -392,7 +404,7 @@ export function MetricsPage() {
       )}
 
       {/* --------------------------------- diyaloglar -------------------------------- */}
-      {dialog && (
+      {dialog && canEdit && (
         <MetricDialog
           key={dialog.kind === 'edit' ? dialog.metric.id : `new-${JSON.stringify(dialog.preset ?? {})}`}
           mode={dialog}

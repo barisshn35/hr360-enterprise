@@ -32,11 +32,12 @@ function Checklist({ title, items, onChange }: { title: string; items: AgendaIte
           {items.map((it, i) => (
             <motion.li key={it.id ?? i} layout initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, height: 0 }} className="group flex items-center gap-2 rounded-lg px-1 py-1 hover:bg-accent/40">
               <button type="button" onClick={() => onChange(items.map((x, j) => (j === i ? { ...x, done: !x.done } : x)))}
+                aria-label={it.done ? tx('Tamamlanmadı olarak işaretle: {0}', [it.text]) : tx('Tamamlandı olarak işaretle: {0}', [it.text])} aria-pressed={it.done}
                 className={cn('grid size-5 shrink-0 cursor-pointer place-items-center rounded-md border transition', it.done ? 'border-primary bg-primary text-primary-foreground' : 'border-border')}>
                 {it.done && <Check className="size-3.5" />}
               </button>
               <span className={cn('flex-1 text-[13.5px]', it.done && 'text-muted-foreground line-through')}>{it.text}</span>
-              {it.by && <span className="text-[11px] text-muted-foreground">{it.by.split(' ')[0]}</span>}
+              {it.by && <span className="text-[11px] text-muted-foreground" title={tx('Ekleyen: {0}', [it.by])}>{tx('ekleyen: {0}', [it.by.split(' ')[0]])}</span>}
               <button type="button" aria-label={tx('Sil')} onClick={() => onChange(items.filter((_, j) => j !== i))} className="cursor-pointer text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive"><Trash2 className="size-3.5" /></button>
             </motion.li>
           ))}
@@ -56,6 +57,8 @@ function MeetingDetail({ m }: { m: OneOnOne }) {
   const [priv, setPriv] = useState(m.privateNotes ?? '')
   useEffect(() => { setShared(m.sharedNotes ?? ''); setPriv(m.privateNotes ?? '') }, [m.id, m.sharedNotes, m.privateNotes])
   const upd = useAction((body: Parameters<typeof engagementApi.updateOneOnOne>[1]) => engagementApi.updateOneOnOne(m.id, body), { invalidate: [['one-on-ones']] })
+  // Notlar odak kaybında kaydedilir; kullanıcı kaydedildiğini görsün.
+  const saveNote = useAction((body: Parameters<typeof engagementApi.updateOneOnOne>[1]) => engagementApi.updateOneOnOne(m.id, body), { success: tx('Not kaydedildi'), invalidate: [['one-on-ones']] })
   const del = useAction(() => engagementApi.deleteOneOnOne(m.id), { success: tx('Silindi'), invalidate: [['one-on-ones']] })
   const other = m.iAmManager ? m.employeeName : m.managerName
   const confirm = useConfirm()
@@ -70,7 +73,7 @@ function MeetingDetail({ m }: { m: OneOnOne }) {
         action={
           <div className="flex flex-wrap gap-1.5">
             <Button size="sm" variant="outline" onClick={() => engagementApi.oneOnOneIcs(m).catch((e) => toast.stop(errMsg(e)))}><CalendarPlus className="size-4" />{' '}{tx('Takvime ekle')}</Button>
-            {m.iAmManager && m.status === 'Planned' && <Button size="sm" onClick={() => upd.mutate({ status: 'Done' })}>{tx('Tamamlandı')}</Button>}
+            {m.iAmManager && m.status === 'Planned' && <Button size="sm" aria-label={tx('{0} ile görüşmeyi tamamlandı olarak işaretle', [other])} onClick={() => upd.mutate({ status: 'Done' })}><Check className="size-4" aria-hidden />{' '}{tx('Tamamlandı')}</Button>}
             {m.iAmManager && <Button size="icon" variant="ghost" aria-label={tx('Sil')} onClick={askDelete}><Trash2 className="size-4" /></Button>}
           </div>
         }
@@ -94,10 +97,10 @@ function MeetingDetail({ m }: { m: OneOnOne }) {
           )}
         </div>
         <div className="space-y-4">
-          <TextAreaField label={tx('Ortak notlar (iki taraf da görür)')} rows={6} value={shared} onChange={(e) => setShared(e.target.value)} onBlur={() => shared !== (m.sharedNotes ?? '') && upd.mutate({ sharedNotes: shared })} />
+          <TextAreaField label={tx('Ortak notlar (iki taraf da görür)')} rows={6} value={shared} onChange={(e) => setShared(e.target.value)} onBlur={() => shared !== (m.sharedNotes ?? '') && saveNote.mutate({ sharedNotes: shared })} />
           {m.iAmManager && (
             <div>
-              <TextAreaField label={tx('Özel notlarım')} rows={4} value={priv} onChange={(e) => setPriv(e.target.value)} onBlur={() => priv !== (m.privateNotes ?? '') && upd.mutate({ privateNotes: priv })} />
+              <TextAreaField label={tx('Özel notlarım')} rows={4} value={priv} onChange={(e) => setPriv(e.target.value)} onBlur={() => priv !== (m.privateNotes ?? '') && saveNote.mutate({ privateNotes: priv })} />
               <p className="mt-1 flex items-center gap-1 text-[11.5px] text-muted-foreground"><Lock className="size-3" />{' '}{tx('Yalnızca siz görürsünüz; denetim kaydında içerik maskelenir.')}</p>
             </div>
           )}
@@ -114,16 +117,18 @@ function NewMeetingModal({ onClose, preset }: { onClose: () => void; preset?: st
   const { employeeId: me } = useMyEmployeeId()
   const tomorrow = new Date(Date.now() + 86400000)
   const [when, setWhen] = useState(`${tomorrow.toISOString().slice(0, 10)}T10:00`)
+  // Planlı görüşme geçmişe kurulamaz (sunucu da 400 döner).
+  const past = !when || Number.isNaN(new Date(when).getTime()) || new Date(when).getTime() < Date.now() - 5 * 60_000
   const [agenda, setAgenda] = useState(tx('Geçen haftadan aksiyonlar\nEngeller ve destek ihtiyacı\nKariyer ve gelişim'))
   const create = useAction(() => engagementApi.createOneOnOne({ employeeId: emp, scheduledAt: new Date(when).toISOString(), agenda: agenda.split('\n').filter((l) => l.trim()) }), {
     success: tx('1:1 planlandı; çalışana bildirim gitti'), invalidate: [['one-on-ones']], onDone: onClose,
   })
   return (
-    <Modal open onClose={onClose} title="1:1 planla" note={tx('Önceki görüşmenin açık aksiyonları otomatik taşınır.')}
-      footer={<><Button variant="outline" onClick={onClose}>{tx('Vazgeç')}</Button><Button disabled={!emp || create.isPending} onClick={() => create.mutate(undefined)}>{tx('Planla')}</Button></>}>
+    <Modal open onClose={onClose} title={tx('1:1 planla')} note={tx('Önceki görüşmenin açık aksiyonları otomatik taşınır.')}
+      footer={<><Button variant="outline" onClick={onClose}>{tx('Vazgeç')}</Button><Button disabled={!emp || past || create.isPending} onClick={() => create.mutate(undefined)}>{tx('Planla')}</Button></>}>
       <div className="space-y-4">
         <SelectField label={tx('Ekip üyesi')} value={emp} onChange={setEmp} options={(team.data ?? []).map((t) => ({ value: t.employeeId, label: t.name }))} />
-        <TextField label={tx('Tarih ve saat')} type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} />
+        <TextField label={tx('Tarih ve saat')} type="datetime-local" value={when} error={past ? tx('Geçmiş bir tarihe görüşme planlanamaz.') : undefined} onChange={(e) => setWhen(e.target.value)} />
         {emp && me && <SlotFinder employeeIds={[me, emp]} durationMinutes={30} onPick={setWhen} />}
         <TextAreaField label={tx('Gündem (her satır bir madde)')} rows={4} value={agenda} onChange={(e) => setAgenda(e.target.value)} />
       </div>

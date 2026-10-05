@@ -10,6 +10,7 @@ import { SelectField, TextAreaField, TextField } from '@/components/ui/Field'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { EmptyState, InfoNote, RowsSkeleton } from '@/components/ui/States'
 import { useToast } from '@/components/ui/Toast'
+import { useConfirm } from '@/components/ui/Confirm'
 import { useAuth } from '@/auth/useAuth'
 import { useDirectory } from '@/api/directory'
 import { expenseApi, expenseCategoryLabels, type CategoryLimit, type ExpenseCategory, type TravelRequest, type TravelStatus } from '@/api/expense'
@@ -122,6 +123,17 @@ export function TravelPage() {
   const toast = useToast()
   const inv = [['travel'], ['expense']]
   const cancel = useAction((id: string) => expenseApi.cancelTravel(id), { success: tx('Seyahat iptal edildi'), invalidate: inv })
+  const confirm = useConfirm()
+  const askCancel = async (t: TravelRequest) => {
+    if (await confirm({
+      title: tx('Seyahat talebi iptal edilsin mi?'),
+      note: t.status === 'Submitted'
+        ? tx('Bekleyen onay akışı da kapatılır. Pasaport bilgisi hemen silinir.')
+        : tx('Onaylanmış seyahat iptal edilir. Pasaport bilgisi hemen silinir.'),
+      action: tx('İptal et'),
+      destructive: true,
+    })) cancel.mutate(t.id)
+  }
   const decide = useAction((a: { id: string; approve: boolean }) => expenseApi.decideTravel(a.id, a.approve), { success: tx('Karar kaydedildi'), invalidate: inv })
   const claim = useAction((id: string) => expenseApi.perDiemClaim(id), { success: (r) => tx('Harcırah beyanı taslağı oluşturuldu ({0})', [formatMoney(r.amount)]), invalidate: inv })
   const showPassport = async (id: string) => {
@@ -144,7 +156,7 @@ export function TravelPage() {
               {t.hasPassport && <Button size="sm" variant="ghost" onClick={() => void showPassport(t.id)}>{tx('Pasaport')}</Button>}
               {t.status === 'Approved' && <Button size="sm" variant="outline" onClick={() => claim.mutate(t.id)}>{tx('Harcırahı beyan et')}</Button>}
               {hr && t.status === 'Submitted' && !t.workflowRequestId && <><Button size="sm" onClick={() => decide.mutate({ id: t.id, approve: true })}>{tx('Onayla')}</Button><Button size="sm" variant="outline" onClick={() => decide.mutate({ id: t.id, approve: false })}>{tx('Reddet')}</Button></>}
-              {(t.status === 'Submitted' || t.status === 'Approved') && <Button size="sm" variant="ghost" onClick={() => cancel.mutate(t.id)}>{tx('İptal')}</Button>}
+              {(t.status === 'Submitted' || t.status === 'Approved') && <Button size="sm" variant="ghost" disabled={cancel.isPending} onClick={() => void askCancel(t)}>{tx('İptal')}</Button>}
             </li>
           ))}
         </ul></PanelBody></Panel>

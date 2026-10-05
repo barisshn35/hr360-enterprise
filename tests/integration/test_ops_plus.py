@@ -276,6 +276,19 @@ try:
     planned = dt.date(TODAY.year + y, mo + 1, min(TODAY.day, calendar.monthrange(TODAY.year + y, mo + 1)[1]))
     check("G15 imha planı: TerminatedEmployees saklama süresi kadar sonrası", case["retentionMonths"] == months and case["plannedAnonymizationOn"] == planned.isoformat(),
           (case["retentionMonths"], case["plannedAnonymizationOn"], planned))
+    # Dalga 5: süreç yönetimi yalnızca İK; departman başı (Mehmet) ekibindeki süreci görür,
+    # yalnızca sorumlusu "Yönetici" olan adımı işaretler.
+    code, _ = api("mehmet", "POST", f"{EN}/offboarding", {"employeeId": E, "lastWorkingDay": TODAY.isoformat(), "reason": "Resignation"})
+    check("G15 yönetici süreç başlatamaz", code == 403, code)
+    code, lst = api("mehmet", "GET", f"{EN}/offboarding")
+    check("G15 departman başı ekibindeki süreci görür", code == 200 and any(x["id"] == C for x in lst), code)
+    code, _ = api("mehmet", "PATCH", f"{EN}/offboarding/{C}/checklist/sgk", {"done": True})
+    check("G15 yönetici İK adımını işaretleyemez", code == 403, code)
+    code, _ = api("mehmet", "PATCH", f"{EN}/offboarding/{C}/checklist/handover", {"done": True})
+    check("G15 yönetici devir-teslim adımını işaretler", code == 200, code)
+    for path in ("complete", "cancel"):
+        code, _ = api("mehmet", "POST", f"{EN}/offboarding/{C}/{path}")
+        check(f"G15 yönetici {path} yapamaz", code == 403, code)
     for it in case["checklist"]:
         if it["key"] == "exit-interview":
             api("admin", "PUT", f"{EN}/offboarding/{C}/exit-interview", {"interview": {"primaryReason": "Diğer"}, "rehireEligible": True})

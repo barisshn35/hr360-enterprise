@@ -18,7 +18,8 @@ public class CandidatesController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetAll([FromQuery] string? search)
     {
-        var q = _db.Candidates.AsQueryable();
+        // Liste "Başvuru" sütunu için başvurular da gelir (yalnızca başvuru satırları; mülakatlar değil).
+        var q = _db.Candidates.AsNoTracking().Include(c => c.Applications).AsQueryable();
         if (!string.IsNullOrWhiteSpace(search))
         {
             var term = search.Trim().ToLower();

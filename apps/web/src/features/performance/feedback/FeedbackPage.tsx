@@ -53,7 +53,8 @@ export function FeedbackPage() {
   const tab = (['gelen', 'giden', 'calisan'].includes(params.get('sekme') ?? '') ? params.get('sekme') : 'gelen') as Tab
   const [reason, setReason] = useState<FeedbackReason | '__all__'>('__all__')
   const [since, setSince] = useState<Since>('all')
-  const [composing, setComposing] = useState(false)
+  // "Benim performansım › Geri bildirim yaz" bağlantısı ?yaz=1 ile gelir; yazabilen kişide form açık başlar.
+  const [composing, setComposing] = useState(() => manager && params.get('yaz') === '1')
   const target = params.get('calisan')
 
   const filters = { reason: reason === '__all__' ? undefined : reason, since: sinceIso(since) }

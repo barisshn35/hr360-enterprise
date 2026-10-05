@@ -6,6 +6,7 @@ using LeaveService.Models;
 using LeaveService.Services;
 using LeaveService.Messaging;
 using LeaveService.Infrastructure;
+using LeaveService.Auditing;
 using System.Text.Json;
 
 namespace LeaveService.Controllers;
@@ -26,6 +27,28 @@ public class LeaveRequestsController : ControllerBase
     private bool IsHr => User.IsInRole("hr-admin") || User.IsInRole("tenant-admin")
         || User.IsInRole("platform-admin");
     private bool IsManagerOrAbove => IsHr || User.IsInRole("manager");
+
+    /// <summary>
+    /// Yöneticinin görebildiği çalışanlar: başı olduğu departmanlarda bugün geçerli ataması olan
+    /// aktif çalışanlar + kendisi. Organizasyon/çalışan tabloları aynı veritabanında salt okunur
+    /// sorgulanır (ApprovalWorkflowClient'taki departman başı çözümlemesiyle aynı desen).
+    /// İK için null (kısıt yok).
+    /// </summary>
+    private async Task<HashSet<Guid>?> VisibleEmployeesAsync(CancellationToken ct)
+    {
+        if (IsHr) return null;
+        var me = await _approvals.FindMyEmployeeIdAsync(ct);
+        if (me is null) return new HashSet<Guid>();
+        var team = await _db.Database.SqlQueryRaw<Guid>(
+            """
+            SELECT DISTINCT a."EmployeeId" AS "Value" FROM employee_assignments a
+            JOIN organization_departments d ON d."Id" = a."DepartmentId"
+            JOIN employee_employees e ON e."Id" = a."EmployeeId"
+            WHERE a."TenantSlug" = {0} AND d."HeadEmployeeId" = {1} AND e."Status" <> 'Terminated'
+              AND a."EffectiveFrom" <= current_date AND (a."EffectiveTo" IS NULL OR a."EffectiveTo" >= current_date)
+            """, _db.CurrentTenantSlug ?? "", me.Value).ToListAsync(ct);
+        return team.Append(me.Value).ToHashSet();
+    }
 
     /// <summary>
     /// Iki tarih arasindaki is gunu sayisi: hafta sonlari ve sirketin resmi tatil
@@ -81,6 +104,14 @@ public class LeaveRequestsController : ControllerBase
         }
 
         var query = _db.LeaveRequests.AsNoTracking().AsQueryable();
+        // Yönetici kapsamı: İK tümünü görür; yönetici yalnızca ekibini (başı olduğu
+        // departmanlar) ve kendisini. Önceden yöneticiye kiracı genelini döndürüyordu.
+        if (isManager && await VisibleEmployeesAsync(ct) is { } visible)
+        {
+            if (employeeId.HasValue && !visible.Contains(employeeId.Value)) return Forbid();
+            var ids = visible.ToList();
+            query = query.Where(r => ids.Contains(r.EmployeeId));
+        }
         if (employeeId.HasValue) query = query.Where(r => r.EmployeeId == employeeId.Value);
         if (status.HasValue) query = query.Where(r => r.Status == status.Value);
         if (type.HasValue) query = query.Where(r => r.Type == type.Value);
@@ -94,6 +125,8 @@ public class LeaveRequestsController : ControllerBase
                 .Where(t => t.HasValue).Select(t => t!.Value).Distinct().ToList();
             query = query.Where(r => EF.Functions.Like(LeaveDbContext.Fold(r.Reason ?? ""), like, "\\") || types.Contains(r.Type));
         }
+
+        await AuditPlatformListAsync(query, ct);
 
         var desc = sort is null || Paging.Desc(dir);
         IOrderedQueryable<LeaveRequest> ordered = (sort ?? "createdAt").ToLowerInvariant() switch
@@ -119,7 +152,24 @@ public class LeaveRequestsController : ControllerBase
             var me = await _approvals.FindMyEmployeeIdAsync(ct);
             if (me is null || me.Value != r.EmployeeId) return NotFound();
         }
+        else if (await VisibleEmployeesAsync(ct) is { } visible && !visible.Contains(r.EmployeeId)) return NotFound();
+        if (PlatformAccessAudit.ShouldLog(_db.CurrentIsPlatformAdmin, _db.CurrentTenantSlug, r.TenantSlug))
+            await PlatformAccessAudit.WriteAsync(_db, HttpContext, "LeaveRequest", r.Id.ToString(),
+                new[] { (r.TenantSlug, (object)new { employeeId = r.EmployeeId }) }, ct);
         return Ok(r);
+    }
+
+    /// <summary>
+    /// Platform yöneticisinin (başka kiracının ya da kiracısız) liste okuması: okunan kayıtların
+    /// kiracısına, kiracı başına tek "PlatformAccess" satırı ve yalnızca kayıt sayısı.
+    /// </summary>
+    private async Task AuditPlatformListAsync(IQueryable<LeaveRequest> query, CancellationToken ct)
+    {
+        if (!_db.CurrentIsPlatformAdmin) return;
+        var counts = await query.GroupBy(r => r.TenantSlug).Select(g => new { Tenant = g.Key, Count = g.Count() }).ToListAsync(ct);
+        var rows = counts.Where(c => PlatformAccessAudit.ShouldLog(true, _db.CurrentTenantSlug, c.Tenant))
+            .Select(c => (c.Tenant, (object)new { count = c.Count })).ToList();
+        if (rows.Count > 0) await PlatformAccessAudit.WriteAsync(_db, HttpContext, "LeaveRequestList", "list", rows, ct);
     }
 
     /// <summary>Izin talebi olusturur, bakiyeden 'beklemede' olarak duser ve

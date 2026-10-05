@@ -108,7 +108,7 @@ public class ApplicationsController : ControllerBase
                 {
                     a.Id, a.CandidateId, candidateName = a.Candidate is null ? null : $"{a.Candidate.FirstName} {a.Candidate.LastName}",
                     status = a.Status.ToString(), a.AppliedAt, a.StatusChangedAt, a.Channel, a.DuplicateReason,
-                    interviewCount = a.Interviews.Count,
+                    interviewCount = a.Interviews.Count(i => i.Result != InterviewResult.Cancelled),
                     nextInterviewAt = a.Interviews.Where(i => i.Result == InterviewResult.Pending && i.ScheduledAt > DateTimeOffset.UtcNow)
                         .OrderBy(i => i.ScheduledAt).Select(i => (DateTimeOffset?)i.ScheduledAt).FirstOrDefault(),
                     averageScore = sc.Count == 0 ? (decimal?)null : Math.Round(sc.Average(), 2),
@@ -167,21 +167,7 @@ public class ApplicationsController : ControllerBase
         var people = await _db.PeopleAsync(tenant, interviewers, ct);
         if (people.Count != interviewers.Count) return BadRequest(new { message = "Görüşmecilerden biri bulunamadı" });
 
-        // Çakışma: aynı görüşmecinin (birincil ya da panel) beklemedeki bir mülakatıyla zaman aralığı kesişiyor mu?
-        var windowStart = request.ScheduledAt.AddHours(-8);
-        var windowEnd = request.ScheduledAt.AddMinutes(duration);
-        var near = await _db.Interviews.AsNoTracking()
-            .Where(i => i.Result == InterviewResult.Pending && i.ScheduledAt > windowStart && i.ScheduledAt < windowEnd)
-            .ToListAsync(ct);
-        var conflicts = near
-            .Where(i => ScorecardRules.Overlaps(request.ScheduledAt, duration, i.ScheduledAt, i.DurationMinutes))
-            .SelectMany(i => i.AllInterviewers().Where(interviewers.Contains).Select(p => new { interviewerId = p, interviewId = i.Id, i.ScheduledAt, i.DurationMinutes }))
-            .ToList();
-        if (conflicts.Count > 0)
-        {
-            var names = people.Where(p => conflicts.Any(c => c.interviewerId == p.Id)).Select(p => $"{p.FirstName} {p.LastName}");
-            return Conflict(new { message = $"Görüşmecinin bu saatte başka bir mülakatı var: {string.Join(", ", names)}", code = "interviewer_busy", conflicts });
-        }
+        if (await BusyConflictAsync(request.ScheduledAt, duration, interviewers, people, null, ct) is { } busy) return busy;
 
         var interview = new Interview
         {
@@ -228,6 +214,112 @@ public class ApplicationsController : ControllerBase
         });
     }
 
+    /// <summary>
+    /// Çakışma: aynı görüşmecinin (birincil ya da panel) beklemedeki bir mülakatıyla zaman aralığı kesişiyor mu?
+    /// <paramref name="exceptId"/> yeniden planlamada mülakatın kendisini dışarıda bırakır.
+    /// </summary>
+    private async Task<IActionResult?> BusyConflictAsync(DateTimeOffset at, int duration, List<Guid> interviewers,
+        List<RecruitmentSql.PersonRow> people, Guid? exceptId, CancellationToken ct)
+    {
+        var windowStart = at.AddHours(-8);
+        var windowEnd = at.AddMinutes(duration);
+        var near = await _db.Interviews.AsNoTracking()
+            .Where(i => i.Result == InterviewResult.Pending && i.ScheduledAt > windowStart && i.ScheduledAt < windowEnd && i.Id != exceptId)
+            .ToListAsync(ct);
+        var conflicts = near
+            .Where(i => ScorecardRules.Overlaps(at, duration, i.ScheduledAt, i.DurationMinutes))
+            .SelectMany(i => i.AllInterviewers().Where(interviewers.Contains).Select(p => new { interviewerId = p, interviewId = i.Id, i.ScheduledAt, i.DurationMinutes }))
+            .ToList();
+        if (conflicts.Count == 0) return null;
+        var names = people.Where(p => conflicts.Any(c => c.interviewerId == p.Id)).Select(p => $"{p.FirstName} {p.LastName}");
+        return Conflict(new { message = $"Görüşmecinin bu saatte başka bir mülakatı var: {string.Join(", ", names)}", code = "interviewer_busy", conflicts });
+    }
+
+    /// <summary>
+    /// Planlanan (beklemedeki) mülakatı iptal eder. Görüşmecilere uygulama içi bildirim gider; aday daha
+    /// önce e-postayla davet edildiyse ve istenirse adaya da iptal e-postası gönderilir.
+    /// </summary>
+    [HttpPost("{id}/interviews/{interviewId}/cancel")]
+    public async Task<IActionResult> CancelInterview(Guid id, Guid interviewId, [FromBody] CancelInterviewRequest? request, CancellationToken ct)
+    {
+        var iv = await _db.Interviews.Include(i => i.Application!).ThenInclude(a => a.Candidate)
+            .Include(i => i.Application!).ThenInclude(a => a.JobPosting)
+            .FirstOrDefaultAsync(i => i.Id == interviewId && i.ApplicationId == id, ct);
+        if (iv is null) return NotFound(new { message = "Mülakat bulunamadı" });
+        if (iv.Result != InterviewResult.Pending) return BadRequest(new { message = "Yalnızca sonuçlanmamış mülakat iptal edilebilir" });
+        if (request?.Reason is { Length: > 300 }) return BadRequest(new { message = "Gerekçe en fazla 300 karakter olabilir" });
+
+        iv.Result = InterviewResult.Cancelled;
+        iv.Notes = string.IsNullOrWhiteSpace(request?.Reason) ? iv.Notes : request!.Reason!.Trim();
+        await _db.SaveChangesAsync(ct);
+
+        var tenant = iv.TenantSlug;
+        var when = InterviewTexts.When(iv.ScheduledAt);
+        var posting = iv.Application?.JobPosting?.Title ?? "";
+        // KVKK: görüşmeci bildiriminde aday adı yok.
+        foreach (var p in iv.AllInterviewers())
+            await _db.NotifyAsync(tenant, p, "Mülakat iptal edildi",
+                $"{when} tarihindeki \"{posting}\" pozisyonu mülakatı iptal edildi.", "recruitment.interview.cancelled", ct);
+        var candidate = iv.Application?.Candidate;
+        if (request?.NotifyCandidate == true && iv.CandidateNotifiedAt is not null && candidate is { AnonymizedAt: null })
+        {
+            var company = (await _db.TenantAsync(tenant, ct))?.Name ?? "Şirketimiz";
+            await _db.EmailCandidateAsync(tenant, candidate.Email, $"Mülakat iptali — {company}",
+                InterviewTexts.Cancellation(candidate.FirstName, company, posting, when), "recruitment.interview.cancelled", ct);
+        }
+        return Ok(new { iv.Id, iv.ApplicationId, iv.Result });
+    }
+
+    /// <summary>Beklemedeki mülakatın zamanını/süresini değiştirir (çakışma denetimiyle); görüşmecilere bildirim.</summary>
+    [HttpPost("{id}/interviews/{interviewId}/reschedule")]
+    public async Task<IActionResult> RescheduleInterview(Guid id, Guid interviewId, [FromBody] RescheduleInterviewRequest request, CancellationToken ct)
+    {
+        var iv = await _db.Interviews.Include(i => i.Application!).ThenInclude(a => a.Candidate)
+            .Include(i => i.Application!).ThenInclude(a => a.JobPosting)
+            .FirstOrDefaultAsync(i => i.Id == interviewId && i.ApplicationId == id, ct);
+        if (iv is null) return NotFound(new { message = "Mülakat bulunamadı" });
+        if (iv.Result != InterviewResult.Pending) return BadRequest(new { message = "Yalnızca sonuçlanmamış mülakat yeniden planlanabilir" });
+        var duration = request.DurationMinutes ?? iv.DurationMinutes;
+        if (duration is < 15 or > 480) return BadRequest(new { message = "Süre 15-480 dakika olmalı" });
+        if (request.ScheduledAt < DateTimeOffset.UtcNow.AddMinutes(-5)) return BadRequest(new { message = "Geçmiş bir zamana mülakat planlanamaz" });
+
+        var interviewers = iv.AllInterviewers().ToList();
+        var people = await _db.PeopleAsync(iv.TenantSlug, interviewers, ct);
+        if (await BusyConflictAsync(request.ScheduledAt, duration, interviewers, people, iv.Id, ct) is { } busy) return busy;
+
+        var oldWhen = InterviewTexts.When(iv.ScheduledAt);
+        iv.ScheduledAt = request.ScheduledAt;
+        iv.DurationMinutes = duration;
+        await _db.SaveChangesAsync(ct);
+
+        var tenant = iv.TenantSlug;
+        var when = InterviewTexts.When(iv.ScheduledAt);
+        var where = InterviewTexts.Where(iv.Location, iv.MeetingUrl);
+        var posting = iv.Application?.JobPosting?.Title ?? "";
+        foreach (var p in interviewers)
+            await _db.NotifyAsync(tenant, p, "Mülakat yeniden planlandı",
+                $"\"{posting}\" pozisyonu mülakatı {oldWhen} yerine {when} tarihine alındı ({duration} dk, {where}).", "recruitment.interview.rescheduled", ct);
+        var candidate = iv.Application?.Candidate;
+        string? invitation = null;
+        if (candidate is not null)
+        {
+            var company = (await _db.TenantAsync(tenant, ct))?.Name ?? "Şirketimiz";
+            invitation = InterviewTexts.Invitation(candidate.FirstName, company, posting, when, duration, where);
+            if (request.NotifyCandidate && candidate.AnonymizedAt is null)
+            {
+                iv.CandidateNotifiedAt = DateTimeOffset.UtcNow;
+                await _db.SaveChangesAsync(ct);
+                await _db.EmailCandidateAsync(tenant, candidate.Email, $"Mülakat zamanı değişti — {company}", invitation, "recruitment.interview.invite", ct);
+            }
+        }
+        return Ok(new
+        {
+            iv.Id, iv.ApplicationId, iv.Type, iv.ScheduledAt, iv.DurationMinutes, iv.Location, iv.MeetingUrl,
+            iv.InterviewerEmployeeId, iv.InterviewerIds, iv.Result, candidateNotified = request.NotifyCandidate && iv.CandidateNotifiedAt is not null,
+            invitationText = invitation,
+        });
+    }
+
     [HttpPost("{id}/interviews/{interviewId}/result")]
     public async Task<IActionResult> RecordResult(
         Guid id, Guid interviewId, [FromBody] InterviewResultRequest request)
@@ -235,6 +327,8 @@ public class ApplicationsController : ControllerBase
         var interview = await _db.Interviews
             .FirstOrDefaultAsync(i => i.Id == interviewId && i.ApplicationId == id);
         if (interview is null) return NotFound();
+        if (interview.Result == InterviewResult.Cancelled || request.Result == InterviewResult.Cancelled)
+            return BadRequest(new { message = "İptal edilen mülakata sonuç girilemez; iptal için iptal işlemini kullanın" });
 
         interview.Result = request.Result;
         interview.Score = request.Score;
@@ -274,6 +368,11 @@ public static class InterviewTexts
         + $"Tarih ve saat: {when} (Türkiye saati)\nSüre: yaklaşık {minutes} dakika\nYer: {where}\n\n"
         + "Bu zaman size uygun değilse lütfen İnsan Kaynakları ile iletişime geçin.\n\nSaygılarımızla,\n"
         + $"{company} İnsan Kaynakları";
+
+    public static string Cancellation(string firstName, string company, string posting, string when) =>
+        $"Merhaba {firstName},\n\n{company} bünyesindeki \"{posting}\" pozisyonu için {when} (Türkiye saati) tarihinde planlanan mülakatınız iptal edilmiştir. "
+        + "Yeni bir zaman planlanırsa size ayrıca bilgi verilecektir.\n\nSaygılarımızla,\n"
+        + $"{company} İnsan Kaynakları";
 }
 
 public record CreateApplicationRequest(Guid JobPostingId, Guid CandidateId, string? Notes);
@@ -282,4 +381,6 @@ public record ScheduleInterviewRequest(
     InterviewType Type, DateTimeOffset ScheduledAt, Guid? InterviewerEmployeeId,
     List<Guid>? InterviewerEmployeeIds = null, int? DurationMinutes = null, string? Location = null,
     string? MeetingUrl = null, bool NotifyCandidate = false);
+public record CancelInterviewRequest(string? Reason, bool NotifyCandidate = false);
+public record RescheduleInterviewRequest(DateTimeOffset ScheduledAt, int? DurationMinutes = null, bool NotifyCandidate = false);
 public record InterviewResultRequest(InterviewResult Result, int? Score, string? Notes);

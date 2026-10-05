@@ -406,8 +406,9 @@ export function CoursePlayerPage() {
   const [tab, setTab] = useTabParam<TabKey>('gorunum', 'icerik')
   const course = useQuery({ queryKey: ['learning', 'courses', 'detail', courseId], queryFn: ({ signal }) => learningApi.getCourse(courseId, signal) })
   const modules = useQuery({ queryKey: ['learning', 'modules', courseId], queryFn: ({ signal }) => learningContentApi.modules(courseId, signal) })
-  const progress = useQuery({ queryKey: ['learning', 'progress', courseId], queryFn: ({ signal }) => learningContentApi.progress(courseId, undefined, signal), retry: false })
   const { employeeId } = useMyEmployeeId()
+  // Çalışan kaydı olmayan kullanıcıda (ör. yalnızca İK/platform hesabı) kendi ilerlemesi yoktur; istek atılmaz (404 önlenir).
+  const progress = useQuery({ queryKey: ['learning', 'progress', courseId], queryFn: ({ signal }) => learningContentApi.progress(courseId, undefined, signal), retry: false, enabled: Boolean(employeeId) })
   const [active, setActive] = useState<string | null>(null)
   const list = useMemo(() => modules.data ?? [], [modules.data])
   const current = list.find((m) => m.id === active) ?? list[0]

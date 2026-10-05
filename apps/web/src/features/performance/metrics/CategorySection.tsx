@@ -45,6 +45,7 @@ export function CategorySection({
   onAdd,
   onScope,
   index,
+  readOnly = false,
 }: {
   category: MetricCategory
   /** Bu kategoride listelenecek metrikler (arşiv açıksa arşivdekiler dahil). */
@@ -63,6 +64,8 @@ export function CategorySection({
   onAdd: (category: MetricCategory) => void
   onScope: (scope: Scope) => void
   index: number
+  /** Yalnızca İK düzenler; yöneticide ekle/düzenle/arşivle gizli. */
+  readOnly?: boolean
 }) {
   const [hover, setHover] = useState<string | null>(null)
   const color = categoryColor[category]
@@ -119,10 +122,12 @@ export function CategorySection({
                     </Chip>
                   </Link>
                 ))}
-              <Button size="xs" variant="ghost" onClick={() => onAdd(category)}>
-                <Plus aria-hidden />
-                {tx('Ekle')}
-              </Button>
+              {!readOnly && (
+                <Button size="xs" variant="ghost" onClick={() => onAdd(category)}>
+                  <Plus aria-hidden />
+                  {tx('Ekle')}
+                </Button>
+              )}
             </div>
           </div>
 
@@ -236,7 +241,7 @@ export function CategorySection({
                       </div>
                     </div>
                     <div className="flex shrink-0 items-center gap-0.5 sm:opacity-0 sm:transition-opacity sm:group-focus-within:opacity-100 sm:group-hover:opacity-100">
-                      {m.isActive && (
+                      {m.isActive && !readOnly && (
                         <>
                           <Button size="icon-sm" variant="ghost" onClick={() => onEdit(m)} aria-label={tx('{0} metriğini düzenle', [m.name])} title={tx('Düzenle')}>
                             <Pencil aria-hidden />

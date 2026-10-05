@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, TriangleAlert } from 'lucide-react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { ArrowLeft, ExternalLink, TriangleAlert } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Panel, PanelBody, PanelHead } from '@/components/ui/Panel'
 import { Button } from '@/components/ui/button'
@@ -12,9 +12,10 @@ import { useToast } from '@/components/ui/Toast'
 import { useAuth } from '@/auth/useAuth'
 import { isHr } from '@/auth/roles'
 import { workflowApi } from '@/api/workflows'
-import { qk, useEmployees, useWorkflow, useMyEmployeeId } from '@/api/queries'
+import { qk, useWorkflow, useMyEmployeeId } from '@/api/queries'
+import { useDirectory } from '@/api/directory'
 import { workflowTypeLabels, type ApprovalStep } from '@/api/types'
-import { formatDate, formatDateTime, formatNumber, formatRelativeToNow, fullName } from '@/lib/format'
+import { formatDate, formatDateTime, formatMoney, formatNumber, formatRelativeToNow } from '@/lib/format'
 import { leaveTypeLabels, type LeaveType } from '@/api/leave'
 import { cn } from '@/lib/utils'
 import { ApprovalChain, activeStepId } from './ApprovalChain'
@@ -22,7 +23,7 @@ import { DecisionModal } from './DecisionModal'
 import { DelegateModal } from './DelegateModal'
 import { tx } from '@/lib/i18n'
 
-/** Talep yükündeki bilinen anahtarların okunur adları (İK'nın "Ek veri" listesi için). */
+/** Talep yükündeki bilinen anahtarların okunur adları ("Talep bilgileri" listesi için). */
 const PAYLOAD_LABELS: Record<string, string> = {
   type: tx('Tür'),
   startDate: tx('Başlangıç'),
@@ -39,7 +40,11 @@ const PAYLOAD_LABELS: Record<string, string> = {
   grossSalary: tx('Brüt ücret'),
   expiresAt: tx('Geçerlilik sonu'),
   reason: tx('Gerekçe'),
+  destination: tx('Gidilecek yer'),
+  abroad: tx('Yurt dışı'),
 }
+/** Para birimiyle birlikte gösterilen tutar alanları (yükteki "currency" ile). */
+const MONEY_KEYS = ['amount', 'totalAmount', 'grossSalary']
 const GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}(T[\d:.]+(Z|[+-]\d{2}:\d{2})?)?$/
 
@@ -60,7 +65,10 @@ function payloadRows(p: Record<string, unknown>, skip: string[]): Array<{ key: s
     if (skip.includes(key) || raw === null || raw === undefined || raw === '') continue
     if (/id$/i.test(key) || (typeof raw === 'string' && GUID_RE.test(raw))) continue
     let value: string
-    if (typeof raw === 'number') value = formatNumber(raw)
+    if (key === 'currency' && Object.keys(p).some((k) => MONEY_KEYS.includes(k))) continue
+    if (typeof raw === 'number' && MONEY_KEYS.includes(key))
+      value = formatMoney(raw, typeof p.currency === 'string' && /^[A-Z]{3}$/.test(p.currency) ? p.currency : 'TRY')
+    else if (typeof raw === 'number') value = formatNumber(raw)
     else if (typeof raw === 'boolean') value = raw ? tx('Evet') : tx('Hayır')
     else if (typeof raw === 'string')
       value =
@@ -83,16 +91,25 @@ export function WorkflowDetailPage() {
   const queryClient = useQueryClient()
 
   const workflow = useWorkflow(workflowId)
-  const employees = useEmployees({ enabled: can('employee:viewAll') })
+  // Ad çözümlemesi herkesin erişebildiği dizinden (tam liste çalışan rolüne 403 döner;
+  // onaycı adı kimlik parçası olarak görünüyordu).
+  const directory = useDirectory()
+  const isLeave = workflow.data?.type === 'LeaveRequest'
+  const leaveBalance = useQuery({
+    queryKey: ['workflows', workflowId, 'leave-balance'],
+    queryFn: ({ signal }) => workflowApi.leaveBalance(workflowId!, signal),
+    enabled: Boolean(workflowId) && isLeave,
+    retry: false,
+  })
 
   const [decision, setDecision] = useState<{ step: ApprovalStep; approve: boolean } | null>(null)
   const [delegateStep, setDelegateStep] = useState<ApprovalStep | null>(null)
 
   const employeeNames = useMemo(() => {
     const map = new Map<string, string>()
-    for (const e of employees.data ?? []) map.set(e.id, fullName(e))
+    for (const e of directory.data ?? []) map.set(e.id, e.fullName)
     return map
-  }, [employees.data])
+  }, [directory.data])
 
   const nameOf = (id: string | null | undefined) =>
     (id && employeeNames.get(id)) || (id ? `${id.slice(0, 8)}…` : '—')
@@ -175,7 +192,11 @@ export function WorkflowDetailPage() {
   // Gerekçe onaycıya ve İK'ya gösterilir; akış tanımında gizlenmişse sunucu onaycıya döndürmez.
   const payload = parsePayload(data.payload)
   const reason = typeof payload?.reason === 'string' && payload.reason.trim() ? payload.reason.trim() : null
-  const extraRows = hr && payload ? payloadRows(payload, ['reason']) : []
+  // Talep içeriği (tutar, gün, tarih...) onaycıya da gösterilir: bilgi olmadan karar verilmesin.
+  // Akış tanımında gizlenen alanları sunucu onaycıya zaten döndürmez.
+  const detailRows = payload ? payloadRows(payload, ['reason']) : []
+  const expenseClaimId = data.type === 'ExpenseClaim' && typeof payload?.expenseClaimId === 'string' ? payload.expenseClaimId : null
+  const bal = leaveBalance.data
 
   return (
     <div className="space-y-5">
@@ -255,6 +276,25 @@ export function WorkflowDetailPage() {
                     {formatDateTime(data.createdAt)}
                   </dd>
                 </div>
+                {detailRows.map((r) => (
+                  <div key={r.key} className="flex items-baseline justify-between gap-4 py-2.5">
+                    <dt className="text-[12px] text-muted-foreground">{r.label}</dt>
+                    <dd className="tabular text-right text-[13px] break-words">{r.value}</dd>
+                  </div>
+                ))}
+                {bal?.available && (
+                  <div className="flex items-baseline justify-between gap-4 py-2.5">
+                    <dt className="text-[12px] text-muted-foreground">
+                      {tx('Kalan bakiye ({0})', [bal.year ?? ''])}
+                    </dt>
+                    <dd className="tabular text-right text-[13px]">
+                      <span className="font-semibold">{tx('{0} gün', [formatNumber(bal.remainingDays)])}</span>
+                      <span className="block text-[11.5px] text-muted-foreground">
+                        {tx('Hak {0} · kullanılan {1} · bekleyen {2}', [formatNumber(bal.entitledDays), formatNumber(bal.usedDays), formatNumber(bal.pendingDays)])}
+                      </span>
+                    </dd>
+                  </div>
+                )}
                 <div className={cn('flex items-baseline justify-between gap-4', reason ? 'py-2.5' : 'pt-2.5')}>
                   <dt className="text-[12px] text-muted-foreground">{tx('SLA hedefi')}</dt>
                   <dd
@@ -274,6 +314,17 @@ export function WorkflowDetailPage() {
                 )}
               </dl>
 
+              {expenseClaimId && can('expense:manage') && (
+                <div className="mt-4 border-t border-border pt-3">
+                  <Button variant="outline" size="sm" asChild>
+                    <Link to={`/panel/masraf/${expenseClaimId}`}>
+                      <ExternalLink className="size-4" />
+                      {tx('Masraf beyanını ve kalemleri aç')}
+                    </Link>
+                  </Button>
+                </div>
+              )}
+
               {data.slaDueAt && isOpen && (
                 <div className="mt-4 border-t border-border pt-3">
                   <StatusBadge tone={late ? 'danger' : 'neutral'}>
@@ -284,22 +335,6 @@ export function WorkflowDetailPage() {
             </PanelBody>
           </Panel>
 
-          {/* Ham yük (JSON) çalışana gösterilmez; İK okunur liste görür, kimlikler gizlenir. */}
-          {extraRows.length > 0 && (
-            <Panel>
-              <PanelHead title={tx('Ek veri')} />
-              <PanelBody>
-                <dl className="divide-y divide-border">
-                  {extraRows.map((r) => (
-                    <div key={r.key} className="flex items-baseline justify-between gap-4 py-2 first:pt-0 last:pb-0">
-                      <dt className="text-[12px] text-muted-foreground">{r.label}</dt>
-                      <dd className="tabular text-right text-[13px] break-words">{r.value}</dd>
-                    </div>
-                  ))}
-                </dl>
-              </PanelBody>
-            </Panel>
-          )}
         </div>
       </div>
 

@@ -77,7 +77,14 @@ export function SettingsPage() {
         <Panel>
           <PanelHead title={tx('Şirket')} note={tx('Bağlı olduğunuz kiracı')} />
           <PanelBody className="space-y-4">
-            {!tenantSlug ? (
+            {!tenantSlug && roles.includes('platform-admin') ? (
+              // Platform yöneticisi hiçbir kiracıya bağlı değildir; uyarı yanlış alarm olurdu (AppShell ile aynı kural).
+              <p className="text-[13px] leading-relaxed text-muted-foreground">
+                {tx('Platform yöneticisi olarak hiçbir şirkete bağlı değilsiniz. Şirketleri')}{' '}
+                <Link to="/panel/platform/kiracilar" className="font-medium text-primary underline-offset-4 hover:underline">{tx('Kiracılar')}</Link>{' '}
+                {tx('ekranından yönetirsiniz.')}
+              </p>
+            ) : !tenantSlug ? (
               <div
                 role="alert"
                 className="flex items-start gap-2.5 rounded-lg border border-[hsl(var(--warning))]/40 bg-[hsl(var(--warning))]/10 p-3.5"

@@ -141,6 +141,40 @@ public class WorkflowConfigController : ControllerBase
         return Ok(d is null ? new List<string>() : JsonSerializer.Deserialize<List<string>>(d.HiddenFieldsJson) ?? new());
     }
 
+    // ------------------------------------------------------------------ onay ayarları
+
+    public record SettingsInput(Guid? HrApproverEmployeeId);
+
+    /// <summary>
+    /// İK onaycısı: üst onaycısı bulunamayan talepler (departman başının kendi izni gibi) ve
+    /// süre aşımında iletilecek üst yönetici yoksa talepler bu kişiye gider.
+    /// </summary>
+    [HttpGet("settings")]
+    public async Task<IActionResult> GetSettings(CancellationToken ct)
+    {
+        if (!IsHr) return Forbid();
+        if (string.IsNullOrEmpty(_db.CurrentTenantSlug)) return Ok(new { hrApproverEmployeeId = (Guid?)null, updatedAt = (DateTimeOffset?)null });
+        var s = await _db.Settings.AsNoTracking().FirstOrDefaultAsync(ct);
+        return Ok(new { hrApproverEmployeeId = s?.HrApproverEmployeeId, updatedAt = s?.UpdatedAt });
+    }
+
+    [HttpPut("settings")]
+    public async Task<IActionResult> SaveSettings([FromBody] SettingsInput b, CancellationToken ct)
+    {
+        if (!IsHr) return Forbid();
+        var tenant = _db.CurrentTenantSlug;
+        if (string.IsNullOrEmpty(tenant)) return BadRequest(new { message = "Kiracı belirtilmedi" });
+        if (b.HrApproverEmployeeId is { } id
+            && !(await _routing.ActiveLoginEmployeesAsync(tenant, new[] { id }, ct)).Contains(id))
+            return BadRequest(new { message = "İK onaycısı HR360 giriş hesabı olan, aktif bir çalışan olmalı" });
+        var s = await _db.Settings.FirstOrDefaultAsync(ct);
+        if (s is null) { s = new WorkflowSettings(); _db.Settings.Add(s); }
+        s.HrApproverEmployeeId = b.HrApproverEmployeeId;
+        s.UpdatedAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        return Ok(new { hrApproverEmployeeId = s.HrApproverEmployeeId, updatedAt = s.UpdatedAt });
+    }
+
     // ------------------------------------------------------------------ vekâlet
 
     public record DelegationInput(Guid? FromEmployeeId, Guid ToEmployeeId, DateOnly StartDate, DateOnly EndDate, string? Reason);

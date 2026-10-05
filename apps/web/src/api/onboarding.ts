@@ -183,6 +183,17 @@ export const onboardingApi = {
   returnAsset: (id: string, input: ReturnAssetInput) =>
     apiFetch<AssetAssignment>(`${BASE}/assets/${id}/return`, { method: 'POST', body: input }),
 
+  /** Demirbaş bilgisini düzeltir; etiket kiracı içinde tekil (409). */
+  updateAsset: (id: string, input: CreateAssetInput) =>
+    apiFetch<Asset>(`${BASE}/assets/${id}`, { method: 'PUT', body: input }),
+
+  /** Elle durum: Boşta ↔ Bakımda / Hurda / Kayıp. Zimmetliyken 409. */
+  setAssetStatus: (id: string, status: Exclude<AssetStatus, 'Assigned'>, note?: string) =>
+    apiFetch<{ id: string; status: AssetStatus }>(`${BASE}/assets/${id}/status`, { method: 'PUT', body: { status, note } }),
+
+  /** Zimmet ya da bakım geçmişi olan demirbaş silinmez (409; hurdaya ayırın). */
+  deleteAsset: (id: string) => apiFetch<void>(`${BASE}/assets/${id}`, { method: 'DELETE' }),
+
   assetsByEmployee: (employeeId: string, signal?: AbortSignal) =>
     apiFetch<AssetAssignment[]>(`${BASE}/assets/by-employee/${employeeId}`, { signal }),
 }

@@ -36,7 +36,7 @@ export function ReviewsPage() {
   const manager = can('performance:manage')
   const me = useMyEmployeeId()
   const people = usePeople()
-  const { cycles, current } = useCurrentCycle()
+  const { cycles, current, isPending: cyclesPending } = useCurrentCycle()
   const [params, setParams] = useSearchParams()
   const cycleId = params.get('donem') ?? current?.id ?? ''
   const cycle = cycles.find((c) => c.id === cycleId)
@@ -141,7 +141,7 @@ export function ReviewsPage() {
         <Panel>
           <ErrorState title={tx('Değerlendirmeler alınamadı')} message={errorText(reviews.error)} onRetry={() => void reviews.refetch()} />
         </Panel>
-      ) : reviews.isPending || me.isPending ? (
+      ) : cyclesPending || me.isPending || (Boolean(cycleId) && reviews.isPending) ? (
         <Panel aria-busy="true">
           {[0, 1, 2, 3, 4].map((i) => (
             <div key={i} className="flex items-center gap-3 border-b border-border px-4 py-3.5 last:border-0">
@@ -150,6 +150,15 @@ export function ReviewsPage() {
               <Skeleton className="h-7 w-24" />
             </div>
           ))}
+        </Panel>
+      ) : !cycleId ? (
+        // Dönem yokken sorgu devre dışıdır; isPending true kalır — sonsuz iskelet yerine boş durum.
+        <Panel>
+          <EmptyState
+            icon={ClipboardList}
+            title={tx('Henüz açık bir performans dönemi yok')}
+            detail={manager ? tx('Değerlendirmeler bir döneme bağlıdır. Dönemler ekranından ilk dönemi oluşturun.') : tx('Değerlendirmeler bir döneme bağlıdır. İK bir performans dönemi açtığında burada görünür.')}
+          />
         </Panel>
       ) : rows.length === 0 ? (
         <Panel>

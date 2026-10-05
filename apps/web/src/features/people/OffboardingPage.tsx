@@ -13,6 +13,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge'
 import { EmptyState, ErrorState, InfoNote, RowsSkeleton } from '@/components/ui/States'
 import { engagementApi, offboardingReasonLabels, type ExitInterview, type OffboardingReason } from '@/api/engagement'
 import { useAuth } from '@/auth/useAuth'
+import { isHr } from '@/auth/roles'
 import { useEmployee } from '@/api/queries'
 import { formatDate, formatMoney } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -85,13 +86,17 @@ function CaseModal({ id, onClose }: { id: string; onClose: () => void }) {
   const complete = useAction(() => engagementApi.completeOffboarding(id, true), { success: (r) => r.warning ?? tx('Süreç tamamlandı; çalışan “Ayrıldı” durumuna alındı, giriş hesabı kapatıldı'), invalidate: [['offboarding']], onDone: onClose })
   const c = q.data
   const showMoney = roles.some((r) => ['hr-admin', 'tenant-admin', 'platform-admin', 'ext-compensation-view'].includes(r))
+  // Süreci yönetmek (tamamlama, çıkış görüşmesi, İK adımları) yalnızca İK; yönetici ekibinin
+  // sürecini görür ve yalnızca sorumlusu "Yönetici" olan adımları işaretler.
+  const hr = isHr(roles, 'ext-engagement-manage')
+  const canTick = (owner: string, key: string) => key !== 'exit-interview' && (hr || owner === 'Yönetici')
   const Score = ({ k, label }: { k: keyof ExitInterview; label: string }) => (
     <div className="flex items-center justify-between gap-2 text-[13px]"><span>{label}</span><div className="flex gap-1">{[1, 2, 3, 4, 5].map((n) => (
       <button key={n} type="button" onClick={() => setIv({ ...iv, [k]: n })} className={cn('size-7 cursor-pointer rounded-md border text-[12px]', iv[k] === n ? 'border-primary bg-primary/15' : 'border-border')}>{n}</button>))}</div></div>
   )
   return (
     <Modal open onClose={onClose} size="xl" title={c ? tx('{0} — ayrılış', [c.employeeName]) : tx('Ayrılış')} note={c ? tx('{0} · son iş günü {1}', [offboardingReasonLabels[c.reason], formatDate(c.lastWorkingDay)]) : undefined}
-      footer={c?.status === 'Open' && <><Button variant="outline" onClick={onClose}>{tx('Kapat')}</Button><Button disabled={c.checklist.some((i) => !i.done) || (c.assetChecks ?? []).some((a) => a.resolution === 'Open') || complete.isPending} onClick={() => complete.mutate(undefined)}><LogOut className="size-4" />{' '}{tx('Süreci tamamla')}</Button></>}>
+      footer={c?.status === 'Open' && hr && <><Button variant="outline" onClick={onClose}>{tx('Kapat')}</Button><Button disabled={c.checklist.some((i) => !i.done) || (c.assetChecks ?? []).some((a) => a.resolution === 'Open') || complete.isPending} onClick={() => complete.mutate(undefined)}><LogOut className="size-4" />{' '}{tx('Süreci tamamla')}</Button></>}>
       {!c ? <RowsSkeleton /> : (
         <div className="grid gap-6 lg:grid-cols-2">
           <div>
@@ -100,9 +105,9 @@ function CaseModal({ id, onClose }: { id: string; onClose: () => void }) {
               {c.checklist.map((it) => (
                 <li key={it.key} className="flex items-start gap-2.5 rounded-xl border border-border p-2.5">
                   {/* Kutu metne bağlı: erişilebilir adı başlıktır ve metne tıklamak da işaretler. */}
-                  <Checkbox id={`ofb-${c.id}-${it.key}`} aria-describedby={`ofb-${c.id}-${it.key}-d`} checked={it.done} disabled={c.status !== 'Open' || it.key === 'exit-interview'} onCheckedChange={(v) => toggle.mutate({ key: it.key, done: v === true })} className="mt-0.5" />
+                  <Checkbox id={`ofb-${c.id}-${it.key}`} aria-describedby={`ofb-${c.id}-${it.key}-d`} checked={it.done} disabled={c.status !== 'Open' || !canTick(it.owner, it.key)} onCheckedChange={(v) => toggle.mutate({ key: it.key, done: v === true })} className="mt-0.5" />
                   <div className="min-w-0 flex-1">
-                    <label htmlFor={`ofb-${c.id}-${it.key}`} className={cn('block text-[13px]', c.status === 'Open' && it.key !== 'exit-interview' && 'cursor-pointer', it.done && 'text-muted-foreground line-through')}>{it.title}</label>
+                    <label htmlFor={`ofb-${c.id}-${it.key}`} className={cn('block text-[13px]', c.status === 'Open' && canTick(it.owner, it.key) && 'cursor-pointer', it.done && 'text-muted-foreground line-through')}>{it.title}</label>
                     <p id={`ofb-${c.id}-${it.key}-d`} className="text-[11.5px] text-muted-foreground">{it.owner}{it.doneBy ? ` · ${it.doneBy}, ${formatDate(it.doneAt)}` : ''}{it.hint ? ` · ${it.hint}` : ''}</p>
                   </div>
                 </li>
@@ -121,7 +126,7 @@ function CaseModal({ id, onClose }: { id: string; onClose: () => void }) {
                   <p>{tx('Tavsiye eder mi: {0} · Yeniden işe alınabilir: {1}', [c.exitInterview.wouldRecommend == null ? '—' : c.exitInterview.wouldRecommend ? tx('Evet') : tx('Hayır'), c.rehireEligible == null ? '—' : c.rehireEligible ? tx('Evet') : tx('Hayır')])}</p>
                   {c.exitInterview.comments && <p className="text-muted-foreground">“{c.exitInterview.comments}”</p>}
                 </div>
-              ) : c.status === 'Open' ? (
+              ) : c.status === 'Open' && hr ? (
                 <div className="space-y-3">
                   <SelectField label={tx('Ana ayrılış nedeni')} value={iv.primaryReason ?? ''} onChange={(v) => setIv({ ...iv, primaryReason: v })} options={[tx('Kariyer fırsatı'), tx('Ücret'), tx('Yönetici ilişkisi'), tx('İş yükü'), tx('Taşınma'), tx('Kişisel'), tx('Diğer')].map((x) => ({ value: x, label: x }))} />
                   <Score k="managerScore" label={tx('Yöneticiyle ilişki')} /><Score k="cultureScore" label={tx('Şirket kültürü')} /><Score k="growthScore" label={tx('Gelişim fırsatı')} /><Score k="compensationScore" label={tx('Ücret ve yan haklar')} />
@@ -132,7 +137,7 @@ function CaseModal({ id, onClose }: { id: string; onClose: () => void }) {
                   <TextAreaField label={tx('Yorumlar')} rows={2} value={iv.comments ?? ''} onChange={(e) => setIv({ ...iv, comments: e.target.value })} />
                   <Button size="sm" onClick={() => saveIv.mutate(undefined)} disabled={!iv.primaryReason}>{tx('Görüşmeyi kaydet')}</Button>
                 </div>
-              ) : <p className="text-[13px] text-muted-foreground">{tx('Görüşme yapılmadı.')}</p>}
+              ) : <p className="text-[13px] text-muted-foreground">{c.status === 'Open' ? tx('Çıkış görüşmesini İK yapar.') : tx('Görüşme yapılmadı.')}</p>}
             </div>
             {showMoney && (
               <div>
@@ -150,13 +155,16 @@ function CaseModal({ id, onClose }: { id: string; onClose: () => void }) {
 export function OffboardingPage() {
   // Zimmet iadesi başka ekrandan yapılır; sayfaya dönüşte liste her zaman tazelenir.
   const q = useQuery({ queryKey: ['offboarding'], queryFn: ({ signal }) => engagementApi.offboardings(signal), refetchOnMount: 'always' })
+  const { roles } = useAuth()
+  // Süreç başlatma yalnızca İK; yönetici ekibindeki süreçleri izler.
+  const hr = isHr(roles, 'ext-engagement-manage')
   const [starting, setStarting] = useState(false)
   const [open, setOpen] = useState<string | null>(null)
   return (
     <PlanGate feature="offboarding">
-      <PageHeader title={tx('İşten ayrılış')} description={tx('Zimmet iadesi, erişim kapatma, SGK bildirimi, çıkış görüşmesi ve hak ediş tahmini — eksiksiz ve izlenebilir bir veda.')} actions={<Button onClick={() => setStarting(true)}><Plus className="size-4" />{' '}{tx('Süreç başlat')}</Button>} />
+      <PageHeader title={tx('İşten ayrılış')} description={tx('Zimmet iadesi, erişim kapatma, SGK bildirimi, çıkış görüşmesi ve hak ediş tahmini — eksiksiz ve izlenebilir bir veda.')} actions={hr ? <Button onClick={() => setStarting(true)}><Plus className="size-4" />{' '}{tx('Süreç başlat')}</Button> : undefined} />
       {q.isPending ? <RowsSkeleton /> : q.isError ? <ErrorState message={(q.error as Error).message} onRetry={() => q.refetch()} /> : q.data.length === 0 ? (
-        <EmptyState icon={LogOut} title={tx('Açık ayrılış süreci yok')} detail={tx('Bir çalışan ayrılacağında süreci başlatın; kontrol listesi otomatik oluşur.')} action={<Button onClick={() => setStarting(true)}>{tx('Süreç başlat')}</Button>} />
+        <EmptyState icon={LogOut} title={tx('Açık ayrılış süreci yok')} detail={hr ? tx('Bir çalışan ayrılacağında süreci başlatın; kontrol listesi otomatik oluşur.') : tx('Ekibinizden biri için İK ayrılış süreci başlattığında burada görünür.')} action={hr ? <Button onClick={() => setStarting(true)}>{tx('Süreç başlat')}</Button> : undefined} />
       ) : (
         <Panel>
           <PanelHead title={tx('Süreçler')} />
@@ -180,7 +188,7 @@ export function OffboardingPage() {
           </PanelBody>
         </Panel>
       )}
-      {starting && <StartModal onClose={() => setStarting(false)} />}
+      {starting && hr && <StartModal onClose={() => setStarting(false)} />}
       {open && <CaseModal id={open} onClose={() => setOpen(null)} />}
     </PlanGate>
   )

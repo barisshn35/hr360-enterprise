@@ -26,6 +26,7 @@ import { DevicePanel } from './DevicePanel'
 import { AccessibilityPanel, NotificationPrefsPanel } from './NotificationPrefs'
 import { ExtraInfoPanel } from '@/features/governance/CustomFields'
 import { tx } from '@/lib/i18n'
+import { useConfirm } from '@/components/ui/Confirm'
 
 type TabKey = 'bilgiler' | 'bildirimler' | 'gizlilik' | 'takvim' | 'guvenlik' | 'erisilebilirlik'
 
@@ -131,7 +132,14 @@ function PrivacyTab({ employeeId }: { employeeId: string }) {
   const record = useAction(({ type, granted }: { type: string; granted: boolean }) => governanceApi.recordConsent(type, granted), { success: tx('Tercihiniz kaydedildi'), invalidate: [['privacy']] })
   const [kind, setKind] = useState<DataRequestKind>('Access')
   const [details, setDetails] = useState('')
-  const create = useAction(() => governanceApi.createDataRequest(kind, details), { success: tx('Başvurunuz alındı; en geç 30 gün içinde yanıtlanır.'), invalidate: [['privacy']], onDone: () => setDetails('') })
+  const create = useAction(() => governanceApi.createDataRequest(kind, details.trim()), { success: tx('Başvurunuz alındı; en geç 30 gün içinde yanıtlanır.'), invalidate: [['privacy']], onDone: () => setDetails('') })
+  const withdraw = useAction((id: string) => governanceApi.withdrawDataRequest(id), { success: tx('Başvurunuz geri çekildi'), invalidate: [['privacy']] })
+  const confirm = useConfirm()
+  const askWithdraw = async (id: string, label: string) => {
+    if (await confirm({ title: tx('Başvuru geri çekilsin mi?'), note: tx('{0} başvurunuz geri çekilir ve İK tarafından işlenmez. Gerekirse yeniden başvurabilirsiniz.', [label]), action: tx('Geri çek') })) withdraw.mutate(id)
+  }
+  // Sunucuyla aynı kural: İK'nın başvuruyu karşılayabilmesi için en az 10 karakter açıklama.
+  const detailsShort = details.trim().length < 10
   const toast = useToast()
   return (
     <div className="grid gap-5 lg:grid-cols-2">
@@ -173,18 +181,27 @@ function PrivacyTab({ employeeId }: { employeeId: string }) {
           <PanelHead title={tx('İlgili kişi başvurusu')} note={tx('KVKK m.11 haklarınız için başvuru yapın.')} />
           <PanelBody className="space-y-3">
             <SelectField label={tx('Başvuru türü')} value={kind} onChange={(v) => setKind(v as DataRequestKind)} options={(Object.keys(dataRequestLabels) as DataRequestKind[]).map((k) => ({ value: k, label: dataRequestLabels[k] }))} />
-            <TextAreaField label={tx('Açıklama')} rows={3} value={details} onChange={(e) => setDetails(e.target.value)} />
-            <Button onClick={() => create.mutate(undefined)} disabled={create.isPending}>{tx('Başvur')}</Button>
+            <TextAreaField label={tx('Açıklama')} rows={3} value={details} maxLength={4000}
+              hint={tx('Talebinizi en az 10 karakterle açıklayın (ör. hangi verinin düzeltilmesini istediğiniz).')}
+              error={details.length > 0 && detailsShort ? tx('Başvurunuzu en az 10 karakterle açıklayın.') : undefined}
+              onChange={(e) => setDetails(e.target.value)} />
+            <Button onClick={() => create.mutate(undefined)} disabled={create.isPending || detailsShort}>{tx('Başvur')}</Button>
             {(requests.data ?? []).length > 0 && (
               <ul className="mt-2 divide-y divide-border rounded-xl border border-border">
                 {requests.data!.map((r) => (
                   <li key={r.id} className="px-3.5 py-2.5 text-[13px]">
-                    <div className="flex items-center justify-between">
-                      <span>{dataRequestLabels[r.kind]}</span>
-                      <StatusBadge tone={r.status === 'Completed' ? 'success' : r.status === 'Rejected' ? 'danger' : r.overdue ? 'danger' : 'warning'}>
-                        {r.status === 'Completed' ? tx('Yanıtlandı') : r.status === 'Rejected' ? tx('Reddedildi') : tx('{0} gün içinde', [r.daysLeft])}
-                      </StatusBadge>
+                    <div className="flex items-center justify-between gap-2">
+                      <span>{dataRequestLabels[r.kind]} <span className="text-[11.5px] text-muted-foreground">· {formatDate(r.createdAt)}</span></span>
+                      <span className="flex items-center gap-2">
+                        {(r.status === 'Received' || r.status === 'InProgress') && (
+                          <Button size="sm" variant="ghost" className="h-7 px-2 text-[12px]" disabled={withdraw.isPending} onClick={() => void askWithdraw(r.id, dataRequestLabels[r.kind])}>{tx('Geri çek')}</Button>
+                        )}
+                        <StatusBadge tone={r.status === 'Completed' ? 'success' : r.status === 'Rejected' ? 'danger' : r.status === 'Withdrawn' ? 'neutral' : r.overdue ? 'danger' : 'warning'}>
+                          {r.status === 'Completed' ? tx('Yanıtlandı') : r.status === 'Rejected' ? tx('Reddedildi') : r.status === 'Withdrawn' ? tx('Geri çekildi') : tx('{0} gün içinde', [r.daysLeft])}
+                        </StatusBadge>
+                      </span>
                     </div>
+                    {r.details && <p className="mt-1 text-[12.5px] whitespace-pre-line text-muted-foreground">{tx('Açıklamanız: {0}', [r.details])}</p>}
                     {r.response && <p className="mt-1 text-[12.5px] text-muted-foreground">{tx('Yanıt: {0}', [r.response])}</p>}
                   </li>
                 ))}

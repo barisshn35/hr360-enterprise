@@ -16,8 +16,10 @@ namespace LeaveService.Services;
 /// yapan kullanicinin KENDI JWT'si iletilerek yapilir (pass-through) -
 /// diger DirectoryClient'larla ayni desen.
 ///
-/// Departman basi bulunamazsa (atanmamis ya da calisan kendisi bas ise)
-/// onay akisi acilmaz - talep leave-service'te Submitted kalir ve mevcut
+/// Departman basi bulunamazsa (atanmamis ya da calisan kendisi bas ise) onayci
+/// listesi bos gonderilir; workflow-service ust bolum basini, o da yoksa kiracinin
+/// IK onaycisini atar (onceden akis hic acilmiyor, talep kimsenin kutusuna dusmeden
+/// askida kaliyordu). Orada da kimse yoksa talep Submitted kalir ve mevcut
 /// /resolve ucuyla (RequireManagerOrAbove) elle sonuclandirilabilir. Bu,
 /// cagiran akisi (izin talebi olusturma) hicbir zaman engellememesi
 /// gereken best-effort bir islem.
@@ -83,17 +85,21 @@ public class ApprovalWorkflowClient
 
             var employee = JsonSerializer.Deserialize<EmployeeDto>(
                 await empResp.Content.ReadAsStringAsync(ct), JsonOpts);
-            var activeDeptId = employee?.Assignments
+            if (employee is null) return null;
+            var activeDeptId = employee.Assignments
                 .FirstOrDefault(a => a.EffectiveTo is null)?.DepartmentId;
-            if (activeDeptId is null) return null;
+            // Bos liste = onayciyi workflow-service belirler (ust bolum basi / IK onaycisi).
+            var approvers = new List<Guid>();
+            if (activeDeptId is not null)
+            {
+                var deptResp = await _http.SendAsync(
+                    Build(HttpMethod.Get, _organizationServiceUrl, $"/api/departments/{activeDeptId}"), ct);
+                if (!deptResp.IsSuccessStatusCode) return null;
 
-            var deptResp = await _http.SendAsync(
-                Build(HttpMethod.Get, _organizationServiceUrl, $"/api/departments/{activeDeptId}"), ct);
-            if (!deptResp.IsSuccessStatusCode) return null;
-
-            var dept = JsonSerializer.Deserialize<DepartmentDto>(
-                await deptResp.Content.ReadAsStringAsync(ct), JsonOpts);
-            if (dept?.HeadEmployeeId is null || dept.HeadEmployeeId == employeeId) return null;
+                var dept = JsonSerializer.Deserialize<DepartmentDto>(
+                    await deptResp.Content.ReadAsStringAsync(ct), JsonOpts);
+                if (dept?.HeadEmployeeId is { } headId && headId != employeeId) approvers.Add(headId);
+            }
 
             var wfResp = await _http.SendAsync(
                 Build(HttpMethod.Post, _workflowServiceUrl, "/api/workflows", new CreateWorkflowBody(
@@ -101,7 +107,7 @@ public class ApprovalWorkflowClient
                     RequesterEmployeeId: employeeId,
                     Subject: subject,
                     Payload: payload,
-                    ApproverEmployeeIds: new List<Guid> { dept.HeadEmployeeId.Value },
+                    ApproverEmployeeIds: approvers,
                     SlaHours: null)), ct);
             if (!wfResp.IsSuccessStatusCode) return null;
 
@@ -133,13 +139,15 @@ public class ApprovalWorkflowClient
                 WHERE a."TenantSlug" = {0} AND a."EmployeeId" = {1} AND a."EffectiveTo" IS NULL
                 ORDER BY a."EffectiveFrom" DESC LIMIT 1
                 """, tenant, employeeId).FirstOrDefaultAsync(ct);
-            if (head is null || head == employeeId) return null;
+            // Bas yoksa (ya da calisan kendisi bas ise) bos liste: workflow-service ust bolum
+            // basini, o da yoksa IK onaycisini atar.
+            var approvers = head is { } h && h != employeeId ? new[] { h } : Array.Empty<Guid>();
             using var req = new HttpRequestMessage(HttpMethod.Post, $"{_workflowServiceUrl}/api/internal/workflows")
             {
                 Content = new StringContent(JsonSerializer.Serialize(new
                 {
                     tenantSlug = tenant, type = 0, requesterEmployeeId = employeeId, subject, payload,
-                    approverEmployeeIds = new[] { head.Value }, slaHours = (int?)null,
+                    approverEmployeeIds = approvers, slaHours = (int?)null,
                 }), Encoding.UTF8, "application/json"),
             };
             req.Headers.Add("X-Internal-Token", token);

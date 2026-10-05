@@ -14,6 +14,7 @@ import { formatDateTime } from '@/lib/format'
 import { errMsg, useAction } from '@/features/shared/kit'
 import { tx } from '@/lib/i18n'
 import { useConfirm } from '@/components/ui/Confirm'
+import { useAuth } from '@/auth/useAuth'
 
 const TYPE_LABELS: Record<CustomFieldType, string> = {
   text: tx('Metin'), number: tx('Sayı'), date: tx('Tarih'), select: tx('Seçim listesi'), boolean: tx('Evet / hayır'),
@@ -155,7 +156,10 @@ function display(v: CustomFieldValue) {
 
 /** Profil / çalışan sayfası "Ek bilgiler": görünürlük düzeyine göre süzülmüş alanlar. */
 export function ExtraInfoPanel({ employeeId }: { employeeId?: string }) {
+  // Özel alanlar şirkete aittir: kiracısız oturumda (platform yöneticisi) istek atılmaz (400 tenant_missing).
+  const { tenantSlug } = useAuth()
   const q = useQuery({
+    enabled: Boolean(tenantSlug),
     queryKey: ['custom-fields', 'values', employeeId ?? 'me'],
     queryFn: ({ signal }) => (employeeId ? platformGovApi.fieldValues(employeeId, signal) : platformGovApi.myFieldValues(signal)),
     retry: false,

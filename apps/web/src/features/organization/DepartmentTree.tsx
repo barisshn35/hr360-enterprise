@@ -8,13 +8,14 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { cn } from '@/lib/utils'
 import type { Department } from '@/api/types'
 import { tx } from '@/lib/i18n'
@@ -281,7 +282,7 @@ export function DepartmentTree({
         ))}
       </ul>
 
-      <Dialog
+      <AlertDialog
         open={pendingDelete !== null}
         onOpenChange={(open) => {
           if (!open) {
@@ -290,28 +291,28 @@ export function DepartmentTree({
           }
         }}
       >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{tx('Departmanı sil')}</DialogTitle>
-            <DialogDescription>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{tx('Departmanı sil')}</AlertDialogTitle>
+            <AlertDialogDescription>
               <strong>{pendingDelete?.name}</strong>{' '}{tx('departmanını silmek üzeresiniz. Departmana bağlı pasif ekipler ve ekip üyelik geçmişleri de silinir; geçmiş görev atamaları kayıtlarda kalır. Bu işlem geri alınamaz.')}
-            </DialogDescription>
-          </DialogHeader>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
 
           {deleteError && (
-            <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-[13px] text-destructive">
+            <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-[13px] text-destructive">
               {deleteError}
             </p>
           )}
 
-          <DialogFooter>
-            <button
-              type="button"
-              onClick={() => setPendingDelete(null)}
+          <AlertDialogFooter>
+            {/* role="alertdialog": odak "Vazgeç"te başlar. "Sil" kendisi kapatmaz (AlertDialogAction
+                değil): 409 iletisi pencerede kalsın diye kapanmayı confirmDelete yönetir. */}
+            <AlertDialogCancel
               className="cursor-pointer rounded-md border border-border px-3.5 py-2 text-[13px] font-medium transition-colors hover:bg-muted"
             >
               {tx('Vazgeç')}
-            </button>
+            </AlertDialogCancel>
             <button
               type="button"
               onClick={confirmDelete}
@@ -320,9 +321,9 @@ export function DepartmentTree({
             >
               {deleting ? tx('Siliniyor…') : tx('Evet, sil')}
             </button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

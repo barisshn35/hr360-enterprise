@@ -47,9 +47,11 @@ public static class NotificationTexts
         var why = escalated
             ? (en ? " It was forwarded to you because the decision deadline passed." : " Karar süresi aşıldığı için size iletildi.")
             : delegated ? (en ? " You are deciding as a delegate." : " Vekâleten karar vereceksiniz.") : "";
+        // Kayıt hem uygulama içi bildirim listesinde hem e-postada görünür; "aşağıdaki düğme" cümlesi yalnızca
+        // e-postaya aittir ve gönderimde eklenir (EmailActionHint). Burada kanal bağımsız bir yönlendirme kalır.
         var link = hasLink
-            ? (en ? " You can approve or reject with the button below (single-use link, valid for 72 hours) or in HR360."
-                  : " Aşağıdaki düğmeyle (tek kullanımlık, 72 saat geçerli) ya da HR360'ta onaylayabilir veya reddedebilirsiniz.")
+            ? (en ? " You can approve or reject it in HR360 under Approvals."
+                  : " HR360'ta Onay kutusundan onaylayabilir veya reddedebilirsiniz.")
             : "";
         return en
             ? ("A request is awaiting your approval",
@@ -57,6 +59,18 @@ public static class NotificationTexts
             : ("Onayınızı bekleyen bir talep var",
                $"Merhaba {approverFirst}, {who} tarafından açılan bir {type} talebi onayınızı bekliyor.{why}" + (sla is null ? "" : $" Son karar tarihi: {Dt(sla.Value, lang)}.") + link);
     }
+
+    /// <summary>
+    /// Yalnızca e-posta gövdesine eklenen düğme açıklaması (karar bağlantısı olan şablonlar için).
+    /// Uygulama içi bildirimde "aşağıdaki düğme" olmadığından kayıtlı gövdeye yazılmaz.
+    /// </summary>
+    public static string? EmailActionHint(string? templateCode, string? lang) => templateCode switch
+    {
+        "workflow.submitted" => lang == "en"
+            ? "You can also decide with the button below (single-use link, valid for 72 hours)."
+            : "Aşağıdaki düğmeyle de (tek kullanımlık, 72 saat geçerli) karar verebilirsiniz.",
+        _ => null,
+    };
 
     public static string TypeLabel(string? type, bool en) => en
         ? type switch { "LeaveRequest" => "leave", "ExpenseClaim" => "expense", "PositionChange" => "position change", "AssetRequest" => "asset",

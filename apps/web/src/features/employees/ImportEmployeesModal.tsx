@@ -152,9 +152,12 @@ export function ImportEmployeesModal({
     onClose()
   }
 
-  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+  function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
-    if (!file) return
+    if (file) void readFile(file)
+  }
+
+  async function readFile(file: File) {
     setFileName(file.name)
     setResults(null)
     setParsing(true)
@@ -266,9 +269,15 @@ export function ImportEmployeesModal({
           <label
             htmlFor="employee-import-file"
             className="border-border flex cursor-pointer flex-col items-center gap-2 rounded-lg border border-dashed px-6 py-10 text-center hover:bg-white/5"
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault()
+              const file = e.dataTransfer.files?.[0]
+              if (file) void readFile(file)
+            }}
           >
             <Upload className="text-muted-foreground size-6" />
-            <span className="text-sm font-medium">{tx('.xlsx dosyasını seçin')}</span>
+            <span className="text-sm font-medium">{tx('Excel (.xlsx) ya da CSV (.csv) dosyası seçin')}</span>
             <span className="text-muted-foreground text-xs">
               {tx('veya sürükleyip bırakın — ilk satır başlık olmalı')}
             </span>

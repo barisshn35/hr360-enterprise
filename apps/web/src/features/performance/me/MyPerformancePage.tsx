@@ -39,7 +39,9 @@ import { usePeople } from '../hooks'
 import { tx } from '@/lib/i18n'
 
 export function MyPerformancePage() {
-  const { user } = useAuth()
+  const { user, can } = useAuth()
+  // Geri bildirim yazmak yöneticiye ve üstüne açık; çalışan yalnızca aldıklarını görür.
+  const canWriteFeedback = can('performance:manage')
   const toast = useToast()
   const people = usePeople()
   const [period, setPeriod] = useState<AnalyticsPeriod>('quarter')
@@ -107,9 +109,9 @@ export function MyPerformancePage() {
                 </Link>
               </Button>
               <Button asChild size="sm" variant="ghost">
-                <Link to="/panel/performans/geri-bildirim">
+                <Link to={canWriteFeedback ? '/panel/performans/geri-bildirim?yaz=1' : '/panel/performans/geri-bildirim'}>
                   <MessageSquarePlus aria-hidden />
-                  {tx('Geri bildirim yaz')}
+                  {canWriteFeedback ? tx('Geri bildirim yaz') : tx('Geri bildirimlerim')}
                 </Link>
               </Button>
             </div>

@@ -64,7 +64,7 @@ function NewCourseModal({ open, onClose, course }: {
     setTitle(course.title)
     setDescription(course.description ?? '')
     setProvider(course.provider ?? '')
-    setDuration(String(course.durationHours))
+    setDuration(String(course.durationHours).replace('.', ','))
     setCategory(course.category)
     setMandatory(course.isMandatory)
     setError(undefined)
@@ -100,7 +100,9 @@ function NewCourseModal({ open, onClose, course }: {
     e.preventDefault()
     const hours = parseDecimal(durationHours)
     // Sunucu kuralıyla aynı: 0 < süre ≤ 1000 saat.
-    const dErr = hours === null || hours <= 0 || hours > 1000 ? tx('Süre 0’dan büyük ve en fazla 1000 saat olmalı.') : undefined
+    const dErr = hours === null && durationHours.trim()
+      ? tx('Geçerli bir sayı girin (ör. 1,5).')
+      : hours === null || hours <= 0 || hours > 1000 ? tx('Süre 0’dan büyük ve en fazla 1000 saat olmalı.') : undefined
     setDurationError(dErr)
     if (title.trim().length < 3) return setError(tx('Eğitim adı en az 3 karakter olmalı.'))
     setError(undefined)
@@ -169,9 +171,9 @@ function NewCourseModal({ open, onClose, course }: {
           <TextField
             id="course-duration"
             label={tx('Süre (saat)')}
-            type="number"
-            min={0.5}
-            step={0.5}
+            // type=number tr-TR'de "1,5" virgülünü düşürüp 15 yapıyordu: metin + parseDecimal.
+            inputMode="decimal"
+            autoComplete="off"
             className="tabular"
             value={durationHours}
             error={durationError}

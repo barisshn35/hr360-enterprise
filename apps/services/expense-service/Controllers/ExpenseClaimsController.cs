@@ -34,6 +34,46 @@ public class ExpenseClaimsController : ControllerBase
     private bool CanReadAll => IsHr || User.IsInRole("manager") || User.IsInRole("accounting")
         || User.IsInRole("ext-expense-markPaid") || User.IsInRole("ext-expense-manage");
 
+    /// <summary>Muhasebe/ödeme rolleri: gönderilmiş tüm beyanları görür (taslakları değil).</summary>
+    private bool IsFinance => User.IsInRole("accounting") || User.IsInRole("ext-expense-markPaid")
+        || User.IsInRole("ext-expense-manage");
+
+    /// <summary>
+    /// Okuma kapsamı. İK: hepsi. Muhasebe: gönderilmiş hepsi + kendi taslakları. Yönetici:
+    /// ekibi (başı olduğu departmanlarda bugün geçerli ataması olan aktif çalışanlar) ve
+    /// kendisi. Taslaklar (Draft) yalnızca sahibine ve İK'ya görünür — önceden yönetici
+    /// çalışanın gönderilmemiş taslaklarını da görüyordu.
+    /// </summary>
+    private sealed record ReadScope(Guid? Me, HashSet<Guid>? Employees);
+
+    private async Task<ReadScope?> ReadScopeAsync(CancellationToken ct)
+    {
+        if (IsHr) return null;
+        var me = await _approvals.FindMyEmployeeIdAsync(ct);
+        if (IsFinance) return new ReadScope(me, null);
+        var visible = new HashSet<Guid>();
+        if (me is not null)
+        {
+            visible.Add(me.Value);
+            if (User.IsInRole("manager"))
+                foreach (var id in await _db.Database.SqlQueryRaw<Guid>(
+                    """
+                    SELECT DISTINCT a."EmployeeId" AS "Value" FROM employee_assignments a
+                    JOIN organization_departments d ON d."Id" = a."DepartmentId"
+                    JOIN employee_employees e ON e."Id" = a."EmployeeId"
+                    WHERE a."TenantSlug" = {0} AND d."HeadEmployeeId" = {1} AND e."Status" <> 'Terminated'
+                      AND a."EffectiveFrom" <= current_date AND (a."EffectiveTo" IS NULL OR a."EffectiveTo" >= current_date)
+                    """, _db.CurrentTenantSlug ?? "", me.Value).ToListAsync(ct))
+                    visible.Add(id);
+        }
+        return new ReadScope(me, visible);
+    }
+
+    private static bool Visible(ReadScope? scope, ExpenseClaim c) =>
+        scope is null
+        || ((scope.Employees is null || scope.Employees.Contains(c.EmployeeId))
+            && (c.Status != ClaimStatus.Draft || c.EmployeeId == scope.Me));
+
     /// <summary>
     /// Masraf beyanlarini listeler.
     ///
@@ -58,6 +98,17 @@ public class ExpenseClaimsController : ControllerBase
         }
 
         var q = _db.Claims.Include(c => c.Items).AsQueryable();
+        if (CanReadAll && await ReadScopeAsync(ct) is { } scope)
+        {
+            if (scope.Employees is { } emps)
+            {
+                if (employeeId.HasValue && !emps.Contains(employeeId.Value)) return Forbid();
+                var ids = emps.ToList();
+                q = q.Where(c => ids.Contains(c.EmployeeId));
+            }
+            var mine = scope.Me;
+            q = q.Where(c => c.Status != ClaimStatus.Draft || c.EmployeeId == mine);
+        }
         if (employeeId.HasValue) q = q.Where(c => c.EmployeeId == employeeId.Value);
         if (status.HasValue) q = q.Where(c => c.Status == status.Value);
         return Ok(await q.OrderByDescending(c => c.CreatedAt).ToListAsync());
@@ -75,6 +126,7 @@ public class ExpenseClaimsController : ControllerBase
             var me = await _approvals.FindMyEmployeeIdAsync(ct);
             if (me is null || me.Value != c.EmployeeId) return NotFound();
         }
+        else if (!Visible(await ReadScopeAsync(ct), c)) return NotFound();
         return Ok(c);
     }
 
@@ -209,16 +261,33 @@ public class ExpenseClaimsController : ControllerBase
 
         claim.Title = request.Title.Trim();
         claim.Currency = currency!;
-        _db.Items.RemoveRange(claim.Items);
-        claim.Items.Clear();
-        foreach (var item in items!)
-        {
-            item.ClaimId = claim.Id;
-            claim.Items.Add(item);
-        }
-        claim.TotalAmount = claim.Items.Sum(i => i.Amount);
+        ReplaceItems(_db, claim, items!);
         await _db.SaveChangesAsync(ct);
         return Ok(claim);
+    }
+
+    /// <summary>
+    /// Taslağın kalemlerini yenileriyle değiştirir (kaydetmez). Yeni kalemlerin Id'si
+    /// <c>Guid.NewGuid()</c> ile DOLU geldiği için yalnızca gezinme koleksiyonuna eklemek
+    /// EF'e "var olan kayıt" dedirtiyor, SaveChanges UPDATE çalıştırıp
+    /// DbUpdateConcurrencyException veriyordu (her düzenleme 500). Kalemler açıkça
+    /// Added olarak izlenir; eskiler silinir.
+    /// </summary>
+    [NonAction]
+    public static void ReplaceItems(ExpenseDbContext db, ExpenseClaim claim, List<ExpenseItem> items)
+    {
+        db.Items.RemoveRange(claim.Items);
+        claim.Items.Clear();
+        foreach (var item in items)
+        {
+            item.ClaimId = claim.Id;
+            item.TenantSlug = claim.TenantSlug;
+        }
+        // AddRange, ClaimId sayesinde kalemleri claim.Items'a da bağlar (ilişki düzeltmesi);
+        // ayrıca elle eklemek yanıtta her kalemi iki kez gösteriyordu.
+        db.Items.AddRange(items);
+        foreach (var item in items) if (!claim.Items.Contains(item)) claim.Items.Add(item);
+        claim.TotalAmount = items.Sum(i => i.Amount);
     }
 
     /// <summary>Taslak beyanı (kalemleriyle) siler. Yalnızca Draft; yalnızca sahibi ya da İK.</summary>

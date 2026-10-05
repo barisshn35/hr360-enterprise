@@ -12,6 +12,8 @@ import { StatusBadge } from '@/components/ui/StatusBadge'
 import { EmptyState, InfoNote, RowsSkeleton } from '@/components/ui/States'
 import { Tabs, useTabParam } from '@/components/ui/Tabs'
 import { useToast } from '@/components/ui/Toast'
+import { useConfirm } from '@/components/ui/Confirm'
+import { useDirectory } from '@/api/directory'
 import { dataRequestLabels, governanceApi, type DataRequest, type RetentionPolicy } from '@/api/governance'
 import { formatDate, formatDateTime } from '@/lib/format'
 import { PersonSelect, PlanGate, errMsg, useAction } from '@/features/shared/kit'
@@ -76,8 +78,8 @@ function Requests() {
                 <div className="min-w-0 flex-1"><p className="text-[13.5px] font-medium">{r.personName} — {dataRequestLabels[r.kind]}</p><p className="truncate text-[12px] text-muted-foreground">{r.details ?? '—'} · {formatDate(r.createdAt)} · {channelLabel[r.channel ?? 'Panel']}{r.contact ? ` · ${r.contact}` : ''}</p></div>
                 {r.identityVerified === false && <StatusBadge tone="warning">{tx('Kimlik doğrulanmadı')}</StatusBadge>}
                 {r.identityVerified === false && (r.status === 'Received' || r.status === 'InProgress') && <VerifyIdentityButton id={r.id} />}
-                <StatusBadge tone={r.status === 'Completed' ? 'success' : r.status === 'Rejected' ? 'neutral' : r.overdue ? 'danger' : 'warning'}>
-                  {r.status === 'Completed' ? tx('Yanıtlandı') : r.status === 'Rejected' ? tx('Reddedildi') : r.overdue ? tx('Süre aşıldı') : tx('{0} gün kaldı', [r.daysLeft])}
+                <StatusBadge tone={r.status === 'Completed' ? 'success' : r.status === 'Rejected' || r.status === 'Withdrawn' ? 'neutral' : r.overdue ? 'danger' : 'warning'}>
+                  {r.status === 'Completed' ? tx('Yanıtlandı') : r.status === 'Rejected' ? tx('Reddedildi') : r.status === 'Withdrawn' ? tx('Geri çekildi') : r.overdue ? tx('Süre aşıldı') : tx('{0} gün kaldı', [r.daysLeft])}
                 </StatusBadge>
                 {r.employeeId && <Button size="sm" variant="outline" onClick={() => governanceApi.exportPersonalData(r.employeeId!).catch((e) => toast.stop(errMsg(e)))}><Download className="size-4" />{' '}{tx('Veri dökümü')}</Button>}
                 {(r.status === 'Received' || r.status === 'InProgress') && <Button size="sm" onClick={() => { setSel(r); setStatus('Completed'); setResponse('') }}>{tx('Yanıtla')}</Button>}
@@ -109,13 +111,23 @@ function RetentionRow({ p }: { p: RetentionPolicy }) {
   const [enabled, setEnabled] = useState(p.isEnabled)
   const save = useAction(() => governanceApi.updateRetention(p.id, { retentionMonths: Number(months), action, isEnabled: enabled }), { success: tx('Politika kaydedildi'), invalidate: [['privacy', 'retention']] })
   const run = useAction(() => governanceApi.runRetention(p.id), { success: (r) => tx('{0} kayıt işlendi', [r.affected]), invalidate: [['privacy', 'retention']] })
+  const confirm = useConfirm()
+  // Kayıtlı politika çalışır (kaydedilmemiş form değerleri değil); işlem kalıcıdır.
+  const runNow = async () => {
+    const ok = await confirm({
+      title: tx('“{0}” politikası şimdi çalıştırılsın mı?', [p.label]),
+      note: tx('Saklama süresi ({0} ay) dolan kayıtlar {1}. Bu işlem geri alınamaz; kaydedilmemiş değişiklikler dikkate alınmaz.', [p.retentionMonths, p.action === 'Anonymize' ? tx('anonimleştirilir') : tx('kalıcı olarak silinir')]),
+      action: tx('Şimdi çalıştır'),
+    })
+    if (ok) run.mutate(undefined)
+  }
   return (
     <div className="grid items-end gap-3 rounded-2xl border border-border p-4 md:grid-cols-[1.6fr_110px_150px_auto_auto]">
       <div><p className="text-[13.5px] font-medium">{p.label}</p><p className="text-[11.5px] text-muted-foreground">{tx('Son çalışma: {0}', [p.lastRunAt ? tx('{0} · {1} kayıt', [formatDateTime(p.lastRunAt), p.lastAffected]) : tx('hiç')])}</p></div>
       <TextField label={tx('Süre (ay)')} type="number" min={1} max={240} value={months} onChange={(e) => setMonths(e.target.value)} />
       <SelectField label={tx('İşlem')} value={action} onChange={setAction} options={p.allowedActions.map((a) => ({ value: a, label: a === 'Anonymize' ? tx('Anonimleştir') : tx('Sil') }))} />
       <label className="flex h-9 items-center gap-2 text-[13px]"><Checkbox checked={enabled} onCheckedChange={(v) => setEnabled(v === true)} />{' '}{tx('Otomatik')}</label>
-      <div className="flex gap-2"><Button size="sm" onClick={() => save.mutate(undefined)}>{tx('Kaydet')}</Button><Button size="sm" variant="outline" onClick={() => run.mutate(undefined)} title={tx('Şimdi çalıştır')}><Play className="size-4" /></Button></div>
+      <div className="flex gap-2"><Button size="sm" onClick={() => save.mutate(undefined)}>{tx('Kaydet')}</Button><Button size="sm" variant="outline" disabled={run.isPending} onClick={runNow} title={tx('Şimdi çalıştır')} aria-label={tx('Şimdi çalıştır')}><Play className="size-4" /></Button></div>
     </div>
   )
 }
@@ -124,6 +136,17 @@ function Retention() {
   const q = useQuery({ queryKey: ['privacy', 'retention'], queryFn: ({ signal }) => governanceApi.retention(signal) })
   const [emp, setEmp] = useState('')
   const anon = useAction(() => governanceApi.anonymize(emp), { success: tx('Çalışan anonimleştirildi'), onDone: () => setEmp('') })
+  const dir = useDirectory()
+  const confirm = useConfirm()
+  const anonymize = async () => {
+    const name = dir.data?.find((d) => d.id === emp)?.fullName ?? tx('seçilen çalışan')
+    const ok = await confirm({
+      title: tx('{0} anonimleştirilsin mi?', [name]),
+      note: tx('Ad, e-posta, telefon, adres, IBAN ve TCKN kalıcı olarak silinir; yalnızca istatistik alanları kalır. Bu işlem geri alınamaz.'),
+      action: tx('Anonimleştir'),
+    })
+    if (ok) anon.mutate(undefined)
+  }
   return (
     <div className="space-y-5">
       <InfoNote>{tx('KVKK m.7 gereği işleme amacı ortadan kalkan veriler silinir veya anonimleştirilir. Otomatik politikalar günde bir kez çalışır; “▶” ile hemen çalıştırabilirsiniz. Bordro/SGK kayıtları için yasal saklama süreleri (ör. 10 yıl) gözetilmelidir.')}</InfoNote>
@@ -132,7 +155,7 @@ function Retention() {
         <PanelHead title={<span className="flex items-center gap-2"><EraserIcon className="size-4 text-destructive" />{' '}{tx('Tek çalışanı anonimleştir')}</span>} note={tx('Yalnızca işten ayrılmış çalışanlar. Geri alınamaz: ad, e-posta, telefon, adres, IBAN, TCKN silinir; istatistik alanları kalır.')} />
         <PanelBody className="flex flex-wrap items-end gap-3">
           <div className="w-72"><PersonSelect label={tx('Çalışan')} value={emp} onChange={setEmp} /></div>
-          <Button variant="destructive" disabled={!emp || anon.isPending} onClick={() => anon.mutate(undefined)}>{tx('Anonimleştir')}</Button>
+          <Button variant="destructive" disabled={!emp || anon.isPending} onClick={anonymize}>{tx('Anonimleştir')}</Button>
         </PanelBody>
       </Panel>
       <DestructionLogsPanel />

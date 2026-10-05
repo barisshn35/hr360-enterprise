@@ -99,6 +99,7 @@ public class InterviewsController : ControllerBase
         var (iv, me, _, err) = await LoadAsync(id, ct);
         if (err is not null) return err;
         if (me is null) return StatusCode(403, new { message = "Puan kartını yalnızca mülakatın görüşmecileri doldurabilir" });
+        if (iv!.Result == InterviewResult.Cancelled) return BadRequest(new { message = "İptal edilen mülakat için puan kartı doldurulamaz" });
         if (body.Notes is { Length: > 4000 }) return BadRequest(new { message = "Not en fazla 4000 karakter olabilir" });
         if (body.Recommendation is { Length: > 0 } r && !Recommendations.Contains(r)) return BadRequest(new { message = "Öneri geçersiz" });
         var criteria = await CriteriaAsync(iv!.Application!.JobPostingId, ct);

@@ -69,6 +69,10 @@ public class OneOnOnesController : AppController
 
     public record CreateInput(Guid EmployeeId, DateTime ScheduledAt, List<string>? Agenda);
 
+    /// <summary>Gelen zaman UTC kabul edilir (istemci ISO "Z" gönderir); 5 dakikalık pay tanınır.</summary>
+    public static bool IsPast(DateTime when, DateTime? now = null) =>
+        DateTime.SpecifyKind(when, DateTimeKind.Utc) < (now ?? DateTime.UtcNow).AddMinutes(-5);
+
     [HttpPost]
     [Authorize(Policy = "RequireManagerOrAbove")]
     public async Task<IActionResult> Create(CreateInput body, CancellationToken ct)
@@ -77,6 +81,8 @@ public class OneOnOnesController : AppController
         if (emp is null) return NotFound(new { message = "Çalışan bulunamadı." });
         var me = await MyPersonAsync(ct);
         if (me?.Id == emp.Id) return BadRequest(new { message = "Kendinizle 1:1 planlayamazsınız." });
+        // Planlı görüşme geçmişe kurulamaz (saat dilimi/saat farkı için 5 dk pay).
+        if (IsPast(body.ScheduledAt)) return BadRequest(new { message = "Geçmiş bir tarihe görüşme planlanamaz." });
 
         // Önceki görüşmenin bitmemiş aksiyonları yeni gündeme taşınır.
         var carry = await _db.OneOnOnes.AsNoTracking()
@@ -109,12 +115,26 @@ public class OneOnOnesController : AppController
         var isEmployee = o.EmployeeUserId == Me.UserId;
         if (!isManager && !isEmployee) return Forbid();
 
-        if (body.Agenda is not null) { o.Agenda = body.Agenda.Where(a => !string.IsNullOrWhiteSpace(a.Text)).ToList(); _db.Entry(o).Property(x => x.Agenda).IsModified = true; }
-        if (body.ActionItems is not null) { o.ActionItems = body.ActionItems.Where(a => !string.IsNullOrWhiteSpace(a.Text)).ToList(); _db.Entry(o).Property(x => x.ActionItems).IsModified = true; }
+        // Yazarı belirtilmemiş yeni maddeler ekleyen kişiye yazılır ("ekleyen" etiketi).
+        string? myName = null;
+        async Task<List<AgendaItem>> WithAuthorAsync(List<AgendaItem> items)
+        {
+            var list = items.Where(a => !string.IsNullOrWhiteSpace(a.Text)).ToList();
+            if (list.Any(a => string.IsNullOrWhiteSpace(a.By)))
+            {
+                myName ??= (await MyPersonAsync(ct))?.Name ?? Me.Name;
+                foreach (var a in list.Where(a => string.IsNullOrWhiteSpace(a.By))) a.By = myName;
+            }
+            return list;
+        }
+        if (body.Agenda is not null) { o.Agenda = await WithAuthorAsync(body.Agenda); _db.Entry(o).Property(x => x.Agenda).IsModified = true; }
+        if (body.ActionItems is not null) { o.ActionItems = await WithAuthorAsync(body.ActionItems); _db.Entry(o).Property(x => x.ActionItems).IsModified = true; }
         if (body.SharedNotes is not null) o.SharedNotes = body.SharedNotes;
         if (isManager)
         {
             if (body.PrivateNotes is not null) o.PrivateNotes = body.PrivateNotes;
+            if (body.ScheduledAt is not null && body.ScheduledAt.Value != o.ScheduledAt && (body.Status ?? o.Status) == "Planned" && IsPast(body.ScheduledAt.Value))
+                return BadRequest(new { message = "Geçmiş bir tarihe görüşme planlanamaz." });
             if (body.ScheduledAt is not null) o.ScheduledAt = DateTime.SpecifyKind(body.ScheduledAt.Value, DateTimeKind.Utc);
             if (body.Status is "Planned" or "Done" or "Cancelled") o.Status = body.Status;
         }

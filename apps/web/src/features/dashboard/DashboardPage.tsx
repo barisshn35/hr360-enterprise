@@ -40,12 +40,14 @@ import { flattenItems } from '@/components/layout/nav-config'
 import { useNavGroups } from '@/components/layout/use-nav'
 import { useAuth } from '@/auth/useAuth'
 import { PinnedReportsWidget } from '@/features/insights/SavedReports'
+import { PlatformDashboard } from './PlatformDashboard'
 import {
   useCompanies,
   useEmployees,
   useGatewayHealth,
   useJobPostings,
   useLeaveRequests,
+  useMyEmployeeId,
   useOverdueWorkflows,
   useWorkflows,
 } from '@/api/queries'
@@ -122,7 +124,17 @@ function Tile({ className, children, i = 0 }: { className?: string; children: Re
 
 type Kpi = StatCardProps & { key: string; to: string }
 
+/**
+ * Kiracısız platform yöneticisi şirket panosu yerine platform özetini görür (PlatformDashboard);
+ * şirkete bağlı herkes (platform yöneticisi bir kiracıyla girse bile) şirket panosunu görür.
+ */
 export function DashboardPage() {
+  const { roles, tenantSlug } = useAuth()
+  if (!tenantSlug && roles.includes('platform-admin')) return <PlatformDashboard />
+  return <TenantDashboard />
+}
+
+function TenantDashboard() {
   const { user, can } = useAuth()
   const reduced = useReducedMotion()
   const canSeeEmployees = can('employee:viewAll')
@@ -148,6 +160,22 @@ export function DashboardPage() {
   )
   const overdueCount = overdue.data?.length ?? 0
   const pendingCount = pending.data?.length ?? 0
+  // Rol metni: kişinin kendi açtığı talepler "bekleyen talebiniz", etkin adımında onaycı (ya da
+  // vekil) olduğu talepler "kararınızı bekliyor" diye ayrı sayılır.
+  const { employeeId: myEmployeeId } = useMyEmployeeId(canWorkflow)
+  const { mineCount, decideCount } = useMemo(() => {
+    let mine = 0
+    let decide = 0
+    for (const w of pending.data ?? []) {
+      if (myEmployeeId && w.requesterEmployeeId === myEmployeeId) {
+        mine++
+        continue
+      }
+      const active = [...(w.steps ?? [])].sort((a, b) => a.order - b.order).find((st) => st.decision === 'Pending')
+      if (myEmployeeId && active && (active.approverEmployeeId === myEmployeeId || active.delegatedToEmployeeId === myEmployeeId)) decide++
+    }
+    return { mineCount: mine, decideCount: decide }
+  }, [pending.data, myEmployeeId])
 
   const leaveThisMonth = useMemo(() => {
     const now = new Date()
@@ -265,8 +293,15 @@ export function DashboardPage() {
                   <>
                     <span className="font-medium text-[hsl(var(--warning))]">
                       {tx('{0} talebin süresi geçti.', [formatNumber(overdueCount)])}</span>{' '}{tx('Onay kutusunda sıradaki adımlar sizi bekliyor.', [])}</>
-                ) : pendingCount > 0 ? (
-                  tx('{0} talep kararınızı bekliyor; hepsi süresinde.', [formatNumber(pendingCount)])
+                ) : decideCount > 0 || mineCount > 0 ? (
+                  [
+                    decideCount > 0 && tx('{0} talep kararınızı bekliyor; hepsi süresinde.', [formatNumber(decideCount)]),
+                    mineCount > 0 && tx('Onay bekleyen {0} talebiniz var.', [formatNumber(mineCount)]),
+                  ]
+                    .filter(Boolean)
+                    .join(' ')
+                ) : pendingCount > 0 && canDecide ? (
+                  tx('Şirkette onay sürecinde {0} talep var.', [formatNumber(pendingCount)])
                 ) : (
                   tx('Bugün bekleyen bir işiniz yok. Şirketin nabzı aşağıda.')
                 )}
@@ -323,7 +358,7 @@ export function DashboardPage() {
               <Spotlight />
               <div className="flex items-start justify-between">
                 <div>
-                  <p className="text-[13px] font-medium text-muted-foreground">{tx('Bekleyen onay')}</p>
+                  <p className="text-[13px] font-medium text-muted-foreground">{canDecide ? tx('Bekleyen onay') : tx('Bekleyen talepleriniz')}</p>
                   <p className="tabular mt-2 text-[44px] leading-none font-semibold tracking-[-0.05em]">
                     <CountUp to={pendingCount} format={(v) => formatNumber(Math.round(v))} />
                   </p>

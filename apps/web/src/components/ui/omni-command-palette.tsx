@@ -96,23 +96,57 @@ const DEFAULT_DEBOUNCE = 120;
 const DEFAULT_MAX_RECENTS = 8;
 
 /**
- * Lightweight fuzzy scoring and highlighting
- * Scores substrings and subsequences; returns score and highlight positions.
+ * Arama için harf katlama: Türkçe küçültme + aksan katlama (İ/I → i, ş → s, ğ → g, ü → u, ö → o,
+ * ç → c, ı → i). `normalizeSearch` ile aynı kural, ancak karakter karakter çalışır ve UZUNLUĞU
+ * KORUR; böylece katlanmış metinde bulunan konumlar özgün etikette vurgulamak için kullanılabilir.
+ * ("İzin".toLowerCase() → "i̇zin" — birleşik nokta yüzünden "izin" eşleşmiyordu.)
  */
-function fuzzyScore(query: string, text: string, keywords: string[] = []) {
-  const q = query.trim().toLowerCase();
-  const t = text.toLowerCase();
+const FOLD_MAP: Record<string, string> = { ı: "i", ş: "s", ğ: "g", ü: "u", ö: "o", ç: "c" };
+export function foldSearch(value: string): string {
+  let out = "";
+  for (let i = 0; i < value.length; i++) {
+    const c = value[i];
+    let l = c.toLocaleLowerCase("tr");
+    if (l.length !== 1) l = c.toLowerCase();
+    if (l.length !== 1) l = c;
+    out += FOLD_MAP[l] ?? l;
+  }
+  return out;
+}
+
+/** Sorgu katlaması: uzunluk önemsiz; kenar boşlukları ve birleşik nokta (U+0307) atılır. */
+function foldQuery(value: string): string {
+  return foldSearch(value.replace(/\u0307/g, "")).trim();
+}
+
+const isWordStart = (text: string, pos: number) => pos === 0 || /[\s\-_/.(›·]/.test(text[pos - 1]);
+
+/**
+ * Lightweight fuzzy scoring and highlighting
+ * Sıralama: tam eşleşme > başta eşleşme > kelime başında alt dize > başka alt dize > alt dizi.
+ * Böylece "izin" yazınca "İzin" ilk sırada gelir; "Yetenek dizini" geride kalır.
+ */
+export function fuzzyScore(query: string, text: string, keywords: string[] = []) {
+  const q = foldQuery(query);
+  const t = foldSearch(text);
 
   if (!q) return { score: 0, indices: [] as number[] };
 
-  // Strong bonus for prefix and whole-word matches
   let score = 0;
   const indices: number[] = [];
 
-  // Simple substring highlight
-  const idx = t.indexOf(q);
+  // Alt dize: önce kelime başındaki ilk eşleşme aranır (ör. "alım" → "İşe alım"daki "alım").
+  let idx = -1;
+  for (let from = t.indexOf(q); from >= 0; from = t.indexOf(q, from + 1)) {
+    if (idx < 0) idx = from;
+    if (isWordStart(t, from)) { idx = from; break; }
+  }
   if (idx >= 0) {
-    score += 100 + Math.max(0, 20 - idx); // earlier is better
+    if (t.trim() === q) score += 1000;
+    else if (idx === 0) score += 400;
+    else if (isWordStart(t, idx)) score += 250;
+    else score += 100;
+    score += Math.max(0, 20 - idx); // earlier is better
     for (let i = 0; i < q.length; i++) indices.push(idx + i);
   } else {
     // Subsequence scoring
@@ -133,15 +167,15 @@ function fuzzyScore(query: string, text: string, keywords: string[] = []) {
         tPos = found + 1;
 
         // word-start bonus
-        if (found === 0 || /\s|-|_|\/|\./.test(text[found - 1])) score += 3;
+        if (isWordStart(t, found)) score += 3;
       }
     }
   }
 
   // Keyword bonus
   for (const k of keywords) {
-    const kk = k.toLowerCase();
-    if (kk.includes(q) || q.includes(kk)) score += 8;
+    const kk = foldQuery(k);
+    if (kk && (kk.includes(q) || q.includes(kk))) score += 8;
   }
 
   return { score, indices: Array.from(new Set(indices)).sort((a, b) => a - b) };

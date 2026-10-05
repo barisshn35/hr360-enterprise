@@ -35,19 +35,25 @@ public class PayrollController : ControllerBase
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
-    private async Task AuditAsync(string entityType, string entityId, string action, object changes)
+    // tenant: kaydın kiracısı. Platform yöneticisinin oturumunda kiracı olmadığından kayıt kendi kiracısına yazılır
+    // (aksi halde şirketin erişim kayıtlarında görünmüyordu).
+    private async Task AuditAsync(string entityType, string entityId, string action, object changes, string? tenant = null)
     {
         try
         {
             await _db.Database.ExecuteSqlRawAsync(
                 "INSERT INTO audit_log (\"TenantSlug\",\"Service\",\"EntityType\",\"EntityId\",\"Action\",\"Changes\",\"UserId\",\"UserName\",\"CorrelationId\",\"IpAddress\",\"OccurredAt\") " +
                 "VALUES ({0},'compensation-service',{1},{2},{3},{4}::jsonb,{5},{6},{7},{8},now())",
-                (object?)_tenant.TenantSlug ?? DBNull.Value, entityType, entityId, action, JsonSerializer.Serialize(changes, Json),
+                (object?)(tenant ?? _tenant.TenantSlug) ?? DBNull.Value, entityType, entityId, action, JsonSerializer.Serialize(changes, Json),
                 UserId, (object?)UserName ?? DBNull.Value,
                 (object?)(Request.Headers["X-Correlation-Id"].FirstOrDefault() ?? HttpContext.TraceIdentifier) ?? DBNull.Value,
                 (object?)Request.Headers["X-Real-IP"].FirstOrDefault() ?? DBNull.Value);
         }
-        catch (Exception) { /* denetim yazılamazsa iş akışı bozulmaz */ }
+        catch (Exception ex)
+        {
+            // Denetim yazılamazsa iş akışı bozulmaz; ama sessizce yutulmaz (KVKK erişim kaydı eksik kalır).
+            HttpContext.RequestServices.GetService<ILogger<PayrollAudit>>()?.LogWarning(ex, "audit_log yazılamadı: {EntityType} {Action}", entityType, action);
+        }
     }
 
     private async Task<Guid?> MyEmployeeIdAsync(CancellationToken ct)
@@ -366,7 +372,7 @@ public class PayrollController : ControllerBase
         period.ClosedBy = UserName ?? UserId;
         await ApplyAdvanceRepaymentsAsync(id, +1, ct);
         await _db.SaveChangesAsync(ct);
-        await AuditAsync("PayrollPeriod", id.ToString(), "Closed", new { period.Year, period.Month });
+        await AuditAsync("PayrollPeriod", id.ToString(), "Closed", new { period.Year, period.Month }, period.TenantSlug);
         return Ok(new { period.Id, status = period.Status.ToString(), period.ClosedAt });
     }
 
@@ -386,7 +392,7 @@ public class PayrollController : ControllerBase
         period.ClosedAt = null; period.ClosedBy = null;
         await ApplyAdvanceRepaymentsAsync(id, -1, ct);
         await _db.SaveChangesAsync(ct);
-        await AuditAsync("PayrollPeriod", id.ToString(), "Reopened", new { period.Year, period.Month, reason = body.Reason.Trim() });
+        await AuditAsync("PayrollPeriod", id.ToString(), "Reopened", new { period.Year, period.Month, reason = body.Reason.Trim() }, period.TenantSlug);
         return Ok(new { period.Id, status = period.Status.ToString() });
     }
 
@@ -395,7 +401,7 @@ public class PayrollController : ControllerBase
     {
         if (!IsPayrollViewer) return Forbid();
         var rows = await _db.Payslips.AsNoTracking().Where(s => s.PeriodId == id).OrderBy(s => s.EmployeeId).ToListAsync(ct);
-        await AuditAsync("Payslip", id.ToString(), "SensitiveViewed", new { field = "payrollList", count = rows.Count });
+        await AuditAsync("Payslip", id.ToString(), "SensitiveViewed", new { field = "payrollList", count = rows.Count }, rows.FirstOrDefault()?.TenantSlug);
         return Ok(rows);
     }
 
@@ -426,9 +432,12 @@ public class PayrollController : ControllerBase
         else
         {
             if (!IsPayrollViewer) return NotFound();
-            await AuditAsync("Payslip", s.EmployeeId.ToString(), "SensitiveViewed", new { field = "payslip", s.Year, s.Month });
+            await AuditAsync("Payslip", s.EmployeeId.ToString(), "SensitiveViewed", new { field = "payslip", s.Year, s.Month }, s.TenantSlug);
         }
         var p = await ParamsAsync(s.Year, ct);
         return Ok(new { payslip = s, rates = new { p.SgkEmployeeRate, p.UnemploymentEmployeeRate, p.StampTaxRate, employerSgkRate = p.EffectiveEmployerSgkRate, p.UnemploymentEmployerRate } });
     }
 }
+
+/// <summary>Bordro denetim günlüğü kategorisi (ILogger için).</summary>
+public sealed class PayrollAudit { }

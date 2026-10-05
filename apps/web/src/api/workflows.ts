@@ -55,6 +55,18 @@ export const workflowApi = {
   emailAction: (token: string, decision: 'Approved' | 'Rejected', comment?: string) =>
     apiFetch<{ status: string; decision: string }>(`${BASE}/workflows/email-action`, { method: 'POST', body: { token, decision, comment }, anonymous: true }),
 
+  /** Serbest talepte seçilebilecek onaycılar: giriş hesabı olan, ayrılmamış çalışanlar (çağıran hariç). */
+  approverCandidates: (signal?: AbortSignal) =>
+    apiFetch<Array<{ id: string; firstName: string; lastName: string; fullName: string }>>(`${BASE}/workflows/approver-candidates`, { signal }),
+  /** İzin talebinin onayında çalışanın güncel bakiyesi (talebi görebilenler). */
+  leaveBalance: (id: string, signal?: AbortSignal) =>
+    apiFetch<WorkflowLeaveBalance>(`${BASE}/workflows/${id}/leave-balance`, { signal }),
+  /** Onay ayarları (İK): üst onaycısı bulunamayan talepler İK onaycısına gider. */
+  settings: (signal?: AbortSignal) =>
+    apiFetch<{ hrApproverEmployeeId: string | null; updatedAt: string | null }>(`${BASE}/workflows/settings`, { signal }),
+  saveSettings: (body: { hrApproverEmployeeId: string | null }) =>
+    apiFetch<{ hrApproverEmployeeId: string | null; updatedAt: string | null }>(`${BASE}/workflows/settings`, { method: 'PUT', body }),
+
   /* ------------------------------------------------ akış tanımları ve vekâlet */
   definitions: (signal?: AbortSignal) => apiFetch<WorkflowDefinition[]>(`${BASE}/workflows/definitions`, { signal }),
   validateDefinition: (body: DefinitionInput) =>
@@ -69,6 +81,24 @@ export const workflowApi = {
     apiFetch<{ id: string; moved: number }>(`${BASE}/workflows/delegations`, { method: 'POST', body }),
   revokeDelegation: (id: string) => apiFetch<void>(`${BASE}/workflows/delegations/${id}`, { method: 'DELETE' }),
 }
+
+export interface WorkflowLeaveBalance {
+  available: boolean
+  leaveType?: string
+  year?: number
+  requestDays?: number
+  requestStatus?: string
+  entitledDays?: number | null
+  usedDays?: number | null
+  pendingDays?: number | null
+  remainingDays?: number | null
+}
+
+/**
+ * Kendi modül ekranından açılan talep türleri: genel "Yeni talep" ucu bunları reddeder
+ * (workflow-service WorkflowsController.ModuleTypes ile aynı).
+ */
+export const MODULE_WORKFLOW_TYPES: readonly WorkflowType[] = ['LeaveRequest', 'ExpenseClaim', 'Travel', 'Overtime', 'OfferApproval']
 
 export type ApproverKind = 'DepartmentHead' | 'ParentDepartmentHead' | 'Employee'
 export type ConditionField = 'Days' | 'Amount' | 'Hours'

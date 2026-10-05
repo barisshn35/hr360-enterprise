@@ -12,7 +12,7 @@ import {
   JobPostingStatusBadge,
 } from '@/components/ui/ModuleBadges'
 import { Modal } from '@/components/ui/Modal'
-import { SelectField, TextAreaField } from '@/components/ui/Field'
+import { SelectField, TextAreaField, TextField } from '@/components/ui/Field'
 import { useToast } from '@/components/ui/Toast'
 import { useAuth } from '@/auth/useAuth'
 import { recruitmentApi } from '@/api/recruitment'
@@ -23,6 +23,7 @@ import {
   interviewTypeLabels,
   type Application,
   type ApplicationStatus,
+  type Interview,
 } from '@/api/types'
 import { formatDate, formatDateTime, formatNumber } from '@/lib/format'
 import { ApplicationFunnel } from './ApplicationFunnel'
@@ -124,6 +125,73 @@ function StatusModal({
   )
 }
 
+/** ISO zaman → datetime-local alanının beklediği yerel "YYYY-MM-DDTHH:mm". */
+function toLocalInput(iso: string): string {
+  const d = new Date(iso)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+/** Planlanan mülakatı yeniden planlama: yeni zaman/süre; görüşmecilere bildirim sunucudan gider. */
+function RescheduleInterviewModal({ target, onClose }: { target: { applicationId: string; interview: Interview } | null; onClose: () => void }) {
+  const toast = useToast()
+  const queryClient = useQueryClient()
+  const [at, setAt] = useState('')
+  const [duration, setDuration] = useState('60')
+  const [notify, setNotify] = useState(true)
+  useEffect(() => {
+    if (target) {
+      setAt(toLocalInput(target.interview.scheduledAt))
+      setDuration(String(target.interview.durationMinutes ?? 60))
+      setNotify(true)
+    }
+  }, [target])
+  const past = !at || Number.isNaN(new Date(at).getTime()) || new Date(at).getTime() < Date.now() - 5 * 60_000
+  const dur = Number(duration)
+  const durErr = !Number.isInteger(dur) || dur < 15 || dur > 480 ? tx('Süre 15-480 dakika olmalı') : undefined
+  const mutation = useMutation({
+    mutationFn: () =>
+      recruitmentApi.rescheduleInterview(target!.applicationId, target!.interview.id, {
+        scheduledAt: new Date(at).toISOString(),
+        durationMinutes: dur,
+        notifyCandidate: notify,
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['recruitment'] })
+      toast.ok(tx('Mülakat yeniden planlandı; görüşmecilere bildirim gitti'))
+      onClose()
+    },
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Mülakat yeniden planlanamadı.')),
+  })
+  if (!target) return null
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={tx('Mülakatı yeniden planla')}
+      note={tx('{0} mülakatı · şu an: {1}', [interviewTypeLabels[target.interview.type], formatDateTime(target.interview.scheduledAt)])}
+      footer={
+        <>
+          <Button variant="outline" onClick={onClose} disabled={mutation.isPending}>{tx('Vazgeç')}</Button>
+          <Button disabled={past || !!durErr || mutation.isPending} onClick={() => mutation.mutate()}>
+            {mutation.isPending && <LoaderCircle className="size-4 animate-spin" />}
+            {tx('Kaydet')}
+          </Button>
+        </>
+      }
+    >
+      <div className="grid gap-4 sm:grid-cols-2">
+        <TextField label={tx('Yeni tarih ve saat')} type="datetime-local" value={at} error={at && past ? tx('Geçmiş bir zamana mülakat planlanamaz') : undefined} onChange={(e) => setAt(e.target.value)} />
+        <TextField label={tx('Süre (dk)')} type="number" min={15} max={480} value={duration} error={durErr} onChange={(e) => setDuration(e.target.value)} />
+        <label className="flex cursor-pointer items-center gap-2 text-[13px] sm:col-span-2">
+          <input type="checkbox" checked={notify} onChange={(e) => setNotify(e.target.checked)} />
+          {tx('Adaya yeni zamanı e-postayla bildir')}
+        </label>
+      </div>
+    </Modal>
+  )
+}
+
 export function JobPostingDetailPage() {
   const { postingId } = useParams<{ postingId: string }>()
   const { can } = useAuth()
@@ -139,6 +207,17 @@ export function JobPostingDetailPage() {
   const [interviewFor, setInterviewFor] = useState<{ applicationId: string; candidateName: string } | null>(null)
   const [offerFor, setOfferFor] = useState<{ applicationId: string; candidateName: string; postingTitle: string } | null>(null)
   const [scorecardsFor, setScorecardsFor] = useState<string | null>(null)
+  const [rescheduleFor, setRescheduleFor] = useState<{ applicationId: string; interview: Interview } | null>(null)
+
+  const cancelInterview = useMutation({
+    mutationFn: (v: { applicationId: string; interviewId: string }) =>
+      recruitmentApi.cancelInterview(v.applicationId, v.interviewId, { notifyCandidate: true }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['recruitment'] })
+      toast.ok(tx('Mülakat iptal edildi; görüşmecilere bildirim gitti'))
+    },
+    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Mülakat iptal edilemedi.')),
+  })
 
   const candidateName = useMemo(() => {
     const map = new Map<string, string>()
@@ -170,10 +249,25 @@ export function JobPostingDetailPage() {
     onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('İlan kapatılamadı.')),
   })
   const confirm = useConfirm()
+  const askCancelInterview = async (applicationId: string, iv: Interview) => {
+    if (await confirm({
+      title: tx('Mülakat iptal edilsin mi?'),
+      note: tx('{0} tarihindeki mülakat iptal edilir; görüşmecilere bildirim gider. Aday e-postayla davet edildiyse ona da iptal e-postası gönderilir.', [formatDateTime(iv.scheduledAt)]),
+      action: tx('Mülakatı iptal et'),
+    })) cancelInterview.mutate({ applicationId, interviewId: iv.id })
+  }
   const askClose = async () => {
+    // Kapanışta beklemedeki (gelecekteki) mülakatlar kendiliğinden iptal edilmez; kullanıcı uyarılır.
+    const openInterviews = (posting.data?.applications ?? [])
+      .flatMap((a) => a.interviews ?? [])
+      .filter((iv) => iv.result === 'Pending' && new Date(iv.scheduledAt).getTime() > Date.now()).length
     if (await confirm({
       title: tx('İlan kapatılsın mı?'),
-      note: tx('Kapatılan ilan yeni başvuru almaz ve yeniden yayına alınamaz; gerekirse yeni ilan açmanız gerekir. Mevcut başvurular korunur.'),
+      note:
+        tx('Kapatılan ilan yeni başvuru almaz ve yeniden yayına alınamaz; gerekirse yeni ilan açmanız gerekir. Mevcut başvurular korunur.') +
+        (openInterviews > 0
+          ? ' ' + tx('Bu ilanda planlanmış {0} mülakat var; kapanış onları iptal etmez. Gerekiyorsa mülakatları ayrıca iptal edin.', [formatNumber(openInterviews)])
+          : ''),
       action: tx('İlanı kapat'),
     })) close.mutate()
   }
@@ -317,6 +411,16 @@ export function JobPostingDetailPage() {
                                 {tx('Puan kartları')}
                               </Button>
                             )}
+                            {canManage && iv.result === 'Pending' && new Date(iv.scheduledAt) > new Date() && (
+                              <>
+                                <Button size="sm" variant="ghost" className="h-6 px-2 text-[11.5px]" onClick={() => setRescheduleFor({ applicationId: a.id, interview: iv })}>
+                                  {tx('Yeniden planla')}
+                                </Button>
+                                <Button size="sm" variant="ghost" className="h-6 px-2 text-[11.5px] text-destructive" disabled={cancelInterview.isPending} onClick={() => void askCancelInterview(a.id, iv)}>
+                                  {tx('İptal et')}
+                                </Button>
+                              </>
+                            )}
                             {iv.result === 'Pending' && new Date(iv.scheduledAt) > new Date() && (
                               <div className="w-full pt-1">
                                 <MeetingPanel sourceType="interview" sourceId={iv.id} canCreate={canManage} candidate />
@@ -385,6 +489,7 @@ export function JobPostingDetailPage() {
       <ScheduleInterviewModal target={interviewFor} onClose={() => setInterviewFor(null)} />
       <OfferModal target={offerFor} onClose={() => setOfferFor(null)} />
       <ScorecardsModal interviewId={scorecardsFor} onClose={() => setScorecardsFor(null)} />
+      <RescheduleInterviewModal target={rescheduleFor} onClose={() => setRescheduleFor(null)} />
     </div>
   )
 }

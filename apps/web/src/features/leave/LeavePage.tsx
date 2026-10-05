@@ -31,7 +31,16 @@ import { NewBalanceModal } from './NewBalanceModal'
 import { HolidaysModal } from './HolidaysModal'
 import { StatutoryModal } from './StatutoryModal'
 import { NewLeaveRequestModal } from './NewLeaveRequestModal'
-import { tx } from '@/lib/i18n'
+import { tx, appLocale } from '@/lib/i18n'
+
+/** Dar ekranda (tarih sütunu gizliyken) tür hücresinin altında gösterilen kısa aralık: "05.10–07.10". */
+function shortRange(start: string, end: string): string {
+  const f = new Intl.DateTimeFormat(appLocale, { day: '2-digit', month: '2-digit' })
+  const a = new Date(start)
+  const b = new Date(end)
+  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return ''
+  return start.slice(0, 10) === end.slice(0, 10) ? f.format(a) : `${f.format(a)}–${f.format(b)}`
+}
 
 type TabKey = LeaveStatus | 'all'
 
@@ -107,8 +116,10 @@ export function LeavePage() {
   const hr = isHr(roles)
   const canCancel = (r: { employeeId: string }) => hr || r.employeeId === myEmployeeId
   const confirm = useConfirm()
-  // İK listede herkesin talebini görür: kimin talebi olduğu dizin önbelleğinden (yalnızca ad) çözülür.
-  const directory = useDirectory(hr)
+  // İK listede herkesin, yönetici ekibinin talebini görür: kimin talebi olduğu dizin
+  // önbelleğinden (yalnızca ad) çözülür.
+  const showWho = hr || roles.includes('manager')
+  const directory = useDirectory(showWho)
   const nameOf = useMemo(() => {
     const m = new Map((directory.data ?? []).map((d) => [d.id, d.fullName]))
     return (id: string) => m.get(id) ?? '—'
@@ -178,7 +189,7 @@ export function LeavePage() {
   const rows = requests.data?.items
 
   const columns: Array<Column<LeaveRequest>> = [
-    ...(hr
+    ...(showWho
       ? [{
           id: 'employee',
           header: tx('Çalışan'),
@@ -195,6 +206,8 @@ export function LeavePage() {
         <div className="min-w-0">
           <p className="font-medium text-foreground">{leaveTypeLabels[r.type]}</p>
           {r.reason && <p className="mt-0.5 truncate text-[12px] text-muted-foreground">{r.reason}</p>}
+          {/* Mobilde tarih sütunu gizli: kısa tarih burada. */}
+          <p className="tabular mt-0.5 text-[12px] text-muted-foreground sm:hidden">{shortRange(r.startDate, r.endDate)}</p>
         </div>
       ),
     },
@@ -225,7 +238,19 @@ export function LeavePage() {
       align: 'right',
       sortValue: (r) => leaveStatusLabels[r.status],
       exportText: (r) => leaveStatusLabels[r.status],
-      cell: (r) => <LeaveStatusBadge status={r.status} />,
+      cell: (r) =>
+        r.status === 'Submitted' && !r.workflowRequestId ? (
+          // Onay akışı açılamadı (ör. departman başı atanmamış ya da talep sahibi kendisi):
+          // talep kimsenin Onay kutusuna düşmez, İK sonuçlandırır.
+          <div className="flex flex-col items-end gap-0.5">
+            <LeaveStatusBadge status={r.status} />
+            <span className="text-[11.5px] text-[hsl(var(--warning))]" title={tx('Onay akışı açılamadı; talebi İK sonuçlandırır.')}>
+              {tx('Onaycı bulunamadı')}
+            </span>
+          </div>
+        ) : (
+          <LeaveStatusBadge status={r.status} />
+        ),
     },
   ]
 

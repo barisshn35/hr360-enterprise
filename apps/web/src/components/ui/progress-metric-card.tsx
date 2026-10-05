@@ -129,29 +129,37 @@ export default function ProgressMetricCard({
 
   // Tous les chiffres dérivent de la série principale → la card reste cohérente
   // et réagit au changement de période. Les props restent prioritaires.
+  // Yüzde, dönemin TOPLAMINI bir önceki eşit uzunluktaki dönemin toplamıyla karşılaştırır (ör. son 14
+  // gün ↔ önceki 14 gün). Eskiden dönemin ilk ve son GÜNÜ karşılaştırılıyordu: ikisi de 0 iken "%0,0"
+  // görünürken altta "−190 düne göre" yazıyordu (çelişkili). Önceki dönem verisi yoksa yüzde gösterilmez.
   const stats = useMemo(() => {
     const vals = primary?.data.map((d) => d.value) ?? [];
     const sum = vals.reduce((a, b) => a + b, 0);
     const first = vals[0] ?? 0;
     const last = vals[vals.length - 1] ?? 0;
     const prev = vals[vals.length - 2] ?? first;
-    const net = last - first;
+    const all = baseSeries[0]?.data ?? [];
+    const n = vals.length;
+    const hasPrevPeriod = n > 0 && all.length >= 2 * n;
+    const prevSum = hasPrevPeriod ? all.slice(-2 * n, -n).reduce((a, d) => a + d.value, 0) : 0;
+    const net = sum - prevSum;
     return {
       sum,
       net,
-      pct: first ? (net / first) * 100 : 0,
-      // Başlangıç 0 iken yüzde tanımsızdır ("0.0%" ve düz ok yanıltıcıydı).
-      fromZero: first === 0 && net !== 0,
+      hasPrevPeriod,
+      pct: prevSum ? (net / prevSum) * 100 : 0,
+      // Önceki dönem 0 iken yüzde tanımsızdır ("0.0%" ve düz ok yanıltıcıydı).
+      fromZero: prevSum === 0 && net !== 0,
       step: last - prev,
       peak: vals.length ? Math.max(...vals) : 0,
       low: vals.length ? Math.min(...vals) : 0,
       avg: vals.length ? sum / vals.length : 0,
     };
-  }, [primary]);
+  }, [primary, baseSeries]);
 
   // La couleur dépend du sens (dernier vs premier point), avec une zone neutre.
   const resolvedTrend: 'up' | 'down' | 'flat' =
-    trend ?? (stats.fromZero ? (stats.net > 0 ? 'up' : 'down') : Math.abs(stats.pct) < NEUTRAL_PCT ? 'flat' : stats.net >= 0 ? 'up' : 'down');
+    trend ?? (!stats.hasPrevPeriod ? 'flat' : stats.fromZero ? (stats.net > 0 ? 'up' : 'down') : Math.abs(stats.pct) < NEUTRAL_PCT ? 'flat' : stats.net >= 0 ? 'up' : 'down');
   const resolvedAccent: MetricAccent =
     accent ?? (resolvedTrend === 'up' ? 'emerald' : resolvedTrend === 'down' ? 'rose' : 'neutral');
   const color = ACCENTS[resolvedAccent];
@@ -165,7 +173,8 @@ export default function ProgressMetricCard({
 
   const displayTotal = total ?? fmtCompact(stats.sum);
   const displayDelta = delta ?? sign(stats.step);
-  const displayPercent = percent ?? (stats.fromZero ? tx('yeni') : formatPercent(Math.abs(stats.pct) / 100, 1));
+  const displayPercent =
+    percent ?? (!stats.hasPrevPeriod ? null : stats.fromZero ? tx('yeni') : formatPercent(Math.abs(stats.pct) / 100, 1));
 
   // Couleur de chaque série : accent défini → palette → couleur du titre.
   const chartSeries: ChartSeries[] = visibleSeries.map((s, i) => ({
@@ -266,10 +275,17 @@ export default function ProgressMetricCard({
               gelebilir. Yari saydam zemin metnin her durumda okunur
               kalmasini garantiliyor. */}
           <div className="flex items-center gap-3.5 rounded-full bg-card/80 px-2.5 py-1 text-[14px] backdrop-blur-sm">
-            <span className="flex items-center gap-1 font-medium" style={{ color: color.text }}>
-              <TrendIcon size={16} strokeWidth={2.5} />
-              {displayPercent}
-            </span>
+            {displayPercent != null && (
+              <span
+                className="flex items-center gap-1 font-medium"
+                style={{ color: color.text }}
+                title={percent ? undefined : tx('Önceki eşit uzunluktaki döneme göre')}
+              >
+                <TrendIcon size={16} strokeWidth={2.5} />
+                {displayPercent}
+                {!percent && <span className="sr-only">{' '}{tx('Önceki eşit uzunluktaki döneme göre')}</span>}
+              </span>
+            )}
             <PeriodSelect
               value={selectedLabel}
               options={periods}

@@ -12,6 +12,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge'
 import { EmptyState, InfoNote, RowsSkeleton } from '@/components/ui/States'
 import { Tabs, useTabParam } from '@/components/ui/Tabs'
 import { useToast } from '@/components/ui/Toast'
+import { useConfirm } from '@/components/ui/Confirm'
 import { governanceApi, type Webhook } from '@/api/governance'
 import { formatDateTime, formatRelativeToNow } from '@/lib/format'
 import { PlanGate, useAction } from '@/features/shared/kit'
@@ -55,6 +56,21 @@ function Webhooks() {
   const ping = useAction((id: string) => governanceApi.pingWebhook(id), { success: (r) => (r.ok ? tx('Teslim edildi (HTTP {0})', [r.lastStatus]) : tx('Başarısız (HTTP {0})', [r.lastStatus ?? '—'])), invalidate: [['webhooks']] })
   const rotate = useAction((id: string) => governanceApi.rotateWebhookSecret(id), { success: tx('Yeni gizli anahtar üretildi'), invalidate: [['webhooks']] })
   const del = useAction((id: string) => governanceApi.deleteWebhook(id), { success: tx('Silindi'), invalidate: [['webhooks']] })
+  const confirm = useConfirm()
+  const askRotate = async (w: Webhook) => {
+    if (await confirm({
+      title: tx('“{0}” için gizli anahtar yenilensin mi?', [w.name]),
+      note: tx('Eski anahtar hemen geçersiz olur; alıcı sistem yeni anahtarla güncellenene kadar imza doğrulaması başarısız olur.'),
+      action: tx('Anahtarı yenile'),
+    })) rotate.mutate(w.id)
+  }
+  const askDelete = async (w: Webhook) => {
+    if (await confirm({
+      title: tx('“{0}” webhook\'u silinsin mi?', [w.name]),
+      note: tx('Bu adrese artık olay gönderilmez ve teslimat geçmişi kaybolur. Bu işlem geri alınamaz.'),
+      action: tx('Sil'),
+    })) del.mutate(w.id)
+  }
   const inboxQ = useQuery({ queryKey: ['webhook-inbox', inbox], enabled: !!inbox, queryFn: ({ signal }) => governanceApi.webhookInbox(inbox!, signal), refetchInterval: 3000 })
   const dQ = useQuery({ queryKey: ['webhook-deliveries', deliveries?.id], enabled: !!deliveries, queryFn: ({ signal }) => governanceApi.webhookDeliveries(deliveries!.id, signal) })
   return (
@@ -76,8 +92,8 @@ function Webhooks() {
                 <Button size="sm" variant="outline" onClick={() => ping.mutate(w.id)}><Send className="size-4" />{' '}{tx('Ping')}</Button>
                 <Button size="sm" variant="outline" onClick={() => setDeliveries(w)}>{tx('Teslimatlar')}</Button>
                 {w.url.includes('/inbox/') && <Button size="sm" variant="outline" onClick={() => setInbox(w.url.split('/inbox/')[1])}>{tx('Gelen kutusu')}</Button>}
-                <Button size="sm" variant="ghost" onClick={() => rotate.mutate(w.id)} title={tx('Anahtarı yenile')}><RefreshCw className="size-4" /></Button>
-                <Button size="sm" variant="ghost" onClick={() => del.mutate(w.id)} aria-label={tx('Sil')}><Trash2 className="size-4" /></Button>
+                <Button size="sm" variant="ghost" onClick={() => askRotate(w)} title={tx('Anahtarı yenile')} aria-label={tx('Anahtarı yenile')}><RefreshCw className="size-4" /></Button>
+                <Button size="sm" variant="ghost" onClick={() => askDelete(w)} aria-label={tx('Sil')}><Trash2 className="size-4" /></Button>
               </div>
             </div>
           ))}
@@ -119,6 +135,14 @@ function ApiKeys() {
   const [created, setCreated] = useState<string | null>(null)
   const create = useAction(() => governanceApi.createApiKey(form!.name, form!.scopes), { invalidate: [['api-keys']], onDone: (r) => { setForm(null); setCreated(r.key) } })
   const revoke = useAction((id: string) => governanceApi.revokeApiKey(id), { success: tx('Anahtar iptal edildi'), invalidate: [['api-keys']] })
+  const confirm = useConfirm()
+  const askRevoke = async (k: { id: string; name: string }) => {
+    if (await confirm({
+      title: tx('“{0}” API anahtarı iptal edilsin mi?', [k.name]),
+      note: tx('Bu anahtarı kullanan sistemlerin istekleri hemen reddedilir. İptal geri alınamaz; gerekirse yeni anahtar oluşturmanız gerekir.'),
+      action: tx('İptal et'),
+    })) revoke.mutate(k.id)
+  }
   const base = `${window.location.origin}/api/governance/public/v1`
   return (
     <div className="space-y-5">
@@ -131,7 +155,7 @@ function ApiKeys() {
                 <KeyRound className="size-4 text-muted-foreground" />
                 <div className="min-w-0 flex-1"><p className="font-medium">{k.name}</p><p className="font-mono text-[11.5px] text-muted-foreground">{tx('hr360_{0}_•••• · {1}', [k.prefix, k.scopes.join(', ')])}</p></div>
                 <span className="text-[12px] text-muted-foreground">{k.lastUsedAt ? tx('son kullanım {0}', [formatRelativeToNow(k.lastUsedAt)]) : tx('hiç kullanılmadı')}</span>
-                {k.active ? <Button size="sm" variant="outline" onClick={() => revoke.mutate(k.id)}>{tx('İptal et')}</Button> : <StatusBadge>{tx('İptal')}</StatusBadge>}
+                {k.active ? <Button size="sm" variant="outline" onClick={() => askRevoke(k)}>{tx('İptal et')}</Button> : <StatusBadge>{tx('İptal')}</StatusBadge>}
               </li>
             ))}</ul>
           )}
@@ -165,6 +189,14 @@ function ChatIntegrations() {
   const create = useAction(() => governanceApi.createIntegration({ ...form!, signingSecret: form!.signingSecret || null, isEnabled: true }), { success: tx('Kanal bağlandı'), invalidate: [['integrations']], onDone: () => setForm(null) })
   const test = useAction((id: string) => governanceApi.testIntegration(id), { success: (r) => (r.ok ? tx('Test mesajı gönderildi') : tx('Gönderilemedi (HTTP {0})', [r.lastStatus ?? '—'])), invalidate: [['integrations']] })
   const del = useAction((id: string) => governanceApi.deleteIntegration(id), { success: tx('Kaldırıldı'), invalidate: [['integrations']] })
+  const confirm = useConfirm()
+  const askDelete = async (i: { id: string; kind: string; name: string }) => {
+    if (await confirm({
+      title: tx('“{0} · {1}” kanal bağlantısı kaldırılsın mı?', [i.kind, i.name]),
+      note: tx('Bu kanala artık olay duyurusu gönderilmez. Yeniden bağlamak için adresi tekrar girmeniz gerekir.'),
+      action: tx('Kaldır'),
+    })) del.mutate(i.id)
+  }
   return (
     <div className="space-y-5">
       <InfoNote>{tx('Bir kanala olay duyurusu (ör. “yeni çalışan katıldı”) göndermek için. Slack: “Incoming Webhooks” ile kanal adresi alın. Teams: kanalda')}{' '}<b>{tx('Workflows › “Post to a channel when a webhook request is received”')}</b>{' '}{tx('şablonuyla akış oluşturup adresini girin (eski “Gelen Web Kancası” bağlayıcıları Microsoft tarafından kapatıldı). Kişiye özel bildirim ve onay düğmeleri için “Sohbet uygulamaları” sekmesini kullanın.')}</InfoNote>
@@ -177,7 +209,7 @@ function ChatIntegrations() {
               <p className="mt-1 font-mono text-[11.5px] text-muted-foreground">{i.webhookUrl}</p>
               <div className="mt-2 flex flex-wrap gap-1">{i.events.map((e) => <span key={e} className="rounded-full bg-muted px-2 py-0.5 font-mono text-[10.5px]">{e}</span>)}</div>
               {i.kind === 'Slack' && <div className="mt-2 text-[12px] text-muted-foreground">{tx('Komut adresi:')}{' '}<Copyable text={`${window.location.origin}/api/governance/integrations/${i.id}/slack-command`} /></div>}
-              <div className="mt-3 flex gap-1.5"><Button size="sm" variant="outline" onClick={() => test.mutate(i.id)}><Send className="size-4" />{' '}{tx('Test')}</Button><Button size="sm" variant="ghost" onClick={() => del.mutate(i.id)}><Trash2 className="size-4" /></Button></div>
+              <div className="mt-3 flex gap-1.5"><Button size="sm" variant="outline" onClick={() => test.mutate(i.id)}><Send className="size-4" />{' '}{tx('Test')}</Button><Button size="sm" variant="ghost" onClick={() => askDelete(i)} aria-label={tx('Kaldır')}><Trash2 className="size-4" /></Button></div>
             </div>
           ))}
         </div>

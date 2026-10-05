@@ -171,7 +171,8 @@ export const navGroups: NavGroupData[] = [
       { id: 'model-card', title: tx('Model kartı'), description: tx('Devir riski modeli: önem, kayma, adalet'), icon: BarChart3, path: '/panel/model-karti', permission: 'performance:manage', feature: 'analytics', requireRoles: ['hr-admin', 'tenant-admin', 'platform-admin'] },
       { id: 'nl-report', title: tx('Rapor asistanı'), description: tx('Türkçe sorun, tablo ve grafik gelsin'), icon: Sparkles, path: '/panel/rapor-asistani', permission: 'performance:manage', feature: 'nl-report' },
       { id: 'time-machine', title: tx('Zaman makinesi'), description: tx('Organizasyon geçmişte nasıldı?'), icon: History, path: '/panel/zaman-makinesi', permission: 'performance:manage', feature: 'time-machine' },
-      { id: 'event-radar', title: tx('Canlı olay radarı'), description: tx('Kafka olayları gerçek zamanlı'), icon: Radar, path: '/panel/olay-radari', permission: 'performance:manage', feature: 'events' },
+      // Olay yükleri kiracı genelinde kişisel veri taşır: yalnızca İK (sunucu: RequireHrAdmin).
+      { id: 'event-radar', title: tx('Canlı olay radarı'), description: tx('Kafka olayları gerçek zamanlı'), icon: Radar, path: '/panel/olay-radari', permission: 'employee:manage', feature: 'events' },
       { id: 'ai-tools', title: tx('Yapay zekâ araçları'), description: tx('CV, ilan, eşleşme, tahmin'), icon: Bot, path: '/panel/ai-araclari', permission: 'recruitment:view', feature: 'ai-tools' },
     ],
   },

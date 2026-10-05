@@ -11,6 +11,7 @@ import { Modal } from '@/components/ui/Modal'
 import { SelectField, TextAreaField, TextField } from '@/components/ui/Field'
 import { CenteredSpinner, ErrorState } from '@/components/ui/States'
 import { useToast } from '@/components/ui/Toast'
+import { useConfirm } from '@/components/ui/Confirm'
 import {
   useChangeTenantPlan,
   useReactivateTenant,
@@ -377,8 +378,32 @@ export function TenantsPage() {
   const [suspendFor, setSuspendFor] = useState<Tenant | null>(null)
   const [planFor, setPlanFor] = useState<Tenant | null>(null)
 
-  const tenants = useTenants({ status: status === ALL ? undefined : (status as TenantStatus) })
+  // Tüm kiracılar bir kez çekilir; durum filtresi istemcide uygulanır. Böylece üstteki
+  // istatistik kartları (toplam/aktif/…) filtreden bağımsız, tüm platformu gösterir.
+  const tenants = useTenants()
+  const rows = useMemo(
+    () => (status === ALL ? tenants.data : tenants.data?.filter((t) => t.status === status)),
+    [tenants.data, status],
+  )
   const reactivate = useReactivateTenant()
+  const confirm = useConfirm()
+  const askReactivate = async (t: Tenant) => {
+    const ok = await confirm({
+      title: tx('{0} yeniden etkinleştirilsin mi?', [t.name]),
+      note: tx('Askıya alma sırasında kapatılan kullanıcı hesapları yeniden açılır ve şirket platformu yeniden kullanabilir. Askı gerekçesi kayıttan silinir.'),
+      action: tx('Yeniden etkinleştir'),
+      destructive: false,
+    })
+    if (!ok) return
+    reactivate.mutate(
+      { id: t.id },
+      {
+        onSuccess: () => toast.ok(tx('{0} yeniden etkinleştirildi', [t.name])),
+        onError: (e: unknown) =>
+          toast.stop(e instanceof Error ? e.message : tx('Kiracı etkinleştirilemedi.')),
+      },
+    )
+  }
 
   const stats = useMemo(() => {
     const list = tenants.data ?? []
@@ -527,7 +552,7 @@ export function TenantsPage() {
       )}
 
       <DataTable
-        rows={tenants.data}
+        rows={rows}
         rowKey={(t) => t.id}
         columns={columns}
         filters={filters}
@@ -557,15 +582,7 @@ export function TenantsPage() {
           {
             label: tx('Yeniden etkinleştir'),
             hidden: (t) => t.status !== 'Suspended',
-            onSelect: (t) =>
-              reactivate.mutate(
-                { id: t.id },
-                {
-                  onSuccess: () => toast.ok(tx('{0} yeniden etkinleştirildi', [t.name])),
-                  onError: (e: unknown) =>
-                    toast.stop(e instanceof Error ? e.message : tx('Kiracı etkinleştirilemedi.')),
-                },
-              ),
+            onSelect: (t) => void askReactivate(t),
           },
         ]}
       />

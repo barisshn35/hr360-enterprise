@@ -109,6 +109,9 @@ public class PrivacyController : AppController
             return BadRequest(new { message = "Geçersiz başvuru türü." });
         var me = await MyPersonAsync(ct);
         if (body.Details is { Length: > 4000 }) return BadRequest(new { message = L("Açıklama en fazla 4000 karakter.", "Details must be at most 4000 characters.") });
+        // İK'nın başvuruyu karşılayabilmesi için talep açıklanmalı (KVKK m.13: başvuru talebi içermeli).
+        if ((body.Details?.Trim().Length ?? 0) < 10)
+            return BadRequest(new { message = L("Başvurunuzu en az 10 karakterle açıklayın.", "Please describe your request in at least 10 characters.") });
         // Kendi oturumundan gelen başvuruda kimlik oturumla doğrulanmıştır.
         var r = new DataRequest { UserId = Me.UserId, EmployeeId = me?.Id, PersonName = me?.Name ?? Me.Name, Kind = body.Kind, Details = body.Details?.Trim(),
             Channel = "Panel", IdentityVerified = true, VerificationMethod = "Session", VerifiedAt = DateTime.UtcNow, VerifiedBy = "HR360" };
@@ -126,6 +129,27 @@ public class PrivacyController : AppController
         return Ok(rows.Select(r => new { r.Id, r.PersonName, r.EmployeeId, r.Kind, r.Details, r.Status, r.Response, r.DueAt, r.CreatedAt, r.CompletedAt,
             r.Channel, contact = Me.IsHr ? r.Contact : null, r.IdentityVerified, r.VerificationMethod, r.VerifiedBy, r.VerifiedAt,
             overdue = r.Status is "Received" or "InProgress" && r.DueAt < DateTime.UtcNow, daysLeft = (int)Math.Ceiling((r.DueAt - DateTime.UtcNow).TotalDays) }));
+    }
+
+    /// <summary>
+    /// Başvurucu, henüz sonuçlanmamış (Received/InProgress) kendi başvurusunu geri çekebilir.
+    /// Kayıt silinmez ("Withdrawn"); hesap verebilirlik için denetim kaydına yazılır.
+    /// </summary>
+    [HttpPost("requests/{id:guid}/withdraw")]
+    public async Task<IActionResult> WithdrawRequest(Guid id, CancellationToken ct)
+    {
+        var r = await _db.DataRequests.FirstOrDefaultAsync(x => x.Id == id && x.UserId == Me.UserId, ct);
+        if (r is null) return NotFound();
+        if (r.Status is not ("Received" or "InProgress"))
+            return Conflict(new { message = L("Yanıtlanmış başvuru geri çekilemez.", "A request that has been answered cannot be withdrawn.") });
+        r.Status = "Withdrawn";
+        r.CompletedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        await Db.ExecuteAsync("""
+            INSERT INTO audit_log ("TenantSlug","Service","EntityType","EntityId","Action","Changes","UserId","UserName","OccurredAt")
+            VALUES ($1,'governance-service','DataRequest',$2,'Withdrawn',$3::jsonb,$4,$5,now())
+            """, ct, Tenant, r.Id.ToString(), System.Text.Json.JsonSerializer.Serialize(new { r.Kind }), Me.UserId, Me.Name);
+        return Ok(new { r.Id, r.Status });
     }
 
     public record RequestUpdate(string Status, string? Response);

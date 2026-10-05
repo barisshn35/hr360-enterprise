@@ -1,5 +1,4 @@
 import { Suspense, lazy, type ComponentType, type ReactNode } from 'react'
-import { tx } from '@/lib/i18n'
 import { BrowserRouter, Navigate, Outlet, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ApiError } from '@/api/client'
@@ -10,13 +9,12 @@ import type { Permission, Role } from '@/auth/roles'
 import { AppShell } from '@/components/layout/AppShell'
 import { ToastProvider } from '@/components/ui/Toast'
 import { ConfirmProvider } from '@/components/ui/Confirm'
-import { CenteredSpinner, EmptyState, FullPageSpinner } from '@/components/ui/States'
+import { CenteredSpinner, FullPageSpinner } from '@/components/ui/States'
 import { useAuth } from '@/auth/useAuth'
-import { Building2 } from 'lucide-react'
 import { ErrorBoundary } from '@/app/ErrorBoundary'
 import { DashboardPage } from '@/features/dashboard/DashboardPage'
 import { NotFoundPage } from '@/features/NotFoundPage'
-import { PlanGate } from '@/features/shared/FeatureGate'
+import { NoTenantNotice, PlanGate } from '@/features/shared/FeatureGate'
 
 /**
  * Adlandırılmış dışa aktarımı olan sayfaları tembel yükler.
@@ -162,7 +160,7 @@ const queryClient = new QueryClient({
 /** Şirkete bağlı veri gösteren ekranlar: kiracısız oturumda (platform yöneticisi) boş durum gösterir. */
 function TenantOnly({ children }: { children: ReactNode }) {
   const { tenantSlug } = useAuth()
-  if (!tenantSlug) return <EmptyState icon={Building2} title={tx('Şirket seçilmedi')} detail={tx('Bu ekran bir şirket seçildiğinde kullanılabilir.')} />
+  if (!tenantSlug) return <NoTenantNotice />
   return <>{children}</>
 }
 
@@ -408,10 +406,10 @@ export function App() {
 
                     {/* ---------------- İçgörü ---------------- */}
                     <Route path="analitik" element={guarded('performance:manage', <PlanGate feature="analytics"><InsightsAnalyticsPage /></PlanGate>)} />
-                    <Route path="model-karti" element={guarded('performance:manage', <PlanGate feature="analytics"><ModelCardPage /></PlanGate>, ['hr-admin', 'tenant-admin', 'platform-admin'])} />
+                    <Route path="model-karti" element={guarded('performance:manage', <PlanGate feature="analytics" allowPlatform><ModelCardPage /></PlanGate>, ['hr-admin', 'tenant-admin', 'platform-admin'])} />
                     <Route path="rapor-asistani" element={guarded('performance:manage', <PlanGate feature="nl-report"><NlReportPage /></PlanGate>)} />
                     <Route path="zaman-makinesi" element={guarded('performance:manage', <PlanGate feature="time-machine"><TimeMachinePage /></PlanGate>)} />
-                    <Route path="olay-radari" element={guarded('performance:manage', <PlanGate feature="events"><EventRadarPage /></PlanGate>)} />
+                    <Route path="olay-radari" element={guarded('employee:manage', <PlanGate feature="events"><EventRadarPage /></PlanGate>)} />
                     <Route path="ai-araclari" element={guarded('recruitment:view', <PlanGate feature="ai-tools"><AiToolsPage /></PlanGate>)} />
 
                     {/* ---------------- Yönetişim ---------------- */}

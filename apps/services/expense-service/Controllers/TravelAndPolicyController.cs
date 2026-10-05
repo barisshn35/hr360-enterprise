@@ -220,10 +220,17 @@ public class TravelAndPolicyController : ControllerBase
         var me = await _approvals.FindMyEmployeeIdAsync(ct);
         if (me != t.EmployeeId && !IsHr) return NotFound();
         if (t.Status is not (TravelStatus.Submitted or TravelStatus.Approved)) return Conflict(new { message = "Bu seyahat iptal edilemez" });
+        var wasPending = t.Status == TravelStatus.Submitted;
         t.Status = TravelStatus.Cancelled;
         // İptal edilen seyahatin pasaport bilgisi hemen silinir.
         if (t.PassportCipher is not null) { t.PassportCipher = null; t.PassportPurgedAt = DateTimeOffset.UtcNow; }
         await _db.SaveChangesAsync(ct);
+        // Önceden onay akışı açık kalıyordu: onaycı iptal edilmiş seyahati Onay kutusunda
+        // görmeye devam ediyordu. Bekleyen akış talep sahibi adına kapatılır (izin/fazla mesai gibi).
+        if (wasPending && t.WorkflowRequestId is { } wf
+            && !await _approvals.CancelWorkflowInternalAsync(t.TenantSlug, wf, t.EmployeeId, ct))
+            HttpContext.RequestServices.GetRequiredService<ILogger<TravelAndPolicyController>>()
+                .LogWarning("Seyahat {TravelId} iptal edildi ancak onay akışı {WorkflowId} kapatılamadı", t.Id, wf);
         return Ok(View(t, false));
     }
 

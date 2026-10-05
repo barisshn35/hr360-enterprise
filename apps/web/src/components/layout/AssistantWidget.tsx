@@ -55,7 +55,7 @@ export function AssistantWidget() {
         onClick={() => setOpen((o) => !o)}
         whileHover={{ scale: 1.06 }}
         whileTap={{ scale: 0.94 }}
-        className="fixed right-5 bottom-24 z-40 grid size-13 cursor-pointer place-items-center rounded-2xl border border-primary/40 bg-card/80 text-primary shadow-[0_10px_40px_-10px_hsl(var(--primary)/0.6)] backdrop-blur-xl md:bottom-6"
+        className="fixed right-3 bottom-3 z-40 grid size-11 cursor-pointer place-items-center rounded-2xl border border-primary/40 bg-card/80 text-primary shadow-[0_10px_40px_-10px_hsl(var(--primary)/0.6)] backdrop-blur-xl md:right-5 md:bottom-6 md:size-13"
       >
         <AnimatePresence mode="wait" initial={false}>
           <motion.span key={open ? 'x' : 'b'} initial={{ rotate: -90, opacity: 0 }} animate={{ rotate: 0, opacity: 1 }} exit={{ rotate: 90, opacity: 0 }}>
@@ -72,7 +72,7 @@ export function AssistantWidget() {
             exit={{ opacity: 0, y: 16, scale: 0.97 }}
             // Yay (spring) hedefi aşabildiğinden blur negatife düşüp tarayıcı uyarısı veriyordu: filtre ease ile gider.
             transition={{ type: 'spring', stiffness: 320, damping: 28, filter: { type: 'tween', ease: 'easeOut', duration: 0.2 } }}
-            className="fixed right-5 bottom-40 z-40 flex h-[min(560px,70dvh)] w-[min(400px,calc(100vw-2.5rem))] flex-col overflow-hidden rounded-3xl border border-border bg-popover shadow-2xl md:bottom-22"
+            className="fixed right-3 bottom-17 z-40 flex h-[min(560px,70dvh)] w-[min(400px,calc(100vw-1.5rem))] md:right-5 flex-col overflow-hidden rounded-3xl border border-border bg-popover shadow-2xl md:bottom-22"
           >
             <div className="flex items-center gap-2.5 border-b border-border bg-gradient-to-r from-primary/15 to-transparent px-4 py-3">
               <span className="grid size-8 place-items-center rounded-xl bg-primary/15 text-primary"><Sparkles className="size-4" /></span>

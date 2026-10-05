@@ -73,6 +73,54 @@ public sealed class EventHub
         };
     }
 
+    /// <summary>
+    /// GÜVENLİK: Olay yükünden gizli alanları (adında token/secret/password geçen; ör.
+    /// workflow.submitted'daki tek kullanımlık e-posta karar jetonu "ActionToken") iç içe dahil
+    /// ayıklar. Önceden jeton governance_events'e ham yazılıyor, olay radarında ve açık API'de
+    /// (events:read) okunabiliyordu: okuyan kişi başkasının onay adımını e-posta bağlantısıyla
+    /// karara bağlayabilirdi. <paramref name="personal"/> verilirse bu alanlar da (ör. onaycı
+    /// e-postası; radarda gereksiz kişisel veri) ayıklanır.
+    /// </summary>
+    public static JsonElement? Sanitize(JsonElement? payload, params string[] personal)
+    {
+        if (payload is not { } p || (p.ValueKind != JsonValueKind.Object && p.ValueKind != JsonValueKind.Array)) return payload;
+        var node = System.Text.Json.Nodes.JsonNode.Parse(p.GetRawText());
+        if (node is null || !Strip(node, personal)) return payload;
+        using var doc = JsonDocument.Parse(node.ToJsonString());
+        return doc.RootElement.Clone();
+    }
+
+    public static bool IsSecretName(string name)
+    {
+        var n = name.ToLowerInvariant();
+        return n.Contains("token") || n.Contains("secret") || n.Contains("password") || n.Contains("passwd");
+    }
+
+    private static bool Strip(System.Text.Json.Nodes.JsonNode node, string[] personal)
+    {
+        var changed = false;
+        if (node is System.Text.Json.Nodes.JsonObject o)
+        {
+            foreach (var key in o.Select(kv => kv.Key).ToList())
+            {
+                if (IsSecretName(key) || personal.Any(x => string.Equals(x, key, StringComparison.OrdinalIgnoreCase)))
+                {
+                    o.Remove(key);
+                    changed = true;
+                }
+                else if (o[key] is { } child && Strip(child, personal)) changed = true;
+            }
+        }
+        else if (node is System.Text.Json.Nodes.JsonArray a)
+        {
+            foreach (var child in a) if (child is not null && Strip(child, personal)) changed = true;
+        }
+        return changed;
+    }
+
+    /// <summary>Saklanan/radarda gösterilen yükten ayrıca çıkarılan kişisel alanlar.</summary>
+    public static readonly string[] RadarPersonalFields = { "ApproverEmail" };
+
     /// <summary>Yükten alan okur: büyük/küçük harf duyarsız, "a.b" ile iç içe.</summary>
     public static string? Field(JsonElement? payload, string path)
     {
@@ -164,6 +212,11 @@ public sealed class EventConsumer : BackgroundService
         var id = Guid.TryParse(H("event-id"), out var g) ? g : DeterministicId(r);
         JsonElement? payload = null;
         try { payload = JsonDocument.Parse(r.Message.Value).RootElement.Clone(); } catch (JsonException) { }
+        // Gizli alanlar (e-posta karar jetonu vb.) hiçbir yere (kural, webhook, sohbet) gitmez.
+        payload = EventHub.Sanitize(payload);
+        // Saklanan ve radarda gösterilen kopyada onaycı e-postası da yok (sohbet bildirimi
+        // onaycıyı e-postayla eşlediği için Dispatcher'a giden kopyada kalır).
+        var stored = EventHub.Sanitize(payload, EventHub.RadarPersonalFields);
         var tenant = EventHub.Field(payload, "TenantSlug");
         var at = r.Message.Timestamp.UtcDateTime;
         if (at.Year < 2000) at = DateTime.UtcNow;
@@ -176,10 +229,10 @@ public sealed class EventConsumer : BackgroundService
             INSERT INTO governance_events ("Id","TenantSlug","Topic","EventType","Payload","OccurredAt")
             VALUES ($1,$2,$3,$4,$5::jsonb,$6) ON CONFLICT ("Id") DO NOTHING
             """, ct, id, string.IsNullOrEmpty(tenant) ? null : tenant, r.Topic, type,
-            payload is null ? null : payload.Value.GetRawText(), at);
+            stored is null ? null : stored.Value.GetRawText(), at);
         if (inserted == 0) return; // daha önce işlendi
 
-        _hub.Publish(new RadarEvent(id, tenant, r.Topic, type, payload, at, EventHub.Describe(type, payload)));
+        _hub.Publish(new RadarEvent(id, tenant, r.Topic, type, stored, at, EventHub.Describe(type, stored)));
         if (!string.IsNullOrEmpty(tenant))
             await scope.ServiceProvider.GetRequiredService<Dispatcher>().DispatchAsync(scope.ServiceProvider, tenant, id, type, payload, ct);
     }

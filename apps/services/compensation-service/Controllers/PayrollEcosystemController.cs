@@ -30,18 +30,24 @@ public class PayrollEcosystemController : ControllerBase
     private string Tenant => _tenant.TenantSlug ?? "";
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
-    private async Task AuditAsync(string entityType, string entityId, string action, object changes)
+    // tenant: kaydın kiracısı. Platform yöneticisinin oturumunda kiracı olmadığından kayıt kendi kiracısına yazılır
+    // (aksi halde şirketin erişim kayıtlarında görünmüyordu).
+    private async Task AuditAsync(string entityType, string entityId, string action, object changes, string? tenant = null)
     {
         try
         {
             await _db.Database.ExecuteSqlRawAsync(
                 "INSERT INTO audit_log (\"TenantSlug\",\"Service\",\"EntityType\",\"EntityId\",\"Action\",\"Changes\",\"UserId\",\"UserName\",\"CorrelationId\",\"IpAddress\",\"OccurredAt\") " +
                 "VALUES ({0},'compensation-service',{1},{2},{3},{4}::jsonb,{5},{6},{7},{8},now())",
-                (object?)_tenant.TenantSlug ?? DBNull.Value, entityType, entityId, action, JsonSerializer.Serialize(changes, Json),
+                (object?)(tenant ?? _tenant.TenantSlug) ?? DBNull.Value, entityType, entityId, action, JsonSerializer.Serialize(changes, Json),
                 UserId, UserName, (object?)(Request.Headers["X-Correlation-Id"].FirstOrDefault() ?? HttpContext.TraceIdentifier) ?? DBNull.Value,
                 (object?)Request.Headers["X-Real-IP"].FirstOrDefault() ?? DBNull.Value);
         }
-        catch (Exception) { /* denetim yazılamazsa iş akışı bozulmaz */ }
+        catch (Exception ex)
+        {
+            // Denetim yazılamazsa iş akışı bozulmaz; ama sessizce yutulmaz (KVKK erişim kaydı eksik kalır).
+            HttpContext.RequestServices.GetService<ILogger<PayrollAudit>>()?.LogWarning(ex, "audit_log yazılamadı: {EntityType} {Action}", entityType, action);
+        }
     }
 
     private async Task<Guid?> MyEmployeeIdAsync(CancellationToken ct)
@@ -135,7 +141,7 @@ public class PayrollEcosystemController : ControllerBase
         };
         _db.PayrollExports.Add(e);
         await _db.SaveChangesAsync(ct);
-        await AuditAsync("PayrollExport", e.Id.ToString(), "Created", new { e.Kind, e.RowCount, period.Year, period.Month });
+        await AuditAsync("PayrollExport", e.Id.ToString(), "Created", new { e.Kind, e.RowCount, period.Year, period.Month }, e.TenantSlug);
         return Ok(new { e.Id, e.Kind, e.FileName, e.RowCount, e.SingleUse, e.ExpiresAt, warnings = r.Warnings });
     }
 
@@ -166,7 +172,7 @@ public class PayrollEcosystemController : ControllerBase
         if (e.SingleUse) { e.Cipher = null; e.PurgedAt = DateTimeOffset.UtcNow; }
         await _db.SaveChangesAsync(ct);
         await AuditAsync("PayrollExport", e.Id.ToString(), e.Kind is "SgkAphb" or "SgkHires" or "Bank" ? "Exported" : "Downloaded",
-            new { field = e.Kind, e.FileName, e.RowCount });
+            new { field = e.Kind, e.FileName, e.RowCount }, e.TenantSlug);
         return File(plain, e.ContentType + (e.ContentType.StartsWith("text/") ? "; charset=utf-8" : ""), e.FileName);
     }
 
@@ -249,7 +255,7 @@ public class PayrollEcosystemController : ControllerBase
         a.Status = body.Approve ? AdvanceStatus.Approved : AdvanceStatus.Rejected;
         a.DecidedBy = UserName; a.DecisionNote = body.Note?.Trim(); a.DecidedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);
-        await AuditAsync("SalaryAdvance", a.Id.ToString(), body.Approve ? "Approved" : "Rejected", new { a.Installments });
+        await AuditAsync("SalaryAdvance", a.Id.ToString(), body.Approve ? "Approved" : "Rejected", new { a.Installments }, a.TenantSlug);
         // Bildirimde tutar yazmaz (anlık bildirim/e-posta önizlemesinde görünmesin).
         await Notify(a.EmployeeId, body.Approve ? "Avans talebiniz onaylandı" : "Avans talebiniz reddedildi",
             body.Approve ? "Taksitler bordronuzdan kesinti olarak düşülecek. Ayrıntılar: Bordrolarım › Avanslar." : $"Gerekçe: {a.DecisionNote}", "compensation.advance", ct);
@@ -423,7 +429,7 @@ public class PayrollEcosystemController : ControllerBase
             return Conflict(new { message = "Bu dönemde zam önerisi var; dönem silinemez. Önerilere kapatmak için durumunu değiştirin." });
         _db.RaiseCycles.Remove(c);
         await _db.SaveChangesAsync(ct);
-        await AuditAsync("RaiseCycle", id.ToString(), "Deleted", new { c.Name, c.Year, status = c.Status.ToString() });
+        await AuditAsync("RaiseCycle", id.ToString(), "Deleted", new { c.Name, c.Year, status = c.Status.ToString() }, c.TenantSlug);
         return NoContent();
     }
 
@@ -446,7 +452,7 @@ public class PayrollEcosystemController : ControllerBase
         var current = records.GroupBy(r => r.EmployeeId).ToDictionary(g => g.Key, g => g.OrderByDescending(r => r.EffectiveFrom).First());
         var bands = await _db.SalaryBands.AsNoTracking().Where(b => b.Year == c.Year || b.Year == c.Year - 1).ToListAsync(ct);
         var proposals = await _db.RaiseProposals.AsNoTracking().Where(p => p.CycleId == id && ids.Contains(p.EmployeeId)).ToDictionaryAsync(p => p.EmployeeId, ct);
-        await AuditAsync("RaiseCycle", id.ToString(), "SensitiveViewed", new { field = "salaryWorksheet", count = scope.Count });
+        await AuditAsync("RaiseCycle", id.ToString(), "SensitiveViewed", new { field = "salaryWorksheet", count = scope.Count }, c.TenantSlug);
         var rows = scope.Where(p => current.ContainsKey(p.Id)).Select(p =>
         {
             var r = current[p.Id];
@@ -541,7 +547,7 @@ public class PayrollEcosystemController : ControllerBase
         c.AppliedAt = DateTimeOffset.UtcNow;
         c.Status = RaiseCycleStatus.Closed;
         await _db.SaveChangesAsync(ct);
-        await AuditAsync("RaiseCycle", id.ToString(), "Applied", new { count = approved.Count });
+        await AuditAsync("RaiseCycle", id.ToString(), "Applied", new { count = approved.Count }, c.TenantSlug);
         foreach (var p in approved)
             await Notify(p.EmployeeId, "Ücret güncellemesi", $"{c.Name} kapsamında ücretiniz {c.EffectiveDate:dd.MM.yyyy} itibarıyla güncellendi. Ayrıntı için İK ile görüşebilirsiniz.", "compensation.raise", ct);
         return Ok(new { applied = approved.Count });

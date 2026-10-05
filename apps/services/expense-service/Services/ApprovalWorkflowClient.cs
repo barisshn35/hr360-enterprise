@@ -78,17 +78,22 @@ public class ApprovalWorkflowClient
 
             var employee = JsonSerializer.Deserialize<EmployeeDto>(
                 await empResp.Content.ReadAsStringAsync(ct), JsonOpts);
-            var activeDeptId = employee?.Assignments
+            if (employee is null) return null;
+            var activeDeptId = employee.Assignments
                 .FirstOrDefault(a => a.EffectiveTo is null)?.DepartmentId;
-            if (activeDeptId is null) return null;
+            // Boş liste = onaycıyı workflow-service belirler (üst bölüm başı / İK onaycısı); önceden
+            // departman başının kendi masrafı hiçbir onaycıya gitmeden askıda kalıyordu.
+            var approvers = new List<Guid>();
+            if (activeDeptId is not null)
+            {
+                var deptResp = await _http.SendAsync(
+                    Build(HttpMethod.Get, _organizationServiceUrl, $"/api/departments/{activeDeptId}"), ct);
+                if (!deptResp.IsSuccessStatusCode) return null;
 
-            var deptResp = await _http.SendAsync(
-                Build(HttpMethod.Get, _organizationServiceUrl, $"/api/departments/{activeDeptId}"), ct);
-            if (!deptResp.IsSuccessStatusCode) return null;
-
-            var dept = JsonSerializer.Deserialize<DepartmentDto>(
-                await deptResp.Content.ReadAsStringAsync(ct), JsonOpts);
-            if (dept?.HeadEmployeeId is null || dept.HeadEmployeeId == employeeId) return null;
+                var dept = JsonSerializer.Deserialize<DepartmentDto>(
+                    await deptResp.Content.ReadAsStringAsync(ct), JsonOpts);
+                if (dept?.HeadEmployeeId is { } headId && headId != employeeId) approvers.Add(headId);
+            }
 
             var wfResp = await _http.SendAsync(
                 Build(HttpMethod.Post, _workflowServiceUrl, "/api/workflows", new CreateWorkflowBody(
@@ -96,7 +101,7 @@ public class ApprovalWorkflowClient
                     RequesterEmployeeId: employeeId,
                     Subject: subject,
                     Payload: payload,
-                    ApproverEmployeeIds: new List<Guid> { dept.HeadEmployeeId.Value },
+                    ApproverEmployeeIds: approvers,
                     SlaHours: null)), ct);
             if (!wfResp.IsSuccessStatusCode) return null;
 
@@ -144,4 +149,27 @@ public class ApprovalWorkflowClient
     }
 
     private record EmployeeIdDto(Guid Id);
+
+    /// <summary>
+    /// İptal edilen talebin (seyahat) onay akışını workflow-service'in iç ucuyla talep sahibi
+    /// adına kapatır — izin ve fazla mesai iptaliyle aynı yol. İK başkasının talebini iptal
+    /// ettiğinde de çalışır (kullanıcı jetonu gerekmez). Başarısızsa false; kayıt yine iptal edilir.
+    /// </summary>
+    public async Task<bool> CancelWorkflowInternalAsync(string? tenantSlug, Guid workflowId, Guid requesterEmployeeId, CancellationToken ct)
+    {
+        var token = Environment.GetEnvironmentVariable("INTERNAL_SERVICE_TOKEN");
+        if (string.IsNullOrEmpty(token) || string.IsNullOrEmpty(tenantSlug)) return false;
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Post, $"{_workflowServiceUrl}/api/internal/workflows/{workflowId}/cancel")
+            {
+                Content = new StringContent(JsonSerializer.Serialize(new { tenantSlug, actorEmployeeId = requesterEmployeeId }),
+                    Encoding.UTF8, "application/json"),
+            };
+            req.Headers.Add("X-Internal-Token", token);
+            using var resp = await _http.SendAsync(req, ct);
+            return resp.IsSuccessStatusCode;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException) { return false; }
+    }
 }

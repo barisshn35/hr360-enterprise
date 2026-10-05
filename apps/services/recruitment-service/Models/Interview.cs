@@ -3,7 +3,8 @@ using RecruitmentService.Tenancy;
 namespace RecruitmentService.Models;
 
 public enum InterviewType { Phone, Technical, HR, Final }
-public enum InterviewResult { Pending, Pass, Fail, NoShow }
+/// <summary>Cancelled: planlanan mülakat iptal edildi (metin olarak saklanır; şema değişmez).</summary>
+public enum InterviewResult { Pending, Pass, Fail, NoShow, Cancelled }
 
 public class Interview : ITenantOwned
 {
