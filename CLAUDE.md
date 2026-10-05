@@ -43,9 +43,14 @@ iletişim **Türkçe**. Ürün belgeleri: `README.md`, `docs/` (mimari, güvenli
   - unit: .NET xUnit (`tests/dotnet/*`), Vitest (`apps/web`), ML pytest.
   - integration: 23 Python betiği (`tests/integration/test_*.py`), chatmock ve OpenLDAP'ı kendisi başlatır.
     Her betik `FAILS: n` yazar. Kullanıcılar `tests/credentials.json` (ayse=çalışan, mehmet=yönetici,
-    admin=İK+şirket yöneticisi, platform=platform yöneticisi). Testler sabit demo verisine dayanır
+    admin=İK+şirket yöneticisi, platform=platform yöneticisi, ik=Elif Şahin: çalışan kaydı olan İK yöneticisi ve
+    üst onaycısı olmayan taleplerin İK onaycısı). Testler sabit demo verisine dayanır
     (Ayşe `0e879b9e-d72b-489f-aa5b-8291e0bcbefb`, Mühendislik departmanı; temiz kurulumda `tests/support/seed_demo.py`) — bkz. "Demo verisi".
   - e2e: Playwright (`tests/e2e`), `pip install pytest playwright && playwright install --with-deps chromium`.
+  - Test kalıntıları: integration ve e2e sonunda (başarısız olsalar da) `tests/support/cleanup_test_data.py`
+    çalışır; test işaretli kayıtları (izin/akış/bildirim vb.) tek transaction'da siler, izin bakiyelerini
+    yeniden hesaplar. Elle: `python3 tests/support/cleanup_test_data.py [--dry-run]`. Yeni test kayıt
+    bırakıyorsa işaretini (gerekçe/başlık öneki) bu betiğe ekle; demo seed verisine dokunma.
 - Arayüz tip kontrolü: `cd apps/web && npx tsc -b --noEmit`
 - Çeviri: `cd apps/web && node scripts/i18n-check.mjs --missing` (eksik anahtarlar), ekledikten sonra
   `node scripts/i18n-check.mjs --write`. Sunucu iletileri `"@server:<Türkçe metin>"` anahtarıyla.

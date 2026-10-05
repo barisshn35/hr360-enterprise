@@ -8,6 +8,7 @@
 #   scripts/test.sh e2e           Tarayici testleri (Playwright): tum ekranlar x tum roller, izin akisi
 #   scripts/test.sh all           Hepsi
 #
+# integration ve e2e sonunda test kalintilari temizlenir (tests/support/cleanup_test_data.py).
 # integration ve e2e calisan bir kurulum ister. Test kullanicilari: tests/credentials.json
 # (ornek: tests/credentials.example.json) ya da HR360_TEST_USERS. Adres: HR360_BASE_URL.
 # Gereken: docker; e2e/integration icin python3 + `pip install pytest playwright` + `playwright install chromium`.
@@ -19,6 +20,14 @@ what="${1:-unit}"
 fail=0
 step() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 run() { if "$@"; then echo "OK"; else echo "BASARISIZ: $*"; fail=1; fi; }
+# Testlerin canli demo veritabaninda biraktigi kalintilari temizler (tests/support/cleanup_test_data.py).
+# Testler basarisiz olsa da calisir; temizlik hatasi ekrana yazilir ama test sonucunu (fail) degistirmez.
+cleanup_data() {
+  step "Test kalintilari temizligi"
+  if ! python3 tests/support/cleanup_test_data.py; then
+    echo "UYARI: test kalintilari temizlenemedi (test sonucu etkilenmez)" >&2
+  fi
+}
 
 if ! declare -F docker >/dev/null && ! docker info >/dev/null 2>&1 && sudo docker info >/dev/null 2>&1; then
   docker() { command sudo docker "$@"; }
@@ -68,11 +77,13 @@ integration() {
   docker compose up -d >/dev/null
   docker compose -f docker-compose.yml -f deploy/testing/chat-mock.yml --profile ldaptest rm -sf openldap >/dev/null 2>&1 || true
   docker rm -f chatmock >/dev/null 2>&1 || true
+  cleanup_data
 }
 
 e2e() {
   step "Tarayici testleri (Playwright)"
   run python3 -m pytest -q -p no:cacheprovider tests/e2e
+  cleanup_data
 }
 
 case "$what" in

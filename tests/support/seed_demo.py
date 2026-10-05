@@ -5,8 +5,9 @@ açılışta "demo" şirketini (Keycloak organizasyonu + şirket kaydı) oluştu
 
   - demo.admin'e hr-admin rolü (İK + şirket yöneticisi), şirkete çalışan kotası
   - Mühendislik departmanı; Mehmet Demir (yönetici, departman başı), Ayşe Yılmaz (çalışan,
-    "Yazılım Mühendisi"), Zeynep Kaya (departmansız, giriş hesabı yok)
-  - Ayşe ve Mehmet için davet (Keycloak hesabı + organizasyon üyeliği), kalıcı parola
+    "Yazılım Mühendisi"), Zeynep Kaya (departmansız, giriş hesabı yok); İnsan Kaynakları
+    departmanında Elif Şahin (İK uzmanı, İK yöneticisi rolü, İK onaycısı)
+  - Ayşe, Mehmet ve Elif için davet (Keycloak hesabı + organizasyon üyeliği), kalıcı parola
   - Maaş kayıtları, yıllık izin bakiyesi, Ayşe'nin bir yıllık izin talebi, resmî tatiller, örnek masalar, örnek bilgi bankası makaleleri
   - tests/credentials.json (yoksa; parolalar rastgele üretilir, ekrana basılmaz)
 
@@ -41,18 +42,23 @@ def env():
 
 
 def ensure_credentials():
-    if CRED.exists():
-        return json.loads(CRED.read_text())
-    e = env()
-    creds = {
-        "admin": ["demo.admin", e["DEMO_ADMIN_PASSWORD"]],
-        "platform": ["platform.admin", e["PLATFORM_ADMIN_PASSWORD"]],
-        "mehmet": ["mehmet.demir@demo.hr360", "Hr360-" + secrets.token_urlsafe(12)],
-        "ayse": ["ayse.yilmaz@demo.hr360", "Hr360-" + secrets.token_urlsafe(12)],
+    creds = json.loads(CRED.read_text()) if CRED.exists() else {}
+    e = env() if not {"admin", "platform"} <= creds.keys() else {}
+    wanted = {
+        "admin": lambda: ["demo.admin", e["DEMO_ADMIN_PASSWORD"]],
+        "platform": lambda: ["platform.admin", e["PLATFORM_ADMIN_PASSWORD"]],
+        "mehmet": lambda: ["mehmet.demir@demo.hr360", "Hr360-" + secrets.token_urlsafe(12)],
+        "ayse": lambda: ["ayse.yilmaz@demo.hr360", "Hr360-" + secrets.token_urlsafe(12)],
+        # İK uzmanı: çalışan kaydı olan İK yöneticisi; üst onaycısı olmayan taleplerin İK onaycısı.
+        "ik": lambda: ["elif.sahin@demo.hr360", "Hr360-" + secrets.token_urlsafe(12)],
     }
-    CRED.write_text(json.dumps(creds, indent=2) + "\n")
-    os.chmod(CRED, 0o600)
-    print("tests/credentials.json yazıldı")
+    missing = [k for k in wanted if k not in creds]
+    if missing:
+        for k in missing:
+            creds[k] = wanted[k]()
+        CRED.write_text(json.dumps(creds, indent=2) + "\n")
+        os.chmod(CRED, 0o600)
+        print("tests/credentials.json güncellendi: " + ", ".join(missing))
     return creds
 
 
@@ -128,15 +134,24 @@ if not eng:
     _, d = api("admin", "POST", "/api/organization/departments", {"name": "Mühendislik", "companyId": company_id, "parentDepartmentId": None})
     eng = d["id"]
     print("Mühendislik departmanı oluşturuldu")
+# İK departmanı Mühendislik'ten sonra ve başsız oluşturulur (testler "en eski başlı departman"
+# olarak Mühendislik'i bekler).
+hr_dept = psql("""SELECT "Id" FROM organization_departments WHERE "TenantSlug"='demo' AND "Name"='İnsan Kaynakları' LIMIT 1""")
+if not hr_dept:
+    _, d = api("admin", "POST", "/api/organization/departments", {"name": "İnsan Kaynakları", "companyId": company_id, "parentDepartmentId": None})
+    hr_dept = d["id"]
+    print("İnsan Kaynakları departmanı oluşturuldu")
 
 # --- Çalışanlar -----------------------------------------------------------------------------
 PEOPLE = [
     ("mehmet", "Mehmet", "Demir", "mehmet.demir@demo.hr360", "2019-03-01", "Mühendislik Müdürü"),
     ("ayse", "Ayşe", "Yılmaz", "ayse.yilmaz@demo.hr360", "2022-09-12", "Yazılım Mühendisi"),
     ("zeynep", "Zeynep", "Kaya", "zeynep.kaya@demo.hr360", "2023-02-06", None),
+    ("ik", "Elif", "Şahin", "elif.sahin@demo.hr360", "2021-04-05", "İK Uzmanı"),
 ]
 ids = {}
 for key, first, last, email, hired, title in PEOPLE:
+    dept = hr_dept if key == "ik" else eng
     eid = psql(f"""SELECT "Id" FROM employee_employees WHERE "TenantSlug"='demo' AND "Email"='{email}' LIMIT 1""")
     if not eid:
         _, e = api("admin", "POST", "/api/employee/employees",
@@ -146,7 +161,7 @@ for key, first, last, email, hired, title in PEOPLE:
     ids[key] = eid
     if title and not psql(f"""SELECT 1 FROM employee_assignments WHERE "EmployeeId"='{eid}' AND "EffectiveTo" IS NULL"""):
         api("admin", "POST", f"/api/employee/employees/{eid}/assignments",
-            {"departmentId": eng, "positionTitle": title, "effectiveFrom": hired})
+            {"departmentId": dept, "positionTitle": title, "effectiveFrom": hired})
 
 if psql(f"""SELECT "HeadEmployeeId" FROM organization_departments WHERE "Id"='{eng}'""") != ids["mehmet"]:
     api("admin", "PUT", f"/api/organization/departments/{eng}", {"name": "Mühendislik", "headEmployeeId": ids["mehmet"]})
@@ -154,7 +169,7 @@ if psql(f"""SELECT "HeadEmployeeId" FROM organization_departments WHERE "Id"='{e
 
 # --- Giriş hesapları (davet) ------------------------------------------------------------------
 kc = {}
-for key in ("mehmet", "ayse"):
+for key in ("mehmet", "ayse", "ik"):
     username, password = CREDS[key]
     _, r = api("admin", "POST", f"/api/tenant/my-tenant/members/{ids[key]}/invite")
     kc[key] = r["keycloakUserId"]
@@ -162,6 +177,9 @@ for key in ("mehmet", "ayse"):
     kcadm("set-password", "--userid", kc[key], "--new-password", password)
     drop_token(key)
 kcadm("add-roles", "--uid", kc["mehmet"], "--rolename", "manager")
+kcadm("add-roles", "--uid", kc["ik"], "--rolename", "hr-admin")
+# Üst onaycısı bulunamayan talepler (departman başının kendi izni vb.) İK uzmanına gider.
+api("admin", "PUT", "/api/workflow/workflows/settings", {"hrApproverEmployeeId": ids["ik"]})
 
 # --- Maaş, izin, tatil, masa ----------------------------------------------------------------
 for key, salary in (("ayse", 85000), ("mehmet", 140000)):
@@ -186,4 +204,4 @@ if not psql("""SELECT 1 FROM engagement_desks WHERE "TenantSlug"='demo' AND "IsA
 # İK asistanı örnek bilgi bankası makaleleri (ör. "Uzaktan çalışma"); var olanlar atlanır.
 api("admin", "POST", "/api/governance/insights/kb/samples")
 
-print(json.dumps({"AYSE": ids["ayse"], "MEHMET": ids["mehmet"], "ZEYNEP": ids["zeynep"], "ENG": eng, "AYSE_KC": kc["ayse"]}))
+print(json.dumps({"AYSE": ids["ayse"], "MEHMET": ids["mehmet"], "ZEYNEP": ids["zeynep"], "ELIF": ids["ik"], "ENG": eng, "AYSE_KC": kc["ayse"]}))
