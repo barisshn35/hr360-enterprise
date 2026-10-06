@@ -34,6 +34,8 @@ export interface ModelCard {
   training_rows: number | null
   data_window: { start: string; end: string } | null
   data_window_note: string | null
+  /** Dalga 10: kiracı izniyle toplanan veriyle eğitildiyse kaynağı (kiracı adı değil özeti). */
+  provenance?: { kind: 'tenant-consented'; tenant_ref: string; consent_at: string; validation: 'time-based'; train_snapshot: string; eval_snapshot: string } | null
   evaluation_source: string | null
   evaluation_rows: number | null
   metrics: ModelMetrics | null

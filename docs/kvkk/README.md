@@ -18,13 +18,23 @@ Açılış sekmesi. Şunları denetler ve sorunlu satırdan ilgili sekmeye göt�
 | Yurt dışına aktarım | Dayanak kaydı olmadan kullanılan hizmet ya da Kurul'a bildirimi geciken standart sözleşme |
 | E-posta sağlayıcısı | SMTP sunucusu yurt dışında olabilir (bilgi) |
 
-## İşleme envanteri (m.16, VERBİS hazırlığı)
+## İşleme envanteri (m.16, VERBİS)
 
-Her modül için işleme faaliyeti, ilgili kişi grubu, veri kategorileri, amaç, hukuki sebep,
-özel nitelikli veri olup olmadığı, saklama süresi, alıcı grupları, yurt dışı aktarım ve
-güvenlik önlemleri listelenir. "Excel olarak indir" ile VERBİS'e girilecek bilgilerin taslağı
-alınır. Yurt dışı aktarım sütunu o an açık olan entegrasyonlara göre hesaplanır.
-Envanter metni Türkçedir.
+**KVKK › Envanter** bakımı yapılan, şirkete özel bir kayıttır (`governance_privacy_inventory`).
+İlk açılışta ürünün veri modelinden ve saklama kategorilerinden (yerleşik katalog + özel alanlar)
+tohumlanır; İK/KVKK sorumlusu her faaliyeti düzenler, şirkete özgü faaliyet ekler ya da katalog
+faaliyetini pasifleştirir (katalog faaliyeti silinemez). Ürün yeni bir işleme getirdiğinde
+"Katalogdan eksikleri ekle" yalnızca eksik faaliyetleri ekler, düzenlenmiş satırlara dokunmaz.
+Her değişiklik önceki/sonraki değerleriyle denetim kaydına yazılır; ekranda "son güncelleme"
+(zaman ve kişi) görünür.
+
+Dışa aktarım VERBİS alanlarıyla aynı sıradadır: veri kategorisi, kişisel veri, işleme amacı,
+hukuki sebep, ilgili kişi grubu, alıcı grubu, saklama süresi, yurt dışına aktarım (hizmet, ülke ve
+kayıtlı dayanak — bkz. aşağı), özel nitelikli, idari ve teknik tedbirler. Her faaliyetin her veri
+kategorisi ayrı satırdır. Biçimler: Excel (XLSX, arayüz üretir), CSV (noktalı virgüllü, Türkçe
+Excel doğrudan açar; formül enjeksiyonuna karşı kaçışlı) ve yazdırılabilir HTML (tarayıcıdan PDF).
+Her indirme denetim kaydına yazılır. Eski uç `GET /privacy/inventory` (yalnızca yerleşik katalog)
+geriye uyumluluk için durur. Envanter metni Türkçedir.
 
 ## Yurt dışına aktarım (m.9)
 
@@ -52,7 +62,39 @@ belge talepleri (varsayılan 24 ay). "Otomatik" işaretli politikalar günde bir
 veya Anonim Hale Getirme Yönetmeliği'ndeki en geç 6 aylık periyodik imha süresinin içinde kalır.
 
 Her silme ve anonimleştirme **imha tutanağına** yazılır: tarih, veri kategorisi, yöntem,
-etkilenen kayıt sayısı, tetikleyen (periyodik / elle / yedekten geri yükleme sonrası).
+etkilenen kayıt sayısı, tetikleyen (periyodik / elle / yedekten geri yükleme sonrası) ve
+(dalga 10) tablo bazında döküm.
+
+**Kapsam (dalga 10).** Saklama uygulayıcısı her kategoriyi tablo/işlem adımlarından oluşan bir
+plana çevirir (`Infrastructure/RetentionPlans.cs`); önizleme ile uygulama aynı planı kullanır.
+Ayrılmış çalışan anonimleştirmesi yalnızca çalışan kaydı ve profili değil, tüm servislerdeki ad,
+iletişim ve serbest metin alanlarını kapsar: takdir, mentorluk, iç ilan başvurusu, birebir notları,
+masa/ofis durumu, ayrılış kaydı (çıkış görüşmesi), izin gerekçesi, puantaj notu ve ham konum,
+kart/PIN, vardiya tercihleri, fazla mesai gerekçesi, pasaport numarası, değerlendirme ve geri
+bildirim metinleri, sertifika numarası, SCORM verisi, zimmet notu, bildirim geçmişi ve abonelikleri,
+sohbet bağlamı/hesap bağlantıları, takvim bağlantıları, rıza ve okuma kayıtlarındaki ad/IP, başvuru
+kayıtlarındaki ad/iletişim ve veri paketleri. Yasal saklama yükümlülüğü olanlar bilerek bırakılır
+ve gerekçesiyle listelenir (bordro/ücret 10 yıl, masraf/fiş VUK, İSG 15 yıl, kendi politikası olan
+kategoriler). Aday anonimleştirmesi recruitment-service'in kendi turuyla aynı alanları temizler
+(özgeçmiş metni ve dosya bağlantısı, notlar, mülakat/teklif metinleri).
+
+**Önizleme (kuru çalıştırma).** Her politikanın yanındaki göz düğmesi, kayıtlı ayarla çalıştırılsaydı
+hangi tablodan kaç satırın etkileneceğini, kaç dosyanın silineceğini ve neyin bilerek
+saklandığını gösterir; hiçbir şey değişmez (`GET /privacy/retention/{id}/preview`).
+
+**İmha doğrulama (nesne deposu).** Silinen/anonimleşen kaydın başvurduğu dosya anahtarları
+(şu an: aday özgeçmişi `ResumeStorageKey`) kayıt değişmeden önce `governance_storage_deletions`
+kuyruğuna alınır. Bakım turu (saatte bir; elle "Bekleyen dosyaları şimdi işle") tenant-service'in
+iç ucundan (`POST /internal/storage/delete`, X-Internal-Token; S3 kimlik bilgileri yalnızca orada)
+nesneyi siler ve yokluğunu yeniden sorgulayarak doğrular. Durumlar: silindi ve doğrulandı, zaten
+yok, depoda tutulmuyor (kova yok), başarısız (en çok 5 deneme). Anahtarın kendisi işlendikten
+sonra silinir, yalnızca SHA-256 özeti kalır. Yalnızca kişisel dosya kovalarına dokunulur
+(`STORAGE_PERSONAL_BUCKETS`, varsayılan `hr360-documents`); şirket logosu ve model dosyaları bu
+yolla silinemez. **KVKK › İmha doğrulama** sekmesi kuyruğun durumunu, kişi kimliği taşıyan her
+tablonun planda ya da gerekçeli istisnada olup olmadığını (veritabanı şemasından canlı denetim),
+ürünün dosya/ikili veri tuttuğu konumları ve son imha turlarının tablo dökümünü gösterir.
+Not: bu sürümde özgeçmiş, fiş ve belge dosyası yükleme ucu yoktur (anahtarlar istemciden gelir);
+kova yoksa durum "depoda tutulmuyor" olur.
 
 **Yedekler:** `scripts/backup.sh` arşivi AES-256 ile şifreler (`BACKUP_ENCRYPTION_KEY`); dış
 depoya yalnızca şifreli arşiv gider, yurt dışı depo m.9 dayanağı ister. Yedekten geri
@@ -125,6 +167,16 @@ edilmiş kayıtlar yeniden silinir (bkz. README › Yedekleme). Tutanaklar silin
 onay kutusunda birleştirilmez. Yeni sürüm yayımlanınca eski onaylar "güncel değil" görünür ve
 çalışandan yeniden okuması istenir. Eski sürümler silinmez: kimin hangi metni gördüğü kanıttır.
 
+**Yeniden onay kampanyası (dalga 10).** Yeni sürüm yayımlanınca o metin için kampanya
+kendiliğinden açılır (aynı tipin önceki açık kampanyası kapanır); yerleşik sürüm (ör.
+`GORSEL_KULLANIM` 2026.1) için İK elle başlatabilir. Hedef: aydınlatma metninde hesabı olan tüm
+çalışanlar; açık rızada yalnızca **eski sürüme onay vermiş** olanlar (rızaları eski metne dayanır).
+Reddetmiş ya da hiç yanıtlamamış kişi hedef değildir: rıza zorlanmaz. Yeni sürüme verilen ret de
+yanıttır. **KVKK › Rıza durumu** ilerlemeyi (yanıtlayan/hedef) ve bekleyenleri gösterir; İK 24 saatte
+bir hatırlatma gönderebilir, bakım turu kampanya başladıktan 7 gün sonra haftada bir (en çok 3 kez)
+otomatik hatırlatır. Bekleyen kişi girişte kapatılabilir bir bilgilendirme bandı görür
+(Profilim › Gizlilik'e götürür). Hatırlatma ve kampanya işlemleri denetim kaydına yazılır.
+
 ## Veri ihlali (m.12/5)
 
 **KVKK › Veri ihlali**: tespit anı, etkilenen veri kategorileri ve çalışanlar, neden ve önlemler
@@ -139,6 +191,20 @@ gelen başvuru İK tarafından kaydedilir; 30 günlük süre başvurunun ulaşt�
 Kimlik doğrulanmadan (KEP, güvenli e-imza, kayıtlı e-posta, kimlik belgesi görülerek) başvuru
 "Sonuçlandı" yapılamaz; kimlik belgesinin kopyası saklanmaz. Yanıt şablonları (bilgi, düzeltme,
 silme, yasal saklama nedeniyle ret, itiraz, kimlik doğrulama isteği) hazır gelir.
+
+**Süre takibi (dalga 10).** Listede açık başvurunun kaçıncı gününde olduğu (Gün n/30) gösterilir.
+Bakım turu 20. ve 27. günde birer hatırlatma, süre geçince bir kez süre aşımı uyarısını İK
+alıcılarına (güvenlik ayarlarındaki uyarı alıcıları + İK onaycısı) uygulama içi gönderir; bildirimde
+kişinin adı yoktur. Her uyarı denetim kaydına yazılır.
+
+**Erişim başvurusu veri paketi.** Bilgi/erişim başvurusu panelden gelirse (oturumla doğrulanmış)
+paket hemen, panel dışından gelirse kimlik doğrulandığı anda otomatik hazırlanır; İK yeniden de
+hazırlayabilir. ZIP içeriği: tüm modüllerdeki kişisel veri (dışa aktarım ucuyla aynı içerik),
+hassas veriye erişim kayıtları (son 2 yıl), başvuru özeti, açıklama metni ve SHA-256 manifesti.
+Paket AES-256-GCM ile şifreli saklanır; İK her zaman, başvurucu başvurusu **sonuçlandıktan** sonra
+Profilim › Gizlilik'ten indirir. Her hazırlama ve indirme denetim/erişim kaydına yazılır. Paket
+oluşturulduktan 60 gün sonra (sonuçlandırmada en az 30 gün uzar) silinir; çalışan anonimleşince de
+silinir. Başvuru sonuçlanınca panelden başvurana bildirim gider.
 
 ## Gizlilik etki değerlendirmesi
 
@@ -188,6 +254,17 @@ performans puanı, yapay zekâ özetleri. Çalışan **Profilim › Gizlilik**'t
   kaydına yazılır. Gateway, model uçlarını (`/ml/predict`, `/ml/explain`) dışarıya kapatır.
 - Ekranda skorun tek başına karar için kullanılamayacağı yazılıdır.
 
+## Makine öğrenmesi ve KVKK (dalga 10)
+
+- **Devir modelinin şirket verisiyle eğitimi:** varsayılan kapalıdır; şirket yöneticisi (tenant-admin)
+  **Model kartı › Modeli şirket verisiyle eğit (izin)** ile açar/kapatır (denetim kaydı). Ayrıntı ve
+  eşikler: `docs/ml/README.md`.
+- **"Sana uygun" önerileri** yalnızca kişinin kendisine gösterilir, otomatik başvuru/kayıt yapmaz.
+- **Aday–ilan uygunluk puanı** işe alım uzmanına yardımcıdır; otomatik eleme/ret yoktur; ad,
+  cinsiyet, yaş, fotoğraf, adres puanlamaya girmez; her hesaplama denetim kaydına yazılır.
+- Üçü de envanterde ayrı işleme faaliyeti olarak yer alır (`attrition-training`,
+  `growth-recommendations`, `candidate-fit`).
+
 ## Test
 
 `tests/integration/test_payroll_time.py`, `test_workflow_docs.py` ve `test_push.py` modül
@@ -197,3 +274,8 @@ imha tutanağı, şifreleme, gerekçe zorunluluğu, erişim kaydı ve itiraz ak�
 `tests/integration/test_kvkk_ops.py` metin sürümlerini, 72 saat kuralını, kimlik doğrulama
 zorunluluğunu, etki değerlendirmesini, alan yetkilerini, hash zincirinin kurcalamayı yakalamasını,
 SIEM'de takma ad kullanımını, IP kısıtını ve oturum yönetimini denetler.
+`tests/integration/test_kvkk_ml10.py` (dalga 10) VERBİS envanterini (tohumlama, düzenleme denetimi,
+CSV/HTML/JSON), başvuru gün sayacını ve veri paketini (ZIP manifesti, kimlik ve sonuçlandırma kuralı),
+yeniden onay kampanyasını (otomatik açılış, giriş bandı, hatırlatma sınırı), imha önizlemesini,
+kapsam denetimini, tenant-service üzerinden nesne deposu doğrulamasını ve ML izin/eşik kurallarını
+denetler.

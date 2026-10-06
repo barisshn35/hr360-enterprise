@@ -162,3 +162,36 @@ public class PlatformAccessRulesTests
     [Fact]
     public void Reason_too_long() => Assert.NotNull(PlatformAccessRules.Validate("demo", new string('x', 501), 1));
 }
+
+/// <summary>Dalga 10 (madde 57): nesne deposu imha doğrulaması — yalnızca kişisel dosya kovaları.</summary>
+public class ObjectStorageEraserTests
+{
+    private static readonly string[] Allowed = { "hr360-documents", "cv" };
+
+    [Theory]
+    [InlineData("ozgecmis/ayse.pdf", "hr360-documents", "ozgecmis/ayse.pdf")]
+    [InlineData("cv/ayse.pdf", "cv", "ayse.pdf")]
+    [InlineData("s3://cv/x.pdf", "cv", "x.pdf")]
+    [InlineData("/hr360-documents/a/b.pdf", "hr360-documents", "a/b.pdf")]
+    public void Izinli_kova(string raw, string bucket, string key)
+    {
+        var (b, k) = TenantService.Services.ObjectStorageEraser.Resolve(raw, Allowed, "hr360-documents");
+        Assert.Equal(bucket, b);
+        Assert.Equal(key, k);
+    }
+
+    [Theory]
+    [InlineData("tenant-logos/abc.png")]
+    [InlineData("hr360-mlflow-artifacts/1/model.pkl")]
+    [InlineData("../etc/passwd")]
+    [InlineData("")]
+    public void Izinsiz_ya_da_gecersiz(string raw) =>
+        Assert.Null(TenantService.Services.ObjectStorageEraser.Resolve(raw, Allowed, "hr360-documents").Bucket);
+
+    [Fact]
+    public void Kova_listesi_varsayilani()
+    {
+        Assert.Equal(new[] { "hr360-documents" }, TenantService.Services.ObjectStorageEraser.Buckets(null));
+        Assert.Equal(new[] { "a-b", "cvs" }, TenantService.Services.ObjectStorageEraser.Buckets(" a-b, cvs ,x"));
+    }
+}

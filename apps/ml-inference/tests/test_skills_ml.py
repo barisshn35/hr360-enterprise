@@ -56,3 +56,33 @@ def test_beceri_haritasi_kucuk_grup_gizler():
     assert res["hidden_people"] == 3
     edge = next(e for e in res["edges"] if {e["a"], e["b"]} == {"Python", "Kubernetes"})
     assert edge["people"] == 6 and edge["jaccard"] == 1.0
+
+
+def test_sana_uygun_oneriler_aciklamali_ve_yalnizca_oneri():
+    req = sm.RecommendRequest(
+        me=sm.MeIn(skills=["csharp", "PostgreSQL", "Excel"], position="Yazılım Geliştirici",
+                   gaps=[sm.Gap(id="g1", name="Kubernetes yönetimi", required=4, current=1), sm.Gap(id="g2", name="Sunum", required=3, current=3)],
+                   completed_course_ids=["c-done"]),
+        postings=[sm.PostingRef(id="p1", title="Backend Geliştirici", text="C#, PostgreSQL ve Kubernetes bilgisi"),
+                  sm.PostingRef(id="p2", title="Muhasebe Uzmanı", text="Muhasebe ve bordro deneyimi")],
+        mentors=[sm.MentorRef(id="m1", offers=["Kubernetes", "Docker"], free_slots=2),
+                 sm.MentorRef(id="m2", offers=["Kubernetes"], free_slots=0),
+                 sm.MentorRef(id="m3", offers=["Satış"], free_slots=3)],
+        courses=[sm.CourseRef(id="c1", title="Kubernetes ile konteyner yönetimi", competencies=[sm.CourseCompetency(id="g1", target_level=3)]),
+                 sm.CourseRef(id="c-done", title="Kubernetes giriş", competencies=[sm.CourseCompetency(id="g1", target_level=2)]),
+                 sm.CourseRef(id="c3", title="Pasta yapımı")],
+    )
+    res = sm.recommend(req)
+    assert [p["id"] for p in res["postings"]] == ["p1"]
+    assert "Kubernetes" in res["postings"][0]["missing"] and res["postings"][0]["reasons"]
+    assert [m["id"] for m in res["mentors"]] == ["m1"]  # dolu mentor ve ilgisiz mentor önerilmez
+    assert [c["id"] for c in res["courses"]] == ["c1"]  # tamamlanan ve ilgisiz eğitim önerilmez
+    assert "Yetkinlik açığını kapatır" in res["courses"][0]["reasons"][0]
+    assert [g["id"] for g in res["gaps"]] == ["g1"]
+    assert "otomatik" in res["note"]
+
+
+def test_oneri_semasi_kimlik_kabul_etmez():
+    import pytest
+    with pytest.raises(Exception):
+        sm.MentorRef(id="m", offers=[], free_slots=1, name="Mehmet")

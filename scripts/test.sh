@@ -101,7 +101,7 @@ integration() {
   for t in test_chat test_calendar test_ai_llm test_cache test_report_lang test_email_lang test_kvkk \
            test_payroll_time test_push test_workflow_docs test_kvkk_ops test_payroll_eco test_hr_compliance test_recruitment_plus test_learning_perf test_ops_plus \
            test_platform_reports test_notify_prefs test_identity_sign test_paging test_model_card test_chat_plus test_telemetry test_identity_security \
-           test_time_leave; do
+           test_time_leave test_kvkk_ml10; do
     step "Entegrasyon: $t"
     run python3 "tests/integration/$t.py"
   done

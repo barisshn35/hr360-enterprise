@@ -30,14 +30,17 @@ public class InternalRetentionController : ControllerBase
         _tenant.IsPlatformAdmin = true;
         var policies = await _db.RetentionPolicies.IgnoreQueryFilters().Where(p => p.IsEnabled).ToListAsync(ct);
         var total = 0;
+        var details = new List<(Models.DestructionLog? Log, Retention.RunResult Run)>();
         foreach (var p in policies)
         {
-            p.LastAffected = await Retention.RunAsync(_sql, p, ct);
+            var run = await Retention.RunDetailedAsync(_sql, p, ct);
+            p.LastAffected = run.Affected;
             p.LastRunAt = DateTime.UtcNow;
             total += p.LastAffected;
-            Retention.Log(_db, p.TenantSlug, p.Category, p.Action, p.LastAffected, p.RetentionMonths, "Restore", "Sistem (yedekten geri yükleme sonrası)");
+            details.Add((Retention.Log(_db, p.TenantSlug, p.Category, p.Action, p.LastAffected, p.RetentionMonths, "Restore", "Sistem (yedekten geri yükleme sonrası)"), run));
         }
         await _db.SaveChangesAsync(ct);
+        foreach (var (log, run) in details) await Retention.SaveDetailsAsync(_sql, log, run, ct);
         return Ok(new { policies = policies.Count, affected = total });
     }
 }

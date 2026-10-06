@@ -128,6 +128,27 @@ public static class RecruitmentSql
         catch (Exception ex) { Console.Error.WriteLine($"recruitment-service: denetim kaydı yazılamadı: {ex.Message}"); }
     }
 
+    /// <summary>
+    /// Dalga 10 (KVKK imha doğrulaması): silinecek/anonimleşecek aday kaydının özgeçmiş dosyası anahtarını
+    /// governance'in silme kuyruğuna yazar; governance bakım turu nesneyi siler ve yokluğunu doğrular.
+    /// Anahtar işlendikten sonra kuyrukta yalnızca SHA-256 özeti kalır. Kuyruk tablosu yoksa sessizce geçer.
+    /// </summary>
+    public static async Task EnqueueResumeDeletionAsync(this RecruitmentDbContext db, string tenant, Guid candidateId, string category, CancellationToken ct)
+    {
+        try
+        {
+            var key = await db.Candidates.IgnoreQueryFilters().Where(c => c.Id == candidateId).Select(c => c.ResumeStorageKey).FirstOrDefaultAsync(ct);
+            if (string.IsNullOrWhiteSpace(key)) return;
+            key = key.Trim();
+            var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(key))).ToLowerInvariant();
+            await db.Database.ExecuteSqlRawAsync("""
+                INSERT INTO governance_storage_deletions ("Id","TenantSlug","Category","SourceTable","SourceColumn","StorageKey","KeyHash","Status","CreatedAt")
+                VALUES ({0},{1},{2},'recruitment_candidates','ResumeStorageKey',{3},{4},'Pending',now())
+                """, new object[] { Guid.NewGuid(), tenant, category, key, hash }, ct);
+        }
+        catch (Exception ex) { Console.Error.WriteLine($"recruitment-service: dosya silme kuyruğuna yazılamadı: {ex.Message}"); }
+    }
+
     /// <summary>İmha tutanağı (governance /kvkk ekranında görünür).</summary>
     public static async Task DestructionLogAsync(this RecruitmentDbContext db, string tenant, int affected, int retentionMonths, string trigger, string actor, CancellationToken ct,
         string action = "Anonymize")

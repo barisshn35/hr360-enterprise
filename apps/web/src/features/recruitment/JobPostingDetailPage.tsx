@@ -30,6 +30,7 @@ import { ApplicationFunnel } from './ApplicationFunnel'
 import { OfferModal, OffersPanel, PipelineBoard, ScheduleInterviewModal, ScorecardsModal, ScorecardTemplatePanel } from './RecruitmentPlus'
 import { MeetingPanel } from '@/features/shared/Meetings'
 import { tx } from '@/lib/i18n'
+import { FitBadge, FitSummary, useCandidateFit } from './CandidateFit'
 import { useConfirm } from '@/components/ui/Confirm'
 
 /** Başvuru durumunu ilerletme — sıradaki mantıklı aşamayı önerir. */
@@ -208,6 +209,10 @@ export function JobPostingDetailPage() {
   const [offerFor, setOfferFor] = useState<{ applicationId: string; candidateName: string; postingTitle: string } | null>(null)
   const [scorecardsFor, setScorecardsFor] = useState<string | null>(null)
   const [rescheduleFor, setRescheduleFor] = useState<{ applicationId: string; interview: Interview } | null>(null)
+  // Dalga 10: aday–ilan uygunluğu (yardımcı; otomatik ret yok). İstek üzerine hesaplanır, denetim kaydına yazılır.
+  const [showFit, setShowFit] = useState(false)
+  const fit = useCandidateFit(postingId, showFit && can('recruitment:candidates'))
+  const fitByApp = useMemo(() => new Map((fit.data?.results ?? []).map((r) => [r.applicationId, r])), [fit.data])
 
   const cancelInterview = useMutation({
     mutationFn: (v: { applicationId: string; interviewId: string }) =>
@@ -365,10 +370,18 @@ export function JobPostingDetailPage() {
           <PanelHead
             title={tx('Başvurular')}
             action={
-              <span className="tabular text-[12px] text-muted-foreground">
-                {tx('{0} kayıt', [formatNumber(applications.length)])}</span>
+              <span className="flex items-center gap-3">
+                {can('recruitment:candidates') && applications.length > 0 && (
+                  <Button size="sm" variant={showFit ? 'default' : 'outline'} className="h-7 cursor-pointer text-[12px]" onClick={() => setShowFit((v) => !v)}>
+                    {showFit ? tx('Uygunluğu gizle') : tx('Uygunluk puanı (yardımcı)')}
+                  </Button>
+                )}
+                <span className="tabular text-[12px] text-muted-foreground">
+                  {tx('{0} kayıt', [formatNumber(applications.length)])}</span>
+              </span>
             }
           />
+          {showFit && <FitSummary q={fit} />}
           {applications.length === 0 ? (
             <EmptyState title={tx('Başvuru yok')} detail={tx('Aday eklendikçe bu listede görünür.')} />
           ) : (
@@ -387,6 +400,8 @@ export function JobPostingDetailPage() {
                       </span>
                       <ApplicationStatusBadge status={a.status} />
                     </div>
+
+                    {showFit && <FitBadge fit={fitByApp.get(a.id)} />}
 
                     {a.notes && (
                       <p className="mt-1.5 border-l-2 border-border pl-3 text-[13px] leading-relaxed text-muted-foreground">

@@ -165,6 +165,14 @@ export interface DataRequest {
   verificationMethod?: string | null
   verifiedBy?: string | null
   verifiedAt?: string | null
+  /** Dalga 10: açık başvurunun kaçıncı gününde olduğu (yasal süre 30 gün) ve gönderilen uyarılar. */
+  day?: number | null
+  legalDays?: number
+  reminder20At?: string | null
+  reminder27At?: string | null
+  overdueAlertAt?: string | null
+  /** Erişim başvurusu veri paketi (ZIP); başvurucu sonuçlandıktan sonra indirir. */
+  package?: { createdAt: string; expiresAt: string; sizeBytes: number; downloads: number; sha256: string | null; downloadable: boolean } | null
 }
 export interface RetentionPolicy {
   id: string

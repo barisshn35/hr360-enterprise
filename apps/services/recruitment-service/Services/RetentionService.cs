@@ -42,6 +42,7 @@ public static class RetentionService
                     a.JobPosting?.Status == JobPostingStatus.Closed ? a.JobPosting.ClosedAt ?? a.JobPosting.CreatedAt : null)).ToList(),
                 RetentionDays, PoolMonths);
             if (due is null || due > now) continue;
+            await db.EnqueueResumeDeletionAsync(c.TenantSlug, c.Id, "RecruitmentCandidates", ct);
             await AnonymizeAsync(db, c.Id, ct);
             result[c.TenantSlug] = result.GetValueOrDefault(c.TenantSlug) + 1;
         }

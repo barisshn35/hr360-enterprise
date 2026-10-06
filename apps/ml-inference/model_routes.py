@@ -314,6 +314,7 @@ class ModelService:
             "quality": quality,
             "prediction_reference": mq.score_histogram(mq.apply_calibration(raw_eval, calibration)),
             "trained_by": actor,
+            "provenance": req.provenance.model_dump(mode="json") if req.provenance and req.source != "synthetic" else None,
         }
         params = {"source": req.source, "training_rows": meta["training_rows"],
                   "evaluation_source": eval_source, "seed": seed, "calibration": calibration["method"],
@@ -368,6 +369,7 @@ class ModelService:
             "excluded_attributes": [{"key": k, "label": v} for k, v in aml.EXCLUDED_ATTRIBUTES],
             "excluded_check": check,
             "synthetic": meta.get("synthetic"),
+            "provenance": meta.get("provenance"),
             "promotion": meta.get("promotion"),
             "calibration": _calibration_summary(meta.get("quality")),
             "freshness": mq.freshness(meta.get("trained_at"), meta.get("data_window"), validity_days()),
@@ -632,6 +634,17 @@ class DataWindow(BaseModel):
     end: date
 
 
+class Provenance(BaseModel):
+    """Kiracı verisiyle eğitimin kaynağı (Dalga 10, madde 36). Kiracı adı değil yalnızca özeti gelir."""
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["tenant-consented"]
+    tenant_ref: str = Field(min_length=8, max_length=64, pattern=r"^[0-9a-f]+$")
+    consent_at: datetime
+    validation: Literal["time-based"] = "time-based"
+    train_snapshot: date
+    eval_snapshot: date
+
+
 class RetrainRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     source: Literal["synthetic", "rows", "csv"] = "synthetic"
@@ -643,6 +656,7 @@ class RetrainRequest(BaseModel):
     synthetic: SyntheticOptions | None = None
     seed: int = 42
     dry_run: bool = False
+    provenance: Provenance | None = Field(default=None, description="Kiracı izniyle toplanan verinin kaynağı (yalnızca rows kaynağında).")
 
 
 class FairnessGroups(BaseModel):
@@ -814,7 +828,8 @@ def build_router(verify_token, service: ModelService) -> APIRouter:
                         "awaiting_approval": result["awaiting_approval"], "brier_candidate": result["candidate"].get("brier"),
                         "reason": result["decision"]["reason"], "auc_candidate": result["candidate"].get("auc"),
                         "auc_current": (result["current"] or {}).get("auc"), "source": req.source,
-                        "training_rows": result["training"]["rows"], "data_window": result["data_window"]},
+                        "training_rows": result["training"]["rows"], "data_window": result["data_window"],
+                        "provenance": req.provenance.model_dump(mode="json") if req.provenance else None},
             "occurred_at": result["trained_at"],
         }
         result["dry_run"] = req.dry_run

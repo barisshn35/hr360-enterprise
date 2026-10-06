@@ -295,7 +295,17 @@ public sealed class Dispatcher
         try { await sp.GetRequiredService<Calendar.CalendarService>().OnEventAsync(db, tenant, type, payload, ct); }
         catch (Exception ex) when (ex is not OperationCanceledException) { _log.LogWarning(ex, "Takvim senkronizasyonu başarısız ({Type})", type); }
 
-        await db.SaveChangesAsync(ct);
+        // Kural, webhook ya da entegrasyon olay işlenirken silinmiş olabilir (yönetici sildi): o kaydın
+        // sayaç/durum güncellemesi atlanır, olayın geri kalan kayıtları (çalıştırma geçmişi vb.) yazılır.
+        for (var attempt = 0; ; attempt++)
+        {
+            try { await db.SaveChangesAsync(ct); break; }
+            catch (DbUpdateConcurrencyException ex) when (attempt < 3)
+            {
+                foreach (var entry in ex.Entries) entry.State = EntityState.Detached;
+                _log.LogInformation("Olay işlenirken silinen {Count} kayıt güncellemesi atlandı ({Type})", ex.Entries.Count, type);
+            }
+        }
     }
 
     public static (bool, string) Evaluate(IEnumerable<RuleCondition> conditions, JsonElement? payload)
@@ -477,16 +487,25 @@ public sealed class Housekeeping : BackgroundService
 
                 var db = scope.ServiceProvider.GetRequiredService<GovernanceDbContext>();
                 var due = await db.RetentionPolicies.Where(p => p.IsEnabled && (p.LastRunAt == null || p.LastRunAt < DateTime.UtcNow.AddHours(-24))).ToListAsync(ct);
+                var details = new List<(DestructionLog? Log, Retention.RunResult Run)>();
                 foreach (var p in due)
                 {
-                    p.LastAffected = await Retention.RunAsync(sql, p, ct);
+                    var run = await Retention.RunDetailedAsync(sql, p, ct);
+                    p.LastAffected = run.Affected;
                     p.LastRunAt = DateTime.UtcNow;
-                    Retention.Log(db, p.TenantSlug, p.Category, p.Action, p.LastAffected, p.RetentionMonths, "Periodic", "Sistem (periyodik imha)");
+                    details.Add((Retention.Log(db, p.TenantSlug, p.Category, p.Action, p.LastAffected, p.RetentionMonths, "Periodic", "Sistem (periyodik imha)"), run));
                 }
                 // Özel alan değerleri: alan tanımındaki saklama süresi her turda uygulanır (politikadan bağımsız).
                 foreach (var (tenant, n) in await CustomFields.PurgeAsync(sql, null, ct))
                     Retention.Log(db, tenant, "CustomFieldValues", "Delete", n, 0, "Periodic", "Sistem (özel alan saklama süresi)");
                 await db.SaveChangesAsync(ct);
+                foreach (var (log, run) in details) await Retention.SaveDetailsAsync(sql, log, run, ct);
+                // Dalga 10: imha edilen kayıtların nesne deposu dosyaları (madde 57), başvuru süre hatırlatmaları
+                // (madde 54), rıza yenileme hatırlatmaları (madde 55) ve süresi dolan veri paketleri.
+                await RunSafelyAsync("Nesne deposu silme", () => StorageDeletions.ProcessAsync(sql, scope.ServiceProvider.GetRequiredService<IHttpClientFactory>(), null, ct));
+                await RunSafelyAsync("Başvuru hatırlatmaları", () => DataRequestReminders.RunAsync(sql, ct));
+                await RunSafelyAsync("Rıza yenileme hatırlatmaları", () => ConsentCampaigns.AutoRemindAsync(sql, ct));
+                await RunSafelyAsync("Veri paketi temizliği", () => DataRequestPackages.PurgeExpiredAsync(sql, ct));
                 // İleri tarihli duyuruların yayım bildirimi (liste açılışında da tetiklenir).
                 await Controllers.AnnouncementsController.PublishDueAsync(sql, scope.ServiceProvider.GetRequiredService<PeopleDirectory>(), null, ct);
                 if (FeatureFlags.Billing) await Billing.GenerateAsync(sql, db, DateTime.UtcNow, ct);
@@ -497,6 +516,13 @@ public sealed class Housekeeping : BackgroundService
             }
             await Task.Delay(TimeSpan.FromHours(1), ct);
         }
+    }
+
+    /// <summary>Bir alt işin hatası (ör. tablo henüz yok) diğer bakım işlerini durdurmaz.</summary>
+    private async Task RunSafelyAsync(string name, Func<Task<int>> job)
+    {
+        try { await job(); }
+        catch (Exception ex) when (ex is not OperationCanceledException) { _log.LogWarning(ex, "Bakım işi hata verdi: {Job}", name); }
     }
 }
 
@@ -531,116 +557,60 @@ public static class Retention
         : "Veritabanından kalıcı silme";
 
     /// <summary>İmha tutanağı satırı (Silme, Yok Etme veya Anonim Hale Getirme Yönetmeliği: kayıtlar en az 3 yıl saklanır).</summary>
-    public static void Log(GovernanceDbContext db, string tenant, string category, string action, int affected, int months, string trigger, string actor)
+    public static DestructionLog? Log(GovernanceDbContext db, string tenant, string category, string action, int affected, int months, string trigger, string actor)
     {
-        if (affected == 0 && trigger == "Periodic") return;
-        db.DestructionLogs.Add(new DestructionLog
+        if (affected == 0 && trigger == "Periodic") return null;
+        var log = new DestructionLog
         {
             TenantSlug = tenant, Category = category, Action = action, Affected = affected, RetentionMonths = months,
             Trigger = trigger, Actor = actor, Method = MethodOf(action),
-        });
+        };
+        db.DestructionLogs.Add(log);
+        return log;
     }
 
-    private static readonly Lazy<Sql?> RetentionSql = new(() =>
-        Environment.GetEnvironmentVariable("RETENTION_DB_CONNECTION") is { Length: > 0 } cs
-            ? new Sql(Npgsql.NpgsqlDataSource.Create(cs)) : null);
-
-    public static async Task<int> RunAsync(Sql sql, RetentionPolicy p, CancellationToken ct)
+    /// <summary>Dalga 10: tutanağa tablo bazında döküm (SaveChanges'tan sonra; sütun yoksa sessizce atlanır).</summary>
+    public static async Task SaveDetailsAsync(Sql sql, DestructionLog? log, RunResult run, CancellationToken ct)
     {
-        var t = p.TenantSlug;
-        var months = Math.Max(1, p.RetentionMonths);
-        switch (p.Category)
+        if (log is null) return;
+        try
         {
-            case "RejectedCandidates":
-                const string stale = """
-                    c."TenantSlug" = $1 AND NOT EXISTS (
-                        SELECT 1 FROM recruitment_applications a WHERE a."CandidateId" = c."Id"
-                        AND (a."Status" NOT IN ('Rejected','Withdrawn') OR coalesce(a."StatusChangedAt", a."AppliedAt") > now() - make_interval(months => $2)))
-                    AND c."CreatedAt" < now() - make_interval(months => $2) AND c."Email" NOT LIKE 'anon-%'
-                    """;
-                return p.Action == "Delete"
-                    ? await sql.ExecuteAsync($"DELETE FROM recruitment_candidates c WHERE {stale}", ct, t, months)
-                    : await sql.ExecuteAsync($"""
-                        UPDATE recruitment_candidates c SET "FirstName" = 'Anonim', "LastName" = 'Aday',
-                            "Email" = 'anon-' || c."Id" || '@anonim.invalid', "Phone" = NULL, "ResumeStorageKey" = NULL
-                        WHERE {stale}
-                        """, ct, t, months);
-            case "TerminatedEmployees":
-                return await AnonymizeEmployeesAsync(sql, t, null, months, ct);
-            case "AuditLog":
-                // audit_log'dan silme yetkisi en az yetki kurulumunda yalnızca hr360_retention rolündedir
-                // (deploy/postgres/roles.sql); RETENTION_DB_CONNECTION tanımlıysa bu adım o bağlantıyla yapılır.
-                return await (RetentionSql.Value ?? sql).ExecuteAsync("DELETE FROM audit_log WHERE \"TenantSlug\" = $1 AND \"OccurredAt\" < now() - make_interval(months => $2)", ct, t, months);
-            case "Notifications":
-                return await sql.ExecuteAsync("DELETE FROM notification_messages WHERE \"TenantSlug\" = $1 AND \"CreatedAt\" < now() - make_interval(months => $2)", ct, t, months);
-            case "AiUsage":
-                return await sql.ExecuteAsync("DELETE FROM governance_ai_usage WHERE \"TenantSlug\" = $1 AND \"At\" < now() - make_interval(months => $2)", ct, t, months);
-            case "ChatContext":
-                return await sql.ExecuteAsync("DELETE FROM governance_chat_context WHERE \"TenantSlug\" = $1 AND \"CreatedAt\" < now() - least(make_interval(months => $2), interval '30 days')", ct, t, months);
-            case "ChatMessages":
-                return await sql.ExecuteAsync("DELETE FROM governance_chat_messages WHERE \"TenantSlug\" = $1 AND \"State\" <> 'Open' AND \"CreatedAt\" < now() - make_interval(months => $2)", ct, t, months);
-            case "Payslips":
-                return await sql.ExecuteAsync("""
-                    DELETE FROM compensation_payslips s USING compensation_payroll_periods p
-                    WHERE s."PeriodId" = p."Id" AND p."Status" = 'Closed' AND s."TenantSlug" = $1
-                      AND make_date(s."Year", s."Month", 1) < (now() - make_interval(months => $2))::date
-                    """, ct, t, months);
-            case "DocumentRequests":
-                return await sql.ExecuteAsync("DELETE FROM governance_document_requests WHERE \"TenantSlug\" = $1 AND \"Status\" <> 'Pending' AND \"CreatedAt\" < now() - make_interval(months => $2)", ct, t, months);
-            case "DisciplinaryCases":
-                return await sql.ExecuteAsync("DELETE FROM governance_disciplinary_cases WHERE \"TenantSlug\" = $1 AND \"Status\" = 'Closed' AND \"ClosedAt\" < now() - make_interval(months => $2)", ct, t, months);
-            case "EthicsReports":
-                // Mesajlar ON DELETE CASCADE ile silinir.
-                return await sql.ExecuteAsync("DELETE FROM governance_ethics_reports WHERE \"TenantSlug\" = $1 AND \"Status\" = 'Closed' AND \"ClosedAt\" < now() - make_interval(months => $2)", ct, t, months);
-            case "Announcements":
-                await sql.ExecuteAsync("""
-                    DELETE FROM governance_acknowledgements k USING governance_announcements a
-                    WHERE k."SubjectType" = 'Announcement' AND k."SubjectId" = a."Id" AND a."TenantSlug" = $1
-                      AND a."ExpireAt" IS NOT NULL AND a."ExpireAt" < now() - make_interval(months => $2)
-                    """, ct, t, months);
-                return await sql.ExecuteAsync("DELETE FROM governance_announcements WHERE \"TenantSlug\" = $1 AND \"ExpireAt\" IS NOT NULL AND \"ExpireAt\" < now() - make_interval(months => $2)", ct, t, months);
-            case "CustomFieldValues":
-                return (await CustomFields.PurgeAsync(sql, t, ct)).Sum(x => x.Count);
-            case "WebhookDeliveries":
-                return await sql.ExecuteAsync("DELETE FROM governance_webhook_deliveries WHERE \"TenantSlug\" = $1 AND \"OccurredAt\" < now() - make_interval(months => $2)", ct, t, months);
-            default:
-                return 0;
+            await sql.ExecuteAsync("UPDATE governance_destruction_logs SET \"Details\" = $2::jsonb WHERE \"Id\" = $1", ct, log.Id,
+                System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    subjects = run.Plan.Subjects,
+                    tables = run.Steps.Select(s => new { table = s.Table, label = s.Label, kind = s.Kind, rows = s.Rows, skipped = s.Skipped }),
+                    storageQueued = run.Queued,
+                    retained = run.Plan.Retained.Select(r => new { table = r.Table, reason = r.Reason }),
+                }));
         }
+        catch (Npgsql.PostgresException e) when (e.SqlState == "42703") { }
     }
+
+    public sealed record RunResult(int Affected, RetentionPlan Plan, List<StepResult> Steps, int Queued);
+
+    public static async Task<RunResult> RunDetailedAsync(Sql sql, RetentionPolicy p, CancellationToken ct)
+    {
+        var plan = await RetentionPlans.BuildAsync(sql, p.TenantSlug, p.Category, p.Action, p.RetentionMonths, ct);
+        var (steps, queued) = await RetentionPlans.ExecuteAsync(sql, plan, ct);
+        return new RunResult(RetentionPlans.Affected(plan, steps), plan, steps, queued);
+    }
+
+    public static async Task<int> RunAsync(Sql sql, RetentionPolicy p, CancellationToken ct) => (await RunDetailedAsync(sql, p, ct)).Affected;
 
     /// <summary>
-    /// Ayrılmış çalışan(lar)ın kimliğini geri döndürülemez biçimde siler: ad, e-posta,
-    /// telefon, profil (adres, IBAN, TCKN, acil durum kişisi, doğum tarihi). İstatistik
-    /// için gereken alanlar (işe giriş, departman geçmişi) kalır.
+    /// Ayrılmış çalışan(lar)ın kimliğini geri döndürülemez biçimde siler: ad, e-posta, telefon, profil (adres,
+    /// IBAN, TCKN, acil durum kişisi, doğum tarihi) ve diğer servislerdeki ad/serbest metin alanları
+    /// (RetentionPlans.EmployeeSteps). İstatistik ve yasal saklama alanları kalır.
     /// </summary>
-    public static async Task<int> AnonymizeEmployeesAsync(Sql sql, string tenant, Guid? employeeId, int months, CancellationToken ct)
+    public static async Task<int> AnonymizeEmployeesAsync(Sql sql, string tenant, Guid? employeeId, int months, CancellationToken ct) =>
+        (await AnonymizeEmployeesDetailedAsync(sql, tenant, employeeId, months, ct)).Affected;
+
+    public static async Task<RunResult> AnonymizeEmployeesDetailedAsync(Sql sql, string tenant, Guid? employeeId, int months, CancellationToken ct)
     {
-        var filter = employeeId is null
-            ? """
-              e."TenantSlug" = $1 AND e."Status" = 'Terminated' AND e."Email" NOT LIKE 'anon-%'
-              AND coalesce((SELECT max(a."EffectiveTo") FROM employee_assignments a WHERE a."EmployeeId" = e."Id"), e."CreatedAt"::date)
-                  < (now() - make_interval(months => $2))::date
-              """
-            : """e."TenantSlug" = $1 AND e."Id" = $2 AND e."Status" = 'Terminated'""";
-        var ids = employeeId is null
-            ? await sql.QueryAsync($"SELECT e.\"Id\" FROM employee_employees e WHERE {filter}", r => r.GetGuid(0), ct, tenant, months)
-            : await sql.QueryAsync($"SELECT e.\"Id\" FROM employee_employees e WHERE {filter}", r => r.GetGuid(0), ct, tenant, employeeId.Value);
-        if (ids.Count == 0) return 0;
-        var arr = ids.ToArray();
-        await sql.ExecuteAsync("""
-            UPDATE employee_employees SET "FirstName" = 'Anonim', "LastName" = upper(left("Id"::text, 6)),
-                "Email" = 'anon-' || "Id" || '@anonim.invalid', "Phone" = NULL, "KeycloakUserId" = NULL
-            WHERE "TenantSlug" = $1 AND "Id" = ANY($2)
-            """, ct, tenant, arr);
-        await sql.ExecuteAsync("""
-            UPDATE engagement_profiles SET "BirthDate" = NULL, "Bio" = NULL, "Address" = NULL, "EmergencyContactName" = NULL,
-                "EmergencyContactPhone" = NULL, "Iban" = NULL, "NationalId" = NULL, "LinkedInUrl" = NULL, "Skills" = '{}', "Interests" = '{}'
-            WHERE "TenantSlug" = $1 AND "EmployeeId" = ANY($2)
-            """, ct, tenant, arr);
-        await sql.ExecuteAsync("""
-            UPDATE engagement_kudos SET "ToName" = 'Anonim' WHERE "TenantSlug" = $1 AND "ToEmployeeId" = ANY($2)
-            """, ct, tenant, arr);
-        return ids.Count;
+        var plan = await RetentionPlans.BuildAsync(sql, tenant, "TerminatedEmployees", "Anonymize", months, ct, employeeId);
+        var (steps, queued) = await RetentionPlans.ExecuteAsync(sql, plan, ct);
+        return new RunResult(plan.Subjects, plan, steps, queued);
     }
 }
 

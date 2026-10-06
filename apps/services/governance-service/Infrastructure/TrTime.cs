@@ -18,4 +18,8 @@ public static class TrTime
     /// <summary>Türkiye saatiyle verilen günün başlangıcı (UTC).</summary>
     public static DateTime StartOfDayUtc(DateOnly day) =>
         TimeZoneInfo.ConvertTimeToUtc(day.ToDateTime(TimeOnly.MinValue, DateTimeKind.Unspecified), Zone);
+
+    /// <summary>UTC anı Türkiye saatine çevirir (metin/dosya içindeki tarihler için).</summary>
+    public static DateTime ToTr(DateTime utc) =>
+        TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utc, DateTimeKind.Utc), Zone);
 }

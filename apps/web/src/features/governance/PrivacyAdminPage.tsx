@@ -18,7 +18,8 @@ import { dataRequestLabels, governanceApi, type DataRequest, type RetentionPolic
 import { formatDate, formatDateTime } from '@/lib/format'
 import { PersonSelect, PlanGate, errMsg, useAction } from '@/features/shared/kit'
 import { tx } from '@/lib/i18n'
-import { AccessLogPanel, ComplianceOverview, DestructionLogsPanel, InventoryPanel, ObjectionsPanel, TransfersPanel } from './PrivacyFoundation'
+import { AccessLogPanel, ComplianceOverview, DestructionLogsPanel, ObjectionsPanel, TransfersPanel } from './PrivacyFoundation'
+import { ConsentCampaignsPanel, DestructionVerificationPanel, RequestDeadline, RequestPackageButtons, RetentionPreviewButton, VerbisPanel } from './KvkkWave10'
 import { AssessmentsPanel, BreachesPanel, ExternalRequestModal, FieldPoliciesPanel, NoticesPanel, ResponseTemplatePicker, VerifyIdentityButton } from './KvkkOps'
 
 function Consents() {
@@ -43,6 +44,7 @@ function Consents() {
           )
         })}
       </div>
+      <ConsentCampaignsPanel />
       <Panel>
         <PanelHead title={tx('Aydınlatma metnini okumamış çalışanlar')} note={tx('Bu kişilere hatırlatma gönderin; giriş yaptıklarında Profilim → Gizlilik sekmesinden onaylayabilirler.')} />
         <PanelBody className="p-0">
@@ -76,12 +78,14 @@ function Requests() {
             {q.data.map((r) => (
               <li key={r.id} className="flex flex-wrap items-center gap-3 px-5 py-3">
                 <div className="min-w-0 flex-1"><p className="text-[13.5px] font-medium">{r.personName} — {dataRequestLabels[r.kind]}</p><p className="truncate text-[12px] text-muted-foreground">{r.details ?? '—'} · {formatDate(r.createdAt)} · {channelLabel[r.channel ?? 'Panel']}{r.contact ? ` · ${r.contact}` : ''}</p></div>
+                <RequestDeadline r={r} />
                 {r.identityVerified === false && <StatusBadge tone="warning">{tx('Kimlik doğrulanmadı')}</StatusBadge>}
                 {r.identityVerified === false && (r.status === 'Received' || r.status === 'InProgress') && <VerifyIdentityButton id={r.id} />}
                 <StatusBadge tone={r.status === 'Completed' ? 'success' : r.status === 'Rejected' || r.status === 'Withdrawn' ? 'neutral' : r.overdue ? 'danger' : 'warning'}>
                   {r.status === 'Completed' ? tx('Yanıtlandı') : r.status === 'Rejected' ? tx('Reddedildi') : r.status === 'Withdrawn' ? tx('Geri çekildi') : r.overdue ? tx('Süre aşıldı') : tx('{0} gün kaldı', [r.daysLeft])}
                 </StatusBadge>
                 {r.employeeId && <Button size="sm" variant="outline" onClick={() => governanceApi.exportPersonalData(r.employeeId!).catch((e) => toast.stop(errMsg(e)))}><Download className="size-4" />{' '}{tx('Veri dökümü')}</Button>}
+                <RequestPackageButtons r={r} />
                 {(r.status === 'Received' || r.status === 'InProgress') && <Button size="sm" onClick={() => { setSel(r); setStatus('Completed'); setResponse('') }}>{tx('Yanıtla')}</Button>}
               </li>
             ))}
@@ -127,7 +131,7 @@ function RetentionRow({ p }: { p: RetentionPolicy }) {
       <TextField label={tx('Süre (ay)')} type="number" min={1} max={240} value={months} onChange={(e) => setMonths(e.target.value)} />
       <SelectField label={tx('İşlem')} value={action} onChange={setAction} options={p.allowedActions.map((a) => ({ value: a, label: a === 'Anonymize' ? tx('Anonimleştir') : tx('Sil') }))} />
       <label className="flex h-9 items-center gap-2 text-[13px]"><Checkbox checked={enabled} onCheckedChange={(v) => setEnabled(v === true)} />{' '}{tx('Otomatik')}</label>
-      <div className="flex gap-2"><Button size="sm" onClick={() => save.mutate(undefined)}>{tx('Kaydet')}</Button><Button size="sm" variant="outline" disabled={run.isPending} onClick={runNow} title={tx('Şimdi çalıştır')} aria-label={tx('Şimdi çalıştır')}><Play className="size-4" /></Button></div>
+      <div className="flex gap-2"><Button size="sm" onClick={() => save.mutate(undefined)}>{tx('Kaydet')}</Button><RetentionPreviewButton id={p.id} label={p.label} /><Button size="sm" variant="outline" disabled={run.isPending} onClick={runNow} title={tx('Şimdi çalıştır')} aria-label={tx('Şimdi çalıştır')}><Play className="size-4" /></Button></div>
     </div>
   )
 }
@@ -163,7 +167,7 @@ function Retention() {
   )
 }
 
-const PRIVACY_TABS = ['uyum', 'envanter', 'aktarim', 'metinler', 'riza', 'basvuru', 'ihlal', 'pia', 'alan', 'itiraz', 'erisim', 'saklama'] as const
+const PRIVACY_TABS = ['uyum', 'envanter', 'aktarim', 'metinler', 'riza', 'basvuru', 'ihlal', 'pia', 'alan', 'itiraz', 'erisim', 'saklama', 'imha'] as const
 type PrivacyTab = (typeof PRIVACY_TABS)[number]
 
 export function PrivacyAdminPage() {
@@ -172,15 +176,15 @@ export function PrivacyAdminPage() {
   const tab: PrivacyTab = (PRIVACY_TABS as readonly string[]).includes(rawTab) ? rawTab : 'uyum'
   return (
     <PlanGate feature="privacy">
-      <PageHeader title={tx('KVKK')} description={tx('Uyum durumu, işleme envanteri, yurt dışı aktarım, aydınlatma ve rıza metinleri, ilgili kişi başvuruları, veri ihlalleri, etki değerlendirmesi, alan yetkileri, itirazlar, erişim kayıtları, saklama ve imha.')} />
+      <PageHeader title={tx('KVKK')} description={tx('Uyum durumu, VERBİS envanteri, yurt dışı aktarım, aydınlatma ve rıza metinleri, ilgili kişi başvuruları, veri ihlalleri, etki değerlendirmesi, alan yetkileri, itirazlar, erişim kayıtları, saklama, imha ve imha doğrulama.')} />
       <div className="mb-5"><Tabs label={tx('KVKK')} value={tab} onChange={setTab} tabs={[
         { key: 'uyum', label: tx('Uyum durumu') }, { key: 'envanter', label: tx('Envanter') }, { key: 'aktarim', label: tx('Yurt dışı aktarım') },
         { key: 'metinler', label: tx('Metinler') }, { key: 'riza', label: tx('Rıza durumu') }, { key: 'basvuru', label: tx('Başvurular') },
         { key: 'ihlal', label: tx('Veri ihlali') }, { key: 'pia', label: tx('Etki değerlendirmesi') }, { key: 'alan', label: tx('Alan yetkileri') }, { key: 'itiraz', label: tx('İtirazlar') },
-        { key: 'erisim', label: tx('Erişim kayıtları') }, { key: 'saklama', label: tx('Saklama & imha') },
+        { key: 'erisim', label: tx('Erişim kayıtları') }, { key: 'saklama', label: tx('Saklama & imha') }, { key: 'imha', label: tx('İmha doğrulama') },
       ]} /></div>
       {tab === 'uyum' && <ComplianceOverview onOpen={(t) => setTab(t as PrivacyTab)} />}
-      {tab === 'envanter' && <InventoryPanel />}
+      {tab === 'envanter' && <VerbisPanel />}
       {tab === 'aktarim' && <TransfersPanel />}
       {tab === 'metinler' && <NoticesPanel />}
       {tab === 'riza' && <Consents />}
@@ -191,6 +195,7 @@ export function PrivacyAdminPage() {
       {tab === 'itiraz' && <ObjectionsPanel />}
       {tab === 'erisim' && <AccessLogPanel />}
       {tab === 'saklama' && <Retention />}
+      {tab === 'imha' && <DestructionVerificationPanel />}
     </PlanGate>
   )
 }

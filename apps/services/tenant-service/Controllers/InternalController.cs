@@ -35,6 +35,26 @@ public class InternalController : ControllerBase
     private bool InternalTokenValid() =>
         Security.InternalServiceToken.Matches(Request.Headers[Security.InternalServiceToken.Header].FirstOrDefault());
 
+    public record StorageDeleteRequest(string TenantSlug, List<string> Keys);
+
+    /// <summary>
+    /// Dalga 10 (KVKK imha doğrulaması): governance'in kuyruğa aldığı dosya anahtarlarını nesne deposundan
+    /// siler ve yokluğunu doğrular (ObjectStorageEraser). Yalnızca kişisel dosya kovalarına dokunur.
+    /// Anahtarlar günlüğe yazılmaz (kişi adı içerebilir).
+    /// </summary>
+    [HttpPost("storage/delete")]
+    public async Task<IActionResult> DeleteStorage([FromBody] StorageDeleteRequest request, [FromServices] TenantService.Services.ObjectStorageEraser eraser, CancellationToken ct)
+    {
+        if (!InternalTokenValid()) return NotFound();
+        if (string.IsNullOrWhiteSpace(request.TenantSlug) || request.Keys is null || request.Keys.Count == 0)
+            return BadRequest(new { message = "Kiracı ve en az bir anahtar zorunlu" });
+        if (request.Keys.Count > 500) return BadRequest(new { message = "Tek istekte en fazla 500 anahtar" });
+        var results = await eraser.DeleteAndVerifyAsync(request.Keys, ct);
+        _log.LogInformation("KVKK dosya imhasi: kiraci {Tenant}, {Count} anahtar ({Summary})", request.TenantSlug.ToLowerInvariant(), results.Count,
+            string.Join(", ", results.GroupBy(r => r.Status).Select(g => $"{g.Key}={g.Count()}")));
+        return Ok(results);
+    }
+
     public record DisableUserRequest(string TenantSlug, string KeycloakUserId, string? Reason);
 
     /// <summary>

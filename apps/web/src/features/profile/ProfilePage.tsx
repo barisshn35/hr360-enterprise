@@ -15,6 +15,7 @@ import { useToast } from '@/components/ui/Toast'
 import { apiFetch } from '@/api/client'
 import { engagementApi, type MyProfile } from '@/api/engagement'
 import { dataRequestLabels, governanceApi, type DataRequestKind } from '@/api/governance'
+import { kvkk10Api } from '@/api/wave10'
 import { useAuth } from '@/auth/useAuth'
 import { useMyEmployeeId } from '@/api/queries'
 import { formatDate } from '@/lib/format'
@@ -205,6 +206,14 @@ function PrivacyTab({ employeeId }: { employeeId: string }) {
                     </div>
                     {r.details && <p className="mt-1 text-[12.5px] whitespace-pre-line text-muted-foreground">{tx('Açıklamanız: {0}', [r.details])}</p>}
                     {r.response && <p className="mt-1 text-[12.5px] text-muted-foreground">{tx('Yanıt: {0}', [r.response])}</p>}
+                    {r.package?.downloadable && (
+                      <Button size="sm" variant="outline" className="mt-2" onClick={() => kvkk10Api.downloadPackage(r.id).catch((e) => toast.stop(errMsg(e)))}>
+                        <Download className="size-4" />{' '}{tx('Veri paketimi indir (ZIP)')}
+                      </Button>
+                    )}
+                    {r.kind === 'Access' && r.package && !r.package.downloadable && (r.status === 'Received' || r.status === 'InProgress') && (
+                      <p className="mt-1 text-[12px] text-muted-foreground">{tx('Veri paketiniz hazır; başvurunuz sonuçlandığında buradan indirebilirsiniz.')}</p>
+                    )}
                   </li>
                 ))}
               </ul>

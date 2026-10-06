@@ -27,6 +27,7 @@ builder.Services.AddHttpClient<EmployeeDirectoryClient>();
 builder.Services.AddScoped<TenantProvisioningService>();
 builder.Services.AddSingleton<TenantService.Security.SmtpCredentialProtector>();
 builder.Services.AddSingleton<TenantService.Services.LogoStorageService>();
+builder.Services.AddSingleton<TenantService.Services.ObjectStorageEraser>();
 // Anahtar yenileme: etkin olmayan anahtarla şifreli değerleri yeniden yazar (scripts/crypto-keys.sh).
 // Bu servisin sahibi olduğu tüm şifreli sütunlar burada listelenir; yenisini eklerken buraya ve
 // scripts/crypto-keys.sh içindeki listeye ekleyin.

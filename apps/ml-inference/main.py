@@ -130,6 +130,11 @@ for _r in (payroll_ml_router, leave_forecast_router, text_insights_router, skill
 from shift_optimizer import router as shift_optimizer_router
 app.include_router(shift_optimizer_router, dependencies=[Depends(verify_token)])
 
+# Dalga 10 (madde 51): aday–ilan uygunluk puanı — işe alım uzmanına yardımcı; otomatik ret yok,
+# ad/cinsiyet/yaş/fotoğraf/adres modele girmez (recruit_fit.py model kartı). governance-service çağırır.
+from recruit_fit import router as recruit_fit_router
+app.include_router(recruit_fit_router, dependencies=[Depends(verify_token)])
+
 
 # Devir riski modeli: yuklenme, model karti, yeniden egitim ve veri kaymasi
 # (model_routes.py). Yayindaki surum MLflow'da "champion" takma adiyla isaretlenir;

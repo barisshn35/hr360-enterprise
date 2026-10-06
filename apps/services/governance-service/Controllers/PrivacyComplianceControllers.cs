@@ -135,10 +135,21 @@ public class PrivacyComplianceController : AppController
         if (from is { } f) { var fu = TrTime.StartOfDayUtc(f); q = q.Where(x => x.RanAt >= fu); }
         if (to is { } t) { var tu = TrTime.StartOfDayUtc(t.AddDays(1)); q = q.Where(x => x.RanAt < tu); }
         var rows = await q.OrderByDescending(x => x.RanAt).Take(2000).ToListAsync(ct);
+        // Dalga 10: tablo bazında döküm (Details sütunu; göç uygulanmadıysa boş).
+        var details = new Dictionary<Guid, JsonElement>();
+        try
+        {
+            var ids = rows.Select(r => r.Id).ToArray();
+            foreach (var (id, d) in await Db.QueryAsync("""
+                         SELECT "Id","Details"::text FROM governance_destruction_logs WHERE "TenantSlug" = $1 AND "Id" = ANY($2) AND "Details" IS NOT NULL
+                         """, r => (r.GetGuid(0), r.GetString(1)), ct, Tenant, ids))
+                details[id] = JsonDocument.Parse(d).RootElement.Clone();
+        }
+        catch (Npgsql.PostgresException e) when (e.SqlState == "42703") { }
         return Ok(rows.Select(x => new
         {
             x.Id, x.Category, label = Retention.Categories.GetValueOrDefault(x.Category).Label ?? x.Category, x.Action, x.Affected,
-            x.RetentionMonths, x.Trigger, x.Actor, x.Method, x.RanAt,
+            x.RetentionMonths, x.Trigger, x.Actor, x.Method, x.RanAt, details = details.TryGetValue(x.Id, out var d) ? d : (JsonElement?)null,
         }));
     }
 
@@ -256,10 +267,42 @@ public class PrivacyComplianceController : AppController
             Add("identity", L("Başvuru kimlik doğrulaması", "Request identity verification"), "warn",
                 L($"{unverified} başvurucunun kimliği henüz doğrulanmadı.", $"{unverified} applicants have not been verified yet."), "basvuru");
 
-        var special = PrivacyCatalog.Activities.Count(a => a.Special);
-        Add("inventory", L("İşleme envanteri", "Processing inventory"), "ok",
-            L($"{PrivacyCatalog.Activities.Length} işleme faaliyeti, {special} tanesi özel nitelikli veri içeriyor.",
-              $"{PrivacyCatalog.Activities.Length} processing activities, {special} involving special category data."), "envanter");
+        // Dalga 10: bakımı yapılan VERBİS envanteri (yoksa yerleşik katalog sayılır). Bir yıldır güncellenmediyse uyarı.
+        (int Count, int Special, DateTime? Last)? inv = null;
+        try
+        {
+            inv = (await Db.QueryAsync("""
+                SELECT count(*) FILTER (WHERE "IsActive")::int, count(*) FILTER (WHERE "IsActive" AND "Special")::int, max("UpdatedAt")
+                FROM governance_privacy_inventory WHERE "TenantSlug" = $1
+                """, r => (r.GetInt32(0), r.GetInt32(1), r.Ts(2)), ct, Tenant)).FirstOrDefault();
+        }
+        catch (Npgsql.PostgresException e) when (e.SqlState == "42P01") { }
+        if (inv is { Count: > 0 } i)
+        {
+            var stale = i.Last is { } last && last < DateTime.UtcNow.AddYears(-1);
+            Add("inventory", L("İşleme envanteri (VERBİS)", "Processing inventory (VERBIS)"), stale ? "warn" : "ok",
+                stale ? L($"{i.Count} faaliyet; envanter bir yıldan uzun süredir güncellenmedi (son: {i.Last:dd.MM.yyyy}).",
+                          $"{i.Count} activities; the inventory has not been updated for over a year (last: {i.Last:yyyy-MM-dd}).")
+                      : L($"{i.Count} işleme faaliyeti, {i.Special} tanesi özel nitelikli veri içeriyor.",
+                          $"{i.Count} processing activities, {i.Special} involving special category data."), "envanter");
+        }
+        else
+        {
+            var special = PrivacyCatalog.Activities.Count(a => a.Special);
+            Add("inventory", L("İşleme envanteri", "Processing inventory"), "ok",
+                L($"{PrivacyCatalog.Activities.Length} işleme faaliyeti, {special} tanesi özel nitelikli veri içeriyor.",
+                  $"{PrivacyCatalog.Activities.Length} processing activities, {special} involving special category data."), "envanter");
+        }
+
+        // Dalga 10: açık yeniden onay kampanyaları.
+        try
+        {
+            var open = await ConsentCampaigns.ListAsync(Db, Tenant, ct, openOnly: true);
+            if (open.Count > 0)
+                Add("campaigns", L("Yeniden onay kampanyaları", "Re-consent campaigns"), "info",
+                    L($"{open.Count} açık kampanya: güncellenen metinlerin yanıtları izleniyor.", $"{open.Count} open campaigns: responses to updated notices are being tracked."), "riza");
+        }
+        catch (Npgsql.PostgresException e) when (e.SqlState == "42P01") { }
 
         return Ok(checks);
     }

@@ -16,6 +16,7 @@ import { formatDate, formatDateTime, formatNumber, formatPercent } from '@/lib/f
 import { errMsg, useAction } from '@/features/shared/kit'
 import { appLocale, tx, txServer } from '@/lib/i18n'
 import { CalibrationPanel, FairnessPanel, FreshnessBadge, VersionsPanel } from './ModelQualityPanels'
+import { TenantTrainingPanel } from './TenantTrainingPanel'
 
 /** AUC/PSI gibi 0–1 arası metrikler yerel ondalık ayırıcıyla, 3 basamak. */
 const DEC3 = new Intl.NumberFormat(appLocale, { minimumFractionDigits: 3, maximumFractionDigits: 3 })
@@ -185,7 +186,8 @@ export function ModelCardPage() {
                     {tx('{0} güne kadar · {1}', [c.freshness.validity_days, formatDate(c.freshness.expires_on)])}
                   </Row>
                 )}
-                <Row label={tx('Eğitim verisi')}>{sourceLabel(c.training_source)} · {formatNumber(c.training_rows)} {tx('satır')}</Row>
+                <Row label={tx('Eğitim verisi')}>{sourceLabel(c.training_source)} · {formatNumber(c.training_rows)} {tx('satır')}
+                  {c.provenance ? ` · ${tx('kiracı izniyle, zaman bazlı doğrulama ({0} → {1})', [formatDate(c.provenance.train_snapshot), formatDate(c.provenance.eval_snapshot)])}` : ''}</Row>
                 <Row label={tx('Veri dönemi')}>
                   {c.data_window ? `${formatDate(c.data_window.start)} – ${formatDate(c.data_window.end)}` : tx(c.data_window_note ?? '—')}
                 </Row>
@@ -282,6 +284,7 @@ export function ModelCardPage() {
           <CalibrationPanel canEdit={isHr(roles) && !noTenant} noTenant={noTenant} />
           <VersionsPanel canPromote={canPromote} />
           {isHr(roles) && <FairnessPanel noTenant={noTenant} />}
+          {isHr(roles) && !noTenant && <TenantTrainingPanel />}
 
           <Panel>
             <PanelHead title={tx('Sınırlamalar ve KVKK')} />

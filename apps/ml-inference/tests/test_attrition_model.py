@@ -376,3 +376,29 @@ def test_drift_validation(env):
     rows = [dict(zip(aml.FEATURE_NAMES, map(float, x)), employee_id="x") for x in X]
     assert client.post("/model/drift", json={"rows": rows}, headers=h("hr")).status_code == 422
     assert client.post("/model/drift", json={"rows": rows}, headers=h("employee")).status_code in (403, 422)
+
+
+def test_tenant_consented_training_records_provenance_and_waits_for_approval(env, monkeypatch):
+    """Dalga 10 (madde 36): kiracı izniyle toplanan satırlar + zaman bazlı ayrı değerlendirme kümesi;
+    aday yayına otomatik girmez (champion/challenger), kaynak model kartına ve denetim yüküne yazılır."""
+    client, service, _ = env
+    monkeypatch.setenv("INTERNAL_SERVICE_TOKEN", "s3cret")
+    X, y = aml.synthetic_dataset(600, 21)
+    Xe, ye = aml.synthetic_dataset(300, 22)
+    rows = [dict(zip(aml.FEATURE_NAMES, map(float, x)), label=int(l)) for x, l in zip(X, y)]
+    ev = [dict(zip(aml.FEATURE_NAMES, map(float, x)), label=int(l)) for x, l in zip(Xe, ye)]
+    prov = {"kind": "tenant-consented", "tenant_ref": "a1b2c3d4e5f60718", "consent_at": "2026-10-01T09:00:00Z",
+            "validation": "time-based", "train_snapshot": "2024-10-01", "eval_snapshot": "2025-10-01"}
+    body = {"source": "rows", "rows": rows, "evaluation_rows": ev, "provenance": prov,
+            "data_window": {"start": "2024-10-01", "end": "2026-10-01"}}
+    r = client.post("/model/retrain", json=body, headers=h("hr", **{"X-Internal-Token": "s3cret"}))
+    assert r.status_code == 200, r.text
+    res = r.json()
+    assert res["evaluation"]["source"] == "provided-evaluation" and res["evaluation"]["rows"] == 300
+    assert res["promoted"] is False and service.state.version == "1"
+    assert res["audit"]["changes"]["provenance"]["kind"] == "tenant-consented"
+    # Kiracı adı değil yalnızca özet kabul edilir; bilinmeyen alan reddedilir.
+    bad = {**body, "provenance": {**prov, "tenant_ref": "demo"}}
+    assert client.post("/model/retrain", json=bad, headers=h("hr", **{"X-Internal-Token": "s3cret"})).status_code == 422
+    bad = {**body, "provenance": {**prov, "tenant": "demo"}}
+    assert client.post("/model/retrain", json=bad, headers=h("hr", **{"X-Internal-Token": "s3cret"})).status_code == 422

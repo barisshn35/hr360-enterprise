@@ -15,13 +15,14 @@ import { useAuth } from '@/auth/useAuth'
 import { formatDate } from '@/lib/format'
 import { PlanGate, useAction } from '@/features/shared/kit'
 import { tx } from '@/lib/i18n'
+import { ForYouPanel } from './ForYouPanel'
 
 const tone: Record<InternalAppStatus, StatusTone> = { Submitted: 'info', Reviewing: 'warning', Interview: 'warning', Accepted: 'success', Rejected: 'danger', Withdrawn: 'neutral' }
 
 export function MobilityPage() {
   const { can } = useAuth()
   const manager = can('recruitment:view')
-  const [tab, setTab] = useTabParam<'ilanlar' | 'basvurular'>('sekme', 'ilanlar')
+  const [tab, setTab] = useTabParam<'ilanlar' | 'sana-uygun' | 'basvurular'>('sekme', 'ilanlar')
   const postings = useQuery({ queryKey: ['mobility', 'postings'], queryFn: ({ signal }) => engagementApi.internalPostings(signal) })
   const apps = useQuery({ queryKey: ['mobility', 'apps'], queryFn: ({ signal }) => engagementApi.internalApplications(signal) })
   const [applying, setApplying] = useState<InternalPosting | null>(null)
@@ -32,8 +33,8 @@ export function MobilityPage() {
   return (
     <PlanGate feature="mobility">
       <PageHeader title={tx('İç ilanlar')} description={tx('Şirket içindeki açık pozisyonlar önce size açılıyor. Kariyerinizin bir sonraki adımı belki yan masada.')} />
-      <div className="mb-5"><Tabs label={tx('İç ilan')} value={tab} onChange={setTab} tabs={[{ key: 'ilanlar', label: tx('Açık pozisyonlar'), count: postings.data?.length }, { key: 'basvurular', label: manager ? tx('İç başvurular') : tx('Başvurularım'), count: apps.data?.length }]} /></div>
-      {tab === 'ilanlar' ? (
+      <div className="mb-5"><Tabs label={tx('İç ilan')} value={tab} onChange={setTab} tabs={[{ key: 'ilanlar', label: tx('Açık pozisyonlar'), count: postings.data?.length }, { key: 'sana-uygun', label: tx('Sana uygun') }, { key: 'basvurular', label: manager ? tx('İç başvurular') : tx('Başvurularım'), count: apps.data?.length }]} /></div>
+      {tab === 'sana-uygun' ? <ForYouPanel /> : tab === 'ilanlar' ? (
         postings.isPending ? <RowsSkeleton /> : postings.isError ? <ErrorState message={(postings.error as Error).message} /> : postings.data.length === 0 ? (
           <EmptyState icon={Megaphone} title={tx('Şu an açık pozisyon yok')} detail={tx('İşe alım ekibi yeni bir ilan yayınladığında burada görünür.')} />
         ) : (

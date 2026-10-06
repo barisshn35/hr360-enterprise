@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { AlertTriangle, CheckCircle2, Download, Globe2, Info, Printer, XCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Globe2, Info, Printer, XCircle } from 'lucide-react'
 import { Panel, PanelBody, PanelHead } from '@/components/ui/Panel'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/Modal'
@@ -11,7 +11,6 @@ import { EmptyState, InfoNote, RowsSkeleton } from '@/components/ui/States'
 import {
   governanceApi, type AnalysisObjection, type ComplianceCheck, type TransferProviderInfo, type TransferStatus,
 } from '@/api/governance'
-import { downloadWorkbook } from '@/lib/spreadsheet'
 import { formatDate, formatDateTime } from '@/lib/format'
 import { PersonSelect, useAction } from '@/features/shared/kit'
 import { accessLabel, objectionStatusLabel } from '@/features/profile/PrivacyExtras'
@@ -48,55 +47,6 @@ export function ComplianceOverview({ onOpen }: { onOpen: (tab: string) => void }
             <div key={c.key} className="surface flex gap-3 rounded-2xl border border-border p-4">{body}</div>
           )
         })}
-      </div>
-    </div>
-  )
-}
-
-/* ------------------------------------------------------------------ envanter */
-
-export function InventoryPanel() {
-  const q = useQuery({ queryKey: ['privacy', 'inventory'], queryFn: ({ signal }) => governanceApi.inventory(signal) })
-  if (q.isPending) return <RowsSkeleton />
-  const rows = q.data!.activities
-  const exportXlsx = () => downloadWorkbook('kisisel-veri-envanteri.xlsx', {
-    [tx('Envanter')]: rows.map((a) => ({
-      [tx('Modül')]: a.module, [tx('İşleme faaliyeti')]: a.activity, [tx('İlgili kişi grubu')]: a.subjects.join(', '),
-      [tx('Veri kategorileri')]: a.dataCategories.join('; '), [tx('Amaç')]: a.purpose, [tx('Hukuki sebep')]: a.legalBasis,
-      [tx('Özel nitelikli')]: a.special ? tx('Evet') : tx('Hayır'), [tx('Saklama süresi')]: a.retention
-        + (a.retentionPolicy ? ` (${a.retentionPolicy.retentionMonths} ${tx('ay')}${a.retentionPolicy.isEnabled ? '' : ', ' + tx('otomatik değil')})` : ''),
-      [tx('Alıcı grupları')]: a.recipients.join(', '),
-      [tx('Yurt dışı aktarım')]: a.transfers.filter((t) => t.inUse).map((t) => t.name).join(', '),
-      [tx('Güvenlik önlemleri')]: a.measures,
-    })),
-  })
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <InfoNote>{tx('Kişisel veri işleme envanteri (KVKK m.16, VERBİS kaydına hazırlık). Yurt dışı aktarım sütunu şu an açık olan entegrasyonlara göre hesaplanır.')}</InfoNote>
-        <Button variant="outline" onClick={() => void exportXlsx()}><Download className="size-4" />{' '}{tx('Excel olarak indir')}</Button>
-      </div>
-      <div className="space-y-3">
-        {rows.map((a) => (
-          <details key={a.id} className="surface rounded-2xl border border-border p-4">
-            <summary className="flex cursor-pointer flex-wrap items-center gap-2">
-              <span className="text-[13.5px] font-medium">{a.module} — {a.activity}</span>
-              {a.special && <StatusBadge tone="warning">{tx('Özel nitelikli')}</StatusBadge>}
-              {a.transfers.some((t) => t.inUse) && <StatusBadge tone="neutral">{tx('Yurt dışı aktarım')}</StatusBadge>}
-              {a.retentionPolicy && !a.retentionPolicy.isEnabled && <StatusBadge tone="warning">{tx('İmha otomatik değil')}</StatusBadge>}
-            </summary>
-            <dl className="mt-3 grid gap-x-6 gap-y-2 text-[12.5px] md:grid-cols-2">
-              <div><dt className="text-muted-foreground">{tx('İlgili kişi grubu')}</dt><dd>{a.subjects.join(', ')}</dd></div>
-              <div><dt className="text-muted-foreground">{tx('Veri kategorileri')}</dt><dd>{a.dataCategories.join('; ')}</dd></div>
-              <div><dt className="text-muted-foreground">{tx('Amaç')}</dt><dd>{a.purpose}</dd></div>
-              <div><dt className="text-muted-foreground">{tx('Hukuki sebep')}</dt><dd>{a.legalBasis}</dd></div>
-              <div><dt className="text-muted-foreground">{tx('Saklama süresi')}</dt><dd>{a.retention}{a.retentionPolicy ? ` · ${a.retentionPolicy.retentionMonths} ${tx('ay')}` : ''}</dd></div>
-              <div><dt className="text-muted-foreground">{tx('Alıcı grupları')}</dt><dd>{a.recipients.length ? a.recipients.join(', ') : '—'}</dd></div>
-              <div><dt className="text-muted-foreground">{tx('Yurt dışı aktarım')}</dt><dd>{a.transfers.length ? a.transfers.map((t) => `${t.name}${t.inUse ? '' : ' (' + tx('kapalı') + ')'}`).join(', ') : '—'}</dd></div>
-              <div><dt className="text-muted-foreground">{tx('Güvenlik önlemleri')}</dt><dd>{a.measures}</dd></div>
-            </dl>
-          </details>
-        ))}
       </div>
     </div>
   )

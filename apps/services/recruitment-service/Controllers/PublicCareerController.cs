@@ -369,6 +369,8 @@ public class PublicCareerController : ControllerBase
 
         int affected;
         if (a.OwnsCandidate)
+            await _db.EnqueueResumeDeletionAsync(tenantSlug, candidateId, "RecruitmentCandidates", ct);
+        if (a.OwnsCandidate)
             affected = await _db.Candidates.Where(c => c.Id == candidateId).ExecuteDeleteAsync(ct); // FK: başvurular, mülakatlar, puan kartları, teklifler
         else
             affected = await _db.Applications.Where(x => x.Id == a.Id).ExecuteDeleteAsync(ct);

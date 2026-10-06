@@ -117,6 +117,13 @@ public class PrivacyController : AppController
             Channel = "Panel", IdentityVerified = true, VerificationMethod = "Session", VerifiedAt = DateTime.UtcNow, VerifiedBy = "HR360" };
         _db.DataRequests.Add(r);
         await _db.SaveChangesAsync(ct);
+        // Dalga 10: oturumla doğrulanmış erişim başvurusunda veri paketi hemen hazırlanır; başvurucu, İK
+        // başvuruyu sonuçlandırınca indirir. Paket hazırlanamazsa (göç yok, çalışan kaydı yok) başvuru yine alınır.
+        if (r.Kind == "Access" && r.EmployeeId is not null)
+        {
+            try { await DataRequestPackages.CreateAsync(Db, Tenant, r.Id, People, "system", "Sistem (otomatik veri paketi)", ct); }
+            catch (Exception ex) when (ex is Npgsql.PostgresException or InvalidOperationException) { }
+        }
         return Ok(r);
     }
 
@@ -126,9 +133,43 @@ public class PrivacyController : AppController
         var q = _db.DataRequests.AsNoTracking();
         if (!Me.IsHr) q = q.Where(r => r.UserId == Me.UserId);
         var rows = await q.OrderByDescending(r => r.CreatedAt).ToListAsync(ct);
-        return Ok(rows.Select(r => new { r.Id, r.PersonName, r.EmployeeId, r.Kind, r.Details, r.Status, r.Response, r.DueAt, r.CreatedAt, r.CompletedAt,
-            r.Channel, contact = Me.IsHr ? r.Contact : null, r.IdentityVerified, r.VerificationMethod, r.VerifiedBy, r.VerifiedAt,
-            overdue = r.Status is "Received" or "InProgress" && r.DueAt < DateTime.UtcNow, daysLeft = (int)Math.Ceiling((r.DueAt - DateTime.UtcNow).TotalDays) }));
+        // Dalga 10: süre takibi (20./27. gün hatırlatması, süre aşımı uyarısı) ve veri paketi durumu.
+        var extra = new Dictionary<Guid, (DateTime? R20, DateTime? R27, DateTime? Over)>();
+        var packages = new Dictionary<Guid, (DateTime Created, DateTime Expires, int Size, int Downloads, string Sha)>();
+        try
+        {
+            foreach (var x in await Db.QueryAsync("""SELECT "Id","Reminder20At","Reminder27At","OverdueAlertAt" FROM governance_data_requests WHERE "TenantSlug" = $1""",
+                         r => (r.GetGuid(0), r.Ts(1), r.Ts(2), r.Ts(3)), ct, Tenant))
+                extra[x.Item1] = (x.Item2, x.Item3, x.Item4);
+            foreach (var x in await Db.QueryAsync("""
+                         SELECT DISTINCT ON ("RequestId") "RequestId","CreatedAt","ExpiresAt","SizeBytes","DownloadCount","Sha256"
+                         FROM governance_data_request_packages WHERE "TenantSlug" = $1 AND "ExpiresAt" > now() ORDER BY "RequestId","CreatedAt" DESC
+                         """, r => (r.GetGuid(0), r.GetFieldValue<DateTime>(1), r.GetFieldValue<DateTime>(2), r.GetInt32(3), r.GetInt32(4), r.GetString(5)), ct, Tenant))
+                packages[x.Item1] = (x.Item2, x.Item3, x.Item4, x.Item5, x.Item6);
+        }
+        catch (Npgsql.PostgresException e) when (e.SqlState is "42P01" or "42703") { }
+        var now = DateTime.UtcNow;
+        return Ok(rows.Select(r =>
+        {
+            var open = r.Status is "Received" or "InProgress";
+            var ex = extra.GetValueOrDefault(r.Id);
+            var pkg = packages.TryGetValue(r.Id, out var pk) ? pk : default;
+            var hasPkg = packages.ContainsKey(r.Id);
+            return new
+            {
+                r.Id, r.PersonName, r.EmployeeId, r.Kind, r.Details, r.Status, r.Response, r.DueAt, r.CreatedAt, r.CompletedAt,
+                r.Channel, contact = Me.IsHr ? r.Contact : null, r.IdentityVerified, r.VerificationMethod, r.VerifiedBy, r.VerifiedAt,
+                overdue = open && r.DueAt < now, daysLeft = (int)Math.Ceiling((r.DueAt - now).TotalDays),
+                day = open ? DataRequestReminders.DayOf(r.CreatedAt, now) : (int?)null, legalDays = DataRequestReminders.LegalDays,
+                reminder20At = ex.R20, reminder27At = ex.R27, overdueAlertAt = ex.Over,
+                package = !hasPkg ? null : new
+                {
+                    createdAt = pkg.Created, expiresAt = pkg.Expires, sizeBytes = pkg.Size, downloads = pkg.Downloads, sha256 = Me.IsHr ? pkg.Sha : null,
+                    // Başvurucu paketi başvuru sonuçlanınca indirir; İK her zaman.
+                    downloadable = Me.IsHr || (r.Status == "Completed" && r.IdentityVerified),
+                },
+            };
+        }));
     }
 
     /// <summary>
@@ -169,6 +210,23 @@ public class PrivacyController : AppController
         r.Response = body.Response ?? r.Response;
         r.CompletedAt = body.Status is "Completed" or "Rejected" ? DateTime.UtcNow : null;
         await _db.SaveChangesAsync(ct);
+        if (body.Status is "Completed" or "Rejected" && r.EmployeeId is { } emp && r.Channel == "Panel")
+        {
+            // Dalga 10: veri paketi, sonuçlandırmadan sonra en az 30 gün indirilebilir kalır.
+            try
+            {
+                await Db.ExecuteAsync("""
+                    UPDATE governance_data_request_packages SET "ExpiresAt" = greatest("ExpiresAt", now() + interval '30 days')
+                    WHERE "TenantSlug" = $1 AND "RequestId" = $2
+                    """, ct, Tenant, r.Id);
+            }
+            catch (Npgsql.PostgresException e) when (e.SqlState == "42P01") { }
+            await HttpContext.RequestServices.GetRequiredService<Notifier>().LocalizedAsync(Tenant, emp,
+                "KVKK başvurunuz yanıtlandı", "Your data subject request has been answered",
+                "Yanıtı Profilim › Gizlilik (KVKK) ekranında görebilirsiniz." + (r.Kind == "Access" && body.Status == "Completed" ? " Veri paketiniz de oradan indirilebilir." : ""),
+                "You can read the answer under My profile › Privacy (KVKK)." + (r.Kind == "Access" && body.Status == "Completed" ? " Your data package can be downloaded there as well." : ""),
+                "privacy.request.answered", ct);
+        }
         return Ok(r);
     }
 
@@ -182,47 +240,8 @@ public class PrivacyController : AppController
         if (me?.Id != employeeId && !Me.IsHr) return Forbid();
         var person = await People.FindAsync(Tenant, employeeId, ct);
         if (person is null) return NotFound();
-
-        async Task<List<Dictionary<string, object?>>> Rows(string table, string where, string? orderBy = null)
-        {
-            var sql = $"SELECT * FROM {table} WHERE \"TenantSlug\" = $1 AND {where}{(orderBy is null ? "" : " ORDER BY " + orderBy)} LIMIT 5000";
-            return await Db.QueryAsync(sql, r =>
-            {
-                var d = new Dictionary<string, object?>();
-                for (var i = 0; i < r.FieldCount; i++)
-                {
-                    var name = r.GetName(i);
-                    if (name == "TenantSlug") continue;
-                    d[name] = r.IsDBNull(i) ? null : r.GetValue(i) switch { DateOnly x => x.ToString("yyyy-MM-dd"), var v => v };
-                }
-                return d;
-            }, ct, Tenant, employeeId);
-        }
-
-        var bundle = new Dictionary<string, object?>
-        {
-            ["hazirlanma"] = DateTime.UtcNow,
-            ["aciklama"] = "KVKK m.11 kapsamında, HR360'ta sizinle ilişkili tutulan kişisel verilerin dökümüdür.",
-            ["calisan"] = await Rows("employee_employees", "\"Id\" = $2"),
-            ["gorevlendirmeler"] = await Rows("employee_assignments", "\"EmployeeId\" = $2", "\"EffectiveFrom\""),
-            ["profil"] = (await Rows("engagement_profiles", "\"EmployeeId\" = $2")).Select(OpenPii).ToList(),
-            ["izinTalepleri"] = await Rows("leave_requests", "\"EmployeeId\" = $2", "\"StartDate\""),
-            ["izinBakiyeleri"] = await Rows("leave_balances", "\"EmployeeId\" = $2", "\"Year\""),
-            ["puantaj"] = await Rows("timeshift_time_entries", "\"EmployeeId\" = $2", "\"Date\""),
-            ["masraflar"] = await Rows("expense_claims", "\"EmployeeId\" = $2", "\"CreatedAt\""),
-            ["performansHedefleri"] = await Rows("performance_goals", "\"EmployeeId\" = $2"),
-            ["performansDegerlendirmeleri"] = await Rows("performance_reviews", "\"EmployeeId\" = $2"),
-            ["egitimKayitlari"] = await Rows("learning_enrollments", "\"EmployeeId\" = $2"),
-            ["sertifikalar"] = await Rows("learning_certifications", "\"EmployeeId\" = $2"),
-            ["onboarding"] = await Rows("onboarding_plans", "\"EmployeeId\" = $2"),
-            ["zimmetler"] = await Rows("onboarding_asset_assignments", "\"EmployeeId\" = $2"),
-            ["aldigiTakdirler"] = await Rows("engagement_kudos", "\"ToEmployeeId\" = $2"),
-            ["bildirimler"] = await Rows("notification_messages", "\"RecipientEmployeeId\" = $2", "\"CreatedAt\" DESC"),
-        };
-        if (Me.IsHr || me?.Id == employeeId)
-            bundle["ucretGecmisi"] = await Rows("compensation_records", "\"EmployeeId\" = $2", "\"EffectiveFrom\"");
-        if (person.UserId is not null)
-            bundle["onaylar"] = await _db.Consents.AsNoTracking().Where(c => c.UserId == person.UserId).OrderBy(c => c.RecordedAt).ToListAsync(ct);
+        // Dalga 10: döküm içeriği erişim başvurusu veri paketiyle ortak (PersonalDataExport).
+        var bundle = await PersonalDataExport.BuildAsync(Db, Tenant, person, includeCompensation: Me.IsHr || me?.Id == employeeId, ct);
 
         await Db.ExecuteAsync("""
             INSERT INTO audit_log ("TenantSlug","Service","EntityType","EntityId","Action","Changes","UserId","UserName","CorrelationId","OccurredAt")
@@ -233,28 +252,21 @@ public class PrivacyController : AppController
         return File(json, "application/json", $"kisisel-veri-{person.Name.Replace(' ', '-').ToLowerInvariant()}-{DateTime.UtcNow:yyyyMMdd}.json");
     }
 
-    /// <summary>engagement-service'in şifrelediği TCKN/IBAN'ı döküm için açar.</summary>
-    private static Dictionary<string, object?> OpenPii(Dictionary<string, object?> row)
-    {
-        foreach (var k in new[] { "Iban", "NationalId" })
-            if (row.TryGetValue(k, out var v) && v is string sv && GovernanceService.Security.KeyRing.IsSealed(sv))
-                row[k] = SecretBox.Unprotect(sv);
-        return row;
-    }
-
     [HttpPost("anonymize/{employeeId:guid}")]
     [Authorize(Policy = "RequireHrAdmin")]
     public async Task<IActionResult> Anonymize(Guid employeeId, CancellationToken ct)
     {
-        var n = await Infrastructure.Retention.AnonymizeEmployeesAsync(Db, Tenant, employeeId, 0, ct);
-        if (n == 0) return BadRequest(new { message = "Yalnızca işten ayrılmış (Terminated) çalışanlar anonimleştirilebilir." });
-        Infrastructure.Retention.Log(_db, Tenant, "TerminatedEmployees", "Anonymize", n, 0, "Manual", Me.Name);
+        var run = await Infrastructure.Retention.AnonymizeEmployeesDetailedAsync(Db, Tenant, employeeId, 0, ct);
+        var n = run.Affected;
+        if (n == 0) return BadRequest(new { message = L("Yalnızca işten ayrılmış (Terminated) çalışanlar anonimleştirilebilir.", "Only terminated employees can be anonymized.") });
+        var log = Infrastructure.Retention.Log(_db, Tenant, "TerminatedEmployees", "Anonymize", n, 0, "Manual", Me.Name);
         await _db.SaveChangesAsync(ct);
+        await Infrastructure.Retention.SaveDetailsAsync(Db, log, run, ct);
         await Db.ExecuteAsync("""
             INSERT INTO audit_log ("TenantSlug","Service","EntityType","EntityId","Action","Changes","UserId","UserName","OccurredAt")
             VALUES ($1,'governance-service','Employee',$2,'Anonymized','{}'::jsonb,$3,$4,now())
             """, ct, Tenant, employeeId.ToString(), Me.UserId, Me.Name);
-        return Ok(new { anonymized = n });
+        return Ok(new { anonymized = n, tables = run.Steps.Where(s => s.Rows > 0).Select(s => new { s.Table, s.Rows }) });
     }
 
     /* ---------------------------------------------------------- saklama politikaları */
@@ -301,11 +313,47 @@ public class PrivacyController : AppController
     {
         var p = await _db.RetentionPolicies.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (p is null) return NotFound();
-        p.LastAffected = await Infrastructure.Retention.RunAsync(Db, p, ct);
+        var run = await Infrastructure.Retention.RunDetailedAsync(Db, p, ct);
+        p.LastAffected = run.Affected;
         p.LastRunAt = DateTime.UtcNow;
-        Infrastructure.Retention.Log(_db, Tenant, p.Category, p.Action, p.LastAffected, p.RetentionMonths, "Manual", Me.Name);
+        var log = Infrastructure.Retention.Log(_db, Tenant, p.Category, p.Action, p.LastAffected, p.RetentionMonths, "Manual", Me.Name);
         await _db.SaveChangesAsync(ct);
-        return Ok(new { affected = p.LastAffected });
+        await Infrastructure.Retention.SaveDetailsAsync(Db, log, run, ct);
+        // Nesne deposu dosyaları hemen işlenir (bakım turunu beklemeden); ulaşılamazsa tur yeniden dener.
+        if (run.Queued > 0)
+            await StorageDeletions.ProcessAsync(Db, HttpContext.RequestServices.GetRequiredService<IHttpClientFactory>(), Tenant, ct);
+        return Ok(new { affected = p.LastAffected, tables = run.Steps.Select(s => new { s.Table, s.Label, s.Kind, s.Rows }), storageQueued = run.Queued });
+    }
+
+    /// <summary>
+    /// Dalga 10 (madde 56): kuru çalıştırma. Politikanın KAYITLI ayarıyla (süre, işlem) hangi tablodan kaç
+    /// satırın etkileneceğini ve hangi dosya anahtarlarının silineceğini gösterir; hiçbir şey değiştirmez.
+    /// </summary>
+    [HttpGet("retention/{id:guid}/preview")]
+    [Authorize(Policy = "RequireHrAdmin")]
+    public async Task<IActionResult> PreviewRetention(Guid id, CancellationToken ct)
+    {
+        var p = await _db.RetentionPolicies.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (p is null) return NotFound();
+        var plan = await RetentionPlans.BuildAsync(Db, Tenant, p.Category, p.Action, p.RetentionMonths, ct);
+        var steps = await RetentionPlans.PreviewAsync(Db, plan, ct);
+        var storage = new List<object>();
+        foreach (var s in plan.Storage)
+        {
+            var n = 0;
+            try { n = (await Db.QueryAsync(s.Select, r => r.GetString(0), ct, plan.Args)).Count; }
+            catch (Npgsql.PostgresException e) when (e.SqlState is "42P01" or "42703") { }
+            storage.Add(new { table = s.Table, column = s.Column, keys = n });
+        }
+        return Ok(new
+        {
+            p.Category, label = Infrastructure.Retention.Categories.GetValueOrDefault(p.Category).Label, p.Action, p.RetentionMonths, p.IsEnabled,
+            subjects = plan.Subjects < 0 ? (int?)null : plan.Subjects,
+            total = steps.Sum(s => s.Rows),
+            tables = steps.Select(s => new { s.Table, s.Label, s.Kind, s.Rows, s.Skipped }),
+            storage,
+            retained = plan.Retained.Select(r => new { r.Table, r.Reason }),
+        });
     }
 }
 

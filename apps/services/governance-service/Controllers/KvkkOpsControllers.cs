@@ -95,6 +95,8 @@ public class KvkkOpsController : AppController
         _db.PrivacyNotices.Add(n);
         await _db.SaveChangesAsync(ct);
         await AuditAsync("PrivacyNotice", n.Id.ToString(), "Published", new { n.Type, n.Version }, ct);
+        // Dalga 10 (madde 55): yeni sürüm yeniden onay kampanyası başlatır (önceki açık kampanya kapanır).
+        await ConsentCampaigns.StartAsync(Db, Tenant, n.Type, n.Version, current.Version, Me.Name, ct);
         return Ok(n);
     }
 
@@ -346,6 +348,12 @@ public class KvkkOpsController : AppController
         await _db.SaveChangesAsync(ct);
         // Kimlik belgesinin kendisi saklanmaz; yalnızca yöntem ve doğrulayan kaydedilir.
         await AuditAsync("DataRequest", r.Id.ToString(), "IdentityVerified", new { method = body.Method }, ct);
+        // Dalga 10: kimliği doğrulanan erişim başvurusunda veri paketi otomatik hazırlanır.
+        if (r.Kind == "Access" && r.EmployeeId is not null && r.Status is "Received" or "InProgress")
+        {
+            try { await DataRequestPackages.CreateAsync(Db, Tenant, r.Id, People, Me.UserId, Me.Name + " (kimlik doğrulama sonrası otomatik)", ct); }
+            catch (Exception ex) when (ex is Npgsql.PostgresException or InvalidOperationException) { }
+        }
         return Ok(new { r.Id, r.IdentityVerified, r.VerificationMethod, r.VerifiedBy, r.VerifiedAt });
     }
 

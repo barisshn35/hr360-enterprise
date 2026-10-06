@@ -43,7 +43,7 @@ iletişim **Türkçe**. Ürün belgeleri: `README.md`, `docs/` (mimari, güvenli
 - Servis derle/dağıt: `docker compose build -q <svc> && docker image prune -f && docker compose -f docker-compose.yml -f deploy/testing/chat-mock.yml --profile ldaptest up -d <svc>`
 - Testler: `scripts/test.sh unit | integration | e2e | all`
   - unit: .NET xUnit (`tests/dotnet/*`), Vitest (`apps/web`), ML pytest.
-  - integration: 24 Python betiği (`tests/integration/test_*.py`), chatmock ve OpenLDAP'ı kendisi başlatır.
+  - integration: 26 Python betiği (`tests/integration/test_*.py`), chatmock ve OpenLDAP'ı kendisi başlatır.
     Her betik `FAILS: n` yazar. Kullanıcılar `tests/credentials.json` (ayse=çalışan, mehmet=yönetici,
     admin=İK+şirket yöneticisi, platform=platform yöneticisi, ik=Elif Şahin: çalışan kaydı olan İK yöneticisi ve
     üst onaycısı olmayan taleplerin İK onaycısı). Testler sabit demo verisine dayanır

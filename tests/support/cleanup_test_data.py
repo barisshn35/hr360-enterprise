@@ -332,6 +332,44 @@ BEGIN
 END $f$;
 SELECT 'compensation (bordro dalgası 8)', pg_temp.del_payroll8();
 
+-- test_kvkk_ml10.py (dalga 10): başvuru açıklaması "TEST-W10" (veri paketleri ON DELETE CASCADE), yanıt ve süre
+-- bildirimleri, "test-w10" metin sürümü ve kampanyası (test_kvkk_ops.py "test-2" kampanyası dahil), hatırlatma
+-- bildirimleri, "TEST W10" VERBİS faaliyeti ve test özel alanlarından tohumlanan satırlar, "test-w10/" dosya anahtarı.
+-- Tablolar 2026-10-23_kvkk_ml.sql ile gelir; uygulanmamış kurulumda atlanır.
+CREATE FUNCTION pg_temp.del_w10() RETURNS bigint LANGUAGE plpgsql AS $f$
+DECLARE n bigint := 0; k bigint;
+BEGIN
+  EXECUTE $q$DELETE FROM notification_messages m USING governance_data_requests r
+             WHERE r."TenantSlug" = 'demo' AND r."Details" LIKE 'TEST-W10%' AND m."TenantSlug" = 'demo'
+               AND ((m."TemplateCode" = 'privacy.request.answered' AND m."RecipientEmployeeId" = r."EmployeeId"
+                     AND r."CompletedAt" IS NOT NULL AND m."CreatedAt" BETWEEN r."CompletedAt" - interval '5 seconds' AND r."CompletedAt" + interval '2 minutes')
+                 OR (m."TemplateCode" IN ('privacy.request.d20','privacy.request.d27','privacy.request.overdue')
+                     AND m."Body" LIKE '%' || to_char(r."DueAt" AT TIME ZONE 'Europe/Istanbul', 'DD.MM.YYYY') || '%'
+                     AND m."CreatedAt" >= now() - interval '1 day'))$q$;
+  GET DIAGNOSTICS k = ROW_COUNT; n := n + k;
+  EXECUTE $q$DELETE FROM notification_messages WHERE "TenantSlug" = 'demo' AND "TemplateCode" = 'privacy.reconsent'
+               AND ("Body" LIKE '%(sürüm test-%' OR "Body" LIKE '%(version test-%')$q$;
+  GET DIAGNOSTICS k = ROW_COUNT; n := n + k;
+  EXECUTE $q$DELETE FROM governance_data_requests WHERE "TenantSlug" = 'demo' AND "Details" LIKE 'TEST-W10%'$q$;
+  GET DIAGNOSTICS k = ROW_COUNT; n := n + k;
+  EXECUTE $q$DELETE FROM governance_consents WHERE "TenantSlug" = 'demo' AND "Version" = 'test-w10'$q$;
+  GET DIAGNOSTICS k = ROW_COUNT; n := n + k;
+  EXECUTE $q$DELETE FROM governance_privacy_notices WHERE "TenantSlug" = 'demo' AND "Version" = 'test-w10'$q$;
+  GET DIAGNOSTICS k = ROW_COUNT; n := n + k;
+  IF to_regclass('governance_consent_campaigns') IS NOT NULL THEN
+    EXECUTE $q$DELETE FROM governance_consent_campaigns WHERE "TenantSlug" = 'demo' AND "Version" IN ('test-w10','test-2')$q$;
+    GET DIAGNOSTICS k = ROW_COUNT; n := n + k;
+    EXECUTE $q$DELETE FROM governance_privacy_inventory WHERE "TenantSlug" = 'demo'
+                 AND ("Activity" LIKE 'TEST W10%' OR "ActivityKey" LIKE 'custom-field-test%')$q$;
+    GET DIAGNOSTICS k = ROW_COUNT; n := n + k;
+    EXECUTE $q$DELETE FROM governance_storage_deletions WHERE "TenantSlug" = 'demo'
+                 AND "KeyHash" = encode(sha256(convert_to('test-w10/yok.pdf', 'UTF8')), 'hex')$q$;
+    GET DIAGNOSTICS k = ROW_COUNT; n := n + k;
+  END IF;
+  RETURN n;
+END $f$;
+SELECT 'governance (dalga 10)', pg_temp.del_w10();
+
 -- ============================================================== İzin bakiyeleri yeniden hesap
 WITH calc AS (
   SELECT b."Id",
