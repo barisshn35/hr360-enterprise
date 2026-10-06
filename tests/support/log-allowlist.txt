@@ -1,0 +1,2 @@
+# scripts/test.sh log_scan: test sirasinda BEKLENEN servis gunlugu hatalari (grep -E, satir basina bir desen).
+# Yalnizca testin bilerek urettigi hatalar buraya eklenir; her desenin yanina nedenini yazin.

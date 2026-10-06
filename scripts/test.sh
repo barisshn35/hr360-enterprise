@@ -53,7 +53,33 @@ unit() {
     "cp -r /src /w && cd /w && grep -E '^(fastapi|starlette|pydantic|httpx|numpy|scikit-learn|prometheus-fastapi-instrumentator|ortools)==' requirements.txt > r.txt && cat requirements-ai.txt requirements-dev.txt >> r.txt && pip install -q -r r.txt >/dev/null 2>&1 && python -m pytest -q -p no:warnings tests"
 }
 
+# Servis gunluklerinde hata taramasi. Testler yalnizca API yanitlarina bakar; arka plan islerindeki
+# (zamanlayici, kuyruk, gozlemci) hatalar yanita yansimaz ve gozden kacar (ornek: toplu goruntuleme
+# denetleyicisi her turda dusuyordu). Beklenen hatalar tests/support/log-allowlist.txt'te (regex, satir basina bir).
+log_scan() {
+  local since="$1" found=0 c lines patterns
+  # Bos desen listesiyle "grep -v -f" her satiri suzer; desen yoksa suzgec uygulanmaz.
+  patterns="$(grep -vE '^[[:space:]]*(#|$)' "$ROOT/tests/support/log-allowlist.txt" 2>/dev/null || true)"
+  step "Servis gunluklerinde hata taramasi"
+  for c in $(docker ps --format '{{.Names}}' | grep -E '^hr360-.*(service|ml-inference)' | sort); do
+    # Her hata bir blok (baslik + 3 satir); izin listesindeki bir desen bloğun herhangi bir satırına uyarsa blok atlanır.
+    lines="$(docker logs --since "$since" "$c" 2>&1 | grep -A3 -E '^fail: |Unhandled exception|^Traceback' \
+      | PATTERNS="$patterns" awk '
+          function flush() { if (blk != "" && !allowed) printf "%s", keep; blk = ""; keep = ""; allowed = 0 }
+          BEGIN { n = split(ENVIRON["PATTERNS"], pat, "\n") }
+          /^--$/ { flush(); next }
+          { blk = blk $0 "\n"; for (i = 1; i <= n; i++) if (pat[i] != "" && $0 ~ pat[i]) allowed = 1
+            if ($0 ~ /^fail: |Exception|Error|^Traceback/) keep = keep $0 "\n" }
+          END { flush() }' || true)"
+    if [ -n "$lines" ]; then
+      found=1; echo "-- $c"; printf '%s\n' "$lines" | sed 's/^ *//' | cut -c1-200 | sort | uniq -c | sort -rn | head -8
+    fi
+  done
+  if [ "$found" = 0 ]; then echo "OK (beklenmeyen hata yok)"; else echo "BASARISIZ: servis gunluklerinde beklenmeyen hata"; fail=1; fi
+}
+
 integration() {
+  local t0; t0="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   step "Sahte saglayici sunucusu (Slack, Teams, Google, Microsoft Graph, Zoom, LLM)"
   docker rm -f chatmock >/dev/null 2>&1 || true
   docker run -d --name chatmock --network hr360-net -v "$ROOT/tests/integration:/t:ro" python:3.11-slim \
@@ -79,6 +105,8 @@ integration() {
     step "Entegrasyon: $t"
     run python3 "tests/integration/$t.py"
   done
+  # Gunlukler, servisler yeniden olusturulmadan once taranir (sonra kaybolur).
+  log_scan "$t0"
   step "Temizlik: servisler normal ayarlarla"
   docker compose up -d >/dev/null
   docker compose "${TEST_COMPOSE[@]}" --profile ldaptest rm -sf openldap >/dev/null 2>&1 || true
@@ -87,8 +115,10 @@ integration() {
 }
 
 e2e() {
+  local t0; t0="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   step "Tarayici testleri (Playwright)"
   run python3 -m pytest -q -p no:cacheprovider tests/e2e
+  log_scan "$t0"
   cleanup_data
 }
 
