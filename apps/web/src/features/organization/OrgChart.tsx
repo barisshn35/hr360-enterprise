@@ -45,6 +45,7 @@ import {
   Crown,
   Download,
   GitFork,
+  History,
   Link2,
   LoaderCircle,
   Maximize2,
@@ -57,11 +58,14 @@ import {
   X,
 } from 'lucide-react'
 import { ApiError } from '@/api/client'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import { qk, useAddAssignment, useDepartmentList, useEmployees, useMyEmployeeId } from '@/api/queries'
 import type { CreateAssignmentInput, Department, DepartmentLink } from '@/api/types'
 import { useDirectory } from '@/api/directory'
 import { leaveApi } from '@/api/leave'
+import { governanceApi } from '@/api/governance'
+import { engagementApi } from '@/api/engagement'
+import { usePlan } from '@/lib/plan'
 import { useAuth } from '@/auth/useAuth'
 import { Panel } from '@/components/ui/Panel'
 import { ErrorState, InfoNote, RowsSkeleton, EmptyState } from '@/components/ui/States'
@@ -115,9 +119,28 @@ import { OrgOutline } from './OrgOutline'
 import { OrgMinimap } from './OrgMinimap'
 import { DepartmentLinksModal, useDepartmentLinks } from './DepartmentLinksModal'
 import { tx, appLocale } from '@/lib/i18n'
+import { ThreeDGate } from './ThreeDGate'
+import { OrgTimeSlider } from './OrgTimeSlider'
+import { DATE_PARAM, departmentsAt, monthStops, parseDateParam, snapshotEmployees, timeDelta } from './orgTimeline'
+import {
+  applyScenario,
+  COMPARE_PARAM,
+  DIFF_STATUSES,
+  diffColor,
+  diffLabel,
+  diffSubtitle,
+  parseCompareParam,
+  parseScenarioParam,
+  SCENARIO_PARAM,
+  scenarioDiff,
+} from './orgScenario'
 import './orgchart.css'
 
+import type { SvgLayoutKind } from './OrgSvgView'
+
 const OrgSvgView = lazy(() => import('./OrgSvgView'))
+// 3B: three.js yalnızca bu yerleşim seçilince indirilir (ayrı parça).
+const Org3DView = lazy(() => import('./Org3DView'))
 
 /** Kutu başına ilk açılışta görünen kart sayısı. */
 const CARD_LIMIT = 8
@@ -142,6 +165,7 @@ const layoutLabel = (k: OrgLayoutKind) =>
     sunburst: tx('Halka (sunburst)'),
     treemap: tx('Ağaç haritası'),
     list: tx('Liste / anahat'),
+    layers3d: tx('3B katmanlar'),
   })[k]
 
 const encodingLabel = (e: OrgEncoding) =>
@@ -184,6 +208,9 @@ interface ChartCtx {
   select: (sel: string) => void
   focusOn: (deptId: string) => void
   onDeptKey: (e: KeyboardEvent<HTMLButtonElement>, deptId: string) => void
+  /** Zaman kaydırıcısında kişi sayısı değişen departmanlar (kısa süre parlar). */
+  pulse: ReadonlySet<string>
+  pulseSeq: number
 }
 
 const Ctx = createContext<ChartCtx | null>(null)
@@ -338,6 +365,7 @@ function DeptBox({ node }: { node: ChartDept }) {
       )}
     >
       <span aria-hidden className="absolute inset-y-0 left-0 w-1" style={{ background: c.colorOf(dept.id) }} />
+      {c.pulse.has(dept.id) && <span key={c.pulseSeq} aria-hidden className="org-pulse-box absolute inset-0 rounded-xl" />}
 
       <div className="flex items-start gap-1 border-b border-border py-2 pr-1.5 pl-3.5">
         <button
@@ -556,10 +584,83 @@ export function OrgChart({ companyId, companyName }: { companyId: string; compan
   const qc = useQueryClient()
 
   const today = todayIso()
-  const model = useMemo(
+  const { hasFeature } = usePlan()
+  const [searchParams, setSearchParams] = useSearchParams()
+  /** Görünüm dışı adres parametreleri (tarih, senaryo); diğerleri korunur. */
+  const setExtra = useCallback(
+    (patch: Record<string, string | null>) =>
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev)
+          for (const [k, v] of Object.entries(patch)) {
+            if (v === null) next.delete(k)
+            else next.set(k, v)
+          }
+          return next
+        },
+        { replace: true },
+      ),
+    [setSearchParams],
+  )
+
+  /* ------------------------------- zaman kaydırıcısı ------------------------------- */
+  // Zaman makinesi verisi kişi adı içerir: yönetici ve üstü + plan özelliği (zaman makinesi ekranıyla aynı).
+  const canTime = canSeePeople && can('performance:manage') && hasFeature('time-machine')
+  const date = canTime ? parseDateParam(searchParams.get(DATE_PARAM), today) : null
+  const [timeOpen, setTimeOpen] = useState(false)
+  const stops = useMemo(() => monthStops(today, 24), [today])
+  const snap = useQuery({
+    queryKey: ['time-machine', date],
+    queryFn: ({ signal }) => governanceApi.snapshot(date!, signal),
+    enabled: Boolean(date),
+    placeholderData: keepPreviousData,
+    staleTime: 5 * 60_000,
+  })
+
+  const liveModel = useMemo(
     () => buildChart(departments.data ?? [], employees.data ?? [], today),
     [departments.data, employees.data, today],
   )
+  const timeModel = useMemo(
+    () =>
+      date && snap.data
+        ? buildChart(departmentsAt(departments.data ?? [], snap.data), snapshotEmployees(snap.data), String(snap.data.date).slice(0, 10))
+        : null,
+    [date, snap.data, departments.data],
+  )
+  const model = timeModel ?? liveModel
+  /** Renklendirmenin "bugün"ü: geçmiş tarihte kıdem o güne göre. */
+  const refDay = date ?? today
+
+  // Kaydırıcı ilerleyince kişi sayısı değişen/yeni departmanlar kısa süre parlar.
+  const [pulse, setPulse] = useState<{ ids: Set<string>; seq: number }>({ ids: new Set(), seq: 0 })
+  const prevModel = useRef<{ model: typeof model; date: string | null } | null>(null)
+  useEffect(() => {
+    const prev = prevModel.current
+    if (prev?.model === model) return
+    prevModel.current = { model, date }
+    // Yalnızca zaman kaydırıcısı etkinken (canlı verinin yenilenmesi parlatmaz).
+    if (!prev || (prev.date === null && date === null)) return
+    const d = timeDelta(prev.model, model)
+    setPulse((p) => ({ ids: new Set([...d.changed.keys(), ...d.added]), seq: p.seq + 1 }))
+  }, [model, date])
+
+  /* ------------------------------- senaryo karşılaştırma ------------------------------- */
+  const canScenario = canSeePeople && can('performance:manage') && hasFeature('org-scenarios')
+  const scenarios = useQuery({
+    queryKey: ['org-scenarios'],
+    queryFn: ({ signal }) => engagementApi.orgScenarios(signal),
+    enabled: canScenario,
+    staleTime: 60_000,
+  })
+  const scenarioId = canScenario && !date ? parseScenarioParam(searchParams.get(SCENARIO_PARAM)) : null
+  const scenario = scenarioId ? scenarios.data?.find((x) => x.id === scenarioId) : undefined
+  const compare = parseCompareParam(searchParams.get(COMPARE_PARAM))
+  const draftModel = useMemo(
+    () => (scenario ? buildChart(departments.data ?? [], applyScenario(employees.data ?? [], scenario.moves, today), today) : null),
+    [scenario, departments.data, employees.data, today],
+  )
+  const diff = useMemo(() => (draftModel ? scenarioDiff(liveModel, draftModel) : null), [draftModel, liveModel])
 
   const nameOf = useMemo(() => {
     const names = new Map<string, string>()
@@ -577,10 +678,12 @@ export function OrgChart({ companyId, companyName }: { companyId: string; compan
   )
 
   /* ------------------------------- adres durumu ------------------------------- */
-  const [searchParams, setSearchParams] = useSearchParams()
   const deptIds = useMemo(() => [...model.byId.keys()], [model])
   const url = useMemo(() => decodeViewState(searchParams, deptIds), [searchParams, deptIds])
-  const encoding: OrgEncoding = canSeePeople ? url.encoding : 'department'
+  // Geçmiş tarihte "bugün izinde" anlamsız; senaryo karşılaştırmasında renk farkı gösterir.
+  const encoding: OrgEncoding = !canSeePeople || (date && url.encoding === 'leave') ? 'department' : url.encoding
+  /** Geçmiş tarihte şema salt okunur (taşıma bugüne yazılırdı). */
+  const canMoveNow = canMove && !date && !diff
   const layout = url.layout
   const focus = url.focus
   const collapsed = useMemo(() => url.collapsed ?? defaultCollapsed(model), [url.collapsed, model])
@@ -684,17 +787,18 @@ export function OrgChart({ companyId, companyName }: { companyId: string; compan
 
   const colorOf = useCallback(
     (deptId: string) => {
+      if (diff) return diffColor(diff.byDept.get(deptId)?.status ?? 'same')
       const node = model.byId.get(deptId)
       if (!node) return NEUTRAL
       if (encoding === 'leave' && leaveScope && !leaveScope.has(deptId)) return NEUTRAL
-      return nodeColor(encoding, node, node.colorIndex, { today, onLeave })
+      return nodeColor(encoding, node, node.colorIndex, { today: refDay, onLeave })
     },
-    [model, encoding, today, onLeave, leaveScope],
+    [model, encoding, refDay, onLeave, leaveScope, diff],
   )
 
   const personMark = (p: ChartPerson): { color: string; label: string } | null => {
     if (encoding === 'tenure') {
-      const b = tenureBand(p.hireDate, today)
+      const b = tenureBand(p.hireDate, refDay)
       return b ? { color: tenureColor(b), label: tx('Kıdem: {0}', [tenureLabel(b)]) } : null
     }
     if (encoding === 'leave' && onLeave?.has(p.id)) return { color: ON_LEAVE_COLOR, label: tx('Bugün izinde') }
@@ -703,12 +807,13 @@ export function OrgChart({ companyId, companyName }: { companyId: string; compan
 
   const subtitleOf = useCallback(
     (deptId: string) => {
+      if (diff) return diffSubtitle(diff.byDept.get(deptId))
       const n = model.byId.get(deptId)
       if (!n) return ''
       if (!canSeePeople) return n.children.length ? tx('{0} alt departman', [n.children.length]) : tx('Departman')
       let s = tx('{0} kişi', [formatNumber(n.total)])
       if (encoding === 'tenure') {
-        const b = deptTenureBand(n, today)
+        const b = deptTenureBand(n, refDay)
         if (b) s += tx(' · ortanca {0}', [tenureLabel(b)])
       } else if (encoding === 'leave' && onLeave && (!leaveScope || leaveScope.has(deptId))) {
         const share = deptLeaveShare(n, onLeave)
@@ -716,14 +821,15 @@ export function OrgChart({ companyId, companyName }: { companyId: string; compan
       }
       return s
     },
-    [model, canSeePeople, encoding, today, onLeave, leaveScope],
+    [model, canSeePeople, encoding, refDay, onLeave, leaveScope, diff],
   )
 
   const legend: LegendItem[] = useMemo(() => {
+    if (diff) return DIFF_STATUSES.map((st) => ({ key: st, label: diffLabel(st), color: diffColor(st) }))
     if (encoding === 'tenure') return [...TENURE_BANDS.map((b) => ({ key: b, label: tenureLabel(b), color: tenureColor(b) })), smallGroupLegend()]
     if (encoding === 'leave') return [...LEAVE_BUCKETS.map((b) => ({ key: b, label: leaveLabel(b), color: leaveColor(b) })), smallGroupLegend()]
     return model.roots.slice(0, 8).map((r) => ({ key: r.dept.id, label: r.dept.name, color: deptColor(r.colorIndex) }))
-  }, [encoding, model])
+  }, [encoding, model, diff])
 
   /* ------------------------------------ matris ------------------------------------ */
   const links = useDepartmentLinks(companyId, url.matrix)
@@ -853,6 +959,7 @@ export function OrgChart({ companyId, companyName }: { companyId: string; compan
   // Yakınlık sık değişir (tekerlek); yerel tutulur, adrese gecikmeli yazılır.
   const initial = useRef({ zoomFromUrl: searchParams.has(PARAM.zoom), layout })
   const [zoom, setZoom] = useState(url.zoom)
+  const [zoomRight, setZoomRight] = useState(1)
   const [fitRequest, setFitRequest] = useState(0)
   const viewport = useRef<HTMLDivElement>(null)
   const canvas = useRef<HTMLDivElement>(null)
@@ -996,8 +1103,10 @@ export function OrgChart({ companyId, companyName }: { companyId: string; compan
     setExporting(true)
     try {
       const [{ computeLayout }, ex] = await Promise.all([import('./orgLayouts'), import('./orgExport')])
-      const lay = computeLayout(model, layout, { focus, collapsed, rootLabel: companyName, peopleKnown: canSeePeople })
-      const title = [companyName, focus ? model.byId.get(focus)?.dept.name : null, formatDate(today)].filter(Boolean).join(' · ')
+      // 3B görünüm dışa aktarılırken radyal ağaç (aynı x/z düzlemi) kullanılır.
+      const exportKind = layout === 'layers3d' ? 'radial' : layout
+      const lay = computeLayout(model, exportKind, { focus, collapsed, rootLabel: companyName, peopleKnown: canSeePeople })
+      const title = [companyName, focus ? model.byId.get(focus)?.dept.name : null, formatDate(refDay), scenario ? tx('Senaryo: {0}', [scenario.name]) : null].filter(Boolean).join(' · ')
       const svg = ex.layoutToSvg({
         layout: lay,
         title,
@@ -1006,7 +1115,7 @@ export function OrgChart({ companyId, companyName }: { companyId: string; compan
         matrix: url.matrix ? matrix.map((m) => ({ from: m.fromDepartmentId, to: m.toDepartmentId, kind: m.kind })) : [],
         path,
       })
-      const base = `${ex.fileSlug(companyName)}-${layout}`
+      const base = `${ex.fileSlug(companyName)}-${exportKind}${date ? `-${date}` : ''}`
       if (fmt === 'svg') ex.downloadSvg(svg, base)
       else if (fmt === 'png') await ex.downloadPng(svg, base)
       else await ex.printSvg(svg)
@@ -1058,7 +1167,7 @@ export function OrgChart({ companyId, companyName }: { companyId: string; compan
   const ctx: ChartCtx = {
     model,
     peopleKnown: canSeePeople,
-    canMove,
+    canMove: canMoveNow,
     drag,
     setDrag,
     overId,
@@ -1083,6 +1192,8 @@ export function OrgChart({ companyId, companyName }: { companyId: string; compan
     select,
     focusOn,
     onDeptKey,
+    pulse: pulse.ids,
+    pulseSeq: pulse.seq,
   }
 
   const movingPerson = moving
@@ -1093,6 +1204,56 @@ export function OrgChart({ companyId, companyName }: { companyId: string; compan
   const focusChain = focus ? ancestorsOf(model, focus) : []
   const selectedChain = selectedDept ? ancestorsOf(model, selectedDept) : []
   const svgKind = layout === 'horizontal' || layout === 'radial' || layout === 'sunburst' || layout === 'treemap' ? layout : null
+  const sideBySide = Boolean(diff && draftModel && compare === 'side')
+
+  const svgView = (kind: SvgLayoutKind, m: ChartModel, z: number, onZoom: (z: number) => void) => (
+    <Suspense fallback={<div className="p-4"><RowsSkeleton rows={6} columns={4} /></div>}>
+      <OrgSvgView
+        model={m}
+        kind={kind}
+        rootLabel={companyName}
+        focus={focus && m.byId.has(focus) ? focus : null}
+        collapsed={collapsed}
+        peopleKnown={canSeePeople}
+        colorOf={colorOf}
+        subtitleOf={subtitleOf}
+        path={path}
+        matches={deptMatches}
+        selectedDept={selectedDept}
+        matrix={url.matrix ? matrix : null}
+        zoom={z}
+        zoomFromUrl={initial.current.zoomFromUrl && initial.current.layout === layout}
+        onZoom={onZoom}
+        onToggle={toggleKids}
+        onSelect={(id) => select(`d:${id}`)}
+        onFocus={(id) => focusOn(id)}
+        centerRequest={centerRequest}
+        fitRequest={fitRequest}
+        pulse={pulse.ids}
+        pulseSeq={pulse.seq}
+      />
+    </Suspense>
+  )
+
+  const outline = (
+    <OrgOutline
+      roots={roots}
+      collapsed={collapsed}
+      onToggle={toggleKids}
+      selectedDept={selectedDept}
+      path={path}
+      matches={deptMatches}
+      colorOf={colorOf}
+      subtitleOf={subtitleOf}
+      headOf={(id) => {
+        const h = model.byId.get(id)?.dept.headEmployeeId
+        return h ? nameOf(h) : null
+      }}
+      linkCount={url.matrix ? linkCount : () => 0}
+      onSelect={(id) => select(`d:${id}`)}
+      onFocus={(id) => focusOn(id)}
+    />
+  )
 
   const matrixSegments =
     layout === 'vertical' && url.matrix
@@ -1110,6 +1271,10 @@ export function OrgChart({ companyId, companyName }: { companyId: string; compan
       <div className="org-chart-root space-y-3">
         {!canSeePeople ? (
           <InfoNote>{tx('Şema yalnızca departmanları gösteriyor. Çalışanları görmek için yönetici yetkisi gerekir.')}</InfoNote>
+        ) : date ? (
+          <InfoNote>{tx('Şema {0} tarihindeki görevlendirmelere göre gösteriliyor ve salt okunur. Departman geçmişi tutulmadığından silinmiş departmanlar görünmez; üst departman bağları bugünkü hâliyle çizilir.', [formatDate(date)])}</InfoNote>
+        ) : diff ? (
+          <InfoNote>{tx('Senaryo karşılaştırması: renkler senaryodaki kişi sayısı değişimini gösterir. Senaryo gerçek organizasyonu değiştirmez.')}</InfoNote>
         ) : canMove && layout === 'vertical' ? (
           <InfoNote>{tx('Bir çalışan kartını tutup başka bir departman kutusuna bırakın; atama bugünden itibaren değişir. Tarih ya da unvan değiştirmek, klavye veya dokunmatik ekranla taşımak için kartın üzerindeki', [])}{' '}
             <ArrowRightLeft className="inline size-3.5 align-[-2px]" aria-label={tx('taşı')} />{' '}{tx('düğmesini kullanın.')}
@@ -1157,33 +1322,78 @@ export function OrgChart({ companyId, companyName }: { companyId: string; compan
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {(['vertical', 'horizontal', 'radial', 'sunburst', 'treemap', 'list'] as OrgLayoutKind[]).map((k) => (
+                  {(['vertical', 'horizontal', 'radial', 'sunburst', 'treemap', 'list', 'layers3d'] as OrgLayoutKind[]).map((k) => (
                     <SelectItem key={k} value={k}>
                       {layoutLabel(k)}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              <Select value={encoding} onValueChange={(v) => update({ encoding: v as OrgEncoding })}>
+              <Select value={encoding} onValueChange={(v) => update({ encoding: v as OrgEncoding })} disabled={Boolean(diff)}>
                 <SelectTrigger size="sm" aria-label={tx('Renklendirme')} className="min-w-36">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="department">{encodingLabel('department')}</SelectItem>
                   {canSeePeople && <SelectItem value="tenure">{encodingLabel('tenure')}</SelectItem>}
-                  {canSeePeople && <SelectItem value="leave">{encodingLabel('leave')}</SelectItem>}
+                  {canSeePeople && !date && <SelectItem value="leave">{encodingLabel('leave')}</SelectItem>}
                 </SelectContent>
               </Select>
               <Button size="sm" variant={url.matrix ? 'secondary' : 'outline'} aria-pressed={url.matrix} onClick={() => update({ matrix: !url.matrix })}>
                 <Waypoints aria-hidden />
                 {tx('Matris bağları')}
               </Button>
+              {canTime && !diff && (
+                <Button
+                  size="sm"
+                  variant={date || timeOpen ? 'secondary' : 'outline'}
+                  aria-pressed={Boolean(date || timeOpen)}
+                  aria-expanded={Boolean(date || timeOpen)}
+                  onClick={() => {
+                    if (date || timeOpen) {
+                      setTimeOpen(false)
+                      setExtra({ [DATE_PARAM]: null })
+                    } else setTimeOpen(true)
+                  }}
+                >
+                  <History aria-hidden />
+                  {tx('Zaman')}
+                </Button>
+              )}
+              {canScenario && !date && (scenarios.data?.length ?? 0) > 0 && (
+                <Select
+                  value={scenarioId ?? '__none__'}
+                  onValueChange={(v) => setExtra({ [SCENARIO_PARAM]: v === '__none__' ? null : v, ...(v === '__none__' ? { [COMPARE_PARAM]: null } : {}) })}
+                >
+                  <SelectTrigger size="sm" aria-label={tx('Senaryo ile karşılaştır')} className="min-w-44">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">{tx('Senaryo karşılaştırma yok')}</SelectItem>
+                    {scenarios.data!.map((sc) => (
+                      <SelectItem key={sc.id} value={sc.id}>
+                        {tx('Senaryo: {0}', [sc.name])}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              {diff && (
+                <div className="flex items-center rounded-md border border-border p-0.5" role="group" aria-label={tx('Karşılaştırma biçimi')}>
+                  <Button size="xs" variant={compare === 'overlay' ? 'secondary' : 'ghost'} aria-pressed={compare === 'overlay'} onClick={() => setExtra({ [COMPARE_PARAM]: null })}>
+                    {tx('Üst üste')}
+                  </Button>
+                  <Button size="xs" variant={compare === 'side' ? 'secondary' : 'ghost'} aria-pressed={compare === 'side'} onClick={() => setExtra({ [COMPARE_PARAM]: 'yan' })}>
+                    {tx('Yan yana')}
+                  </Button>
+                </div>
+              )}
               {canManageLinks && (
                 <Button size="sm" variant="ghost" onClick={() => setLinksOpen(true)}>
                   {tx('Bağları yönet')}
                 </Button>
               )}
-              {canSeePeople && layout === 'vertical' && (
+              {canSeePeople && layout === 'vertical' && !sideBySide && (
                 <>
                   <Button size="sm" variant="outline" onClick={() => setOpenSet(new Set(model.byId.keys()))}>
                     {tx('Tümünü aç')}
@@ -1217,6 +1427,38 @@ export function OrgChart({ companyId, companyName }: { companyId: string; compan
                 </Button>
               </div>
             </div>
+
+            {(date || timeOpen) && canTime && !diff && (
+              <OrgTimeSlider
+                stops={stops}
+                date={date}
+                onChange={(d) => setExtra({ [DATE_PARAM]: d })}
+                loading={snap.isFetching}
+                error={snap.isError}
+                summary={
+                  date && snap.data
+                    ? tx('O tarihte {0} kişi, {1} departman; bugün {2} kişi.', [
+                        formatNumber(model.deptOf.size),
+                        formatNumber(model.byId.size),
+                        formatNumber(liveModel.deptOf.size),
+                      ])
+                    : null
+                }
+              />
+            )}
+
+            {diff && scenario && (
+              <p className="text-[12.5px]" aria-live="polite">
+                <span className="font-medium">{scenario.name}</span>
+                <span className="text-muted-foreground">
+                  {' · '}
+                  {tx('{0} kişi taşınıyor, {1} yeni pozisyon, {2} ayrılış; {3} departman etkileniyor.', [diff.moved, diff.hires, diff.exits, diff.affected])}
+                </span>{' '}
+                <Link className="font-medium text-primary hover:underline" to="/panel/org-senaryolari">
+                  {tx('Senaryoyu düzenle')}
+                </Link>
+              </p>
+            )}
 
             {/* Odak kırıntısı */}
             {focus && (
@@ -1305,11 +1547,22 @@ export function OrgChart({ companyId, companyName }: { companyId: string; compan
           </div>
 
           {/* Tuval */}
-          {svgKind ? (
-            <Suspense fallback={<div className="p-4"><RowsSkeleton rows={6} columns={4} /></div>}>
-              <OrgSvgView
+          {sideBySide && draftModel ? (
+            // Yan yana: solda bugün, sağda senaryo; aynı yerleşim (dikey/liste/3B için yatay ağaç).
+            <div className="grid divide-y divide-border lg:grid-cols-2 lg:divide-x lg:divide-y-0">
+              <section aria-label={tx('Bugünkü yapı')}>
+                <p className="border-b border-border px-3 py-1.5 text-[12px] font-semibold">{tx('Bugün')}</p>
+                {svgView(svgKind ?? 'horizontal', liveModel, zoom, setZoom)}
+              </section>
+              <section aria-label={tx('Senaryodaki yapı')}>
+                <p className="border-b border-border px-3 py-1.5 text-[12px] font-semibold">{tx('Senaryo: {0}', [scenario?.name ?? ''])}</p>
+                {svgView(svgKind ?? 'horizontal', draftModel, zoomRight, setZoomRight)}
+              </section>
+            </div>
+          ) : layout === 'layers3d' ? (
+            <ThreeDGate fallback={svgView('radial', model, zoom, setZoom)}>
+              <Org3DView
                 model={model}
-                kind={svgKind}
                 rootLabel={companyName}
                 focus={focus}
                 collapsed={collapsed}
@@ -1321,33 +1574,20 @@ export function OrgChart({ companyId, companyName }: { companyId: string; compan
                 selectedDept={selectedDept}
                 matrix={url.matrix ? matrix : null}
                 zoom={zoom}
-                zoomFromUrl={initial.current.zoomFromUrl && initial.current.layout === layout}
-                onZoom={setZoom}
-                onToggle={toggleKids}
                 onSelect={(id) => select(`d:${id}`)}
                 onFocus={(id) => focusOn(id)}
+                onToggle={toggleKids}
                 centerRequest={centerRequest}
                 fitRequest={fitRequest}
+                pulse={pulse.ids}
+                pulseSeq={pulse.seq}
+                aside={outline}
               />
-            </Suspense>
+            </ThreeDGate>
+          ) : svgKind ? (
+            svgView(svgKind, model, zoom, setZoom)
           ) : layout === 'list' ? (
-            <OrgOutline
-              roots={roots}
-              collapsed={collapsed}
-              onToggle={toggleKids}
-              selectedDept={selectedDept}
-              path={path}
-              matches={deptMatches}
-              colorOf={colorOf}
-              subtitleOf={subtitleOf}
-              headOf={(id) => {
-                const h = model.byId.get(id)?.dept.headEmployeeId
-                return h ? nameOf(h) : null
-              }}
-              linkCount={url.matrix ? linkCount : () => 0}
-              onSelect={(id) => select(`d:${id}`)}
-              onFocus={(id) => focusOn(id)}
-            />
+            outline
           ) : (
             <div
               ref={viewport}

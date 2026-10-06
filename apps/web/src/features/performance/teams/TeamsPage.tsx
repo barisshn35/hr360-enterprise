@@ -3,14 +3,15 @@
  *
  *   Diyagram  → herkes: Şirket → Departman → Ekip → Üyeler, salt okunur.
  *   Yönetim   → yalnızca `team:manage`: ekip kur, lider ata, üye ekle/çıkar.
+ *   Ekip ağı  → yalnızca İK: ekipler arası etkileşimin 3B ağı (`?gorunum=ag`, tembel yüklenir).
  *
  * Görünüm ve seçili ekip adreste tutulur (`?gorunum=yonetim&ekip=…`);
  * bağlantı paylaşılabilir, geri tuşu doğru çalışır.
  */
 
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { Network, Plus, Presentation, Settings2 } from 'lucide-react'
+import { Network, Plus, Presentation, Settings2, Share2 } from 'lucide-react'
 import { useAuth } from '@/auth/useAuth'
 import { Button } from '@/components/ui/button'
 import { Panel } from '@/components/ui/Panel'
@@ -26,14 +27,23 @@ import { TeamSheet } from './TeamSheet'
 import { TeamsManage } from './TeamsManage'
 import { useOrgTree } from './useOrgTree'
 import { tx } from '@/lib/i18n'
+import { usePlan } from '@/lib/plan'
+import { RowsSkeleton } from '@/components/ui/States'
 
-type View = 'diyagram' | 'yonetim'
+// 3B ekip ağı: ayrı parça (three.js ayrıca, yalnızca 3B çizilecekse indirilir).
+const TeamNetworkView = lazy(() => import('@/features/organization/TeamNetworkView'))
+
+type View = 'diyagram' | 'yonetim' | 'ag'
 
 export function TeamsPage() {
-  const { can } = useAuth()
+  const { can, hasRole } = useAuth()
+  const { hasFeature } = usePlan()
   const canManage = can('team:manage')
+  // Etkileşim verisinin toplu görünümü: yalnızca İK / şirket yöneticisi (sunucu da RequireHrAdmin).
+  const canNetwork = (hasRole('hr-admin') || hasRole('tenant-admin') || hasRole('platform-admin')) && hasFeature('analytics')
   const [params, setParams] = useSearchParams()
-  const view: View = canManage && params.get('gorunum') === 'yonetim' ? 'yonetim' : 'diyagram'
+  const requested = params.get('gorunum')
+  const view: View = canManage && requested === 'yonetim' ? 'yonetim' : canNetwork && requested === 'ag' ? 'ag' : 'diyagram'
   const selected = params.get('ekip')
   const [showInactive, setShowInactive] = useState(false)
   const [sheet, setSheet] = useState<SheetTarget | null>(null)
@@ -91,14 +101,15 @@ export function TeamsPage() {
         }
       >
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          {canManage ? (
+          {canManage || canNetwork ? (
             <Segmented
               ariaLabel={tx('Görünüm')}
               value={view}
-              onChange={(v) => setParam({ gorunum: v === 'yonetim' ? 'yonetim' : null })}
+              onChange={(v) => setParam({ gorunum: v === 'diyagram' ? null : v })}
               options={[
-                { value: 'diyagram', label: <span className="inline-flex items-center gap-1.5"><Network className="size-3.5" aria-hidden />{tx('Diyagram')}</span> },
-                { value: 'yonetim', label: <span className="inline-flex items-center gap-1.5"><Settings2 className="size-3.5" aria-hidden />{tx('Yönetim')}</span> },
+                { value: 'diyagram' as View, label: <span className="inline-flex items-center gap-1.5"><Network className="size-3.5" aria-hidden />{tx('Diyagram')}</span> },
+                ...(canManage ? [{ value: 'yonetim' as View, label: <span className="inline-flex items-center gap-1.5"><Settings2 className="size-3.5" aria-hidden />{tx('Yönetim')}</span> }] : []),
+                ...(canNetwork ? [{ value: 'ag' as View, label: <span className="inline-flex items-center gap-1.5"><Share2 className="size-3.5" aria-hidden />{tx('Ekip ağı (3B)')}</span> }] : []),
               ]}
             />
           ) : (
@@ -144,6 +155,10 @@ export function TeamsPage() {
             ))}
           </div>
         </Panel>
+      ) : view === 'ag' ? (
+        <Suspense fallback={<Panel><RowsSkeleton rows={6} columns={4} /></Panel>}>
+          <TeamNetworkView />
+        </Suspense>
       ) : view === 'yonetim' ? (
         <TeamsManage
           tree={org.tree}

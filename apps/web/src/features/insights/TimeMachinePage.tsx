@@ -91,7 +91,7 @@ export function TimeMachinePage() {
                   <div className="grid gap-4 md:grid-cols-2">
                     <AnimatePresence mode="popLayout">
                       {s.departments.map((d) => (
-                        <motion.div key={d.department} layout initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} className="surface rounded-2xl border border-border p-4">
+                        <motion.div key={d.departmentId ?? d.department} layout initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} className="surface rounded-2xl border border-border p-4">
                           <div className="mb-3 flex items-center justify-between"><p className="text-[14px] font-semibold">{d.department}</p><span className="tabular rounded-full bg-primary/10 px-2 text-[12px] text-primary">{d.count}</span></div>
                           <div className="flex flex-wrap gap-2">
                             <AnimatePresence mode="popLayout">

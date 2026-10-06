@@ -9,10 +9,11 @@
 
 import type { ChartDept, ChartModel } from './orgChartModel'
 
-export type OrgLayoutKind = 'vertical' | 'horizontal' | 'radial' | 'sunburst' | 'treemap' | 'list'
+/** `layers3d`: 3B katmanlı görünüm (her hiyerarşi seviyesi bir kat; tembel yüklenen WebGL). */
+export type OrgLayoutKind = 'vertical' | 'horizontal' | 'radial' | 'sunburst' | 'treemap' | 'list' | 'layers3d'
 export type OrgEncoding = 'department' | 'tenure' | 'leave'
 
-export const LAYOUT_KINDS: readonly OrgLayoutKind[] = ['vertical', 'horizontal', 'radial', 'sunburst', 'treemap', 'list']
+export const LAYOUT_KINDS: readonly OrgLayoutKind[] = ['vertical', 'horizontal', 'radial', 'sunburst', 'treemap', 'list', 'layers3d']
 export const ENCODINGS: readonly OrgEncoding[] = ['department', 'tenure', 'leave']
 
 export interface OrgViewState {
@@ -60,6 +61,7 @@ const LAYOUT_TOKEN: Record<OrgLayoutKind, string> = {
   sunburst: 'halka',
   treemap: 'kutu',
   list: 'liste',
+  layers3d: '3b',
 }
 const ENCODING_TOKEN: Record<OrgEncoding, string> = { department: 'departman', tenure: 'kidem', leave: 'izin' }
 

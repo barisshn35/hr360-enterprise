@@ -3,8 +3,8 @@
  *
  * Girdi `ChartModel` (departman ağacı), çıktı konumlandırılmış düğümler ve
  * bağlantılar (`OrgLayout`). SVG görünümü, dışa aktarma (PNG/SVG/PDF) ve küçük
- * harita bu çıktıyı kullanır; ileride 3B görünüm de aynı veriyi (x/y + derinlik,
- * açı/yarıçap, dikdörtgen) üçüncü eksene taşıyarak yeniden kullanacak.
+ * harita bu çıktıyı kullanır; 3B katmanlı görünüm (`org3d.ts`) radyal yerleşimin açı/yarıçapını
+ * yatay düzleme, derinliği dikey eksene taşıyarak yeniden kullanır.
  *
  * Koordinatlar piksel benzeri "yerleşim birimi"dir; ölçek/kaydırma çizen tarafta.
  * Düğümler departmandır (kişi düğümü yok): 5000 kişilik kiracıda da düğüm sayısı
@@ -272,8 +272,9 @@ export function computeLayout(model: ChartModel, kind: OrgLayoutKind, opts: Layo
   const res =
     kind === 'horizontal'
       ? nodeLink(data, true)
-      : kind === 'radial'
-        ? radial(data)
+      : kind === 'radial' || kind === 'layers3d'
+        ? // 3B katmanlı görünüm radyal ağacın açı/yarıçapını kullanır; derinlik üçüncü eksene çıkar (org3d.ts).
+          radial(data)
         : kind === 'sunburst'
           ? sunburst(data, peopleKnown)
           : kind === 'treemap'

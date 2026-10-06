@@ -1,6 +1,6 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { Building2, Plus } from 'lucide-react'
+import { lazy, Suspense, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Building2, List, Orbit, Plus } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/button'
 import { DataTable, type Column } from '@/components/ui/DataTable'
@@ -10,12 +10,30 @@ import type { Company } from '@/api/types'
 import { formatDate, formatNumber } from '@/lib/format'
 import { NewCompanyModal } from './NewCompanyModal'
 import { tx } from '@/lib/i18n'
+import { Segmented } from '@/features/performance/components/controls'
+import { RowsSkeleton } from '@/components/ui/States'
+import { ThreeDLoading } from './ThreeDGate'
+
+// 3B şirket grubu görünümü: ayrı parça; three.js yalnızca 3B çizilecekse ayrıca indirilir.
+const CompanyGalaxy = lazy(() => import('./CompanyGalaxy'))
 
 export function OrganizationPage() {
   const { can } = useAuth()
   const navigate = useNavigate()
   const companies = useCompanies()
   const [modalOpen, setModalOpen] = useState(false)
+  const [params, setParams] = useSearchParams()
+  const view = params.get('gorunum') === 'galaksi' ? 'galaxy' : 'list'
+  const setView = (v: 'list' | 'galaxy') =>
+    setParams(
+      (prev) => {
+        const n = new URLSearchParams(prev)
+        if (v === 'galaxy') n.set('gorunum', 'galaksi')
+        else n.delete('gorunum')
+        return n
+      },
+      { replace: true },
+    )
 
   const canCreate = can('organization:manage')
 
@@ -76,6 +94,25 @@ export function OrganizationPage() {
         }
       />
 
+      {(companies.data?.length ?? 0) > 0 && (
+        <Segmented
+          ariaLabel={tx('Görünüm')}
+          value={view}
+          onChange={setView}
+          options={[
+            { value: 'list', label: <span className="inline-flex items-center gap-1.5"><List className="size-3.5" aria-hidden />{tx('Liste')}</span> },
+            { value: 'galaxy', label: <span className="inline-flex items-center gap-1.5"><Orbit className="size-3.5" aria-hidden />{tx('3B grup görünümü')}</span> },
+          ]}
+        />
+      )}
+
+      {view === 'galaxy' && companies.data && companies.data.length > 0 ? (
+        <Suspense fallback={<ThreeDLoading />}>
+          <CompanyGalaxy companies={companies.data} />
+        </Suspense>
+      ) : companies.isPending && view === 'galaxy' ? (
+        <RowsSkeleton />
+      ) : (
       <DataTable
         rows={companies.data}
         rowKey={(c) => c.id}
@@ -97,6 +134,7 @@ export function OrganizationPage() {
           ) : undefined
         }
       />
+      )}
 
       <NewCompanyModal open={modalOpen} onClose={() => setModalOpen(false)} />
     </div>

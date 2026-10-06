@@ -192,3 +192,39 @@
     object-fit: contain;
   }
 }
+
+/* ==========================================================================
+   Zaman kaydırıcısı: kişi sayısı değişen departman kısa süre parlar.
+   Azaltılmış harekette animasyon yok, sabit çerçeve kalır.
+   ========================================================================== */
+
+@keyframes org-pulse {
+  0% {
+    opacity: 0.95;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.org-pulse-ring {
+  fill: none;
+  stroke: hsl(38 92% 50%);
+  stroke-width: 4;
+  pointer-events: none;
+  animation: org-pulse 1.6s ease-out forwards;
+}
+
+.org-pulse-box {
+  pointer-events: none;
+  box-shadow: 0 0 0 3px hsl(38 92% 50%);
+  animation: org-pulse 1.6s ease-out forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .org-pulse-ring,
+  .org-pulse-box {
+    animation: none;
+    opacity: 0.8;
+  }
+}

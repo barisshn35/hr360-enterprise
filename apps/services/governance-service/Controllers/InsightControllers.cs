@@ -270,12 +270,20 @@ public class TimeMachineController : AppController
             """, r => new { entityType = r.GetString(0), action = r.GetString(1), count = r.GetInt64(2) }, ct, Tenant,
             day.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
 
+        // O tarihte var olan departmanlar (organizasyon şeması zaman kaydırıcısı): o güne kadar kurulmuş
+        // ya da o gün içinde kişi bulunan. Silinmiş departmanların geçmişi tutulmadığı için görünmez.
+        var existing = await Db.QueryAsync("""
+            SELECT d."Id" FROM organization_departments d
+            WHERE d."TenantSlug" = $1 AND (d."CreatedAt"::date <= $2 OR d."Id" = ANY($3))
+            """, r => r.GetGuid(0), ct, Tenant, day, rows.Where(r => r.departmentId != null).Select(r => r.departmentId!.Value).Distinct().ToArray());
+
         return Ok(new
         {
             date = day, headcount = rows.Count, headcountToday = nowCount,
-            departments = rows.GroupBy(r => r.department).Select(g => new
+            departmentIds = existing,
+            departments = rows.GroupBy(r => (r.departmentId, r.department)).Select(g => new
             {
-                department = g.Key, count = g.Count(), head = g.FirstOrDefault(x => x.isHead)?.name,
+                departmentId = g.Key.departmentId, department = g.Key.department, count = g.Count(), head = g.FirstOrDefault(x => x.isHead)?.name,
                 people = g.Select(x => new { x.employeeId, x.name, x.position, x.hireDate, x.isHead }),
             }).OrderByDescending(g => g.count),
             changesSince = changes,

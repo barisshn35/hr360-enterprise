@@ -8,8 +8,6 @@
  */
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
-import { Crosshair, GitFork } from 'lucide-react'
-import { Button } from '@/components/ui/button'
 import { formatNumber } from '@/lib/format'
 import { tx } from '@/lib/i18n'
 import type { DepartmentLink } from '@/api/types'
@@ -17,6 +15,7 @@ import type { ChartModel } from './orgChartModel'
 import { arcPath, computeLayout, intersects, linkPath, matrixPath, NODE_H, NODE_W, ROOT_ID, type LayoutNode } from './orgLayouts'
 import { clampZoom, navigate, visibleRoots, type NavMode } from './orgViewState'
 import { OrgMinimap } from './OrgMinimap'
+import { OrgSelectionCard } from './OrgSelectionCard'
 
 export type SvgLayoutKind = 'horizontal' | 'radial' | 'sunburst' | 'treemap'
 
@@ -47,6 +46,9 @@ export interface OrgSvgViewProps {
   centerRequest: { id: string; seq: number } | null
   /** Dışarıdan "sığdır" isteği. */
   fitRequest: number
+  /** Kısa süre parlayan departmanlar (zaman kaydırıcısında kişi sayısı değişenler); `pulseSeq` her değişimde artar. */
+  pulse?: ReadonlySet<string>
+  pulseSeq?: number
 }
 
 interface View {
@@ -450,22 +452,36 @@ export function OrgSvgView(props: OrgSvgViewProps) {
           {linkEls}
           {shown.map(nodeEl)}
           {matrixEls}
+          {props.pulse &&
+            shown
+              .filter((n) => props.pulse!.has(n.id))
+              .map((n) =>
+                n.arc ? (
+                  <path key={`pulse-${n.id}-${props.pulseSeq ?? 0}`} d={arcPath(n.arc.a0, n.arc.a1, n.arc.r0, n.arc.r1)} className="org-pulse-ring" />
+                ) : (
+                  <rect
+                    key={`pulse-${n.id}-${props.pulseSeq ?? 0}`}
+                    x={n.box.x - 4}
+                    y={n.box.y - 4}
+                    width={n.box.w + 8}
+                    height={n.box.h + 8}
+                    rx={kind === 'radial' ? n.box.w : 12}
+                    className="org-pulse-ring"
+                  />
+                ),
+              )}
         </g>
       </svg>
 
       {selNode && selNode.id !== ROOT_ID && (
-        <div className="absolute top-3 left-3 z-10 flex max-w-[calc(100%-24px)] flex-wrap items-center gap-1.5 rounded-lg border border-border bg-card/95 p-1.5 pl-3 text-[12px] shadow-md backdrop-blur">
-          <span className="min-w-0 truncate font-medium">{selNode.name}</span>
-          <span className="text-muted-foreground">{subtitleOf(selNode.id)}</span>
-          <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => props.onFocus(selNode.id)}>
-            <Crosshair className="size-3.5" aria-hidden /> {tx('Odaklan')}
-          </Button>
-          {selNode.childCount > 0 && (
-            <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => props.onToggle(selNode.id)} aria-expanded={selNode.hiddenCount === 0}>
-              <GitFork className="size-3.5" aria-hidden /> {selNode.hiddenCount ? tx('Alt birimleri göster') : tx('Alt birimleri gizle')}
-            </Button>
-          )}
-        </div>
+        <OrgSelectionCard
+          name={selNode.name}
+          subtitle={subtitleOf(selNode.id)}
+          childCount={selNode.childCount}
+          hiddenCount={selNode.hiddenCount}
+          onFocus={() => props.onFocus(selNode.id)}
+          onToggle={() => props.onToggle(selNode.id)}
+        />
       )}
 
       {layout.nodes.length > 15 && (

@@ -10,7 +10,7 @@
  */
 
 import { setupWorker } from 'msw/browser'
-import { organizationHandlers } from './handlers/organization'
+import { organizationHandlers, orgWave3Handlers } from './handlers/organization'
 import { performanceHandlers } from './handlers/performance'
 import { shellHandlers } from './handlers/shell'
 import { getStore as getShiftStore, timeshiftHandlers } from './handlers/timeshift'
@@ -23,6 +23,7 @@ export async function startMocks() {
   const worker = setupWorker(
     ...performanceHandlers,
     ...organizationHandlers,
+    ...orgWave3Handlers,
     ...timeshiftHandlers,
     ...shellHandlers,
   )

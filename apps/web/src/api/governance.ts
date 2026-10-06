@@ -65,7 +65,11 @@ export interface TimeSnapshot {
   date: string
   headcount: number
   headcountToday: number
+  /** O tarihte var olan departmanlar (o güne kadar kurulmuş ya da o gün kişi bulunan). */
+  departmentIds?: string[]
   departments: Array<{
+    /** Atanmamışlar için null. */
+    departmentId?: string | null
     department: string
     count: number
     head: string | null
@@ -73,6 +77,36 @@ export interface TimeSnapshot {
   }>
   changesSince: Array<{ entityType: string; action: string; count: number }>
 }
+/* ---------------------------------------------------------- ekip ağı */
+export interface TeamNetworkNode {
+  /** Ekip kimliği ya da birleşik küçük ekipler için "other". */
+  id: string
+  name: string
+  department: string | null
+  members: number
+  /** "Diğer" düğümünde birleşen ekip sayısı (normal ekipte 1). */
+  mergedTeams: number
+  internal: { kudos: number; oneOnOnes: number; sharedGoals: number }
+}
+export interface TeamNetworkEdge {
+  source: string
+  target: string
+  weight: number
+  kudos: number
+  oneOnOnes: number
+  sharedGoals: number
+}
+export interface TeamNetwork {
+  days: number
+  since: string
+  minTeamSize: number
+  minEdgeCount: number
+  nodes: TeamNetworkNode[]
+  edges: TeamNetworkEdge[]
+  hiddenTeams: number
+  hiddenEdges: number
+}
+
 export interface TimelinePoint { month: string; headcount: number; hires: number; exits: number }
 
 /* --------------------------------------------------------------- analitik */
@@ -561,6 +595,9 @@ export const governanceApi = {
   recentEvents: (limit = 100, signal?: AbortSignal) => apiFetch<RadarEvent[]>(`${BASE}/events/recent${qs({ limit })}`, { signal }),
   eventStats: (signal?: AbortSignal) =>
     apiFetch<{ byType: Array<{ type: string; count: number }>; hourly: Array<{ hour: string; count: number }>; listeners: number }>(`${BASE}/events/stats`, { signal }),
+
+  /* ekip ağı (yalnızca İK; ekip düzeyi, küçük ekip/sayı gizlemeli) */
+  teamNetwork: (days: number, signal?: AbortSignal) => apiFetch<TeamNetwork>(`${BASE}/team-network${qs({ days })}`, { signal }),
 
   /* zaman makinesi */
   snapshot: (date: string, signal?: AbortSignal) => apiFetch<TimeSnapshot>(`${BASE}/time-machine${qs({ date })}`, { signal }),
