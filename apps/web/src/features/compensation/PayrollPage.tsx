@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { Calculator, Lock, LockOpen, Plus, Printer, RotateCcw, Trash2 } from 'lucide-react'
+import { Calculator, Lock, LockOpen, Plus, Printer, RotateCcw, ShieldAlert, Trash2 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Panel, PanelBody, PanelHead } from '@/components/ui/Panel'
 import { Button } from '@/components/ui/button'
@@ -20,6 +20,10 @@ import { Metric, PersonSelect, useAction } from '@/features/shared/kit'
 import { tx, appLocale } from '@/lib/i18n'
 import { printPayslip } from './payslipPrint'
 import { AdvancesAdminPanel, PayrollExportsPanel } from './PayrollExtras'
+import { PayrollAnomalyPanel } from './PayrollAnomalyPanel'
+import { mlInsightsApi } from '@/api/mlInsights'
+import { worstSeverity } from '@/lib/mlInsights'
+import { severityLabel, severityTone } from '@/lib/expenseAudit'
 
 export const monthName = (m: number) => new Date(2026, m - 1, 1).toLocaleDateString(appLocale, { month: 'long' })
 const periodLabel = (p: { year: number; month: number }) => `${monthName(p.month)} ${p.year}`
@@ -244,7 +248,14 @@ export function PayrollPeriodPage() {
   const [reopening, setReopening] = useState(false)
   const [reason, setReason] = useState('')
   const inv = [['payroll']]
-  const calc = useAction(() => payrollApi.calculate(id), { success: (r) => tx('{0} çalışan için hesaplandı', [r.employeeCount]), invalidate: inv })
+  const calc = useAction(() => payrollApi.calculate(id), {
+    success: (r) => r.anomalyFlags ? tx('{0} çalışan için hesaplandı; bordro denetimi {1} işaret üretti', [r.employeeCount, r.anomalyFlags]) : tx('{0} çalışan için hesaplandı', [r.employeeCount]),
+    invalidate: inv,
+  })
+  // ML dalgası 2: bordro denetim işaretleri (yalnızca bordro yetkilisi; kapatmayı engellemez).
+  const anomalies = useQuery({ queryKey: ['payroll', 'anomalies', id], queryFn: ({ signal }) => mlInsightsApi.payrollAnomalies(id, signal), enabled: !!period && period.status !== 'Open', retry: false })
+  const flagsBySlip = useMemo(() => new Map((anomalies.data?.items ?? []).map((i) => [i.payslipId, i.flags])), [anomalies.data])
+  const flaggedCount = anomalies.data?.items.length ?? 0
   const close = useAction(() => payrollApi.close(id), { success: tx('Dönem kapatıldı; pusulalar çalışanlara açıldı'), invalidate: inv })
   const reopen = useAction(() => payrollApi.reopen(id, reason), { success: tx('Dönem yeniden açıldı'), invalidate: inv, onDone: () => setReopening(false) })
   const remove = useAction(() => payrollApi.deletePeriod(id), { success: tx('Dönem silindi'), invalidate: inv, onDone: () => nav('/panel/bordro') })
@@ -261,6 +272,15 @@ export function PayrollPeriodPage() {
     { id: 'k', header: tx('Kesintiler'), cell: (s) => formatMoney(s.gross - s.net), align: 'right', hideBelow: 'sm' },
     { id: 'n', header: tx('Net'), cell: (s) => formatMoney(s.net), align: 'right', sortValue: (s) => s.net },
     { id: 'c', header: tx('İşveren maliyeti'), cell: (s) => formatMoney(s.employerCost), align: 'right', hideBelow: 'lg' },
+    {
+      id: 'a', header: tx('Denetim'), align: 'right', hideBelow: 'sm',
+      sortValue: (s) => flagsBySlip.get(s.id)?.length ?? 0,
+      cell: (s) => {
+        const fl = flagsBySlip.get(s.id)
+        const w = fl ? worstSeverity(fl) : null
+        return fl && w ? <StatusBadge tone={severityTone[w]}><ShieldAlert className="size-3.5" /> {fl.length} · {severityLabel(w)}</StatusBadge> : null
+      },
+    },
   ]
   return (
     <>
@@ -273,7 +293,7 @@ export function PayrollPeriodPage() {
             <Button variant="outline" asChild><Link to="/panel/bordro">{tx('Dönemler')}</Link></Button>
             {admin && !closed && <Button onClick={() => calc.mutate(undefined)} disabled={calc.isPending}><Calculator className="size-4" /> {period.status === 'Open' ? tx('Hesapla') : tx('Yeniden hesapla')}</Button>}
             {admin && period.status === 'Calculated' && <Button variant="outline" disabled={close.isPending} onClick={async () => {
-              if (await confirm({ title: tx('Dönem kapatılsın mı?'), note: tx('{0} bordrosu kesinleşir; pusulalar çalışanlara açılır ve dönem bir daha değiştirilemez (yalnızca şirket yöneticisi gerekçeyle yeniden açabilir).', [periodLabel(period)]), action: tx('Dönemi kapat') })) close.mutate(undefined)
+              if (await confirm({ title: tx('Dönem kapatılsın mı?'), note: tx('{0} bordrosu kesinleşir; pusulalar çalışanlara açılır ve dönem bir daha değiştirilemez (yalnızca şirket yöneticisi gerekçeyle yeniden açabilir).', [periodLabel(period)]) + (flaggedCount ? ' ' + tx('Bordro denetimi {0} çalışan için işaret üretti; kapatmadan önce incelediğinizden emin olun.', [flaggedCount]) : ''), action: tx('Dönemi kapat') })) close.mutate(undefined)
             }}><Lock className="size-4" /> {tx('Dönemi kapat')}</Button>}
             {closed && (hasRole('tenant-admin') || hasRole('platform-admin')) && <Button variant="outline" onClick={() => setReopening(true)}><LockOpen className="size-4" /> {tx('Yeniden aç')}</Button>}
             {admin && !closed && <Button variant="ghost" onClick={async () => {
@@ -288,6 +308,7 @@ export function PayrollPeriodPage() {
         <Metric label={tx('İşveren maliyeti')} value={formatMoney(totals.cost)} hint={tx('Ödenecek gelir vergisi {0}', [formatMoney(totals.tax)])} />
       </div>
       <div className="space-y-5">
+        {period.status !== 'Open' && <PayrollAnomalyPanel query={anomalies} nameOf={nameOf} closed={closed} />}
         <AdjustmentsPanel period={period} editable={admin && !closed} />
         {admin && <PayrollExportsPanel periodId={period.id} closed={closed} />}
         {period.status === 'Open'

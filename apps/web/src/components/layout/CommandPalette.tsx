@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { Building2, CornerDownLeft, Inbox, User } from 'lucide-react'
+import { BookOpenText, Building2, CornerDownLeft, Inbox, User } from 'lucide-react'
 import {
   OmniCommandPalette,
   type OmniItem,
@@ -10,6 +10,8 @@ import {
 import { employeeApi } from '@/api/employees'
 import { organizationApi } from '@/api/organization'
 import { workflowApi } from '@/api/workflows'
+import { mlInsightsApi } from '@/api/mlInsights'
+import { semanticSourceLabel } from '@/lib/mlInsights'
 import { qk } from '@/api/queries'
 import { workflowTypeLabels } from '@/api/types'
 import { useAuth } from '@/auth/useAuth'
@@ -163,6 +165,31 @@ export function CommandPalette({
       })
     }
 
+    /* ------------------- Politika ve belgeler (anlamsal arama, ML dalgası 2) ------------------- */
+    // Herkese açık: sonuçlar sunucuda kullanıcının görebileceği belgelerle süzülür.
+    list.push({
+      id: 'semantic',
+      label: tx('Politika ve belgeler'),
+      minQuery: 3,
+      emptyHint: tx('Anlamca yakın belge yok.'),
+      fetch: async (q) => {
+        const r = await qc.fetchQuery({
+          queryKey: ['semantic', q.trim()],
+          queryFn: ({ signal }) => mlInsightsApi.semanticSearch(q.trim(), signal),
+          staleTime: 60_000,
+        }).catch(() => ({ hits: [] }))
+        return r.hits.slice(0, 5).map<OmniItem>((h) => ({
+          id: `sem:${h.source}:${h.id}`,
+          label: h.title,
+          groupId: 'semantic',
+          subtitle: semanticSourceLabel(h.source),
+          icon: <BookOpenText className="size-4" strokeWidth={1.5} />,
+          onAction: () => navigate(h.source === 'announcement' ? '/panel/duyurular'
+            : `/panel/belgeler-kutuphanesi?ara=${encodeURIComponent(q.trim())}&anlamsal=1`),
+        }))
+      },
+    })
+
     return list
   }, [can, roles, navigate, qc, navTree])
 
@@ -172,7 +199,7 @@ export function CommandPalette({
       onOpenChange={onOpenChange}
       sources={sources}
       storageKey="hr360.omni.recents"
-      placeholder={tx('Çalışan, şirket, talep ara veya bir modüle git…')}
+      placeholder={tx('Çalışan, şirket, talep, politika ara veya bir modüle git…')}
       renderFooter={(active) => (
         <div className="flex items-center justify-between px-3 py-2 text-[11px] text-muted-foreground">
           <span>{tx('↑ ↓ gezin · Esc kapat')}</span>

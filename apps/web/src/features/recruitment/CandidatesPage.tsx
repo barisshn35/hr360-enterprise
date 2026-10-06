@@ -17,6 +17,7 @@ import { formatDate, formatNumber } from '@/lib/format'
 import { ApiError } from '@/api/client'
 import { aiApi } from '@/api/ai'
 import { ChipInput, errMsg } from '@/features/shared/kit'
+import { SkillSuggest } from '@/features/shared/SkillSuggest'
 import { tx } from '@/lib/i18n'
 
 interface DuplicateInfo { message: string; existingCandidateId?: string; canForce?: boolean }
@@ -187,6 +188,9 @@ function NewCandidateModal({ open, onClose }: { open: boolean; onClose: () => vo
         </div>
 
         <ChipInput id="cand-skills" label={tx('Beceriler')} value={skills} onChange={setSkills} />
+        {(skills.length > 0 || resumeText.trim().length > 0) && (
+          <SkillSuggest paste={false} text={[resumeText, ...skills].join('\n')} existing={skills} onAdd={(s) => setSkills((x) => [...x, s].slice(0, 40))} />
+        )}
         <TextAreaField id="cand-summary" label={tx('Özgeçmiş özeti (isteğe bağlı)')} rows={3} maxLength={20000} value={resumeText}
           onChange={(e) => setResumeText(e.target.value)} hint={tx('Özel nitelikli veri (sağlık, din, medeni hal…) eklemeyin.')} />
 

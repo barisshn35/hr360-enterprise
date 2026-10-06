@@ -63,6 +63,7 @@ public class CompensationDbContext : DbContext, ITenantAwareContext
         modelBuilder.Entity<Payslip>().ToTable("compensation_payslips");
         modelBuilder.Entity<Payslip>().HasIndex(p => new { p.PeriodId, p.EmployeeId }).IsUnique();
         modelBuilder.Entity<Payslip>().HasIndex(p => new { p.EmployeeId, p.Year });
+        modelBuilder.Entity<Payslip>().Property(p => p.AnomalyFlagsJson).HasColumnName("AnomalyFlags").HasColumnType("jsonb");
 
         modelBuilder.Entity<PayrollExport>().ConfigureTenantColumn();
         modelBuilder.Entity<PayrollExport>().ToTable("compensation_payroll_exports");

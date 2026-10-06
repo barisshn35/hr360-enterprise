@@ -106,6 +106,21 @@ app.include_router(pii_router, dependencies=[Depends(verify_token)])
 from expense_ml import router as expense_ml_router
 app.include_router(expense_ml_router, dependencies=[Depends(verify_token)])
 
+# ML dalgası 2 (hepsi yerel, açıklanabilir; yalnızca işaret/öneri üretir, kayıt yazmaz):
+#  - bordro / puantaj denetimi (compensation- ve timeshift-service çağırır; takma adlı girdi)
+#  - mevsimsellikli izin tahmini ve ekip kapasitesi (governance-service; yalnızca gün başına sayı)
+#  - anket açık uçlu yanıtlarında konu + duygu (engagement-service; 5'ten küçük grup yok)
+#  - beceri çıkarımı ve beceri haritası (arayüz / governance-service)
+#  - ücret adaleti analizi (compensation-service; İK, denetim kaydıyla)
+#  - anlamsal arama (governance-service; kiracı başına bellek içi dizin)
+from payroll_ml import router as payroll_ml_router
+from leave_forecast import router as leave_forecast_router
+from text_insights import router as text_insights_router
+from skills_ml import router as skills_router
+from pay_equity import router as pay_equity_router
+for _r in (payroll_ml_router, leave_forecast_router, text_insights_router, skills_router, pay_equity_router):
+    app.include_router(_r, dependencies=[Depends(verify_token)])
+
 
 # Devir riski modeli: yuklenme, model karti, yeniden egitim ve veri kaymasi
 # (model_routes.py). Yayindaki surum MLflow'da "champion" takma adiyla isaretlenir;
@@ -123,6 +138,9 @@ model_service = ModelService(
     bootstrap=os.getenv("ATTRITION_BOOTSTRAP", "true").lower() != "false",
 )
 app.include_router(build_router(verify_token, model_service))
+
+import semantic_search
+app.include_router(semantic_search.build_router(verify_token, tenant_of))
 
 
 async def _load_model_and_explainer():

@@ -19,6 +19,10 @@ builder.Services.AddScoped<TenantContext>();
 builder.Services.AddScoped<ITenantContext>(sp => sp.GetRequiredService<TenantContext>());
 
 builder.Services.AddHostedService<CompensationService.Controllers.ExportPurgeWorker>();
+// ML dalgası 2: bordro denetimi ve ücret adaleti analizi (ml-inference).
+builder.Services.AddHttpClient();
+builder.Services.AddScoped<CompensationService.Payroll.PayrollAnomalyClient>();
+builder.Services.AddScoped<CompensationService.Payroll.PayEquityClient>();
 builder.Services.AddDbContext<CompensationDbContext>(options =>
     options.UseNpgsql(connectionString)
         .AddInterceptors(new CompensationService.Auditing.AuditInterceptor("compensation-service"),

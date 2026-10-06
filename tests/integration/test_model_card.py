@@ -118,6 +118,23 @@ check("Yeniden eğitim denetim kaydında", _out.isdigit() and int(_out) >= 1, _o
 code, _ = api("ayse", "POST", "/api/governance/model/retrain", {"dryRun": True})
 check("Çalışan modeli yeniden eğitemez", code == 403, code)
 
+# ---------------------------------------------------------------------- ML dalgası 2
+# Servisler arası ML uçları gateway'den kapalı; erişim yetki ve denetim kaydı olan servis uçlarından.
+for path in ("/ml/payroll/anomaly", "/ml/compensation/pay-equity", "/ml/semantic/search", "/ml/text/topics", "/ml/skills/graph"):
+    check(f"Gateway: {path} kapalı", api("admin", "POST", path, {})[0] == 404)
+code, r = api("ayse", "GET", "/api/governance/search/semantic?q=y%C4%B1ll%C4%B1k%20izin%20hakk%C4%B1m")
+check("Anlamsal arama: çalışan bilgi bankasında arar", code == 200 and isinstance(r.get("hits"), list), (code, str(r)[:200]))
+code, sk = api("admin", "POST", "/ml/skills/extract", {"text": "k8s ve csharp deneyimi", "catalog": []})
+check("Beceri çıkarımı (eş anlamlılar)", code == 200 and {"kubernetes", "c#"} <= {s["key"] for s in sk.get("skills", [])}, (code, sk))
+code, _ = api("ayse", "GET", "/api/compensation/compensation/analytics/pay-equity")
+check("Yetki: çalışan ücret adaleti analizini açamaz", code == 403, code)
+code, _ = api("ayse", "GET", "/api/governance/skills/graph")
+check("Yetki: çalışan beceri haritasını açamaz", code == 403, code)
+code, _ = api("ayse", "GET", "/api/governance/analytics/leave-forecast")
+check("Yetki: çalışan izin tahminini açamaz", code == 403, code)
+code, lf = api("mehmet", "GET", "/api/governance/analytics/leave-forecast?weeks=8")
+check("İzin tahmini (yönetici): yanıt ya da 'veri yok' bildirimi", code == 200 and "available" in lf, (code, str(lf)[:200]))
+
 print(f"\nFAILS: {len(FAIL)}")
 for f in FAIL:
     print("  -", f)

@@ -21,6 +21,8 @@ import { cn } from '@/lib/utils'
 import { tx, appLocale } from '@/lib/i18n'
 import { OvertimePanel } from './OvertimePanel'
 import { AttendanceReportPanel } from './AttendanceReport'
+import { TimesheetAnomalyPanel } from './TimesheetAnomalyPanel'
+import { isHr } from '@/auth/roles'
 
 /** Dakikayı "7s 30dk" biçimine çevirir. */
 function hm(minutes: number): string {
@@ -143,7 +145,7 @@ function TodayCard({ employeeId, today }: { employeeId: string; today?: TimeEntr
 }
 
 export function TimesheetPage() {
-  const { can } = useAuth()
+  const { can, roles } = useAuth()
   const now = new Date()
   // Başkasının puantajını yalnızca yönetici/İK görür (backend 403 döner);
   // diğerleri için sayfa doğrudan kendi kaydıyla açılır.
@@ -334,6 +336,8 @@ export function TimesheetPage() {
       {can('timeshift:clock') && <OvertimePanel />}
 
       <AttendanceReportPanel />
+
+      {isHr(roles, 'ext-timeshift-manage') && <TimesheetAnomalyPanel />}
     </div>
   )
 }

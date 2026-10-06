@@ -52,6 +52,9 @@ export interface ForecastResult {
   seasonal: boolean
   peak_month: string | null
   note: string
+  /** Geri test: son ayları dışarıda bırakarak ölçülen hata (%); veri azsa null. */
+  backtest_mape?: number | null
+  backtest_months?: number
 }
 export interface TrainingRec { id: string; title: string; score: number; reason: string; is_mandatory: boolean }
 

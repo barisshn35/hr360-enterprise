@@ -26,7 +26,11 @@ public class PayrollController : ControllerBase
 {
     private readonly CompensationDbContext _db;
     private readonly ITenantContext _tenant;
-    public PayrollController(CompensationDbContext db, ITenantContext tenant) { _db = db; _tenant = tenant; }
+    private readonly PayrollAnomalyClient? _anomaly;
+    public PayrollController(CompensationDbContext db, ITenantContext tenant, PayrollAnomalyClient? anomaly = null)
+    {
+        _db = db; _tenant = tenant; _anomaly = anomaly;
+    }
 
     private bool IsPayrollAdmin => User.IsInRole("hr-admin") || User.IsInRole("tenant-admin") || User.IsInRole("platform-admin");
     private bool IsPayrollViewer => IsPayrollAdmin || User.IsInRole("ext-compensation-view");
@@ -344,7 +348,62 @@ public class PayrollController : ControllerBase
         period.CalculatedBy = UserId;
         period.CalculatedByName = UserName ?? UserId;
         await _db.SaveChangesAsync(ct);
-        return Ok(new { period.Id, status = period.Status.ToString(), employeeCount = current.Count });
+
+        // Bordro denetimi (ML dalgası 2): olağan dışı fazla mesai / ek ödeme / kesinti / brüt işaretleri.
+        // Hesaplama sonucu bu çağrıya BAĞLI DEĞİLDİR: ML yanıt vermezse (6 sn) işaret yazılmaz, dönem yine "Hesaplandı".
+        var (anomalyChecked, anomalyFlags) = await RunAnomalyCheckAsync(period, current, ct);
+        return Ok(new { period.Id, status = period.Status.ToString(), employeeCount = current.Count, anomalyChecked, anomalyFlags });
+    }
+
+    private async Task<(bool Checked, int Flags)> RunAnomalyCheckAsync(PayrollPeriod period, List<CompensationRecord> current, CancellationToken ct)
+    {
+        if (_anomaly is null) return (false, 0);
+        try
+        {
+            var slips = await _db.Payslips.Where(s => s.PeriodId == period.Id).OrderBy(s => s.EmployeeId).ToListAsync(ct);
+            if (slips.Count == 0) return (true, 0);
+            var empIds = slips.Select(s => s.EmployeeId).ToList();
+            var from = period.Year * 12 + period.Month - PayrollAnomalyClient.HistoryMonths;
+            var history = await _db.Payslips.AsNoTracking()
+                .Where(s => s.PeriodId != period.Id && empIds.Contains(s.EmployeeId) && s.Year * 12 + s.Month >= from
+                            && s.Year * 12 + s.Month < period.Year * 12 + period.Month)
+                .Select(s => new PayslipHistoryRow(s.EmployeeId, s.Year, s.Month, s.OvertimeHours, s.Additions, s.Deductions, s.Gross, s.UnpaidDays))
+                .ToListAsync(ct);
+            var grades = current.GroupBy(r => r.EmployeeId).ToDictionary(g => g.Key, g => g.First().Grade);
+            var (ok, n) = await _anomaly.CheckAsync(_tenant.TenantSlug ?? period.TenantSlug, period.Year, period.Month, slips, grades, history,
+                Request.Headers.Authorization.ToString(), ct);
+            if (ok) period.AnomalyCheckedAt = DateTimeOffset.UtcNow;
+            await _db.SaveChangesAsync(ct);
+            return (ok, n);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            HttpContext.RequestServices.GetService<ILogger<PayrollAudit>>()?.LogWarning(ex, "Bordro denetimi yapılamadı");
+            return (false, 0);
+        }
+    }
+
+    /// <summary>
+    /// Bordro denetim işaretleri (yalnızca bordro yetkilisi; çalışan kendi pusulasında görmez). Kapatmadan
+    /// önce hazırlayan ve onaylayanın incelemesi içindir; otomatik düzeltme ya da engelleme yoktur.
+    /// Görüntüleme hassas veri erişim kaydına yazılır.
+    /// </summary>
+    [HttpGet("payroll/periods/{id:guid}/anomalies")]
+    public async Task<IActionResult> Anomalies(Guid id, CancellationToken ct)
+    {
+        if (!IsPayrollViewer) return Forbid();
+        var period = await _db.PayrollPeriods.AsNoTracking().FirstOrDefaultAsync(p => p.Id == id, ct);
+        if (period is null) return NotFound(new { message = "Dönem bulunamadı" });
+        var rows = await _db.Payslips.AsNoTracking().Where(s => s.PeriodId == id && s.AnomalyFlagsJson != null)
+            .Select(s => new { s.Id, s.EmployeeId, s.AnomalyFlagsJson }).ToListAsync(ct);
+        var items = rows.Select(r =>
+        {
+            using var doc = JsonDocument.Parse(r.AnomalyFlagsJson!);
+            return new { payslipId = r.Id, employeeId = r.EmployeeId, flags = doc.RootElement.Clone() };
+        }).ToList();
+        if (items.Count > 0)
+            await AuditAsync("Payslip", id.ToString(), "SensitiveViewed", new { field = "payrollAnomalies", count = items.Count }, period.TenantSlug);
+        return Ok(new { periodId = id, checkedAt = period.AnomalyCheckedAt, calculatedAt = period.CalculatedAt, items });
     }
 
     /// <summary>Dönem kapanınca avans taksitleri ödenmiş sayılır (yeniden açılırsa geri alınır).</summary>

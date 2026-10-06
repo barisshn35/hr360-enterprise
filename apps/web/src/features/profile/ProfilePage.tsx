@@ -20,6 +20,7 @@ import { useMyEmployeeId } from '@/api/queries'
 import { formatDate } from '@/lib/format'
 import { ChipInput, Initials, errMsg, useAction } from '@/features/shared/kit'
 import { CalendarConnections } from '@/features/shared/Meetings'
+import { SkillSuggest } from '@/features/shared/SkillSuggest'
 import { MyAccessLog, MyObjections } from './PrivacyExtras'
 import { MyChatAccounts } from './ChatAccounts'
 import { DevicePanel } from './DevicePanel'
@@ -108,6 +109,7 @@ function InfoTab({ p }: { p: MyProfile }) {
           <PanelHead title={tx('Beceriler ve ilgi alanları')} note={tx('Yetenek dizininde ve mentor eşleştirmede kullanılır.')} />
           <PanelBody className="space-y-4">
             <ChipInput id="skills" label={tx('Beceriler')} value={f.skills} onChange={(v) => set('skills', v)} suggestions={SKILL_HINTS} />
+            <SkillSuggest text={f.bio} existing={f.skills} onAdd={(s) => set('skills', [...f.skills, s].slice(0, 50))} />
             <ChipInput id="interests" label={tx('İlgi alanları')} value={f.interests} onChange={(v) => set('interests', v)} suggestions={[tx('Fotoğraf'), tx('Koşu'), tx('Satranç'), tx('Müzik'), tx('Gönüllülük')]} />
           </PanelBody>
         </Panel>

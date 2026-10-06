@@ -18,6 +18,8 @@ public class PayrollPeriod : ITenantOwned
     public string? CalculatedByName { get; set; }
     public DateTimeOffset? ClosedAt { get; set; }
     public string? ClosedBy { get; set; }
+    /// <summary>Bordro denetiminin (ml-inference, ML dalgası 2) en son başarıyla çalıştığı an; ML yanıt vermediyse boş.</summary>
+    public DateTimeOffset? AnomalyCheckedAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
@@ -89,4 +91,12 @@ public class Payslip : ITenantOwned
     public decimal UnemploymentEmployer { get; set; }
     public decimal EmployerCost { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    /// <summary>
+    /// Dönem hesaplanınca ml-inference'ın ürettiği denetim işaretleri - jsonb dizi: [{code, severity, reason, details}].
+    /// Yalnızca bordro yetkilisi görür (ayrı uç: payroll/periods/{id}/anomalies); çalışanın kendi pusulası
+    /// yanıtında YER ALMAZ (JsonIgnore). Hesaplamayı ve kapatmayı engellemez.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string? AnomalyFlagsJson { get; set; }
 }

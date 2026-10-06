@@ -53,6 +53,9 @@ iletişim **Türkçe**. Ürün belgeleri: `README.md`, `docs/` (mimari, güvenli
     çalışır; test işaretli kayıtları (izin/akış/bildirim vb.) tek transaction'da siler, izin bakiyelerini
     yeniden hesaplar. Elle: `python3 tests/support/cleanup_test_data.py [--dry-run]`. Yeni test kayıt
     bırakıyorsa işaretini (gerekçe/başlık öneki) bu betiğe ekle; demo seed verisine dokunma.
+- `deploy/nginx/nginx.conf` değişince gateway'i yeniden oluştur: `docker compose ... up -d --force-recreate --no-deps gateway`.
+  Dosya tek başına bağlı (bind mount); düzenleyici dosyayı yeni kopyayla değiştirirse konteyner eskisini görür ve
+  `nginx -s reload` hiçbir şey değiştirmez. Doğrula: `docker exec hr360-gateway-1 grep -c <yeni satır> /etc/nginx/nginx.conf`.
 - Arayüz tip kontrolü: `cd apps/web && npx tsc -b --noEmit`
 - Çeviri: `cd apps/web && node scripts/i18n-check.mjs --missing` (eksik anahtarlar), ekledikten sonra
   `node scripts/i18n-check.mjs --write`. Sunucu iletileri `"@server:<Türkçe metin>"` anahtarıyla.

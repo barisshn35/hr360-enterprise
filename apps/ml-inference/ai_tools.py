@@ -237,6 +237,9 @@ def parse_cv_text(text: str) -> CvResult:
         if total > 0:
             years, basis = min(total, 45.0), "tarih aralıklarının toplamı (çakışmalar dahil olabilir)"
     skills = find_skills(clean, include_languages=False)
+    # Eş anlamlılar (skills_ml.py, skill_synonyms.json): "k8s" -> kubernetes, "csharp" -> c#, "payroll" -> bordro.
+    from skills_ml import find_skills as find_with_aliases  # noqa: PLC0415 (döngüsel içe aktarmayı önler)
+    skills = sorted(set(skills) | {f["key"] for f in find_with_aliases(clean) if f["key"] not in LANGUAGES})
     if not skills:
         warnings.append("Sözlükte eşleşen beceri bulunamadı; metin okunamamış olabilir.")
     if len(clean) < 200:
@@ -588,6 +591,9 @@ class ForecastResult(BaseModel):
     seasonal: bool
     peak_month: str | None
     note: str
+    # Geri test: son 3 ay dışarıda bırakılarak kurulan modelin o aylardaki hatası (en az 9 ay geçmişte).
+    backtest_mape: float | None = None
+    backtest_months: int = 0
 
 
 def _next_month(ym: str, k: int) -> str:
@@ -596,6 +602,44 @@ def _next_month(ym: str, k: int) -> str:
     y += (m - 1) // 12
     m = (m - 1) % 12 + 1
     return f"{y:04d}-{m:02d}"
+
+
+def _fit_monthly(months: list[str], y: np.ndarray):
+    """Doğrusal eğilim + (24 ay ve üstünde) ay bazlı mevsimsellik. (eğim, kesişim, mevsim, mevsimsel_mi, sigma)"""
+    n = len(y)
+    x = np.arange(n)
+    slope, intercept = (np.polyfit(x, y, 1) if n >= 3 else (0.0, float(y.mean())))
+    seasonal = n >= 24
+    resid = y - (intercept + slope * x)
+    season = np.zeros(12)
+    if seasonal:
+        idx = np.array([int(mm[5:7]) - 1 for mm in months])
+        for k in range(12):
+            sel = resid[idx == k]
+            season[k] = sel.mean() if len(sel) else 0.0
+    sigma = float(np.std(resid - (season[[int(mm[5:7]) - 1 for mm in months]] if seasonal else 0))) if n > 2 else float(y.std() or 1.0)
+    # Belirsizlik bandı hiçbir zaman sıfır olmasın (geçmiş tam doğrusal olsa bile).
+    sigma = max(sigma, 0.1 * float(np.mean(y)) if len(y) else 0.0, 0.5)
+    return float(slope), float(intercept), season, seasonal, sigma
+
+
+def _predict_monthly(fit, n: int, ym: str, h: int) -> float:
+    slope, intercept, season, seasonal, _ = fit
+    return max(0.0, intercept + slope * (n - 1 + h) + (season[int(ym[5:7]) - 1] if seasonal else 0))
+
+
+def monthly_backtest(months: list[str], y: np.ndarray, hold: int = 3) -> float | None:
+    """Son `hold` ayı dışarıda bırakıp tahmin eder; MAPE (%; gerçekleşeni 0 olan aylar hariç)."""
+    if len(y) < hold + 6:
+        return None
+    train_m, train_y = months[:-hold], y[:-hold]
+    fit = _fit_monthly(train_m, train_y)
+    errs = []
+    for h in range(1, hold + 1):
+        actual = float(y[len(train_y) + h - 1])
+        if actual > 0:
+            errs.append(abs(actual - _predict_monthly(fit, len(train_y), months[len(train_y) + h - 1], h)) / actual)
+    return round(100 * float(np.mean(errs)), 1) if errs else None
 
 
 @router.post("/forecast/leave", response_model=ForecastResult)
@@ -614,24 +658,12 @@ def forecast_leave(req: ForecastRequest) -> ForecastResult:
     months = list(filled)
     y = np.array(list(filled.values()), dtype=float)
     n = len(y)
-    x = np.arange(n)
-    slope, intercept = (np.polyfit(x, y, 1) if n >= 3 else (0.0, float(y.mean())))
-    seasonal = n >= 24
-    resid = y - (intercept + slope * x)
-    season = np.zeros(12)
-    if seasonal:
-        idx = np.array([int(mm[5:7]) - 1 for mm in months])
-        for k in range(12):
-            sel = resid[idx == k]
-            season[k] = sel.mean() if len(sel) else 0.0
-    sigma = float(np.std(resid - (season[[int(mm[5:7]) - 1 for mm in months]] if seasonal else 0))) if n > 2 else float(y.std() or 1.0)
-    # Belirsizlik bandı hiçbir zaman sıfır olmasın (geçmiş tam doğrusal olsa bile).
-    sigma = max(sigma, 0.1 * float(np.mean(y)) if len(y) else 0.0, 0.5)
+    fit = _fit_monthly(months, y)
+    slope, _, season, seasonal, sigma = fit
     points = []
     for h in range(1, req.horizon + 1):
         ym = _next_month(last, h)
-        f = intercept + slope * (n - 1 + h) + (season[int(ym[5:7]) - 1] if seasonal else 0)
-        f = max(0.0, f)
+        f = _predict_monthly(fit, n, ym, h)
         band = 1.28 * sigma * math.sqrt(1 + h / max(n, 1))
         points.append(ForecastPoint(month=ym, forecast=round(f, 1), low=round(max(0.0, f - band), 1), high=round(f + band, 1)))
     peak = None
@@ -640,8 +672,10 @@ def forecast_leave(req: ForecastRequest) -> ForecastResult:
         peak = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"][peak_idx]
     note = ("24 aydan az veri: mevsimsellik hesaba katılmadı, yalnızca eğilim kullanıldı." if not seasonal
             else f"Mevsimsel tepe ayı: {peak}.")
+    mape = monthly_backtest(months, y)
     return ForecastResult(points=points, method="Doğrusal eğilim" + (" + aylık mevsimsellik" if seasonal else "") + ", %80 tahmin aralığı",
-                          trend_per_month=round(float(slope), 2), seasonal=seasonal, peak_month=peak, note=note)
+                          trend_per_month=round(float(slope), 2), seasonal=seasonal, peak_month=peak, note=note,
+                          backtest_mape=mape, backtest_months=3 if mape is not None else 0)
 
 
 # ================================================================= eğitim önerisi

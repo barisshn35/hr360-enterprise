@@ -20,6 +20,7 @@ import { Metric, PlanGate, useAction } from '@/features/shared/kit'
 import { tx, pct } from '@/lib/i18n'
 import { useConfirm } from '@/components/ui/Confirm'
 import { EnpsTrendPanel, SentimentSummary } from './SurveyInsights'
+import { SurveyTopics } from './SurveyTopics'
 
 /** Sunucudaki anket anonimlik eşiği (engagement-service HrControllers.AnonymityThreshold = 5, KVKK). */
 const SURVEY_ANONYMITY_THRESHOLD = 5
@@ -167,6 +168,7 @@ function ResultsModal({ survey, onClose }: { survey: Survey; onClose: () => void
               ) : (
                 <>
                   <SentimentSummary q={x} />
+                  {x.count >= (r.anonymityThreshold ?? SURVEY_ANONYMITY_THRESHOLD) && <SurveyTopics surveyId={survey.id} questionId={x.id} />}
                   <ul className="space-y-1.5">{x.texts?.map((t, i) => <li key={i} className="rounded-lg bg-muted/50 px-3 py-2 text-[13px]">“{t}”</li>)}</ul>
                 </>
               ))}

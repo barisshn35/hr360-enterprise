@@ -23,6 +23,8 @@ import { useAuth } from '@/auth/useAuth'
 import { cn } from '@/lib/utils'
 import { ChipInput, Metric, PersonSelect, PlanGate, errMsg, useAction } from '@/features/shared/kit'
 import { tx } from '@/lib/i18n'
+import { LeaveCapacityPanel } from './LeaveCapacityPanel'
+import { mapeLabel } from '@/lib/mlInsights'
 
 type TabKey = 'cv' | 'ilan' | 'eslesme' | 'performans' | 'izin' | 'egitim'
 
@@ -358,8 +360,10 @@ function LeaveForecastTool() {
   const fc = useQuery({ queryKey: ['ai', 'leave-fc', history.length], enabled: history.length > 0, queryFn: () => aiApi.forecastLeave(history, 6).catch((e) => { toast.stop(errMsg(e)); throw e }) })
   const data = [...history.map((h) => ({ month: h.month, actual: h.days })), ...(fc.data?.points.map((p) => ({ month: p.month, forecast: p.forecast, band: [p.low, p.high] as [number, number] })) ?? [])]
   return (
+    <div className="space-y-5">
     <Panel>
-      <PanelHead title={tx('Şirket geneli aylık izin günü tahmini')} note={fc.data ? tx('{0} · eğilim {1}{2} gün/ay · {3}', [fc.data.method, fc.data.trend_per_month > 0 ? '+' : '', fc.data.trend_per_month, fc.data.note]) : tx('Son 24 ay onaylı izin verisinden')} />
+      <PanelHead title={tx('Şirket geneli aylık izin günü tahmini')} note={fc.data ? tx('{0} · eğilim {1}{2} gün/ay · {3}', [fc.data.method, fc.data.trend_per_month > 0 ? '+' : '', fc.data.trend_per_month, fc.data.note])
+        + (fc.data.backtest_mape != null ? ' · ' + tx('geri test (son {0} ay) MAPE %{1} ({2})', [fc.data.backtest_months, fc.data.backtest_mape, mapeLabel(fc.data.backtest_mape)]) : '') : tx('Son 24 ay onaylı izin verisinden')} />
       <PanelBody>
         {hist.isPending ? <RowsSkeleton /> : hist.isError ? <p className="text-[13px] text-muted-foreground">{tx('Analitik verisine erişim gerekli (yönetici).')}</p> : (
           <div className="h-72">
@@ -377,6 +381,8 @@ function LeaveForecastTool() {
         )}
       </PanelBody>
     </Panel>
+    {!hist.isError && <LeaveCapacityPanel />}
+    </div>
   )
 }
 

@@ -311,6 +311,47 @@ public class SurveysController : AppController
     }
 
     /// <summary>
+    /// ML dalgası 2 (madde 46): açık uçlu yanıtlarda konu + duygu çıkarımı (ml-inference /text/topics; TF-IDF +
+    /// NMF, Türkçe sözlük tabanlı duygu). Toplam yanıt ve sorudaki metin yanıt en az 5 olmalı; konu ancak en az
+    /// 5 yanıtta geçiyorsa gösterilir ve alıntılar kişisel veri taramasından geçer (ML servisinde). Metinlere
+    /// kimlik eklenmez; görüntüleme (alıntılar dahil) hassas veri erişim kaydına yazılır.
+    /// </summary>
+    [HttpGet("{id:guid}/topics")]
+    [Authorize(Policy = "RequireHrAdmin")]
+    public async Task<IActionResult> Topics(Guid id, [FromQuery] string? questionId, CancellationToken ct)
+    {
+        var s = await _db.Surveys.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (s is null) return NotFound();
+        var q = s.Questions.FirstOrDefault(x => x.Type == "Text" && (questionId is null || x.Id == questionId));
+        if (q is null) return NotFound(new { message = "Ankette açık uçlu soru yok" });
+        var responses = await _db.SurveyResponses.AsNoTracking().Where(r => r.SurveyId == id).ToListAsync(ct);
+        var texts = SurveyTopics.Texts(responses, q.Id);
+        if (responses.Count < AnonymityThreshold || texts.Count < AnonymityThreshold)
+            return Ok(new { questionId = q.Id, available = false, responses = texts.Count, minGroup = AnonymityThreshold });
+        var http = HttpContext.RequestServices.GetRequiredService<IHttpClientFactory>().CreateClient();
+        http.Timeout = TimeSpan.FromSeconds(30);
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Post, SurveyTopics.MlUrl)
+            {
+                Content = System.Net.Http.Json.JsonContent.Create(new { texts, max_topics = 6 }),
+            };
+            req.Headers.TryAddWithoutValidation("Authorization", Request.Headers.Authorization.ToString());
+            using var resp = await http.SendAsync(req, ct);
+            if (!resp.IsSuccessStatusCode) return StatusCode(503, new { message = "Konu analizi şu anda yapılamıyor" });
+            using var doc = System.Text.Json.JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
+            var root = doc.RootElement;
+            var shown = root.TryGetProperty("topics", out var tp) ? tp.EnumerateArray().Sum(t => t.GetProperty("snippets").GetArrayLength()) : 0;
+            await AuditViewAsync(s.Id, "surveyTopics", shown);
+            return Ok(new { questionId = q.Id, available = root.GetProperty("available").GetBoolean(), analysis = root.Clone() });
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException or KeyNotFoundException or InvalidOperationException)
+        {
+            return StatusCode(503, new { message = "Konu analizi şu anda yapılamıyor" });
+        }
+    }
+
+    /// <summary>
     /// eNPS eğilimi: eNPS türündeki anketler zamana göre; yalnızca en az 5 eNPS yanıtı olanlar
     /// (daha azı kimlik çıkarımına açık olduğundan "excluded" sayısına eklenir).
     /// </summary>
@@ -855,4 +896,16 @@ public class OffboardingController : AppController
             hasSalary = gross is not null,
         });
     }
+}
+
+/// <summary>Anket konu analizi yardımcıları (saf; birim testli).</summary>
+public static class SurveyTopics
+{
+    public static readonly string MlUrl =
+        (Environment.GetEnvironmentVariable("ML_INFERENCE_URL") ?? "http://ml-inference:8000").TrimEnd('/') + "/text/topics";
+
+    /// <summary>Sorunun boş olmayan metin yanıtları (kimliksiz, sıra karıştırılmış; en fazla 5000).</summary>
+    public static List<string> Texts(IEnumerable<SurveyResponse> responses, string questionId) =>
+        responses.SelectMany(r => r.Answers).Where(a => a.QuestionId == questionId && !string.IsNullOrWhiteSpace(a.Text))
+            .Select(a => a.Text!.Trim()).OrderBy(_ => Random.Shared.Next()).Take(5000).ToList();
 }

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router-dom'
 import { Archive, BarChart3, BookOpenText, CheckCircle2, ExternalLink, FilePlus2, Plus, Search } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Panel, PanelBody, PanelHead } from '@/components/ui/Panel'
@@ -16,6 +17,7 @@ import { formatDate, formatDateTime } from '@/lib/format'
 import { useAction } from '@/features/shared/kit'
 import { tx } from '@/lib/i18n'
 import { AckStatsView, DepartmentChecklist, RichText, Snippet } from './shared'
+import { SemanticResults } from './SemanticResults'
 
 const audienceLabels: Record<DocAudience, string> = {
   All: tx('Tüm çalışanlar'), Managers: tx('Yöneticiler'), Hr: tx('Yalnızca İK'), Departments: tx('Seçili departmanlar'),
@@ -117,14 +119,17 @@ export function LibraryPage() {
   const { roles } = useAuth()
   const hr = isHr(roles)
   const [category, setCategory] = useState('')
-  const [term, setTerm] = useState('')
-  const [debounced, setDebounced] = useState('')
+  // ⌘K paletinden "?ara=...&anlamsal=1" ile gelinebilir.
+  const [params] = useSearchParams()
+  const [term, setTerm] = useState(() => params.get('ara') ?? '')
+  const [debounced, setDebounced] = useState(() => (params.get('ara') ?? '').trim())
+  const [semantic, setSemantic] = useState(() => params.get('anlamsal') === '1')
   const [open, setOpen] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   useEffect(() => { const t = setTimeout(() => setDebounced(term.trim()), 300); return () => clearTimeout(t) }, [term])
   const meta = useQuery({ queryKey: ['library', 'meta'], queryFn: ({ signal }) => complianceApi.libraryMeta(signal) })
   const list = useQuery({ queryKey: ['library', 'list', category], queryFn: ({ signal }) => complianceApi.library(category || undefined, signal) })
-  const search = useQuery({ queryKey: ['library', 'search', debounced], queryFn: ({ signal }) => complianceApi.librarySearch(debounced, signal), enabled: debounced.length >= 2 })
+  const search = useQuery({ queryKey: ['library', 'search', debounced], queryFn: ({ signal }) => complianceApi.librarySearch(debounced, signal), enabled: debounced.length >= 2 && !semantic })
   const pending = (list.data ?? []).filter((d) => d.needsAck)
   return (
     <>
@@ -139,10 +144,15 @@ export function LibraryPage() {
               <TextField label={tx('Tam metin ara')} className="pl-8" placeholder={tx('ör. fazla mesai -gece')} value={term} onChange={(e) => setTerm(e.target.value)}
                 hint={tx('Yalnızca görme yetkiniz olan belgelerde arar. "tırnak" tam ifade, -kelime hariç tutar.')} />
             </div>
+            <label className="flex items-center gap-2 pb-2 text-[13px]" title={tx('Kelimesi kelimesine değil, anlamca yakın sonuçlar (bilgi bankası ve duyurular dahil)')}>
+              <Checkbox checked={semantic} onCheckedChange={(v) => setSemantic(v === true)} />{' '}{tx('Anlamsal arama')}
+            </label>
             <div className="w-52"><SelectField label={tx('Kategori')} value={category || 'all'} onChange={(v) => setCategory(v === 'all' ? '' : v)} options={[{ value: 'all', label: tx('Tümü') }, ...(meta.data?.categories ?? [])]} /></div>
           </PanelBody>
         </Panel>
-        {debounced.length >= 2 ? (
+        {debounced.length >= 2 && semantic ? (
+          <SemanticResults query={debounced} onOpenDoc={setOpen} />
+        ) : debounced.length >= 2 ? (
           <Panel>
             <PanelHead title={tx('Arama sonuçları')} note={search.data ? tx('{0} belge', [search.data.length]) : undefined} />
             <PanelBody className="p-0">

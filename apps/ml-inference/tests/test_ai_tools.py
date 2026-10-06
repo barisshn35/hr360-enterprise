@@ -195,3 +195,13 @@ def test_cv_parse_short_skills_languages_and_university():
     assert d["universities"] == ["Orta Doğu Teknik Üniversitesi"]
     d2 = client.post("/ai/cv/parse-text", json={"text": CV + "\nUI/UX tasarımı, Go ile servis geliştirme.\n"}).json()
     assert {"ui", "ux", "go"} <= {s.lower() for s in d2["skills"]}
+
+
+def test_forecast_leave_backtest_mape():
+    # 30 aylık düzenli mevsimsel seri: son 3 ay dışarıda bırakılarak ölçülen hata küçük olmalı.
+    hist = [{"month": f"{2024 + (i // 12)}-{i % 12 + 1:02d}", "days": 20 + (15 if i % 12 == 7 else 0) + i * 0.2} for i in range(30)]
+    r = client.post("/ai/forecast/leave", json={"history": hist, "horizon": 3}).json()
+    assert r["backtest_months"] == 3
+    assert r["backtest_mape"] is not None and r["backtest_mape"] < 10
+    short = client.post("/ai/forecast/leave", json={"history": hist[:5], "horizon": 2}).json()
+    assert short["backtest_mape"] is None and short["backtest_months"] == 0

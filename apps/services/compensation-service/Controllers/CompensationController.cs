@@ -275,6 +275,93 @@ public class CompensationController : ControllerBase
     }
 }
 
+/// <summary>
+/// Ücret adaleti analizi (ML dalgası 2, madde 48). YALNIZCA İK ve şirket yöneticisi (ext-compensation-view
+/// okuma izni bu analizi KAPSAMAZ). Ücret verisi bu serviste kalır; ml-inference'a kimliksiz satırlar gider.
+/// Her çalıştırma hassas veri erişim kaydına yazılır. Sonuç bir karar değildir; incelenecek alanları gösterir.
+/// </summary>
+[ApiController]
+[Route("api/compensation/analytics")]
+[Authorize(Policy = "RequireCompensationWrite")]
+public class PayEquityController : ControllerBase
+{
+    private readonly CompensationDbContext _db;
+    private readonly ITenantContext _tenant;
+    private readonly CompensationService.Payroll.PayEquityClient _ml;
+    public PayEquityController(CompensationDbContext db, ITenantContext tenant, CompensationService.Payroll.PayEquityClient ml)
+    {
+        _db = db; _tenant = tenant; _ml = ml;
+    }
+
+    public sealed class EmployeeInfo
+    {
+        public Guid Id { get; set; }
+        public DateOnly HireDate { get; set; }
+        public string? PositionTitle { get; set; }
+        public string? Department { get; set; }
+    }
+
+    [HttpGet("pay-equity")]
+    public async Task<IActionResult> PayEquity(CancellationToken ct)
+    {
+        var tenant = _tenant.TenantSlug;
+        if (string.IsNullOrEmpty(tenant)) return BadRequest(new { message = "Analiz bir şirket oturumunda yapılır" });
+        var today = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(3));
+        var records = await _db.Records.AsNoTracking()
+            .Where(r => r.EffectiveFrom <= today && (r.EffectiveTo == null || r.EffectiveTo >= today))
+            .ToListAsync(ct);
+        var current = records.GroupBy(r => r.EmployeeId).Select(g => g.OrderByDescending(r => r.EffectiveFrom).First()).ToList();
+        var people = (await _db.Database.SqlQueryRaw<EmployeeInfo>("""
+            SELECT e."Id", e."HireDate", a."PositionTitle", d."Name" AS "Department"
+            FROM employee_employees e
+            LEFT JOIN LATERAL (
+                SELECT x."PositionTitle", x."DepartmentId" FROM employee_assignments x
+                WHERE x."EmployeeId" = e."Id" AND x."EffectiveFrom" <= current_date
+                  AND (x."EffectiveTo" IS NULL OR x."EffectiveTo" >= current_date)
+                ORDER BY x."EffectiveFrom" DESC LIMIT 1) a ON true
+            LEFT JOIN organization_departments d ON d."Id" = a."DepartmentId"
+            WHERE e."TenantSlug" = {0} AND e."Status" <> 'Terminated'
+            """, tenant).ToListAsync(ct)).ToDictionary(p => p.Id);
+        var rows = current.Where(r => people.ContainsKey(r.EmployeeId))
+            .Select(r => new CompensationService.Payroll.PayEquityRow(r.BaseSalary, r.Currency, r.Grade,
+                people[r.EmployeeId].PositionTitle, people[r.EmployeeId].Department, people[r.EmployeeId].HireDate))
+            .ToList();
+        var (body, included, excludedCurrency, currency) = CompensationService.Payroll.PayEquityClient.BuildRequest(rows, today);
+        if (included < 20)
+            return BadRequest(new { message = "Ücret adaleti analizi için en az 20 aktif çalışanın güncel ücret kaydı gerekir", included });
+        var (status, text) = await _ml.AnalyzeAsync(body, Request.Headers.Authorization.ToString(), ct);
+        if (status == 0 || text is null) return StatusCode(503, new { message = "Model servisine ulaşılamadı" });
+        if (status != 200)
+            return StatusCode(status is 401 or 403 ? 403 : status == 422 ? 422 : 502,
+                new { message = CompensationService.Payroll.PayEquityClient.Detail(text) ?? "Analiz yapılamadı" });
+        await WriteAuditAsync(tenant, included, ct);
+        using var doc = System.Text.Json.JsonDocument.Parse(text);
+        return Ok(new { generatedAt = DateTimeOffset.UtcNow, currency, included, excludedCurrency, report = doc.RootElement.Clone() });
+    }
+
+    private async Task WriteAuditAsync(string tenant, int count, CancellationToken ct)
+    {
+        try
+        {
+            await _db.Database.ExecuteSqlRawAsync(
+                "INSERT INTO audit_log (\"TenantSlug\",\"Service\",\"EntityType\",\"EntityId\",\"Action\",\"Changes\",\"UserId\",\"UserName\",\"CorrelationId\",\"IpAddress\",\"OccurredAt\") " +
+                "VALUES ({0},'compensation-service','CompensationRecord','pay-equity','SensitiveViewed',{1}::jsonb,{2},{3},{4},{5},now())",
+                new object[]
+                {
+                    tenant, System.Text.Json.JsonSerializer.Serialize(new { field = "payEquity", count }),
+                    User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? User.FindFirst("sub")?.Value ?? "unknown",
+                    (object?)(User.FindFirst("name")?.Value ?? User.FindFirst("preferred_username")?.Value) ?? DBNull.Value,
+                    (object?)(Request.Headers["X-Correlation-Id"].FirstOrDefault() ?? HttpContext.TraceIdentifier) ?? DBNull.Value,
+                    (object?)Request.Headers["X-Real-IP"].FirstOrDefault() ?? DBNull.Value,
+                }, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            HttpContext.RequestServices.GetRequiredService<ILogger<PayEquityController>>().LogWarning(ex, "Ücret adaleti erişim kaydı yazılamadı");
+        }
+    }
+}
+
 public record CreateBandRequest(
     string Grade, string? Title, decimal MinAmount, decimal MidAmount,
     decimal MaxAmount, string Currency, int Year);

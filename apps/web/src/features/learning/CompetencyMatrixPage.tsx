@@ -22,8 +22,10 @@ import { formatDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { tx } from '@/lib/i18n'
 import { useConfirm } from '@/components/ui/Confirm'
+import { isHr as isHrRole } from '@/auth/roles'
+import { SkillGraphPanel } from './SkillGraphPanel'
 
-type TabKey = 'benim' | 'ekip' | 'tanimlar'
+type TabKey = 'benim' | 'ekip' | 'tanimlar' | 'harita'
 
 const sourceLabel: Record<string, string> = { Self: tx('öz'), Manager: tx('yönetici'), Hr: tx('İK') }
 const levelOptions = [1, 2, 3, 4, 5].map((l) => ({ value: String(l), label: competencyLevelLabels[l]! }))
@@ -272,15 +274,18 @@ function Definitions() {
 /* ---------------------------------------------------------------- sayfa */
 
 export function CompetencyMatrixPage() {
-  const { can } = useAuth()
+  const { can, roles } = useAuth()
   const isHr = can('learning:manage')
   const isManager = can('employee:viewAll')
+  // Beceri haritası governance'ın İK politikasıyla korunur (İK, şirket yöneticisi, yönetişim ek izni).
+  const hrAdmin = isHrRole(roles, 'ext-governance-manage')
   const { employeeId, notLinked } = useMyEmployeeId()
   const [tab, setTab] = useTabParam<TabKey>('gorunum', notLinked && isManager ? 'ekip' : 'benim')
   const tabs: Array<TabDef<TabKey>> = [
     ...(!notLinked ? [{ key: 'benim' as TabKey, label: tx('Benim yetkinliklerim') }] : []),
     ...(isManager ? [{ key: 'ekip' as TabKey, label: tx('Ekip ısı haritası') }] : []),
     ...(isHr ? [{ key: 'tanimlar' as TabKey, label: tx('Tanımlar ve rol profilleri') }] : []),
+    ...(hrAdmin ? [{ key: 'harita' as TabKey, label: tx('Beceri haritası') }] : []),
   ]
   return (
     <div className="space-y-5">
@@ -289,6 +294,7 @@ export function CompetencyMatrixPage() {
       {tab === 'benim' && (employeeId ? <GapPanel employee="me" canAssess self /> : notLinked ? <EmptyState title={tx('Çalışan kaydı yok')} detail={tx('Bu hesap bir çalışan kaydına bağlı değil.')} /> : <RowsSkeleton rows={4} />)}
       {tab === 'ekip' && isManager && <TeamHeatmap />}
       {tab === 'tanimlar' && isHr && <Definitions />}
+      {tab === 'harita' && hrAdmin && <SkillGraphPanel />}
     </div>
   )
 }

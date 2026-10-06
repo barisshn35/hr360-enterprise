@@ -28,6 +28,7 @@ import { useConfirm } from '@/components/ui/Confirm'
 import { useEmployeeName } from '@/lib/useEmployeeName'
 import { useAuth } from '@/auth/useAuth'
 import { isHr } from '@/auth/roles'
+import { PayEquityPanel } from './PayEquityPanel'
 
 /** Bant ve ücret kaydı yazmak yalnızca İK'ya açık; "ücret görüntüleme" ek izni salt okumadır. */
 function useCanWriteCompensation() {
@@ -37,7 +38,7 @@ function useCanWriteCompensation() {
 import { cn } from '@/lib/utils'
 import { tx } from '@/lib/i18n'
 
-type TabKey = 'bantlar' | 'gecmis' | 'simulasyon'
+type TabKey = 'bantlar' | 'gecmis' | 'simulasyon' | 'adalet'
 
 /* ------------------------------------------------------------------ bantlar */
 
@@ -939,11 +940,14 @@ function SimulationTab({ year }: { year: number }) {
 export function CompensationPage() {
   const [tab, setTab] = useTabParam<TabKey>('gorunum', 'bantlar')
   const [year, setYear] = useState(new Date().getFullYear())
+  const canAnalyze = useCanWriteCompensation()
 
   const TABS: Array<TabDef<TabKey>> = [
     { key: 'bantlar', label: tx('Ücret bantları') },
     { key: 'gecmis', label: tx('Çalışan geçmişi') },
     { key: 'simulasyon', label: tx('Zam simülasyonu') },
+    // Ücret adaleti yalnızca İK / şirket yöneticisi ("ücret görüntüleme" ek izni kapsamaz).
+    ...(canAnalyze ? [{ key: 'adalet' as TabKey, label: tx('Ücret adaleti') }] : []),
   ]
 
   return (
@@ -958,6 +962,7 @@ export function CompensationPage() {
       {tab === 'bantlar' && <BandsTab year={year} onYearChange={setYear} />}
       {tab === 'gecmis' && <HistoryTab />}
       {tab === 'simulasyon' && <SimulationTab year={year} />}
+      {tab === 'adalet' && canAnalyze && <PayEquityPanel />}
     </div>
   )
 }
