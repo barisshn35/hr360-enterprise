@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion, useReducedMotion } from 'motion/react'
-import { ArrowLeft, LoaderCircle, Pencil, Trash2 } from 'lucide-react'
+import { ArrowLeft, LoaderCircle, Pencil, ShieldAlert, Trash2 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { DataField, Panel, PanelBody, PanelHead } from '@/components/ui/Panel'
 import { Button } from '@/components/ui/button'
@@ -19,6 +19,7 @@ import { expenseCategoryLabels } from '@/api/types'
 import { formatDate, formatDateTime, formatMoney, formatNumber } from '@/lib/format'
 import { useEmployeeName } from '@/lib/useEmployeeName'
 import { tx } from '@/lib/i18n'
+import { flagSummary, flagText, severityLabel, severityTone } from '@/lib/expenseAudit'
 import { NewClaimModal } from './NewClaimModal'
 
 export function ExpenseClaimPage() {
@@ -91,6 +92,7 @@ export function ExpenseClaimPage() {
 
   const c = claim.data
   const items = c.items ?? []
+  const flags = flagSummary(items)
   const canEditDraft = c.status === 'Draft' && can('expense:create') && (isHr(roles) || c.employeeId === myEmployeeId)
 
   return (
@@ -176,6 +178,15 @@ export function ExpenseClaimPage() {
         </PanelBody>
       </Panel>
 
+      {flags.count > 0 && (
+        <div role="status" className="flex items-start gap-2 rounded-xl border border-[hsl(var(--warning))]/40 bg-[hsl(var(--warning))]/10 p-3 text-[13px]">
+          <ShieldAlert className="mt-0.5 size-4 shrink-0" />
+          <span>
+            {tx('Masraf denetimi {0} işaret üretti (aşağıda kalem bazında). İşaretler yalnızca insan incelemesi içindir; beyan otomatik reddedilmez, kararı onaycı verir.', [formatNumber(flags.count)])}
+          </span>
+        </div>
+      )}
+
       <Panel>
         <PanelHead title={tx('Kalemler')} note={tx('{0} kalem', [formatNumber(items.length)])} />
         {items.length === 0 ? (
@@ -196,6 +207,22 @@ export function ExpenseClaimPage() {
                     <span className="mt-0.5 block text-[12px] text-muted-foreground">
                       {item.description}
                     </span>
+                  )}
+                  {(item.invoiceNo || item.supplierTaxId) && (
+                    <span className="tabular mt-0.5 block text-[12px] text-muted-foreground">
+                      {[item.supplierTaxId && tx('VKN/TCKN {0}', [item.supplierTaxId]), item.invoiceNo && tx('No {0}', [item.invoiceNo]),
+                        item.vatAmount != null && tx('KDV {0}', [formatMoney(item.vatAmount, c.currency)])].filter(Boolean).join(' · ')}
+                    </span>
+                  )}
+                  {(item.anomalyFlags ?? []).length > 0 && (
+                    <ul className="mt-1.5 space-y-1">
+                      {(item.anomalyFlags ?? []).map((f, j) => (
+                        <li key={`${f.code}-${j}`} className="flex flex-wrap items-center gap-1.5 text-[12px]">
+                          <StatusBadge tone={severityTone[f.severity] ?? 'neutral'}>{severityLabel(f.severity)}</StatusBadge>
+                          <span>{flagText(f)}</span>
+                        </li>
+                      ))}
+                    </ul>
                   )}
                 </span>
                 <span className="tabular shrink-0 text-[12px] text-muted-foreground">

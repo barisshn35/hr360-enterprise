@@ -42,6 +42,7 @@ const PAYLOAD_LABELS: Record<string, string> = {
   reason: tx('Gerekçe'),
   destination: tx('Gidilecek yer'),
   abroad: tx('Yurt dışı'),
+  anomalyFlags: tx('Masraf denetimi işareti (insan incelemesi; otomatik ret yok)'),
 }
 /** Para birimiyle birlikte gösterilen tutar alanları (yükteki "currency" ile). */
 const MONEY_KEYS = ['amount', 'totalAmount', 'grossSalary']

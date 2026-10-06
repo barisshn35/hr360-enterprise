@@ -26,6 +26,7 @@ builder.Services.AddHostedService<OutboxPublisher>();
 builder.Services.AddHostedService<WorkflowEventConsumer>();
 builder.Services.AddHttpClient<ExpenseService.Services.FxService>();
 builder.Services.AddHttpClient();
+builder.Services.AddScoped<ExpenseService.Services.ExpenseAnomalyClient>();
 builder.Services.AddHostedService<ExpenseService.Controllers.TravelPurgeWorker>();
 
 builder.Services.AddDbContext<ExpenseDbContext>(options =>

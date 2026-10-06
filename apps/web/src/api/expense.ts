@@ -1,5 +1,6 @@
 import { apiFetch, apiUploadFile, qs } from './client'
 import { tx } from '@/lib/i18n'
+import type { AnomalyFlag, EInvoice } from '@/lib/expenseAudit'
 
 const BASE = '/api/expense'
 
@@ -76,6 +77,13 @@ export interface ExpenseItem {
   fxRate?: number | null
   km?: number | null
   travelRequestId?: string | null
+  /** e-Fatura/e-Arşiv karekodundan: tedarikçi VKN/TCKN, fatura no, ETTN, KDV. */
+  supplierTaxId?: string | null
+  invoiceNo?: string | null
+  ettn?: string | null
+  vatAmount?: number | null
+  /** Gönderimde üretilen denetim işaretleri (salt okunur; insan incelemesi için). */
+  anomalyFlags?: AnomalyFlag[] | null
 }
 
 export interface CategoryLimit { perItem: number | null; monthly: number | null; receiptAbove: number | null }
@@ -120,6 +128,8 @@ export interface ExpenseClaim {
   totalAmount: number
   createdAt: string
   workflowRequestId: string | null
+  /** Masraf denetimi çalıştıysa zamanı; null: çalışmadı (ML erişilemedi) ya da henüz gönderilmedi. */
+  anomalyCheckedAt?: string | null
   items?: ExpenseItem[]
 }
 
@@ -256,6 +266,8 @@ export const expenseApi = {
   fx: (currency: string, date?: string, signal?: AbortSignal) =>
     apiFetch<{ currency: string; rate: number; rateDate: string; source: string }>(`${BASE}/expense-fx${qs({ currency, date })}`, { signal }),
   setFx: (body: { currency: string; date: string; rate: number }) => apiFetch<unknown>(`${BASE}/expense-fx`, { method: 'PUT', body }),
+  /** e-Fatura/e-Arşiv karekod metnini ayrıştırır ve doğrular (ml-inference; metin saklanmaz). */
+  einvoice: (text: string) => apiFetch<EInvoice>(`${BASE}/expense-claims/einvoice`, { method: 'POST', body: { text } }),
   ocr: (file: File) => apiUploadFile<{ amount: number | null; date: string | null; taxNo: string | null; confidence: number | null }>(`${BASE}/expense-claims/ocr`, file),
   travels: (signal?: AbortSignal) => apiFetch<TravelRequest[]>(`${BASE}/travel`, { signal }),
   createTravel: (body: { destination: string; abroad: boolean; startDate: string; endDate: string; purpose: string; transport: string; needsAccommodation: boolean; advanceRequested?: number | null; passportNumber?: string }) =>

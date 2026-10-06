@@ -195,8 +195,25 @@ export interface MlHealth {
 
 export interface PredictResponse {
   prediction: number
+  /** [kalma, ayrılma] — kalibre olasılık (kalibrasyonu olmayan eski sürümde ham). */
   probability: number[]
   model: string
+  raw_probability?: number
+  calibration?: 'none' | 'sigmoid' | 'isotonic'
+  /** Şirketin İK'ca seçilen inceleme eşiği. */
+  threshold?: number
+  /** Skor eşiğin üstünde mi: karar değil, "insan incelemesi önerilir" işareti. */
+  flagged?: boolean
+}
+
+/** Sade dilde "neden?" (en etkili özellikler; + riski artırır, − azaltır). */
+export interface PredictionReason {
+  feature: string
+  code: string
+  params: Array<string | number>
+  direction: 'up' | 'down'
+  contribution: number
+  text: string
 }
 
 export interface FeatureContribution {
@@ -210,6 +227,7 @@ export interface ExplainResponse {
   /** Katkıların giriş sırasındaki özellik adları (G5; model kartındaki sıra). */
   feature_names?: string[]
   base_value: number
+  reasons?: PredictionReason[]
 }
 
 /* ==========================================================================

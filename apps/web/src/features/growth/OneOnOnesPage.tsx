@@ -18,6 +18,7 @@ import { useToast } from '@/components/ui/Toast'
 import { useMyEmployeeId } from '@/api/queries'
 import { MeetingPanel, SlotFinder } from '@/features/shared/Meetings'
 import { tx } from '@/lib/i18n'
+import { PiiHint } from '@/components/PiiHint'
 import { useConfirm } from '@/components/ui/Confirm'
 
 const MOODS = ['😞', '🙁', '😐', '🙂', '😄']
@@ -98,9 +99,11 @@ function MeetingDetail({ m }: { m: OneOnOne }) {
         </div>
         <div className="space-y-4">
           <TextAreaField label={tx('Ortak notlar (iki taraf da görür)')} rows={6} value={shared} onChange={(e) => setShared(e.target.value)} onBlur={() => shared !== (m.sharedNotes ?? '') && saveNote.mutate({ sharedNotes: shared })} />
+          <PiiHint text={shared} />
           {m.iAmManager && (
             <div>
               <TextAreaField label={tx('Özel notlarım')} rows={4} value={priv} onChange={(e) => setPriv(e.target.value)} onBlur={() => priv !== (m.privateNotes ?? '') && saveNote.mutate({ privateNotes: priv })} />
+              <PiiHint text={priv} />
               <p className="mt-1 flex items-center gap-1 text-[11.5px] text-muted-foreground"><Lock className="size-3" />{' '}{tx('Yalnızca siz görürsünüz; denetim kaydında içerik maskelenir.')}</p>
             </div>
           )}
@@ -131,6 +134,7 @@ function NewMeetingModal({ onClose, preset }: { onClose: () => void; preset?: st
         <TextField label={tx('Tarih ve saat')} type="datetime-local" value={when} error={past ? tx('Geçmiş bir tarihe görüşme planlanamaz.') : undefined} onChange={(e) => setWhen(e.target.value)} />
         {emp && me && <SlotFinder employeeIds={[me, emp]} durationMinutes={30} onPick={setWhen} />}
         <TextAreaField label={tx('Gündem (her satır bir madde)')} rows={4} value={agenda} onChange={(e) => setAgenda(e.target.value)} />
+        <PiiHint text={agenda} />
       </div>
     </Modal>
   )

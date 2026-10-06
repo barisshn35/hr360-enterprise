@@ -24,4 +24,24 @@ public class ExpenseItem : ITenantOwned
     public decimal? Km { get; set; }
     /// <summary>Bağlı seyahat (harcırah/seyahat masrafı).</summary>
     public Guid? TravelRequestId { get; set; }
+
+    /// <summary>e-Fatura/e-Arşiv karekodundan ya da fişten: tedarikçi VKN/TCKN (mükerrer fiş denetimi için).</summary>
+    public string? SupplierTaxId { get; set; }
+    /// <summary>Fatura numarası (GİB biçimi: 3 karakter seri + 13 hane).</summary>
+    public string? InvoiceNo { get; set; }
+    /// <summary>e-Fatura evrensel tekil numarası (ETTN, UUID): mükerrer fiş anahtarı.</summary>
+    public string? Ettn { get; set; }
+    /// <summary>Kalemdeki KDV tutarı (karekoddan; bilgi amaçlı).</summary>
+    public decimal? VatAmount { get; set; }
+
+    /// <summary>
+    /// Gönderimde ml-inference'ın ürettiği denetim işaretleri (olağan dışı tutar, olası mükerrer fiş)
+    /// - jsonb dizi: [{code, severity, reason, details}]. Yalnızca onaycıya bilgi; beyanı reddetmez.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string? AnomalyFlagsJson { get; set; }
+
+    [System.ComponentModel.DataAnnotations.Schema.NotMapped]
+    public System.Text.Json.JsonElement? AnomalyFlags =>
+        string.IsNullOrEmpty(AnomalyFlagsJson) ? null : System.Text.Json.JsonDocument.Parse(AnomalyFlagsJson).RootElement.Clone();
 }

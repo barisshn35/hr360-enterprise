@@ -19,6 +19,7 @@ import { caseCategoryLabels } from '@/api/types'
 import { formatDateTime } from '@/lib/format'
 import { useEmployeeName } from '@/lib/useEmployeeName'
 import { tx } from '@/lib/i18n'
+import { PiiHint } from '@/components/PiiHint'
 
 export function CaseDetailPage() {
   const { caseId } = useParams<{ caseId: string }>()
@@ -249,6 +250,7 @@ export function CaseDetailPage() {
           onChange={(e) => setResolution(e.target.value)}
           error={error?.includes('Çözüm') ? error : undefined}
         />
+        <PiiHint text={resolution} className="mt-2" />
       </Modal>
     </div>
   )

@@ -15,6 +15,8 @@ RUN pip install --no-cache-dir -r requirements-ai.txt
 # Tum Python modullerini al - performance_ml.py gibi ek router'lar
 # eklendiginde Dockerfile'i tekrar duzeltmek gerekmesin.
 COPY *.py ./
+# Kural dosyalari (ör. pii_rules.json: kisisel veri dedektörünün anahtar sözcükleri).
+COPY *.json ./
 # Root olmayan kullanici; MLflow model indirmeleri /tmp ve ev dizinine yazar.
 RUN useradd --create-home --uid 10001 app
 USER 10001

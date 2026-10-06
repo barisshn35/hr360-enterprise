@@ -37,6 +37,12 @@ async def lifespan(_app: FastAPI):
     task = asyncio.create_task(_load_model_and_explainer())
     _background.add(task)
     task.add_done_callback(_background.discard)
+    # Gunluk veri kaymasi olcumu (son tahminlerin toplu dagilimi -> Prometheus hr360_ml_*_psi).
+    interval = float(os.getenv("DRIFT_INTERVAL_SECONDS", "86400"))
+    if interval > 0:
+        drift = asyncio.create_task(model_service.drift_loop(interval))
+        _background.add(drift)
+        drift.add_done_callback(_background.discard)
     yield
 
 
@@ -62,6 +68,9 @@ mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 class PredictRequest(BaseModel):
     # Sira attrition_ml.FEATURES'tir; deger sinirlari _features icinde FeatureSpec'ten uygulanir.
     features: list[float] = Field(min_length=1, max_length=50)
+    # Kiracinin IK'ca secilen inceleme esigi (governance gonderir); yoksa 0,5. Esik ustu bir
+    # KARAR degildir: "insan incelemesi onerilir" isaretidir.
+    threshold: float | None = Field(default=None, ge=0.01, le=0.99)
 
 async def verify_token(authorization: str = Header(None)):
     if not authorization or not authorization.startswith("Bearer "):
@@ -87,6 +96,16 @@ app.include_router(ai_router, dependencies=[Depends(verify_token)])
 from ocr import router as ocr_router
 app.include_router(ocr_router, dependencies=[Depends(verify_token)])
 
+# Serbest metinde kişisel / özel nitelikli veri uyarısı (TCKN, IBAN, telefon, e-posta, sağlık,
+# sabıka...): yalnızca konum döner, metin saklanmaz. Arayüz aynı kuralları istemcide de uygular.
+from pii import router as pii_router
+app.include_router(pii_router, dependencies=[Depends(verify_token)])
+
+# Masraf denetimi: olagan disi tutar / mukerrer fis isareti ve e-Fatura karekodu ayristirma
+# (expense-service cagiranin jetonunu iletir). Yalnizca isaret uretir; beyan reddedilmez.
+from expense_ml import router as expense_ml_router
+app.include_router(expense_ml_router, dependencies=[Depends(verify_token)])
+
 
 # Devir riski modeli: yuklenme, model karti, yeniden egitim ve veri kaymasi
 # (model_routes.py). Yayindaki surum MLflow'da "champion" takma adiyla isaretlenir;
@@ -94,6 +113,7 @@ app.include_router(ocr_router, dependencies=[Depends(verify_token)])
 # sentetik ureteciyle ilk surum egitilir (ATTRITION_BOOTSTRAP=false ile kapatilir).
 from model_routes import ModelService, build_router, tenant_of
 from attrition_ml import FEATURES, FEATURE_NAMES
+from model_quality import DEFAULT_THRESHOLD, explain_reasons
 from model_store import MlflowModelStore
 
 model_service = ModelService(
@@ -148,13 +168,20 @@ async def predict(req: PredictRequest, token_info: dict = Depends(verify_token))
     # bir model surumuyle tahmin yapilmaz.
     model = model_service.guard()
     X = _features(req, model)
-    pred = model.predict(X)
-    proba = model.predict_proba(X)
-    # Kayma izleme: girdi yalnizca kiracinin TOPLU histogramina sayilir (kisi/kimlik saklanmaz).
-    model_service.record_prediction(tenant_of(token_info), X[0])
+    raw, cal = model_service.scores(X)
+    p = float(cal[0])
+    threshold = req.threshold if req.threshold is not None else DEFAULT_THRESHOLD
+    # Kayma izleme: girdi ve skor yalnizca kiracinin TOPLU histogramina sayilir (kisi/kimlik saklanmaz).
+    model_service.record_prediction(tenant_of(token_info), X[0], p)
+    calibration = (st.meta or {}).get("calibration") or {}
     return {
-        "prediction": int(pred[0]),
-        "probability": proba[0].tolist(),
+        # Kalibre olasilik (kalibrasyonu olmayan eski surumde ham olasilik).
+        "prediction": int(p >= DEFAULT_THRESHOLD),
+        "probability": [1.0 - p, p],
+        "raw_probability": float(raw[0]),
+        "calibration": calibration.get("method", "none"),
+        "threshold": threshold,
+        "flagged": p >= threshold,
         "model": f"{MODEL_NAME}/v{st.version}",
         "authenticated_client": token_info.get("client_id", token_info.get("azp")),
     }
@@ -184,10 +211,13 @@ async def explain(req: PredictRequest, token_info: dict = Depends(verify_token))
     else:
         base_value = float(base)
 
+    names = list(st.meta.get("features") or []) or list(FEATURE_NAMES)
     return {
         "feature_contributions": contributions,
         # Katkilar giris sirasindadir; adlar model kartindaki ozellik sirasidir.
         "feature_names": list(st.meta.get("features") or []),
+        # Sade dilde "neden?": en etkili 3 ozellik (+ riski artirir, - azaltir). Ham SHAP katkisina dayanir.
+        "reasons": explain_reasons(names, X[0].tolist(), contributions) if len(names) == len(contributions) else [],
         "base_value": base_value,
         "model": f"{MODEL_NAME}/v{st.version}",
     }

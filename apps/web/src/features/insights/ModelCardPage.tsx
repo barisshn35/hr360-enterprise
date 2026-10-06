@@ -14,7 +14,8 @@ import { isHr } from '@/auth/roles'
 import { mlModelApi, type DriftLevel, type DriftReport, type RetrainResult } from '@/api/mlModel'
 import { formatDate, formatDateTime, formatNumber, formatPercent } from '@/lib/format'
 import { errMsg, useAction } from '@/features/shared/kit'
-import { appLocale, tx } from '@/lib/i18n'
+import { appLocale, tx, txServer } from '@/lib/i18n'
+import { CalibrationPanel, FairnessPanel, FreshnessBadge, VersionsPanel } from './ModelQualityPanels'
 
 /** AUC/PSI gibi 0–1 arası metrikler yerel ondalık ayırıcıyla, 3 basamak. */
 const DEC3 = new Intl.NumberFormat(appLocale, { minimumFractionDigits: 3, maximumFractionDigits: 3 })
@@ -54,6 +55,14 @@ function DriftTable({ report }: { report: DriftReport }) {
         <span className="text-muted-foreground">
           {tx('{0} kayıt · en yüksek PSI {1} · {2}', [formatNumber(report.rows ?? 0), dec3(report.max_psi ?? 0), formatDateTime(report.computed_at)])}
         </span>
+        {typeof report.prediction_psi === 'number' && (
+          <span className="flex items-center gap-1.5 text-muted-foreground">
+            {tx('Skor dağılımı PSI {0}', [dec3(report.prediction_psi)])}
+            {report.prediction_level && report.prediction_level !== 'stable' && (
+              <StatusBadge tone={driftView[report.prediction_level].tone}>{driftView[report.prediction_level].label}</StatusBadge>
+            )}
+          </span>
+        )}
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-[13px]">
@@ -79,7 +88,7 @@ function DriftTable({ report }: { report: DriftReport }) {
           </tbody>
         </table>
       </div>
-      {report.recommendation && <InfoNote>{tx(report.recommendation)}</InfoNote>}
+      {report.recommendation && <InfoNote>{txServer(report.recommendation)}</InfoNote>}
     </div>
   )
 }
@@ -109,6 +118,7 @@ export function ModelCardPage() {
   })
   const retrain = useAction(() => mlModelApi.retrainSynthetic(effectiveDryRun), {
     success: (r) => (r.promoted ? tx('Yeni sürüm yayımlandı: v{0}', [r.candidate_version])
+      : r.awaiting_approval ? tx('Aday v{0} kaydedildi; yayına alma onay bekliyor', [r.candidate_version])
       : r.dry_run ? tx('Deneme eğitimi tamamlandı: aday v{0} yayımlanmadı', [r.candidate_version])
       : tx('Aday sürüm yayımlanmadı: v{0}', [r.candidate_version])),
     invalidate: [['ml-model']],
@@ -142,6 +152,11 @@ export function ModelCardPage() {
         <ErrorState message={errMsg(card.error)} onRetry={() => void card.refetch()} />
       ) : c && (
         <>
+          {c.freshness?.stale && (
+            <InfoNote>
+              {tx('Model kartının geçerlilik süresi ({0} gün) doldu. Skorları yalnızca insan incelemesiyle kullanın ve modeli güncel veriyle yeniden eğitin.', [c.freshness.validity_days])}
+            </InfoNote>
+          )}
           {!c.serving && (
             <InfoNote>
               {c.blocked_reason
@@ -153,7 +168,7 @@ export function ModelCardPage() {
             <InfoNote>
               {tx('Son eğitim: aday v{0} - {1} (aday AUC {2}, mevcut AUC {3}).', [
                 lastRun.candidate_version,
-                tx(lastRun.decision.reason),
+                txServer(lastRun.decision.reason),
                 dec3(lastRun.candidate.auc),
                 lastRun.current ? dec3(lastRun.current.auc) : '—',
               ])}
@@ -161,10 +176,15 @@ export function ModelCardPage() {
           )}
           <div className="grid gap-6 lg:grid-cols-2">
             <Panel>
-              <PanelHead title={tx('Sürüm ve eğitim')} note={tx(c.intended_use)} />
+              <PanelHead title={tx('Sürüm ve eğitim')} note={tx(c.intended_use)} action={<FreshnessBadge freshness={c.freshness} />} />
               <PanelBody>
                 <Row label={tx('Model')}>{c.model}{c.version ? ` · v${c.version}` : ''}</Row>
                 <Row label={tx('Eğitim tarihi')}>{formatDateTime(c.trained_at)}</Row>
+                {c.freshness?.expires_on && (
+                  <Row label={tx('Geçerlilik')}>
+                    {tx('{0} güne kadar · {1}', [c.freshness.validity_days, formatDate(c.freshness.expires_on)])}
+                  </Row>
+                )}
                 <Row label={tx('Eğitim verisi')}>{sourceLabel(c.training_source)} · {formatNumber(c.training_rows)} {tx('satır')}</Row>
                 <Row label={tx('Veri dönemi')}>
                   {c.data_window ? `${formatDate(c.data_window.start)} – ${formatDate(c.data_window.end)}` : tx(c.data_window_note ?? '—')}
@@ -172,8 +192,9 @@ export function ModelCardPage() {
                 <Row label={tx('Değerlendirme')}>{formatNumber(c.evaluation_rows)} {tx('satır (eğitimde kullanılmadı)')}</Row>
                 <Row label="AUC">{c.metrics ? dec3(c.metrics.auc) : '—'}</Row>
                 <Row label={tx('Doğruluk')}>{c.metrics ? formatPercent(c.metrics.accuracy, 1) : '—'}</Row>
+                {c.calibration && <Row label={tx('Brier (kalibre)')}>{dec3(c.calibration.brier)}</Row>}
                 <Row label={tx('Algoritma')}>{String(c.algorithm.name ?? '—')}</Row>
-                {c.promotion && <Row label={tx('Yayın kararı')}>{tx(c.promotion.reason)}</Row>}
+                {c.promotion && <Row label={tx('Yayın kararı')}>{txServer(c.promotion.reason)}</Row>}
               </PanelBody>
             </Panel>
 
@@ -258,6 +279,10 @@ export function ModelCardPage() {
             </PanelBody>
           </Panel>
 
+          <CalibrationPanel canEdit={isHr(roles) && !noTenant} noTenant={noTenant} />
+          <VersionsPanel canPromote={canPromote} />
+          {isHr(roles) && <FairnessPanel noTenant={noTenant} />}
+
           <Panel>
             <PanelHead title={tx('Sınırlamalar ve KVKK')} />
             <PanelBody className="space-y-2 text-[13px] leading-relaxed">
@@ -276,7 +301,9 @@ export function ModelCardPage() {
           onClose={() => setConfirm(false)}
           title={tx('Modeli yeniden eğit')}
           note={canPromote
-            ? tx('Yeni tohumla sentetik veride aday model eğitilir ve mevcut modelle aynı değerlendirme kümesinde karşılaştırılır. Aday yalnızca AUC farkı -{0} eşiğinden kötü değilse yayımlanır; aksi halde kayıtta kalır.', [dec(c?.promotion_tolerance ?? 0.02)])
+            ? (c?.approval_required
+              ? tx('Yeni tohumla sentetik veride aday model eğitilir ve mevcut modelle aynı değerlendirme kümesinde karşılaştırılır. AUC farkı -{0} eşiğinden kötü değilse aday olarak kaydedilir; yayına alma "Sürümler" bölümünden onayla yapılır.', [dec(c?.promotion_tolerance ?? 0.02)])
+              : tx('Yeni tohumla sentetik veride aday model eğitilir ve mevcut modelle aynı değerlendirme kümesinde karşılaştırılır. Aday yalnızca AUC farkı -{0} eşiğinden kötü değilse yayımlanır; aksi halde kayıtta kalır.', [dec(c?.promotion_tolerance ?? 0.02)]))
             : tx('Deneme eğitimi: aday değerlendirilir, yayımlanmaz; yayımlama platform yöneticisindedir')}
           footer={
             <>

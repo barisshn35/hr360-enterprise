@@ -20,6 +20,9 @@ import tempfile
 from dataclasses import dataclass, field
 
 CHAMPION = "champion"
+CHALLENGER = "challenger"
+# hr360.status etiketi: champion (yayinda) | challenger (onay bekleyen aday) | rejected
+# (karsilastirmayi gecemedi ya da deneme egitimi) | retired (eskiden yayindaydi; geri alinabilir)
 META_FILE = "attrition_meta.json"
 DRIFT_EXPERIMENT = "hr360-attrition-drift"
 TRAIN_EXPERIMENT = "hr360-attrition-training"
@@ -77,7 +80,8 @@ class MlflowModelStore:
         except Exception:  # noqa: BLE001 - eski surumlerde meta yok; kart kismi doner
             return {}
 
-    def register(self, model, meta: dict, metrics: dict, params: dict, promote: bool) -> str:
+    def register(self, model, meta: dict, metrics: dict, params: dict, promote: bool,
+                 challenger: bool = False) -> str:
         import mlflow
         import mlflow.sklearn
 
@@ -99,9 +103,61 @@ class MlflowModelStore:
             version = str(info.registered_model_version)
         client = self._client()
         client.set_model_version_tag(self.name, version, "hr360.promoted", str(promote).lower())
+        status = "champion" if promote else "challenger" if challenger else "rejected"
+        promotion = meta.get("promotion") or {}
+        for k, v in {"hr360.status": status, "hr360.trained_at": meta.get("trained_at") or "",
+                     "hr360.source": meta.get("training_source") or "",
+                     "hr360.compared_with": promotion.get("compared_with_version") or "",
+                     "hr360.recommend": str(bool(promotion.get("promote"))).lower(),
+                     "hr360.reason": (promotion.get("reason") or "")[:240]}.items():
+            if v:  # bos etiket degeri yazilmaz
+                client.set_model_version_tag(self.name, version, k, v)
         if promote:
+            client.set_model_version_tag(self.name, version, "hr360.was_champion", "true")
             client.set_registered_model_alias(self.name, CHAMPION, version)
+        if challenger:
+            client.set_registered_model_alias(self.name, CHALLENGER, version)
         return version
+
+    def load_version(self, version: str) -> LoadedModel:
+        import mlflow.sklearn
+        from mlflow.exceptions import MlflowException
+
+        try:
+            mv = self._client().get_model_version(self.name, str(version))
+        except MlflowException as e:
+            raise ModelNotFound(str(e)) from e
+        model = mlflow.sklearn.load_model(f"models:/{self.name}/{mv.version}")
+        return LoadedModel(model=model, version=str(mv.version), meta=self._meta(mv.run_id))
+
+    def set_champion(self, version: str, previous: str | None) -> None:
+        """Takma adi tasir: yayindaki surum degisir. Onceki surum "retired" olur (geri alinabilir)."""
+        client = self._client()
+        client.set_registered_model_alias(self.name, CHAMPION, str(version))
+        for k, v in {"hr360.status": "champion", "hr360.promoted": "true", "hr360.was_champion": "true"}.items():
+            client.set_model_version_tag(self.name, str(version), k, v)
+        if previous and previous != str(version):
+            client.set_model_version_tag(self.name, previous, "hr360.status", "retired")
+        try:
+            if str(client.get_model_version_by_alias(self.name, CHALLENGER).version) == str(version):
+                client.delete_registered_model_alias(self.name, CHALLENGER)
+        except Exception:  # noqa: BLE001 - aday takma adi yoksa sorun degil
+            pass
+
+    def list_versions(self, limit: int = 15) -> list[dict]:
+        """Son surumler: etiketler ve calisma metrikleri (model dosyasi indirilmez)."""
+        client = self._client()
+        versions = client.search_model_versions(f"name='{self.name}'", max_results=200)
+        versions = sorted(versions, key=lambda v: int(v.version), reverse=True)[:limit]
+        out = []
+        for mv in versions:
+            try:
+                metrics = dict(client.get_run(mv.run_id).data.metrics) if mv.run_id else {}
+            except Exception:  # noqa: BLE001
+                metrics = {}
+            out.append(_version_row(str(mv.version), dict(mv.tags or {}), metrics,
+                                    getattr(mv, "creation_timestamp", None)))
+        return out
 
     def log_drift(self, tenant: str, model_version: str | None, report: dict) -> None:
         import mlflow
@@ -132,6 +188,23 @@ class MlflowModelStore:
             return None
 
 
+def _version_row(version: str, tags: dict, metrics: dict, created_ms: int | None) -> dict:
+    from datetime import datetime, timezone
+
+    status = tags.get("hr360.status") or ("champion" if tags.get("hr360.promoted") == "true" else "rejected")
+    return {
+        "version": version, "status": status,
+        "was_champion": tags.get("hr360.was_champion") == "true" or status == "champion",
+        "trained_at": tags.get("hr360.trained_at") or (
+            datetime.fromtimestamp(created_ms / 1000, tz=timezone.utc).isoformat(timespec="seconds") if created_ms else None),
+        "source": tags.get("hr360.source") or None,
+        "compared_with_version": tags.get("hr360.compared_with") or None,
+        "recommended": tags.get("hr360.recommend") == "true",
+        "reason": tags.get("hr360.reason") or None,
+        "metrics": {k: metrics[k] for k in ("auc", "accuracy", "brier", "ece", "positive_rate") if k in metrics},
+    }
+
+
 class LocalModelStore:
     """Dosya sistemi tabanli depo: MLflow olmadan (birim testi / gelistirme) ayni arayuz."""
 
@@ -141,6 +214,8 @@ class LocalModelStore:
         self.champion: str | None = None
         self.drifts: dict[str, dict] = {}
         self.promoted: dict[str, bool] = {}
+        self.tags: dict[str, dict] = {}
+        self.metrics: dict[str, dict] = {}
 
     def load_current(self) -> LoadedModel:
         if self.champion is None:
@@ -148,13 +223,39 @@ class LocalModelStore:
         model, meta = self.models[self.champion]
         return LoadedModel(model=model, version=self.champion, meta=meta)
 
-    def register(self, model, meta, metrics, params, promote) -> str:
+    def register(self, model, meta, metrics, params, promote, challenger=False) -> str:
         version = str(len(self.models) + 1)
         self.models[version] = (model, json.loads(json.dumps(meta)))
         self.promoted[version] = promote
+        promotion = meta.get("promotion") or {}
+        self.tags[version] = {"hr360.status": "champion" if promote else "challenger" if challenger else "rejected",
+                              "hr360.trained_at": meta.get("trained_at") or "",
+                              "hr360.source": meta.get("training_source") or "",
+                              "hr360.compared_with": promotion.get("compared_with_version") or "",
+                              "hr360.recommend": str(bool(promotion.get("promote"))).lower(),
+                              "hr360.reason": promotion.get("reason") or "",
+                              "hr360.was_champion": "true" if promote else "false"}
+        self.metrics[version] = dict(metrics)
         if promote:
             self.champion = version
         return version
+
+    def load_version(self, version: str) -> LoadedModel:
+        if str(version) not in self.models:
+            raise ModelNotFound(f"no version {version}")
+        model, meta = self.models[str(version)]
+        return LoadedModel(model=model, version=str(version), meta=meta)
+
+    def set_champion(self, version: str, previous: str | None) -> None:
+        self.champion = str(version)
+        self.promoted[str(version)] = True
+        self.tags[str(version)].update({"hr360.status": "champion", "hr360.was_champion": "true"})
+        if previous and previous != str(version) and previous in self.tags:
+            self.tags[previous]["hr360.status"] = "retired"
+
+    def list_versions(self, limit: int = 15) -> list[dict]:
+        return [_version_row(v, self.tags.get(v, {}), self.metrics.get(v, {}), None)
+                for v in sorted(self.models, key=int, reverse=True)[:limit]]
 
     def log_drift(self, tenant, model_version, report) -> None:
         self.drifts[tenant] = report

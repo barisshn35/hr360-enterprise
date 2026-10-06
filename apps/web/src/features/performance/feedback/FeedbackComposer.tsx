@@ -34,6 +34,7 @@ import { PersonAvatar, PersonPicker } from '../components/people'
 import { usePeople } from '../hooks'
 import { FeedbackCard, REASON_ICON, SENTIMENT_COLOR } from './FeedbackCard'
 import { tx } from '@/lib/i18n'
+import { PiiHint } from '@/components/PiiHint'
 
 const SENTIMENT_HINT: Record<FeedbackSentiment, string> = {
   Positive: tx('Takdir, teşekkür, iyi giden bir şey'),
@@ -276,6 +277,7 @@ export function FeedbackComposer({
                 )}
               />
               {touched && errs.detail && <p className="mt-1 text-[12px] text-destructive">{errs.detail}</p>}
+              <PiiHint text={reasonDetail} className="mt-1.5" />
             </div>
 
             {/* Metin */}
@@ -294,6 +296,7 @@ export function FeedbackComposer({
                 className={cn('min-h-28 w-full rounded-md border border-input bg-background px-3 py-2 text-[13px] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50', touched && errs.body && 'border-destructive')}
               />
               {touched && errs.body && <p className="mt-1 text-[12px] text-destructive">{errs.body}</p>}
+              <PiiHint text={body} className="mt-1.5" />
             </div>
 
             <SelectField

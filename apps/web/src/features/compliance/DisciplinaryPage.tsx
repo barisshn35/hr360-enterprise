@@ -12,6 +12,7 @@ import { complianceApi, type CaseStatus, type MyCase } from '@/api/compliance'
 import { formatDate, formatDateTime } from '@/lib/format'
 import { isoDate, PersonSelect, useAction } from '@/features/shared/kit'
 import { tx } from '@/lib/i18n'
+import { PiiHint } from '@/components/PiiHint'
 import { useConfirm } from '@/components/ui/Confirm'
 import { KvkkNote, Warnings } from './shared'
 
@@ -37,6 +38,7 @@ function NewCaseModal({ onClose, onCreated }: { onClose: () => void; onCreated: 
           <SelectField label={tx('Kategori')} value={f.category} onChange={(v) => setF({ ...f, category: v })} options={meta.data?.categories ?? []} />
         </div>
         <TextAreaField label={tx('Olayın açıklaması')} rows={5} value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} hint={tx('Somut olay: ne, ne zaman, nerede. Kişisel yorum ve özel nitelikli veri içermesin.')} />
+        <PiiHint text={f.description} />
       </div>
     </Modal>
   )
@@ -95,6 +97,7 @@ function CaseModal({ id, onClose, initialWarnings }: { id: string; onClose: () =
               <>
                 <KvkkNote>{criminalNote}</KvkkNote>
                 <TextAreaField label={tx('Tutanak metni')} rows={5} value={minutes.text} onChange={(e) => setMinutes({ ...minutes, text: e.target.value })} />
+                <PiiHint text={minutes.text} />
                 <TextField label={tx('Tanıklar (ad soyad, virgülle)')} value={minutes.witnesses} onChange={(e) => setMinutes({ ...minutes, witnesses: e.target.value })} hint={tx('Tanık adları çalışana gösterilmez.')} />
                 <Button size="sm" onClick={() => saveMinutes.mutate(undefined)} disabled={saveMinutes.isPending}>{tx('Kaydet')}</Button>
               </>
@@ -181,6 +184,7 @@ function DefenceForm({ c }: { c: MyCase }) {
       <Warnings items={warnings} />
       <KvkkNote>{tx('Savunmanızda sağlık bilgisi, adli sicil kaydı gibi özel nitelikli verilerinizi paylaşmanız gerekmez.')}</KvkkNote>
       <TextAreaField label={tx('Yazılı savunmanız')} rows={6} value={text} onChange={(e) => setText(e.target.value)} />
+      <PiiHint text={text} />
       <Button onClick={async () => { if (await confirm({ title: tx('Savunma gönderilsin mi?'), note: tx('Savunmanız gönderildikten sonra değiştirilemez.'), action: tx('Gönder'), destructive: false })) submit.mutate(undefined) }} disabled={text.trim().length < 10 || submit.isPending}>{tx('Savunmayı gönder')}</Button>
     </div>
   )

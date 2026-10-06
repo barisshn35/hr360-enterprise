@@ -46,6 +46,7 @@ public class ExpenseDbContext : DbContext, ITenantAwareContext
         modelBuilder.Entity<ExpenseItem>()
             .HasOne(i => i.Claim).WithMany(c => c.Items)
             .HasForeignKey(i => i.ClaimId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<ExpenseItem>().Property(i => i.AnomalyFlagsJson).HasColumnName("AnomalyFlags").HasColumnType("jsonb");
 
         modelBuilder.Entity<Document>().ConfigureTenantColumn();
         modelBuilder.Entity<Document>().ToTable("expense_documents");

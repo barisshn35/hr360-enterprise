@@ -16,8 +16,11 @@ public class ExpenseClaimsController : ControllerBase
     private readonly ApprovalWorkflowClient _approvals;
     private readonly FxService _fx;
     private readonly ExpenseService.Tenancy.ITenantContext _tenant;
-    public ExpenseClaimsController(ExpenseDbContext db, ApprovalWorkflowClient approvals, FxService fx, ExpenseService.Tenancy.ITenantContext tenant)
+    private readonly ExpenseAnomalyClient? _anomaly;
+    public ExpenseClaimsController(ExpenseDbContext db, ApprovalWorkflowClient approvals, FxService fx, ExpenseService.Tenancy.ITenantContext tenant,
+        ExpenseAnomalyClient? anomaly = null)
     {
+        _anomaly = anomaly;
         _db = db;
         _approvals = approvals;
         _fx = fx;
@@ -222,6 +225,9 @@ public class ExpenseClaimsController : ControllerBase
                 amount = Math.Round(item.OriginalAmount.Value * rate.Value, 2);
             }
             if (amount <= 0) return (BadRequest("Kalem tutari sifirdan buyuk olmali"), null, null);
+            var (invoiceError, supplier, invoiceNo, ettn) = NormalizeInvoiceFields(item);
+            if (invoiceError is not null) return (BadRequest(new { message = invoiceError }), null, null);
+            if (item.VatAmount is < 0 || item.VatAmount > amount) return (BadRequest(new { message = "KDV tutarı 0 ile kalem tutarı arasında olmalı" }), null, null);
             items.Add(new ExpenseItem
             {
                 Category = item.Category,
@@ -234,9 +240,35 @@ public class ExpenseClaimsController : ControllerBase
                 FxRate = rate,
                 Km = km,
                 TravelRequestId = item.TravelRequestId,
+                SupplierTaxId = supplier,
+                InvoiceNo = invoiceNo,
+                Ettn = ettn,
+                VatAmount = item.VatAmount,
             });
         }
         return (null, currency, items);
+    }
+
+    /// <summary>
+    /// e-Fatura alanlarını (karekoddan doldurulur ya da elle girilir) doğrular ve normalize eder:
+    /// VKN/TCKN 10-11 hane, fatura no en fazla 32 harf/rakam, ETTN geçerli UUID (küçük harf).
+    /// </summary>
+    [NonAction]
+    public static (string? Error, string? Supplier, string? InvoiceNo, string? Ettn) NormalizeInvoiceFields(ExpenseItemInput item)
+    {
+        string? supplier = string.IsNullOrWhiteSpace(item.SupplierTaxId) ? null : item.SupplierTaxId.Trim();
+        if (supplier is not null && !System.Text.RegularExpressions.Regex.IsMatch(supplier, @"^\d{10,11}$"))
+            return ("Tedarikçi VKN/TCKN 10 ya da 11 haneli olmalı", null, null, null);
+        string? no = string.IsNullOrWhiteSpace(item.InvoiceNo) ? null : item.InvoiceNo.Trim().ToUpperInvariant();
+        if (no is not null && !System.Text.RegularExpressions.Regex.IsMatch(no, @"^[A-Z0-9]{1,32}$"))
+            return ("Fatura numarası en fazla 32 harf/rakam olmalı", null, null, null);
+        string? ettn = null;
+        if (!string.IsNullOrWhiteSpace(item.Ettn))
+        {
+            if (!Guid.TryParse(item.Ettn.Trim(), out var g)) return ("ETTN geçerli değil", null, null, null);
+            ettn = g.ToString();
+        }
+        return (null, supplier, no, ettn);
     }
 
     /// <summary>
@@ -339,6 +371,24 @@ public class ExpenseClaimsController : ControllerBase
                 return BadRequest(new { message = "Masraf politikasına uymayan kalemler var: " + string.Join("; ", violations), code = "policy_violation", violations });
         }
 
+        // Masraf denetimi (olağan dışı tutar / olası mükerrer fiş): yalnızca onaycıya işaret.
+        // Gönderimi ENGELLEMEZ; ML yanıt vermezse işaret yazılmaz ve beyan yine gönderilir.
+        var anomalyFlags = 0;
+        if (_anomaly is not null)
+        {
+            var since = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-ExpenseAnomalyClient.HistoryDays);
+            var history = await _db.Items.AsNoTracking()
+                .Where(i => i.ClaimId != claim.Id && i.ExpenseDate >= since
+                    && (i.Claim!.Status == ClaimStatus.Submitted || i.Claim.Status == ClaimStatus.Approved || i.Claim.Status == ClaimStatus.Paid))
+                .OrderByDescending(i => i.ExpenseDate).Take(ExpenseAnomalyClient.HistoryLimit)
+                .Select(i => new HistoryRow(i.Claim!.EmployeeId, i.Category, i.Amount, i.ExpenseDate, i.SupplierTaxId, i.InvoiceNo, i.Ettn, i.Description))
+                .ToListAsync(ct);
+            var (checkedOk, n) = await _anomaly.CheckAsync(_tenant.TenantSlug ?? "", claim.EmployeeId, claim.Items, history,
+                Request.Headers.Authorization.ToString(), ct);
+            if (checkedOk) claim.AnomalyCheckedAt = DateTimeOffset.UtcNow;
+            anomalyFlags = n;
+        }
+
         claim.Status = ClaimStatus.Submitted;
         claim.SubmittedAt = DateTimeOffset.UtcNow;
 
@@ -352,7 +402,10 @@ public class ExpenseClaimsController : ControllerBase
         claim.WorkflowRequestId =
             await _approvals.StartExpenseApprovalAsync(claim.EmployeeId, claim.Title, ct,
                 // Akış tanımındaki tutar koşulları (ör. 10.000 TL üstü finans onayı) için.
-                System.Text.Json.JsonSerializer.Serialize(new { expenseClaimId = claim.Id, amount = claim.TotalAmount, currency = claim.Currency }));
+                                // anomalyFlags: onaycı akış ekranında denetim işareti sayısını görür (karar insanda).
+                System.Text.Json.JsonSerializer.Serialize(anomalyFlags > 0
+                    ? new { expenseClaimId = claim.Id, amount = claim.TotalAmount, currency = claim.Currency, anomalyFlags }
+                    : (object)new { expenseClaimId = claim.Id, amount = claim.TotalAmount, currency = claim.Currency }));
 
         await _db.SaveChangesAsync();
         return Ok(claim);
@@ -419,7 +472,8 @@ public class ExpenseClaimsController : ControllerBase
 public record ExpenseItemInput(
     ExpenseCategory Category, decimal Amount, DateOnly ExpenseDate,
     string? Description, string? ReceiptStorageKey,
-    string? OriginalCurrency = null, decimal? OriginalAmount = null, decimal? Km = null, Guid? TravelRequestId = null);
+    string? OriginalCurrency = null, decimal? OriginalAmount = null, decimal? Km = null, Guid? TravelRequestId = null,
+    string? SupplierTaxId = null, string? InvoiceNo = null, string? Ettn = null, decimal? VatAmount = null);
 public record CreateClaimRequest(
     Guid EmployeeId, string Title, string Currency, List<ExpenseItemInput> Items);
 public record UpdateClaimRequest(string Title, string Currency, List<ExpenseItemInput> Items);

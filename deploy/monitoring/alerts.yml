@@ -68,3 +68,20 @@ groups:
         labels: { severity: warning }
         annotations:
           summary: "Denetim kaydi zincirinin gecelik kontrolu 30 saattir calismadi"
+
+      # Devir riski modeli veri kaymasi (ml-inference gunluk olcum; kiracilar arasi en yuksek PSI).
+      # PSI > 0,2 belirgin kaymadir: model karti "Veri kaymasi" bolumune bakin, yeniden egitimi
+      # ve bu surede skorlarin yalnizca insan incelemesiyle kullanilmasini degerlendirin.
+      - alert: MLOzellikKaymasi
+        expr: max by (feature) (hr360_ml_feature_psi) > 0.2
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: "Devir riski modeli: {{ $labels.feature }} ozelliginde belirgin veri kaymasi (PSI {{ $value }})"
+
+      - alert: MLTahminKaymasi
+        expr: max(hr360_ml_prediction_psi) > 0.2
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: "Devir riski modeli: skor dagilimi egitimdekinden belirgin farkli (PSI {{ $value }})"

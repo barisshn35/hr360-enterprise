@@ -139,6 +139,47 @@ public class TravelAndPolicyController : ControllerBase
         }
     }
 
+    public record EInvoiceInput(string? Text);
+
+    /// <summary>
+    /// e-Fatura / e-Arşiv karekodu: tarayıcının okuduğu (BarcodeDetector) ya da yapıştırılan QR metni
+    /// ml-inference'ta ayrıştırılır ve doğrulanır (VKN/TCKN denetim hanesi, ETTN, tutar tutarlılığı).
+    /// Tek ayrıştırıcı ML'dedir; burada yalnızca iletilir. Metin saklanmaz.
+    /// </summary>
+    [HttpPost("api/expense-claims/einvoice")]
+    public async Task<IActionResult> EInvoice([FromBody] EInvoiceInput body, CancellationToken ct)
+    {
+        var text = body?.Text?.Trim() ?? "";
+        if (text.Length < 2 || text.Length > 8000) return BadRequest(new { message = "Karekod metni gerekli" });
+        var url = (Environment.GetEnvironmentVariable("ML_INFERENCE_URL") ?? "http://ml-inference:8000").TrimEnd('/') + "/expense/einvoice/parse";
+        try
+        {
+            var client = _http.CreateClient();
+            client.Timeout = TimeSpan.FromSeconds(10);
+            using var req = new HttpRequestMessage(HttpMethod.Post, url) { Content = System.Net.Http.Json.JsonContent.Create(new { text }) };
+            req.Headers.TryAddWithoutValidation("Authorization", Request.Headers.Authorization.ToString());
+            using var resp = await client.SendAsync(req, ct);
+            var raw = await resp.Content.ReadAsStringAsync(ct);
+            if ((int)resp.StatusCode == 422)
+            {
+                string? detail = null;
+                try
+                {
+                    using var err = JsonDocument.Parse(raw);
+                    if (err.RootElement.TryGetProperty("detail", out var d) && d.ValueKind == JsonValueKind.String) detail = d.GetString();
+                }
+                catch (JsonException) { }
+                return BadRequest(new { message = detail ?? "Karekod okunamadı", code = "einvoice_invalid" });
+            }
+            if (!resp.IsSuccessStatusCode) return StatusCode(503, new { message = "Karekod çözümleme hizmeti şu an kullanılamıyor", code = "einvoice_unavailable" });
+            return Content(raw, "application/json");
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            return StatusCode(503, new { message = "Karekod çözümleme hizmeti şu an kullanılamıyor", code = "einvoice_unavailable" });
+        }
+    }
+
     /* ------------------------------------------------------------ Y12 seyahat */
 
     public record TravelInput(string Destination, bool Abroad, DateOnly StartDate, DateOnly EndDate, string Purpose, string Transport,

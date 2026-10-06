@@ -37,6 +37,9 @@ public static class PlatformAccessGate
         "/health", "/metrics", "/swagger", "/api/internal/",
         // governance-service: platform faturalari ve plan/ozellik bilgisi (kabuk her sayfada ister).
         "/api/billing", "/api/plan",
+        // Paylaşılan devir modeli (tüm kiracılar için tek model): eğitim, sürümler, yayına alma/geri alma
+        // ve kalibrasyon platform düzeyindedir. Kiracıya özel eşik (settings) ve adillik raporu kapıda kalır.
+        "/api/model/retrain", "/api/model/versions", "/api/model/promote", "/api/model/rollback", "/api/model/calibration",
     };
 
     private static readonly TimeSpan PositiveTtl = TimeSpan.FromSeconds(15);

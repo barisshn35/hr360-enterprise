@@ -19,8 +19,22 @@ Devir riski modelinin yonetim uclari: model karti, yeniden egitim, veri kaymasi.
                             bellekte yalnizca kova sayilari; kisi bazli kayit yok).
   GET  /model/importance  - kuresel ozellik onemi (ortalama |SHAP|, referans dagilimindan
                             orneklenen yapay satirlarla; ham egitim verisi gerekmez).
+  GET  /model/calibration - kalibrasyon raporu: Brier, ECE, guvenilirlik egrisi, esik tablosu
+                            (IK risk esigini bu tabloya bakarak secer; esik governance'ta kiraci basina).
+  GET  /model/versions    - champion (yayinda), aday (challenger, onay bekliyor), eski surumler.
+  POST /model/promote     - onaylanan adayi yayina alir (platform yoneticisi ya da X-Internal-Token;
+                            governance onaylayan kisiyi denetim kaydina yazar).
+  POST /model/rollback    - daha once yayinda olmus bir surume geri doner.
+  POST /model/fairness    - adillik denetimi: grup basina isaretlenme orani, TPR/FPR, dort-beste bir
+                            orani; 5'ten kucuk gruplar gizlenir. Grup nitelikleri modele girmez.
 
-Her kayma olcumu Prometheus'a hr360_model_feature_psi{feature} olarak yazilir.
+Her kayma olcumu Prometheus'a hr360_model_feature_psi{feature} (eski ad) ve
+hr360_ml_feature_psi{feature} / hr360_ml_prediction_psi olarak yazilir; son tahminlerin toplu
+dagilimi gunde bir arka planda yeniden olculur (DRIFT_INTERVAL_SECONDS).
+
+Champion/challenger: yayinda bir model varken yeni egitilen aday, karsilastirmayi gecse bile
+OTOMATIK yayina alinmaz (MODEL_PROMOTION_REQUIRES_APPROVAL=true, varsayilan); "challenger"
+takma adiyla bekler, insan onayi (POST /model/promote) ile yayina girer.
 
 Kisi bazli tahmin bu dosyada degil: /predict ve /explain yalnizca governance
 uzerinden cagrilir (KVKK m.11 itiraz denetimi ve erisim kaydi orada).
@@ -46,6 +60,7 @@ from prometheus_client import Gauge
 from pydantic import BaseModel, ConfigDict, Field
 
 import attrition_ml as aml
+import model_quality as mq
 from model_store import LoadedModel, ModelNotFound
 
 logger = logging.getLogger(__name__)
@@ -58,6 +73,23 @@ IMPORTANCE_SAMPLE_ROWS = 400
 # defterini yayimlar). Etikette kiraci yok: deger son olcumu gosterir.
 FEATURE_PSI = Gauge("hr360_model_feature_psi", "Devir riski modeli: son ölçümde özellik başına PSI (veri kayması)",
                     ["feature"])
+# Gunluk olcum (tum kiracilar icin en yuksek deger; etikette kiraci yok). Uyari kurallari:
+# deploy/monitoring/alerts.yml (MLOzellikKaymasi, MLTahminKaymasi).
+ML_FEATURE_PSI = Gauge("hr360_ml_feature_psi", "Devir riski modeli: özellik başına PSI (günlük, kiracılar arası en yüksek)",
+                       ["feature"])
+ML_PREDICTION_PSI = Gauge("hr360_ml_prediction_psi",
+                          "Devir riski modeli: tahmin (skor) dağılımının eğitim referansına göre PSI'ı")
+
+
+def approval_required() -> bool:
+    return os.getenv("MODEL_PROMOTION_REQUIRES_APPROVAL", "true").lower() != "false"
+
+
+def validity_days() -> int:
+    try:
+        return max(1, int(os.getenv("MODEL_VALIDITY_DAYS", "180")))
+    except ValueError:
+        return 180
 
 
 # ------------------------------------------------------------------ durum
@@ -85,6 +117,8 @@ class ModelService:
         self.last_drift: dict[str, dict] = {}
         # Kiraci -> toplu tahmin girdisi histogrami (yalnizca kova sayilari).
         self.recent: dict[str, aml.PredictionHistogram] = {}
+        # Kiraci -> (model surumu, skor kovasi sayilari): tahmin dagilimi kaymasi icin.
+        self.recent_scores: dict[str, tuple[str | None, list[int]]] = {}
 
     # -- yukleme
     def _explainer(self, model):
@@ -124,8 +158,14 @@ class ModelService:
             raise HTTPException(status_code=503, detail={"message": str(e), "violations": e.violations}) from None
         return s.model
 
+    # -- skor (kalibre olasilik)
+    def scores(self, X) -> tuple[np.ndarray, np.ndarray]:
+        """(ham, kalibre) pozitif sinif olasiliklari. Kalibrasyonu olmayan eski surumde ikisi aynidir."""
+        raw = self.state.model.predict_proba(np.asarray(X, dtype=float))[:, 1]
+        return raw, mq.apply_calibration(raw, (self.state.meta or {}).get("calibration"))
+
     # -- toplu tahmin girdisi (kayma izleme)
-    def record_prediction(self, tenant: str, values) -> None:
+    def record_prediction(self, tenant: str, values, score: float | None = None) -> None:
         reference = (self.state.meta or {}).get("reference")
         if not reference or len(values) != len(aml.FEATURE_NAMES):
             return
@@ -133,6 +173,12 @@ class ModelService:
         if h is None or h.version != self.state.version:
             h = self.recent[tenant] = aml.PredictionHistogram(reference, self.state.version)
         h.add(values)
+        if score is not None and (self.state.meta or {}).get("prediction_reference"):
+            version, counts = self.recent_scores.get(tenant, (None, []))
+            if version != self.state.version:
+                counts = [0] * (len(mq.SCORE_EDGES) + 1)
+                self.recent_scores[tenant] = (self.state.version, counts)
+            counts[mq.score_bin(score)] += 1
 
     # -- kuresel onem
     def importance(self) -> dict:
@@ -178,7 +224,7 @@ class ModelService:
         print(f"İlk model yayımlandı: v{result['candidate_version']} (AUC {result['candidate']['auc']})")
 
     # -- egitim
-    def _retrain_blocking(self, req: "RetrainRequest") -> dict:
+    def _retrain_blocking(self, req: "RetrainRequest", actor: str | None = None) -> dict:
         # Semayi degistiren biri dislanan bir nitelik eklerse egitim durur (ForbiddenFeatureError -> 422).
         aml.assert_allowed(aml.FEATURE_NAMES)
         check = aml.check_features(aml.FEATURE_NAMES)
@@ -191,6 +237,9 @@ class ModelService:
             # etiketle egitilmis bir aday kendi gurultulu verisinde iyi gorunemez.
             X_eval, y_eval = aml.synthetic_dataset(2000, opts.seed + 1_000_003, 0.0)
             eval_source = "synthetic-clean"
+            # Kalibrasyon kumesi: egitimle ayni kaynaktan (ayni gurultu), egitim ve degerlendirmeden ayri.
+            X_cal, y_cal = aml.synthetic_dataset(max(500, opts.n // 4), opts.seed + 2_000_003, opts.label_noise)
+            X_fit, y_fit = X_train, y_train
             synth_meta = {"seed": opts.seed, "rows": opts.n, "label_noise": opts.label_noise,
                           "description": aml.SYNTHETIC_DESCRIPTION}
             seed = opts.seed
@@ -212,20 +261,36 @@ class ModelService:
             else:
                 X_train, X_eval, y_train, y_eval = aml.split(X, y, seed)
                 eval_source = "provided-holdout"
+            # Egitim kumesinin %20'si kalibrasyona ayrilir (agaclar kendi egitim verisinde asiri emin olur).
+            X_fit, X_cal, y_fit, y_cal = aml.split(X_train, y_train, seed, test_size=0.2)
 
-        candidate = aml.train_model(X_train, y_train, seed, aml.FEATURE_NAMES)
-        cand_metrics = aml.evaluate(candidate, X_eval, y_eval)
+        candidate = aml.train_model(X_fit, y_fit, seed, aml.FEATURE_NAMES)
+        calibration = mq.fit_calibration(candidate.predict_proba(X_cal)[:, 1], y_cal, seed)
+        raw_eval = candidate.predict_proba(X_eval)[:, 1]
+        quality = mq.calibration_report(raw_eval, y_eval, calibration)
+        cand_metrics = {**aml.evaluate(candidate, X_eval, y_eval), "brier": quality["brier"], "ece": quality["ece"]}
         current = self.state
         cur_metrics = None
         if current.model is not None:
             try:
                 cur_metrics = aml.evaluate(current.model, X_eval, y_eval)
+                cur_cal = mq.apply_calibration(current.model.predict_proba(X_eval)[:, 1],
+                                               (current.meta or {}).get("calibration"))
+                cur_metrics["brier"] = round(mq.brier(cur_cal, y_eval), 5)
             except Exception as e:  # noqa: BLE001 - eski model farkli semada olabilir
                 logger.warning("Mevcut model değerlendirilemedi: %s", e)
         decision = aml.promotion_decision(cand_metrics, cur_metrics)
+        challenger = False
         if req.dry_run:
-            decision = {**decision, "promote": False, "reason": "Deneme eğitimi (dry_run): aday kaydedildi, yayımlanmadı. "
-                        + decision["reason"]}
+            decision = {**decision, "promote": False, "recommended": False,
+                        "reason": "Deneme eğitimi (dry_run): aday kaydedildi, yayımlanmadı. " + decision["reason"]}
+        elif decision["promote"] and current.model is not None and approval_required():
+            # Champion/challenger: aday karsilastirmayi gecti ama yayina insan onayiyla girer.
+            challenger = True
+            decision = {**decision, "promote": False, "recommended": True,
+                        "reason": decision["reason"] + " Aday onay bekliyor; yayına alma insan onayıyla yapılır."}
+        else:
+            decision = {**decision, "recommended": decision["promote"]}
 
         trained_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
         meta = {
@@ -245,17 +310,23 @@ class ModelService:
                 candidate, aml.sample_from_reference(reference, IMPORTANCE_SAMPLE_ROWS, seed=0), self._explainer(candidate)),
             "synthetic": synth_meta,
             "promotion": {**decision, "compared_with_version": current.version, "compared_with_metrics": cur_metrics},
+            "calibration": calibration,
+            "quality": quality,
+            "prediction_reference": mq.score_histogram(mq.apply_calibration(raw_eval, calibration)),
+            "trained_by": actor,
         }
         params = {"source": req.source, "training_rows": meta["training_rows"],
-                  "evaluation_source": eval_source, "seed": seed, **{k: v for k, v in aml.ALGORITHM.items()}}
+                  "evaluation_source": eval_source, "seed": seed, "calibration": calibration["method"],
+                  **{k: v for k, v in aml.ALGORITHM.items()}}
         metrics = {"auc": cand_metrics["auc"], "accuracy": cand_metrics["accuracy"],
-                   "positive_rate": cand_metrics["positive_rate"]}
-        version = self.store.register(candidate, meta, metrics, params, decision["promote"])
+                   "positive_rate": cand_metrics["positive_rate"], "brier": quality["brier"], "ece": quality["ece"]}
+        version = self.store.register(candidate, meta, metrics, params, decision["promote"], challenger=challenger)
         if decision["promote"]:
             self._activate(LoadedModel(model=candidate, version=version, meta=meta))
         return {
             "candidate_version": version,
             "promoted": decision["promote"],
+            "awaiting_approval": challenger,
             "decision": decision,
             "candidate": cand_metrics,
             "current": cur_metrics,
@@ -298,6 +369,9 @@ class ModelService:
             "excluded_check": check,
             "synthetic": meta.get("synthetic"),
             "promotion": meta.get("promotion"),
+            "calibration": _calibration_summary(meta.get("quality")),
+            "freshness": mq.freshness(meta.get("trained_at"), meta.get("data_window"), validity_days()),
+            "approval_required": approval_required(),
             "drift_thresholds": {"moderate": aml.PSI_MODERATE, "significant": aml.PSI_SIGNIFICANT},
             "promotion_tolerance": aml.PROMOTION_TOLERANCE,
             "intended_use": "İK'nın elde tutma görüşmelerini önceliklendirmesine yardımcı bir sinyal. "
@@ -313,9 +387,9 @@ class ModelService:
                         "üyeliğini ya da bunların vekillerini kullanmaz; her eğitim ve tahminden önce özellik "
                         "listesi otomatik denetlenir, ihlalde eğitim/tahmin reddedilir.",
                 "residual_risk": "Kullanılan iş özellikleri (ör. fazla mesai, ücret oranı) korunan gruplarla dolaylı "
-                                 "ilişkili olabilir. Gruplar arası hata oranı karşılaştırması bu serviste yapılamaz "
-                                 "(korunan nitelik bilinçli olarak tutulmaz); sonuçlar insan incelemesiyle "
-                                 "değerlendirilmelidir.",
+                                 "ilişkili olabilir. Gruplar arası işaretlenme ve hata oranları adillik denetimiyle "
+                                 "(departman, kıdem bandı; 5'ten küçük gruplar gizli) izlenir; grup bilgisi modele "
+                                 "girmez. Sonuçlar insan incelemesiyle değerlendirilmelidir.",
             },
             "kvkk": "Kişi bazlı skor yalnızca governance üzerinden üretilir; çalışan itiraz edebilir (m.11/1-g) ve "
                     "her hesaplama erişim kaydına yazılır. Eğitim satırları kimlik içermez ve saklanmaz; "
@@ -329,6 +403,11 @@ class ModelService:
             raise HTTPException(status_code=409, detail="Yayındaki modelin referans dağılımı yok; önce modeli yeniden eğitin.")
         X = aml.rows_to_matrix([r.model_dump() for r in rows])
         report = aml.drift_report(reference, X)
+        pred_ref = (self.state.meta or {}).get("prediction_reference")
+        if pred_ref:
+            _, cal = self.scores(X)
+            counts = np.bincount([mq.score_bin(v) for v in cal], minlength=len(mq.SCORE_EDGES) + 1).tolist()
+            _add_prediction_psi(report, pred_ref, counts)
         return self._finish_drift(tenant, report, "batch")
 
     def _finish_drift(self, tenant: str, report: dict, source: str) -> dict:
@@ -337,6 +416,9 @@ class ModelService:
         report["computed_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
         for f in report.get("features", []):
             FEATURE_PSI.labels(feature=f["feature"]).set(f["psi"])
+            ML_FEATURE_PSI.labels(feature=f["feature"]).set(f["psi"])
+        if report.get("prediction_psi") is not None:
+            ML_PREDICTION_PSI.set(report["prediction_psi"])
         self.last_drift[tenant] = report
         try:
             self.store.log_drift(tenant, self.state.version, report)
@@ -353,7 +435,158 @@ class ModelService:
         if rows < DRIFT_MIN_ROWS:
             return {"available": False, "rows": rows, "min_rows": DRIFT_MIN_ROWS, "model_version": self.state.version}
         report = aml.drift_report_from_counts(reference, h.counts, rows, h.means())
+        pred_ref = (self.state.meta or {}).get("prediction_reference")
+        version, counts = self.recent_scores.get(tenant, (None, []))
+        if pred_ref and version == self.state.version and sum(counts) >= DRIFT_MIN_ROWS:
+            _add_prediction_psi(report, pred_ref, counts)
         return {"available": True, **self._finish_drift(tenant, report, "recent-predictions")}
+
+    def daily_drift(self) -> dict:
+        """Gunluk is: yeterli tahmini olan her kiraci icin son tahminlerden kayma olcer ve
+        Prometheus gostergelerini kiracilar arasi EN YUKSEK degere ayarlar (etikette kiraci yok)."""
+        worst_feature: dict[str, float] = {}
+        worst_pred: float | None = None
+        measured = 0
+        for tenant in list(self.recent):
+            try:
+                r = self._recent_drift_blocking(tenant)
+            except HTTPException:
+                return {"measured": 0}
+            if not r.get("available"):
+                continue
+            measured += 1
+            for f in r.get("features", []):
+                worst_feature[f["feature"]] = max(worst_feature.get(f["feature"], 0.0), f["psi"])
+            if r.get("prediction_psi") is not None:
+                worst_pred = max(worst_pred or 0.0, r["prediction_psi"])
+        for name, value in worst_feature.items():
+            ML_FEATURE_PSI.labels(feature=name).set(value)
+        if worst_pred is not None:
+            ML_PREDICTION_PSI.set(worst_pred)
+        return {"measured": measured, "max_feature_psi": max(worst_feature.values(), default=None),
+                "prediction_psi": worst_pred}
+
+    async def drift_loop(self, interval: float) -> None:
+        """Arka plan dongusu (main.py lifespan): her `interval` saniyede bir daily_drift."""
+        while True:
+            await asyncio.sleep(interval)
+            try:
+                result = await asyncio.to_thread(self.daily_drift)
+                print(f"Günlük kayma ölçümü: {result}")
+            except Exception as e:  # noqa: BLE001 - dongu durmamali
+                logger.warning("Günlük kayma ölçümü başarısız: %s", e)
+
+    # -- kalibrasyon raporu
+    def calibration(self) -> dict:
+        s = self.state
+        quality = (s.meta or {}).get("quality")
+        if s.model is None:
+            raise HTTPException(status_code=503, detail="Model yüklenmedi.")
+        if not quality:
+            return {"available": False, "version": s.version,
+                    "note": "Bu sürüm kalibrasyondan önce eğitildi; ham olasılık kullanılır. Yeniden eğitin."}
+        return {"available": True, "version": s.version, **quality}
+
+    # -- champion / challenger
+    def versions(self) -> dict:
+        rows = self.store.list_versions()
+        for r in rows:
+            r["serving"] = r["version"] == self.state.version
+            # Eski surumlerde hr360.status etiketi yok: "promoted" olup artik yayinda olmayan surum emeklidir.
+            if r["status"] == "champion" and not r["serving"]:
+                r["status"] = "retired"
+            r["comparison_current"] = (r.get("compared_with_version") or None) == self.state.version
+        return {"champion": self.state.version, "approval_required": approval_required(), "versions": rows}
+
+    def _switch(self, version: str) -> LoadedModel:
+        try:
+            loaded = self.store.load_version(version)
+        except ModelNotFound:
+            raise HTTPException(status_code=404, detail="Sürüm bulunamadı.") from None
+        names = (loaded.meta or {}).get("features") or list(aml.FEATURE_NAMES)
+        try:
+            # Dislanan nitelik iceren bir surum yayina alinamaz (geri alma dahil).
+            aml.assert_allowed(names)
+        except aml.ForbiddenFeatureError as e:
+            raise HTTPException(status_code=422, detail={"message": str(e), "violations": e.violations}) from None
+        previous = self.state.version
+        self.store.set_champion(loaded.version, previous)
+        self._activate(loaded)
+        return loaded
+
+    def promote(self, version: str) -> dict:
+        """Onaylanan adayi yayina alir. Aday, YAYINDAKI surumle ayni degerlendirme kumesinde
+        karsilastirilmis olmali (karsilastirmadan sonra champion degistiyse yeniden egitim gerekir)."""
+        rows = {r["version"]: r for r in self.store.list_versions(limit=200)}
+        row = rows.get(str(version))
+        if row is None:
+            raise HTTPException(status_code=404, detail="Sürüm bulunamadı.")
+        if str(version) == self.state.version:
+            raise HTTPException(status_code=409, detail="Bu sürüm zaten yayında.")
+        if row["status"] != "challenger":
+            raise HTTPException(status_code=409, detail="Yalnızca onay bekleyen aday (challenger) yayına alınabilir; "
+                                                        "eski bir sürüme dönmek için geri alma kullanın.")
+        if (row.get("compared_with_version") or None) != self.state.version:
+            raise HTTPException(status_code=409, detail="Aday, şu an yayındaki sürümle karşılaştırılmadı; "
+                                                        "yeniden eğitip karşılaştırın.")
+        previous = self.state.version
+        self._switch(str(version))
+        return {"serving_version": self.state.version, "previous_version": previous, "metrics": row.get("metrics")}
+
+    def rollback(self, version: str) -> dict:
+        rows = {r["version"]: r for r in self.store.list_versions(limit=200)}
+        row = rows.get(str(version))
+        if row is None:
+            raise HTTPException(status_code=404, detail="Sürüm bulunamadı.")
+        if str(version) == self.state.version:
+            raise HTTPException(status_code=409, detail="Bu sürüm zaten yayında.")
+        if not row.get("was_champion"):
+            raise HTTPException(status_code=409, detail="Yalnızca daha önce yayında olmuş bir sürüme geri dönülebilir.")
+        previous = self.state.version
+        self._switch(str(version))
+        return {"serving_version": self.state.version, "previous_version": previous, "metrics": row.get("metrics")}
+
+    # -- adillik denetimi
+    def fairness(self, req: "FairnessRequest") -> dict:
+        s = self.state
+        if s.model is None:
+            raise HTTPException(status_code=503, detail="Model yüklenmedi.")
+        X = aml.rows_to_matrix([r.model_dump(include=set(aml.FEATURE_NAMES)) for r in req.rows])
+        _, cal = self.scores(X)
+        threshold = req.threshold if req.threshold is not None else mq.DEFAULT_THRESHOLD
+        groups: dict[str, list] = {}
+        for attr in mq.GROUP_ATTRIBUTES:
+            values = [getattr(r.groups, attr) for r in req.rows]
+            if any(v for v in values):
+                groups[attr] = values
+        labels = [r.label for r in req.rows]
+        report = mq.fairness_report(cal, threshold, groups, labels if any(v is not None for v in labels) else None)
+        report["model_version"] = s.version
+        report["computed_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        report["absent_attributes"] = [{"attribute": a, "label": mq.GROUP_ATTRIBUTES[a]}
+                                       for a in mq.GROUP_ATTRIBUTES if a not in groups]
+        return report
+
+
+def _add_prediction_psi(report: dict, reference: dict, counts: list[int]) -> None:
+    total = sum(counts)
+    if not total:
+        return
+    value = round(aml.psi(reference["proportions"], [c / total for c in counts]), 4)
+    report["prediction_psi"] = value
+    report["prediction_level"] = aml.psi_level(value)
+    if value > aml.PSI_SIGNIFICANT:
+        report["status"] = "significant"
+        report["recommendation"] = ("Tahmin (skor) dağılımı eğitimdekinden belirgin biçimde farklı: modeli güncel "
+                                    "toplu veriyle yeniden eğitmeyi ve kararları insan incelemesine bağlamayı "
+                                    "değerlendirin.") if not report.get("significant_features") else report["recommendation"]
+
+
+def _calibration_summary(quality: dict | None) -> dict | None:
+    if not quality:
+        return None
+    return {k: quality.get(k) for k in ("method", "brier", "brier_raw", "ece", "ece_raw", "recommended_threshold",
+                                        "default_threshold")}
 
 
 def _require_classes(y: np.ndarray, minimum: int, what: str) -> None:
@@ -410,6 +643,31 @@ class RetrainRequest(BaseModel):
     synthetic: SyntheticOptions | None = None
     seed: int = 42
     dry_run: bool = False
+
+
+class FairnessGroups(BaseModel):
+    """Yalnizca denetim icin grup nitelikleri; modele ozellik olarak GIRMEZ. Kimlik kabul edilmez."""
+    model_config = ConfigDict(extra="forbid")
+    department: str | None = Field(default=None, max_length=120)
+    tenure_band: str | None = Field(default=None, max_length=20)
+    age_band: str | None = Field(default=None, max_length=20)
+    gender: str | None = Field(default=None, max_length=20)
+
+
+class FairnessRow(_Features):
+    label: int | None = Field(default=None, ge=0, le=1, description="1 = ayrıldı (biliniyorsa)")
+    groups: FairnessGroups = Field(default_factory=FairnessGroups)
+
+
+class FairnessRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    rows: list[FairnessRow] = Field(min_length=20, max_length=20000)
+    threshold: float | None = Field(default=None, ge=0.01, le=0.99)
+
+
+class VersionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    version: str = Field(min_length=1, max_length=12, pattern=r"^[0-9]+$")
 
 
 class DriftRequest(BaseModel):
@@ -493,6 +751,14 @@ def build_router(verify_token, service: ModelService) -> APIRouter:
             return info
         raise HTTPException(status_code=403, detail="Bu bilgi yalnızca İK yöneticilerine açıktır.")
 
+    async def platform_caller(info: dict = Depends(verify_token),
+                              x_internal_token: str | None = Header(default=None)) -> dict:
+        # Paylasilan modelin yayindaki surumunu degistirmek: platform yoneticisi ya da servisler arasi
+        # cagri (governance, onaylayan kisiyi denetim kaydina yazar).
+        if "platform-admin" in roles_of(info) or _internal_ok(x_internal_token):
+            return info
+        raise HTTPException(status_code=403, detail="Yayındaki model sürümünü yalnızca platform yöneticisi değiştirebilir.")
+
     async def retrain_caller(info: dict = Depends(verify_token),
                              x_internal_token: str | None = Header(default=None)) -> dict:
         # Keycloak jetonu her durumda gerekir (verify_token); IK rolu ya da servisler arasi anahtar.
@@ -532,18 +798,20 @@ def build_router(verify_token, service: ModelService) -> APIRouter:
             raise HTTPException(status_code=409, detail="Başka bir eğitim sürüyor; birazdan yeniden deneyin.")
         async with service.train_lock:
             try:
-                result = await asyncio.to_thread(service._retrain_blocking, req)
+                result = await asyncio.to_thread(service._retrain_blocking, req, actor_of(info)["username"])
             except aml.ForbiddenFeatureError as e:
                 raise HTTPException(status_code=422, detail={"message": str(e), "violations": e.violations}) from None
         # Denetim kaydi governance'ta tutulur: cagiran bu yuku audit_log'a yazar (bu servis veritabanina yazmaz).
         result["audit"] = {
-            "action": "ModelPromoted" if result["promoted"] else "ModelRetrainRejected",
+            "action": ("ModelPromoted" if result["promoted"] else
+                       "ModelChallengerRegistered" if result["awaiting_approval"] else "ModelRetrainRejected"),
             "entityType": "AttritionModel",
             "entityId": f"{service.name}/v{result['candidate_version']}",
             "tenant": tenant_of(info),
             "actor": actor_of(info),
             "changes": {"candidate_version": result["candidate_version"], "previous_version": result["current_version"],
                         "serving_version": result["serving_version"], "promoted": result["promoted"],
+                        "awaiting_approval": result["awaiting_approval"], "brier_candidate": result["candidate"].get("brier"),
                         "reason": result["decision"]["reason"], "auc_candidate": result["candidate"].get("auc"),
                         "auc_current": (result["current"] or {}).get("auc"), "source": req.source,
                         "training_rows": result["training"]["rows"], "data_window": result["data_window"]},
@@ -556,6 +824,40 @@ def build_router(verify_token, service: ModelService) -> APIRouter:
             result["notice"] = ("Yalnızca deneme eğitimi: aday değerlendirildi, yayımlanmadı. "
                                 "Yayımlama platform yöneticisindedir.")
         return result
+
+    @router.get("/calibration")
+    async def calibration(_: dict = Depends(hr_only)) -> dict:
+        return service.calibration()
+
+    @router.get("/versions")
+    async def versions(_: dict = Depends(hr_only)) -> dict:
+        return await asyncio.to_thread(service.versions)
+
+    def _change_audit(action: str, info: dict, result: dict) -> dict:
+        return {"action": action, "entityType": "AttritionModel",
+                "entityId": f"{service.name}/v{result['serving_version']}", "tenant": tenant_of(info),
+                "actor": actor_of(info), "changes": result,
+                "occurred_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+
+    @router.post("/promote")
+    async def promote(req: VersionRequest, info: dict = Depends(platform_caller)) -> dict:
+        if service.train_lock.locked():
+            raise HTTPException(status_code=409, detail="Bir eğitim sürüyor; bitince yeniden deneyin.")
+        async with service.train_lock:
+            result = await asyncio.to_thread(service.promote, req.version)
+        return {**result, "audit": _change_audit("ModelPromotionApproved", info, result)}
+
+    @router.post("/rollback")
+    async def rollback(req: VersionRequest, info: dict = Depends(platform_caller)) -> dict:
+        if service.train_lock.locked():
+            raise HTTPException(status_code=409, detail="Bir eğitim sürüyor; bitince yeniden deneyin.")
+        async with service.train_lock:
+            result = await asyncio.to_thread(service.rollback, req.version)
+        return {**result, "audit": _change_audit("ModelRolledBack", info, result)}
+
+    @router.post("/fairness")
+    async def fairness(req: FairnessRequest, _: dict = Depends(hr_only)) -> dict:
+        return await asyncio.to_thread(service.fairness, req)
 
     @router.post("/drift")
     async def drift(req: DriftRequest, info: dict = Depends(hr_only)) -> dict:

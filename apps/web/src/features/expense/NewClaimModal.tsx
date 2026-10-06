@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
-import { LoaderCircle, Plus, ScanText, Upload } from 'lucide-react'
+import { LoaderCircle, Plus, QrCode, ScanText, Upload } from 'lucide-react'
 import { headerField, readSpreadsheet, SpreadsheetError } from '@/lib/spreadsheet'
 import { Button } from '@/components/ui/button'
 import { Modal, ErrorSummary, type SummaryItem } from '@/components/ui/Modal'
@@ -16,6 +16,9 @@ import type { ExpenseClaim } from '@/api/expense'
 import { formatMoney, parseDecimal } from '@/lib/format'
 import { localISODate } from '@/lib/dates'
 import { tx } from '@/lib/i18n'
+import { einvoiceToDraft, type EInvoice } from '@/lib/expenseAudit'
+import { EInvoiceQr } from './EInvoiceQr'
+import { PiiHint } from '@/components/PiiHint'
 
 /** Formda tutulan taslak kalem — tutar kullanıcı yazarken metin kalır. */
 interface DraftItem {
@@ -30,6 +33,11 @@ interface DraftItem {
   /** Düzenlemede mevcut kalemden korunan alanlar (formda gösterilmez). */
   receiptStorageKey?: string | null
   travelRequestId?: string | null
+  /** e-Fatura/e-Arşiv karekodundan (mükerrer fiş denetimi ve onaycı için). */
+  supplierTaxId?: string | null
+  invoiceNo?: string | null
+  ettn?: string | null
+  vatAmount?: number | null
 }
 
 const CURRENCIES = ['TRY', 'USD', 'EUR', 'GBP', 'CHF']
@@ -77,6 +85,10 @@ function draftFromItem(i: ExpenseItem): DraftItem {
     km: toInput(i.km),
     receiptStorageKey: i.receiptStorageKey,
     travelRequestId: i.travelRequestId,
+    supplierTaxId: i.supplierTaxId,
+    invoiceNo: i.invoiceNo,
+    ettn: i.ettn,
+    vatAmount: i.vatAmount,
   }
 }
 
@@ -214,6 +226,21 @@ export function NewClaimModal({ open, onClose, claim }: {
     }
   }
 
+  const [qrOpen, setQrOpen] = useState<number | null>(null)
+  function applyEInvoice(key: number, e: EInvoice) {
+    const d = einvoiceToDraft(e, CURRENCIES)
+    patch(key, {
+      ...(d.amount ? { amount: d.amount } : {}),
+      ...(d.currency ? { currency: d.currency } : {}),
+      ...(d.expenseDate ? { expenseDate: d.expenseDate } : {}),
+      supplierTaxId: d.supplierTaxId ?? null,
+      invoiceNo: d.invoiceNo ?? null,
+      ettn: d.ettn ?? null,
+      vatAmount: d.vatAmount ?? null,
+    })
+    toast.ok(e.warnings.length ? tx('Karekod okundu; uyarıları ve alanları kontrol edin.') : tx('Karekod okundu; tutarı ve tarihi kontrol edin.'))
+  }
+
   function patch(key: number, changes: Partial<DraftItem>) {
     setItems((prev) => prev.map((i) => (i.key === key ? { ...i, ...changes } : i)))
   }
@@ -275,6 +302,10 @@ export function NewClaimModal({ open, onClose, claim }: {
         description: i.description.trim() || undefined,
         receiptStorageKey: i.receiptStorageKey ?? undefined,
         travelRequestId: i.travelRequestId ?? undefined,
+        supplierTaxId: i.supplierTaxId ?? undefined,
+        invoiceNo: i.invoiceNo ?? undefined,
+        ettn: i.ettn ?? undefined,
+        vatAmount: i.vatAmount ?? undefined,
         ...(i.category === 'Mileage' ? { km: num(i.km) ?? 0 } : {}),
         ...(i.category !== 'Mileage' && i.currency !== 'TRY' ? { originalCurrency: i.currency, originalAmount: num(i.amount) ?? 0 } : {}),
       }))
@@ -494,6 +525,7 @@ export function NewClaimModal({ open, onClose, claim }: {
                         value={item.description}
                         onChange={(e) => patch(item.key, { description: e.target.value })}
                       />
+                      <PiiHint text={item.description} className="mt-2" />
                       {item.category !== 'Mileage' && (
                         <label className="mt-2 inline-flex cursor-pointer items-center gap-1 text-[12px] text-muted-foreground underline hover:text-foreground">
                           {ocrBusy === item.key ? <LoaderCircle className="size-3 animate-spin" /> : <ScanText className="size-3" />}
@@ -501,6 +533,30 @@ export function NewClaimModal({ open, onClose, claim }: {
                           <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
                             onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void readReceipt(item.key, f) }} />
                         </label>
+                      )}
+                      {item.category !== 'Mileage' && qrOpen !== item.key && (
+                        <button type="button" onClick={() => setQrOpen(item.key)}
+                          className="mt-2 ml-4 inline-flex cursor-pointer items-center gap-1 text-[12px] text-muted-foreground underline hover:text-foreground">
+                          <QrCode className="size-3" />
+                          {tx('e-Fatura QR oku')}
+                        </button>
+                      )}
+                      {qrOpen === item.key && (
+                        <EInvoiceQr id={`item-qr-${item.key}`} onClose={() => setQrOpen(null)}
+                          onParsed={(e) => { applyEInvoice(item.key, e); setQrOpen(null) }} />
+                      )}
+                      {(item.supplierTaxId || item.invoiceNo || item.ettn) && (
+                        <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-muted-foreground">
+                          <span>{tx('e-Fatura')}:</span>
+                          {item.supplierTaxId && <span className="tabular">{tx('VKN/TCKN {0}', [item.supplierTaxId])}</span>}
+                          {item.invoiceNo && <span className="tabular">{tx('No {0}', [item.invoiceNo])}</span>}
+                          {item.vatAmount != null && <span className="tabular">{tx('KDV {0}', [formatMoney(item.vatAmount, item.currency)])}</span>}
+                          {item.ettn && <span className="tabular" title={item.ettn}>ETTN {item.ettn.slice(0, 8)}…</span>}
+                          <button type="button" className="cursor-pointer underline hover:text-foreground"
+                            onClick={() => patch(item.key, { supplierTaxId: null, invoiceNo: null, ettn: null, vatAmount: null })}>
+                            {tx('Temizle')}
+                          </button>
+                        </p>
                       )}
                     </div>
                   </div>

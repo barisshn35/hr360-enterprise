@@ -365,9 +365,11 @@ public class PrivacyComplianceController : AppController
 
         var client = _http.CreateClient();
         client.Timeout = TimeSpan.FromSeconds(20);
+        // Kiracının İK'ca seçtiği inceleme eşiği (yoksa 0,5): eşik üstü "insan incelemesi önerilir" işaretidir, karar değildir.
+        var threshold = await ModelGovernanceController.ThresholdAsync(Db, Tenant, ct) ?? 0.5m;
         async Task<(int Status, JsonElement? Body)> Call(string path)
         {
-            using var req = new HttpRequestMessage(HttpMethod.Post, $"{MlBase}{path}") { Content = JsonContent.Create(new { features = body.Features }) };
+            using var req = new HttpRequestMessage(HttpMethod.Post, $"{MlBase}{path}") { Content = JsonContent.Create(new { features = body.Features, threshold }) };
             if (AuthenticationHeaderValue.TryParse(Request.Headers.Authorization.ToString(), out var auth)) req.Headers.Authorization = auth;
             using var res = await client.SendAsync(req, ct);
             var text = await res.Content.ReadAsStringAsync(ct);

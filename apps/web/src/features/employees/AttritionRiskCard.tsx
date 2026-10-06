@@ -14,7 +14,8 @@ import { ProgressBar } from '@/components/ui/Progress'
 import { useToast } from '@/components/ui/Toast'
 import { formatPercent } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import { tx } from '@/lib/i18n'
+import { appLocale, tx } from '@/lib/i18n'
+import { reasonText } from '@/features/insights/modelQuality'
 
 const FEATURE_COUNT = 6
 /** Model girişi (sıra model kartındaki gibi): kıdem, ücret/bant ortası, son puan,
@@ -115,6 +116,10 @@ export function AttritionRiskPanel({ employee }: { employee: Employee }) {
           : 'success'
   const label =
     probability === null ? '' : probability >= 0.66 ? tx('Yüksek') : probability >= 0.33 ? tx('Orta') : tx('Düşük')
+  // Şirketin İK'ca seçtiği inceleme eşiği (model kartı > Kalibrasyon). Eşik üstü bir karar değil,
+  // "insan incelemesi önerilir" işaretidir.
+  const threshold = typeof result?.threshold === 'number' ? result.threshold : null
+  const reasons = explain?.reasons ?? []
 
   return (
     <Panel>
@@ -196,8 +201,32 @@ export function AttritionRiskPanel({ employee }: { employee: Employee }) {
                   {probability === null ? '—' : formatPercent(probability, 1)}
                 </p>
               </div>
-              {label && <StatusBadge tone={tone}>{tx('{0} risk', [label])}</StatusBadge>}
+              <div className="flex flex-col items-end gap-1">
+                {label && <StatusBadge tone={tone}>{tx('{0} risk', [label])}</StatusBadge>}
+                {typeof result.flagged === 'boolean' && (
+                  <StatusBadge tone={result.flagged ? 'warning' : 'neutral'}>
+                    {result.flagged ? tx('İnsan incelemesi önerilir') : tx('İnceleme eşiğinin altında')}
+                  </StatusBadge>
+                )}
+              </div>
             </div>
+            {threshold !== null && (
+              <p className="text-[11.5px] text-muted-foreground">
+                {tx('Şirketinizin inceleme eşiği {0}. Eşik bir karar değildir; skor yalnızca görüşmeyi önceliklendirmeye yardım eder.', [
+                  new Intl.NumberFormat(appLocale, { maximumFractionDigits: 3 }).format(threshold),
+                ])}
+              </p>
+            )}
+
+            {reasons.length > 0 && (
+              <div>
+                <p className="mb-1.5 text-[12px] font-medium">{tx('Neden?')}</p>
+                <ul className="list-disc space-y-1 pl-5 text-[12.5px]">
+                  {reasons.map((r) => <li key={r.feature}>{reasonText(r)}</li>)}
+                </ul>
+                <p className="mt-1 text-[11px] text-muted-foreground">{tx('(+) riski artırır, (−) azaltır. Model ilişki gösterir, neden-sonuç değil.')}</p>
+              </div>
+            )}
 
             {probability !== null && (
               <ProgressBar

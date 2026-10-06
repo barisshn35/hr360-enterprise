@@ -137,9 +137,14 @@ def test_retrain_promotes_good_and_rejects_worse(env):
                     headers=h("platform"))
     assert r.status_code == 200, r.text
     good = r.json()
-    assert good["promoted"] is True and good["candidate_version"] == "2"
+    # Champion/challenger: aday karsilastirmayi gecti ama insan onayi olmadan yayina girmez.
+    assert good["promoted"] is False and good["awaiting_approval"] is True and good["candidate_version"] == "2"
+    assert good["decision"]["recommended"] is True
     assert good["current"]["auc"] is not None and good["candidate"]["auc"] > 0.7
-    assert service.state.version == "2"
+    assert service.state.version == "1" and store.tags["2"]["hr360.status"] == "challenger"
+    r = client.post("/model/promote", json={"version": "2"}, headers=h("platform"))
+    assert r.status_code == 200, r.text
+    assert service.state.version == "2" and r.json()["audit"]["action"] == "ModelPromotionApproved"
 
     r = client.post("/model/retrain", json={"source": "synthetic", "synthetic": {"n": 3000, "seed": 8, "label_noise": 1.0}},
                     headers=h("platform"))
@@ -206,7 +211,7 @@ def test_retrain_returns_audit_payload(env):
                     headers=h("hr"))
     assert r.status_code == 200, r.text
     audit = r.json()["audit"]
-    assert audit["action"] in ("ModelPromoted", "ModelRetrainRejected")
+    assert audit["action"] in ("ModelPromoted", "ModelRetrainRejected", "ModelChallengerRegistered")
     assert audit["entityType"] == "AttritionModel" and audit["entityId"].endswith("/v2")
     assert audit["tenant"] == "demo" and audit["actor"]["roles"] == ["hr-admin"]
     assert audit["changes"]["previous_version"] == "1" and audit["changes"]["data_window"]["end"] == "2025-12-31"
@@ -225,9 +230,9 @@ def test_tenant_hr_retrain_is_forced_to_dry_run(env, monkeypatch):
     assert res["promoted"] is False and res["dry_run"] is True and res["dry_run_only"] is True
     assert "deneme" in res["notice"].lower() and res["audit"]["changes"]["dry_run_forced"] is True
     assert service.state.version == "1" and store.promoted[res["candidate_version"]] is False
-    # Platform yoneticisi ve servisler arasi cagri yayina alabilir.
+    # Platform yoneticisi ve servisler arasi cagri gercek egitim yapar; aday onay bekler (challenger).
     r = client.post("/model/retrain", json=body, headers=h("platform"))
-    assert r.status_code == 200 and r.json()["promoted"] is True and r.json()["dry_run_only"] is False
+    assert r.status_code == 200 and r.json()["awaiting_approval"] is True and r.json()["dry_run_only"] is False
     assert "notice" not in r.json()
     monkeypatch.setenv("INTERNAL_SERVICE_TOKEN", "s3cret")
     r = client.post("/model/retrain", json={**body, "synthetic": {"n": 3000, "seed": 9}},

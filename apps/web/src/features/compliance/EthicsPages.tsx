@@ -14,6 +14,7 @@ import { complianceApi, type EthicsMessage, type EthicsPublicStatus, type Ethics
 import { formatDate } from '@/lib/format'
 import { errMsg, PersonSelect, useAction } from '@/features/shared/kit'
 import { tx } from '@/lib/i18n'
+import { PiiHint } from '@/components/PiiHint'
 import { cn } from '@/lib/utils'
 import { useFormToken } from '@/lib/formGuard'
 
@@ -60,6 +61,7 @@ function ReportModal({ id, onClose }: { id: string; onClose: () => void }) {
           {r.status !== 'Closed' && (
             <div className="space-y-2">
               <TextAreaField label={tx('Bildirimde bulunana yanıt ("Etik Kurulu" imzasıyla)')} rows={3} value={reply} onChange={(e) => setReply(e.target.value)} />
+              <PiiHint text={reply} />
               <Button size="sm" onClick={() => send.mutate(undefined)} disabled={!reply.trim() || send.isPending}>{tx('Gönder')}</Button>
             </div>
           )}
@@ -195,6 +197,7 @@ function FollowUp({ tenant }: { tenant: string }) {
           {data.status !== 'Closed' && (
             <>
               <TextAreaField label={tx('Ek bilgi / yanıt')} rows={3} value={msg} onChange={(e) => setMsg(e.target.value)} />
+              <PiiHint text={msg} />
               <Button size="sm" onClick={() => send.mutate(undefined)} disabled={!msg.trim() || send.isPending}>{tx('Gönder')}</Button>
             </>
           )}
@@ -250,6 +253,7 @@ export function PublicEthicsPage() {
               <SelectField label={tx('Konu')} value={f.category} onChange={(v) => setF({ ...f, category: v })} options={info.data.categories} />
               <TextAreaField label={tx('Ne oldu?')} rows={7} value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })}
                 hint={tx('Ne, nerede, ne zaman? Kendinizi tanıtacak ayrıntılardan kaçının. En az 20 karakter.')} />
+              <PiiHint text={f.description} />
               <TextField label={tx('İletişim (isteğe bağlı)')} value={f.contact} onChange={(e) => setF({ ...f, contact: e.target.value })}
                 hint={tx('Yalnızca sizinle iletişime geçilmesini istiyorsanız. Şifreli saklanır ve yalnızca etik kurulu görebilir.')} />
               {/* Bot tuzağı: görünmez alan (insanlar boş bırakır). */}

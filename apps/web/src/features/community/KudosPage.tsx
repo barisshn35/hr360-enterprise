@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils'
 import { Initials, PersonSelect, PlanGate, useAction } from '@/features/shared/kit'
 import { CelebrationList } from './CelebrationsPage'
 import { tx } from '@/lib/i18n'
+import { PiiHint } from '@/components/PiiHint'
 import { useConfirm } from '@/components/ui/Confirm'
 
 const BADGE_STYLE: Record<string, { emoji: string; ring: string }> = {
@@ -78,6 +79,7 @@ function SendKudosModal({ open, onClose }: { open: boolean; onClose: () => void 
           </div>
         </div>
         <TextAreaField id="kudos-msg" label={tx('Mesajınız')} rows={3} maxLength={500} value={message} onChange={(e) => setMessage(e.target.value)} hint={`${message.length}/500`} />
+        <PiiHint text={message} />
       </div>
     </Modal>
   )

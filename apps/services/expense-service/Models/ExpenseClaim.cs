@@ -23,5 +23,7 @@ public class ExpenseClaim : ITenantOwned
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? SubmittedAt { get; set; }
     public DateTimeOffset? PaidAt { get; set; }
+    /// <summary>Masraf denetimi (olağan dışı tutar / mükerrer fiş) çalıştı mı; null: çalışmadı (ML erişilemedi).</summary>
+    public DateTimeOffset? AnomalyCheckedAt { get; set; }
     public List<ExpenseItem> Items { get; set; } = new();
 }

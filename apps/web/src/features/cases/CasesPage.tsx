@@ -26,6 +26,7 @@ import { formatDate, formatRelativeToNow } from '@/lib/format'
 import { useEmployeeName } from '@/lib/useEmployeeName'
 import { cn } from '@/lib/utils'
 import { tx } from '@/lib/i18n'
+import { PiiHint } from '@/components/PiiHint'
 
 const ALL = '__all__'
 
@@ -162,6 +163,7 @@ function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => void })
           value={description}
           onChange={(e) => setDescription(e.target.value)}
         />
+        <PiiHint text={description} />
       </form>
     </Modal>
   )

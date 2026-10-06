@@ -51,7 +51,10 @@ export function needsPlatformGrant(path: string): boolean {
   if (!m) return false
   if (m[1] === 'tenant') return false
   const inner = `/api${m[2] ?? ''}`
-  return !['/api/billing', '/api/plan'].some((x) => inner === x || inner.startsWith(`${x}/`))
+  const exempt = ['/api/billing', '/api/plan']
+  // governance: paylaşılan modelin platform düzeyi uçları (sunucudaki muafiyetle aynı).
+  if (m[1] === 'governance') exempt.push('/api/model/retrain', '/api/model/versions', '/api/model/promote', '/api/model/rollback', '/api/model/calibration')
+  return !exempt.some((x) => inner === x || inner.startsWith(`${x}/`))
 }
 
 /**

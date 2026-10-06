@@ -23,6 +23,8 @@ describe('needsPlatformGrant', () => {
     expect(needsPlatformGrant('/api/governance/billing/invoices')).toBe(false)
     expect(needsPlatformGrant('/api/governance/plan')).toBe(false)
     expect(needsPlatformGrant('/ml/health')).toBe(false)
+    expect(needsPlatformGrant('/api/governance/model/versions')).toBe(false)
+    expect(needsPlatformGrant('/api/governance/model/settings')).toBe(true)
   })
 })
 
