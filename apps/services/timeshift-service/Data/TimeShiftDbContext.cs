@@ -37,6 +37,7 @@ public class TimeShiftDbContext : DbContext, ITenantAwareContext
     public DbSet<ShiftPreference> ShiftPreferences => Set<ShiftPreference>();
     public DbSet<ShiftSwapRequest> ShiftSwapRequests => Set<ShiftSwapRequest>();
     public DbSet<TimesheetSettings> TimesheetSettings => Set<TimesheetSettings>();
+    public DbSet<TimesheetPeriod> TimesheetPeriods => Set<TimesheetPeriod>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -123,6 +124,10 @@ public class TimeShiftDbContext : DbContext, ITenantAwareContext
         modelBuilder.Entity<ShiftSwapRequest>().ToTable("timeshift_swap_requests");
         modelBuilder.Entity<TimesheetSettings>().ConfigureTenantColumn();
         modelBuilder.Entity<TimesheetSettings>().ToTable("timeshift_settings");
+
+        // Dalga 9: scripts/sql/2026-10-22_time_leave.sql
+        modelBuilder.Entity<TimesheetPeriod>().ConfigureTenantColumn();
+        modelBuilder.Entity<TimesheetPeriod>().ToTable("timeshift_timesheet_periods");
 
         modelBuilder.ApplyTenantFilters(this);
     }

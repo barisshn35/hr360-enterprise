@@ -9,3 +9,6 @@ scikit-learn==1.5.2
 numpy==1.26.4
 boto3==1.35.36
 shap==0.46.0
+# Vardiya planı optimizasyonu (dalga 9, madde 44): CP-SAT çözücüsü (~27 MB tekerlek). 9.15 numpy 2 ister
+# (mlflow/shap için numpy 1.26 sabit); kurulamazsa shift_optimizer.py açgözlü sezgisele düşer.
+ortools==9.14.6206

@@ -112,6 +112,7 @@ ${describeRosterDay(day)}`}
       <span className="flex items-center gap-1 text-[12px] font-semibold">
         <Icon aria-hidden className="size-3.5 shrink-0" strokeWidth={1.75} />
         {s.label}
+        {'partial' in day && day.partial && <span className="font-normal">{' '}½</span>}
       </span>
       {detail && <span className="tabular block max-w-28 truncate text-[11px] opacity-80">{detail}</span>}
     </span>
@@ -128,7 +129,7 @@ function Cell({ day, date, name }: { day: RosterDay | undefined; date: string; n
       type={day.type}
       size="sm"
       title={`${formatLongDay(date)}\n${label}`}
-      className={cn('size-7', isOverride(day.type) && 'ring-[1.5px]')}
+      className={cn('size-7', isOverride(day.type) && 'ring-[1.5px]', 'partial' in day && day.partial && 'opacity-60')}
     />
   )
 }

@@ -117,7 +117,7 @@ function SwapModal({ mine, onClose }: { mine: RosterAssignment; onClose: () => v
           )
         )}
         <TextAreaField label={tx('Not (isteğe bağlı)')} rows={2} maxLength={300} value={note} onChange={(e) => setNote(e.target.value)} />
-        <InfoNote>{tx('Kurallar: aynı ekip, çakışma yok, vardiyalar arası en az 11 saat dinlenme, haftalık en çok 45 saat. Uymayan talep gerekçesiyle reddedilir.')}</InfoNote>
+        <InfoNote>{tx('Kurallar: aynı ekip, çakışma yok, vardiyalar arası en az 11 saat dinlenme, haftalık en çok 45 saat (şirket ayarı farklı olabilir). Uymayan talep gerekçesiyle reddedilir; günlük süre, gece çalışması ve ardışık gün aşımları onaycıya uyarı olarak gösterilir.')}</InfoNote>
       </div>
     </Modal>
   )
@@ -147,6 +147,16 @@ function SwapList({ rows, scope }: { rows: SwapRequest[]; scope: 'mine' | 'appro
               {s.note ? ` · ${s.note}` : ''}{s.rejectReason ? ` · ${s.rejectReason}` : ''}
             </span>
           </span>
+          {/* Madde 66: onaycıya kural uyarıları; engelleyici olanlar onayda takası reddeder. */}
+          {s.ruleWarnings && s.ruleWarnings.length > 0 && (
+            <span className="basis-full space-y-0.5 text-[12px]">
+              {s.ruleWarnings.map((w, i) => (
+                <span key={`${w.code}-${i}`} className={cn('block', w.blocking ? 'text-destructive' : 'text-[hsl(var(--warning))]')}>
+                  {w.blocking ? tx('Engel: {0}', [w.message]) : tx('Uyarı: {0}', [w.message])}
+                </span>
+              ))}
+            </span>
+          )}
           <StatusBadge tone={swapStatusView[s.status].tone}>{swapStatusView[s.status].label}</StatusBadge>
           {s.canRespond && <><Button size="sm" onClick={() => respond.mutate({ id: s.id, ok: true })}><Check className="size-4" />{' '}{tx('Kabul')}</Button><Button size="sm" variant="outline" onClick={() => respond.mutate({ id: s.id, ok: false })}><X className="size-4" />{' '}{tx('Reddet')}</Button></>}
           {s.canApprove && <><Button size="sm" onClick={() => approve.mutate(s.id)}><Check className="size-4" />{' '}{tx('Onayla')}</Button><Button size="sm" variant="outline" onClick={() => { setRej(s); setReason('') }}>{tx('Reddet')}</Button></>}
@@ -194,6 +204,15 @@ function PlannerAssignPanel() {
             {check.conflicts.length === 0 ? <p className="text-[hsl(var(--success))]">{tx('Tercihlerle uyuşmazlık yok.')}</p> : (
               <ul className="list-disc space-y-0.5 pl-5 text-[hsl(var(--warning))]">{check.conflicts.map((c) => <li key={c.code}>{c.message}</li>)}</ul>
             )}
+            {/* Madde 66: çalışma süresi kuralları (uyarı; atama yine yapılabilir). */}
+            {check.ruleWarnings && (check.ruleWarnings.length === 0
+              ? <p className="text-[hsl(var(--success))]">{tx('Çalışma süresi kurallarına uygun (dinlenme, günlük/haftalık süre, gece çalışması, ardışık gün).')}</p>
+              : (
+                <div role="alert" className="rounded-lg border border-destructive/40 bg-destructive/5 p-2">
+                  <p className="mb-1 font-medium text-destructive">{tx('Çalışma süresi kuralı uyarısı')}</p>
+                  <ul className="list-disc space-y-0.5 pl-5">{check.ruleWarnings.map((w, i) => <li key={`${w.code}-${i}`}>{w.message}</li>)}</ul>
+                </div>
+              ))}
             {p && p.updatedAt && (
               <p className="text-[12px] text-muted-foreground">
                 {tx('Tercih: {0} · müsait değil: {1} · gece en çok {2}', [p.preferredDays.map((d) => isoDayLabels[d]).join(', ') || '—',

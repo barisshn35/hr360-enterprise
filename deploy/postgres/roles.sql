@@ -123,6 +123,7 @@ DO $$ DECLARE g text[]; BEGIN
     ['leave_balances', 'SELECT, INSERT, UPDATE, DELETE'],
     ['leave_public_holidays', 'SELECT, INSERT, UPDATE, DELETE'],
     ['leave_requests', 'SELECT, INSERT, UPDATE, DELETE'],
+    ['leave_settings', 'SELECT, INSERT, UPDATE, DELETE'],
     ['messaging_outbox', 'SELECT, INSERT, UPDATE, DELETE'],
     ['messaging_processed_events', 'SELECT, INSERT, UPDATE, DELETE'],
     ['organization_departments', 'SELECT'],
@@ -253,7 +254,8 @@ DO $$ DECLARE g text[]; BEGIN
     ['timeshift_shift_teams', 'SELECT, INSERT, UPDATE, DELETE'],
     ['timeshift_shifts', 'SELECT, INSERT, UPDATE, DELETE'],
     ['timeshift_swap_requests', 'SELECT, INSERT, UPDATE, DELETE'],
-    ['timeshift_time_entries', 'SELECT, INSERT, UPDATE, DELETE']
+    ['timeshift_time_entries', 'SELECT, INSERT, UPDATE, DELETE'],
+    ['timeshift_timesheet_periods', 'SELECT, INSERT, UPDATE, DELETE']
   ]::text[] LOOP
     IF to_regclass('public.' || quote_ident(g[1])) IS NOT NULL THEN
       EXECUTE format('GRANT %s ON TABLE public.%I TO hr360_timeshift', g[2], g[1]);
@@ -597,7 +599,8 @@ DO $$ DECLARE g text[]; BEGIN
     ['organization_departments', 'SELECT'],
     ['platform_access_grants', 'SELECT'],
     ['platform_tenants', 'SELECT'],
-    ['timeshift_overtime_requests', 'SELECT']
+    ['timeshift_overtime_requests', 'SELECT'],
+    ['timeshift_timesheet_periods', 'SELECT']
   ]::text[] LOOP
     IF to_regclass('public.' || quote_ident(g[1])) IS NOT NULL THEN
       EXECUTE format('GRANT %s ON TABLE public.%I TO hr360_compensation', g[2], g[1]);

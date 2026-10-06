@@ -25,6 +25,8 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddHttpClient<ApprovalWorkflowClient>();
 builder.Services.AddHostedService<WorkflowEventConsumer>();
 builder.Services.AddHostedService<OutboxPublisher>();
+// Dalga 9 (madde 72): Aralık ayında gelecek yılın Türkiye resmî tatillerini yükler (LEAVE_HOLIDAY_AUTOLOAD=false kapatır).
+builder.Services.AddHostedService<LeaveService.Services.HolidayAutoLoader>();
 
 builder.Services.AddDbContext<LeaveDbContext>(options =>
     options.UseNpgsql(connectionString)

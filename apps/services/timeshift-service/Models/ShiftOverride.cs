@@ -29,5 +29,8 @@ public class ShiftOverride : ITenantOwned
     /// kullanici tarafindan CRUD uzerinden yonetilir.</summary>
     public bool IsSystemManaged { get; set; }
 
+    /// <summary>Kısmi gün izni (yarım gün / saatlik): çalışan o gün kısmen çalışır; takvimde ayrı gösterilir.</summary>
+    public bool IsPartial { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }

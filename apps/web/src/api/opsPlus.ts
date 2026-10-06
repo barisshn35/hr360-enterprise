@@ -114,7 +114,9 @@ export interface ShiftPreference {
   note: string | null
   updatedAt: string | null
 }
-export interface PreferenceCheck { conflicts: Array<{ code: string; message: string }>; shiftType: 'Day' | 'Night'; preference: ShiftPreference }
+/** Çalışma süresi kural uyarısı (madde 66): overlap, rest, weekly, daily, night, consecutive (takasta ayrıca sameday). */
+export interface RuleWarning { code: string; message: string; blocking?: boolean }
+export interface PreferenceCheck { conflicts: Array<{ code: string; message: string }>; ruleWarnings?: RuleWarning[]; shiftType: 'Day' | 'Night'; preference: ShiftPreference }
 export type SwapStatus = 'PendingPeer' | 'PendingApproval' | 'Approved' | 'Rejected' | 'Declined' | 'Cancelled'
 export const swapStatusView: Record<SwapStatus, { label: string; tone: 'neutral' | 'warning' | 'success' | 'danger' | 'info' }> = {
   PendingPeer: { label: tx('Karşı taraf bekleniyor'), tone: 'warning' },
@@ -143,6 +145,8 @@ export interface SwapRequest {
   canRespond: boolean
   canApprove: boolean
   canCancel: boolean
+  /** Onaycıya kural uyarıları (blocking = onayda takas reddedilir). */
+  ruleWarnings?: RuleWarning[] | null
 }
 
 /* ------------------------------------------------------------------ G7 */
@@ -196,7 +200,21 @@ export interface RosterAssignment {
   shift: { id: string; name: string; startTime: string; endTime: string; breakMinutes: number; isNightShift: boolean } | null
 }
 
-export interface TimesheetSettings { lateGraceMinutes: number; defaultStart: string; defaultEnd: string; defaultBreakMinutes: number }
+export interface TimesheetSettings {
+  lateGraceMinutes: number
+  defaultStart: string
+  defaultEnd: string
+  defaultBreakMinutes: number
+  // Dalga 9: çalışma süresi kuralları (madde 66) ve konum doğrulama (madde 67); kaydederken isteğe bağlı.
+  minRestHours?: number
+  weeklyMaxHours?: number
+  dailyMaxHours?: number
+  nightMaxHours?: number
+  maxConsecutiveDays?: number
+  geoOutsidePolicy?: 'Block' | 'Flag'
+  geoStoreRaw?: boolean
+  geoRawRetentionDays?: number
+}
 
 /* ------------------------------------------------------------------ istemci */
 
@@ -258,6 +276,8 @@ export const opsApi = {
     apiFetch<RosterAssignment[]>(`${TS}/shifts/roster${qs(f)}`, { signal }),
   assignShift: (shiftId: string, employeeId: string, date: string) =>
     apiFetch<unknown>(`${TS}/shifts/${shiftId}/assign`, { method: 'POST', body: { employeeId, date } }),
+  ruleCheck: (body: { employeeId: string; date: string; shiftId?: string; startTime?: string; endTime?: string; breakMinutes?: number }) =>
+    apiFetch<{ warnings: RuleWarning[] }>(`${TS}/shifts/rule-check`, { method: 'POST', body }),
 
   // G7
   attendance: (f: { from: string; to: string; employeeId?: string; departmentId?: string }, signal?: AbortSignal) =>

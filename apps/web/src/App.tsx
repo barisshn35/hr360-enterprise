@@ -88,6 +88,8 @@ const TimeClockPage = page(() => import('@/features/timeshift/TimeClockPage'), '
 const TimeClockAdminPage = page(() => import('@/features/timeshift/TimeClockPage'), 'TimeClockAdminPage')
 const MyDocumentsPage = page(() => import('@/features/documents/DocumentRequestPages'), 'MyDocumentsPage')
 const VerifyDocumentPage = page(() => import('@/features/documents/DocumentRequestPages'), 'VerifyDocumentPage')
+// Dalga 9 (madde 68): paylaşılan tablet için oturumsuz QR / PIN kiosku (terminal anahtarıyla).
+const KioskPage = page(() => import('@/features/timeshift/KioskPage'), 'KioskPage')
 const EmailDecisionPage = page(() => import('@/features/documents/DocumentRequestPages'), 'EmailDecisionPage')
 const WorkflowDesignerPage = page(() => import('@/features/workflows/WorkflowDesignerPage'), 'WorkflowDesignerPage')
 const DocumentsPage = page(() => import('@/features/documents/DocumentsPage'), 'DocumentsPage')
@@ -206,6 +208,7 @@ export function App() {
 
                 {/* Belge doğrulama ve e-postadan tek tıkla karar: oturum gerekmez (kişisel veri göstermez). */}
                 <Route path="/belge-dogrula" element={<Suspense fallback={<FullPageSpinner />}><VerifyDocumentPage /></Suspense>} />
+                <Route path="/kiosk" element={<Suspense fallback={<FullPageSpinner />}><KioskPage /></Suspense>} />
                 <Route path="/belge-dogrula/:code" element={<Suspense fallback={<FullPageSpinner />}><VerifyDocumentPage /></Suspense>} />
                 {/* Y15 anonim etik hattı: oturum gerektirmez */}
                 <Route path="/etik/:tenant" element={<Suspense fallback={<FullPageSpinner />}><PublicEthicsPage /></Suspense>} />

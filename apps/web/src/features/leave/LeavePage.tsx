@@ -30,6 +30,7 @@ import { useDebouncedValue } from '@/lib/useDebouncedValue'
 import { NewBalanceModal } from './NewBalanceModal'
 import { HolidaysModal } from './HolidaysModal'
 import { StatutoryModal } from './StatutoryModal'
+import { LeaveSettingsModal } from './LeaveSettingsModal'
 import { NewLeaveRequestModal } from './NewLeaveRequestModal'
 import { tx, appLocale } from '@/lib/i18n'
 
@@ -132,6 +133,7 @@ export function LeavePage() {
   const [balanceOpen, setBalanceOpen] = useState(false)
   const [holidaysOpen, setHolidaysOpen] = useState(false)
   const [statutoryOpen, setStatutoryOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   const year = new Date().getFullYear()
   const balances = useLeaveBalances(employeeId || undefined, year, Boolean(employeeId))
@@ -230,7 +232,9 @@ export function LeavePage() {
       sortValue: (r) => r.days,
       // CSV'de de arayüzle aynı yerel ondalık ("0,4"; ayırıcı ";" olduğundan çakışmaz).
       exportText: (r) => formatNumber(r.days),
-      cell: (r) => formatNumber(r.days),
+      // Kısmi gün izni: saat ya da "yarım gün" ayrıca gösterilir.
+      cell: (r) => r.hours ? `${formatNumber(r.days)} (${tx('{0} sa', [formatNumber(r.hours)])})`
+        : r.days > 0 && r.days < 1 && r.startDate === r.endDate ? `${formatNumber(r.days)} (${tx('yarım gün')})` : formatNumber(r.days),
     },
     {
       id: 'status',
@@ -269,6 +273,11 @@ export function LeavePage() {
             {can('leave:manageBalance') && (
               <Button variant="outline" className="cursor-pointer" onClick={() => setStatutoryOpen(true)}>
                 {tx('Yasal hak ve devir')}
+              </Button>
+            )}
+            {can('leave:manageBalance') && (
+              <Button variant="outline" className="cursor-pointer" onClick={() => setSettingsOpen(true)}>
+                {tx('İzin ayarları')}
               </Button>
             )}
             {can('leave:manageBalance') && (
@@ -402,6 +411,7 @@ export function LeavePage() {
 
       <HolidaysModal open={holidaysOpen} onClose={() => setHolidaysOpen(false)} year={year} />
       {statutoryOpen && <StatutoryModal onClose={() => setStatutoryOpen(false)} />}
+      {settingsOpen && <LeaveSettingsModal onClose={() => setSettingsOpen(false)} />}
 
       <NewBalanceModal
         open={balanceOpen}

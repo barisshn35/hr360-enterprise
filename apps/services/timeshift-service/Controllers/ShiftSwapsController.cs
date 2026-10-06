@@ -61,35 +61,58 @@ public class ShiftSwapsController : ControllerBase
     private static ShiftInterval Interval(ShiftAssignment a, DateOnly? date = null) =>
         ShiftInterval.Of(a.Id, date ?? a.Date, a.Shift!.StartTime, a.Shift.EndTime, a.Shift.BreakMinutes);
 
-    /// <summary>Takas sonrası iki çalışanın programını kurallara göre denetler; ihlal varsa açıklama.</summary>
-    private async Task<string?> ValidateAsync(ShiftAssignment mine, ShiftAssignment? theirs, Guid requester, Guid target, CancellationToken ct)
+    private WorkRuleSettings? _rules;
+    private async Task<WorkRuleSettings> RulesAsync(CancellationToken ct) => _rules ??= await WorkRuleCheck.RulesAsync(_db, ct);
+
+    /// <summary>
+    /// Takas sonrası iki çalışanın programını kurallara göre değerlendirir (kiracının çalışma süresi
+    /// ayarlarıyla, madde 66). "sameday", "overlap", "rest", "weekly" engeldir; "daily", "night",
+    /// "consecutive" onaycıya uyarı olarak gösterilir.
+    /// </summary>
+    private async Task<List<RuleWarning>> EvaluateAsync(ShiftAssignment mine, ShiftAssignment? theirs, Guid requester, Guid target, CancellationToken ct)
     {
+        var rules = await RulesAsync(ct);
         var from = (theirs is null || mine.Date < theirs.Date ? mine.Date : theirs.Date).AddDays(-8);
         var to = (theirs is null || mine.Date > theirs.Date ? mine.Date : theirs.Date).AddDays(8);
         var names = new Dictionary<Guid, string>();
         foreach (var id in new[] { requester, target })
             names[id] = (await TsOps.PersonAsync(_db, Tenant, id, ct))?.FirstName ?? "Çalışan";
+        var result = new List<RuleWarning>();
 
         // Talep eden: kendi vardiyası çıkar, (varsa) karşı tarafın vardiyası girer.
         var aList = (await WindowAsync(requester, from, to, ct)).Where(x => x.Id != mine.Id && x.Shift is not null).Select(x => Interval(x)).ToList();
-        var aChanged = new List<ShiftInterval>();
         if (theirs is not null)
         {
             if (aList.Any(x => DateOnly.FromDateTime(x.Start) == theirs.Date))
-                return $"{names[requester]}: {theirs.Date:dd.MM.yyyy} günü zaten bir vardiyası var";
-            var n = Interval(theirs);
-            aList.Add(n);
-            aChanged.Add(n);
+                result.Add(new RuleWarning("sameday", $"{names[requester]}: {theirs.Date:dd.MM.yyyy} günü zaten bir vardiyası var"));
+            else
+            {
+                var n = Interval(theirs);
+                aList.Add(n);
+                result.AddRange(WorkRules.Check(aList, new[] { n }, rules, names[requester]));
+            }
         }
-        if (aChanged.Count > 0 && SwapRules.Validate(aList, aChanged, names[requester]) is { } e1) return e1;
 
         // Hedef: kendi vardiyası (varsa) çıkar, talep edenin vardiyası girer.
         var bList = (await WindowAsync(target, from, to, ct)).Where(x => x.Id != theirs?.Id && x.Shift is not null).Select(x => Interval(x)).ToList();
         if (bList.Any(x => DateOnly.FromDateTime(x.Start) == mine.Date))
-            return $"{names[target]}: {mine.Date:dd.MM.yyyy} günü zaten bir vardiyası var";
-        var m = Interval(mine);
-        bList.Add(m);
-        return SwapRules.Validate(bList, new[] { m }, names[target]);
+            result.Add(new RuleWarning("sameday", $"{names[target]}: {mine.Date:dd.MM.yyyy} günü zaten bir vardiyası var"));
+        else
+        {
+            var m = Interval(mine);
+            bList.Add(m);
+            result.AddRange(WorkRules.Check(bList, new[] { m }, rules, names[target]));
+        }
+        return result;
+    }
+
+    private static readonly string[] SwapBlocking = new[] { "sameday" }.Concat(WorkRules.Blocking).ToArray();
+
+    /// <summary>Takas sonrası iki çalışanın programını kurallara göre denetler; engelleyici ihlal varsa açıklama.</summary>
+    private async Task<string?> ValidateAsync(ShiftAssignment mine, ShiftAssignment? theirs, Guid requester, Guid target, CancellationToken ct)
+    {
+        var all = await EvaluateAsync(mine, theirs, requester, target, ct);
+        return all.FirstOrDefault(w => SwapBlocking.Contains(w.Code))?.Message;
     }
 
     private async Task<Guid?> HeadOfAsync(Guid employeeId, CancellationToken ct) =>
@@ -129,6 +152,13 @@ public class ShiftSwapsController : ControllerBase
         canRespond = me == s.TargetEmployeeId && s.Status == SwapStatus.PendingPeer,
         canApprove = s.Status == SwapStatus.PendingApproval && await CanApproveAsync(s, me, ct),
         canCancel = me == s.RequesterEmployeeId && s.Status is SwapStatus.PendingPeer or SwapStatus.PendingApproval,
+        // Madde 66: onaycıya kural uyarıları (engelleyiciler onayda yeniden denetlenir ve takası reddeder).
+        ruleWarnings = s.Status == SwapStatus.PendingApproval && await CanApproveAsync(s, me, ct)
+            && assignments.GetValueOrDefault(s.RequesterAssignmentId) is { Shift: not null } mine
+            && (s.TargetAssignmentId is null || assignments.GetValueOrDefault(s.TargetAssignmentId.Value)?.Shift is not null)
+            ? (await EvaluateAsync(mine, s.TargetAssignmentId is { } ta ? assignments[ta] : null, s.RequesterEmployeeId, s.TargetEmployeeId, ct))
+                .Select(w => new { w.Code, w.Message, blocking = SwapBlocking.Contains(w.Code) }).ToList()
+            : null,
     };
 
     private static object? ShiftDto(ShiftAssignment? a) => a?.Shift is null ? null : new

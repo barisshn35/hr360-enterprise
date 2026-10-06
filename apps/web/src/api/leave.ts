@@ -69,7 +69,7 @@ export interface CreateLeaveRequestInput {
   days: number
   reason?: string
   workflowRequestId?: string
-  /** Saatlik izin: yalnızca tek gün; gün = saat / 7,5 */
+  /** Saatlik izin: yalnızca tek gün; gün = saat / günlük çalışma saati (şirket ayarı, varsayılan 7,5) */
   hours?: number
 }
 
@@ -85,6 +85,45 @@ export interface PublicHoliday {
   id: string
   date: string
   name: string
+  /** Arife ve 28 Ekim: öğleden sonra tatil, izin hesabında 0,5 gün. */
+  isHalfDay?: boolean
+}
+
+/** Şirketin izin ayarları (dalga 9). `dayHours`: geçerli günlük çalışma saati (şirket ayarı ya da varsayılan). */
+export interface LeaveSettings {
+  dayHours: number
+  customDayHours: number | null
+  conflictWarnEnabled: boolean
+  conflictThresholdPercent: number
+  carryOverMaxDays: number | null
+}
+
+/**
+ * Ekip izin çakışması (madde 69). Talep edene yalnızca sayı (ekip 5 kişiden küçükse o da yok);
+ * yönetici/İK `people` ile adları görür. İzin türü hiç dönmez.
+ */
+export interface TeamConflict {
+  enabled: boolean
+  thresholdPercent: number
+  exceeds: boolean
+  teamSize: number | null
+  overlapping: number | null
+  percent: number | null
+  people: Array<{ employeeId: string; name: string | null; startDate: string; endDate: string }> | null
+}
+
+export interface StatutoryRow {
+  employeeId: string
+  serviceYears: number
+  anniversary: string
+  statutoryDays: number
+  ageRule: boolean
+  currentEntitled: number | null
+  carriedOver: number
+  /** Hak bu yılın yıl dönümünde doğdu mu (bugün itibarıyla). */
+  accrued?: boolean
+  /** Uygulanınca bakiye (değişmeyecekse null). */
+  proposedEntitled?: number | null
 }
 
 export interface LeaveRequestFilters {
@@ -108,12 +147,12 @@ export const leaveApi = {
   listHolidays: (year?: number, signal?: AbortSignal) =>
     apiFetch<PublicHoliday[]>(`${BASE}/public-holidays${qs({ year })}`, { signal }),
 
-  createHoliday: (input: { date: string; name: string }) =>
+  createHoliday: (input: { date: string; name: string; isHalfDay?: boolean }) =>
     apiFetch<PublicHoliday>(`${BASE}/public-holidays`, { method: 'POST', body: input }),
 
-  /** Türkiye resmi tatillerini ekler (2026-2027 için dini bayramlar dahil). */
+  /** Türkiye resmi tatillerini ekler (2025-2030 için dini bayramlar ve yarım gün arifeler dahil). */
   seedTurkishHolidays: (year: number) =>
-    apiFetch<{ added: number; skipped: number; religiousIncluded: boolean; message: string }>(
+    apiFetch<{ added: number; skipped: number; halfDays?: number; religiousIncluded: boolean; message: string }>(
       `${BASE}/public-holidays/seed-tr${qs({ year })}`,
       { method: 'POST' },
     ),
@@ -146,9 +185,16 @@ export const leaveApi = {
 
   /** İK: kıdeme ve yaşa göre yasal yıllık izin (İş Kanunu m.53) ön izlemesi. */
   statutory: (year: number, signal?: AbortSignal) =>
-    apiFetch<Array<{ employeeId: string; serviceYears: number; anniversary: string; statutoryDays: number; ageRule: boolean; currentEntitled: number | null; carriedOver: number }>>(
-      `${BASE}/leave-balances/statutory?year=${year}`, { signal }),
-  applyStatutory: (year: number) => apiFetch<{ changed: number }>(`${BASE}/leave-balances/statutory/apply`, { method: 'POST', body: { year } }),
+    apiFetch<StatutoryRow[]>(`${BASE}/leave-balances/statutory?year=${year}`, { signal }),
+  /** Ön izlemede seçilen kişilere uygular; onlyAccrued: yalnızca yıl dönümü gelmiş olanlar. */
+  applyStatutory: (year: number, employeeIds?: string[], onlyAccrued?: boolean) =>
+    apiFetch<{ changed: number; skippedNotAccrued?: number }>(`${BASE}/leave-balances/statutory/apply`, { method: 'POST', body: { year, employeeIds, onlyAccrued } }),
+
+  settings: (signal?: AbortSignal) => apiFetch<LeaveSettings>(`${BASE}/leave-settings`, { signal }),
+  saveSettings: (body: { dayHours: number | null; conflictWarnEnabled: boolean; conflictThresholdPercent: number; carryOverMaxDays: number | null }) =>
+    apiFetch<LeaveSettings>(`${BASE}/leave-settings`, { method: 'PUT', body }),
+  teamConflict: (f: { employeeId?: string; startDate?: string; endDate?: string; leaveRequestId?: string }, signal?: AbortSignal) =>
+    apiFetch<TeamConflict>(`${BASE}/leave-requests/team-conflict${qs(f)}`, { signal }),
   carryOver: (fromYear: number, maxDays?: number) =>
     apiFetch<{ employees: number; days: number }>(`${BASE}/leave-balances/carry-over`, { method: 'POST', body: { fromYear, maxDays } }),
 

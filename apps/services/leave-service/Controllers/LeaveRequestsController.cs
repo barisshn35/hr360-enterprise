@@ -52,19 +52,110 @@ public class LeaveRequestsController : ControllerBase
 
     /// <summary>
     /// Iki tarih arasindaki is gunu sayisi: hafta sonlari ve sirketin resmi tatil
-    /// takvimindeki gunler (PublicHolidays) dislanir. Onceden gun sayisi istemciden
-    /// geliyordu: 10 gunluk izin "days: 0.5" ile gonderilip bakiyeden yarim gun
-    /// dusuluyordu (canli dogrulandi).
+    /// takvimindeki gunler (PublicHolidays) dislanir; yarim gun tatil (arife, 28 Ekim) 0,5 sayilir.
+    /// Onceden gun sayisi istemciden geliyordu: 10 gunluk izin "days: 0.5" ile gonderilip
+    /// bakiyeden yarim gun dusuluyordu (canli dogrulandi).
     /// </summary>
-    private async Task<int> WorkingDaysAsync(DateOnly start, DateOnly end, CancellationToken ct)
+    private async Task<decimal> WorkingDaysAsync(DateOnly start, DateOnly end, CancellationToken ct)
     {
         var holidays = (await _db.PublicHolidays
             .Where(h => h.Date >= start && h.Date <= end)
-            .Select(h => h.Date).ToListAsync(ct)).ToHashSet();
-        var count = 0;
-        for (var d = start; d <= end; d = d.AddDays(1))
-            if (d.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday) && !holidays.Contains(d)) count++;
-        return count;
+            .Select(h => new { h.Date, h.IsHalfDay }).ToListAsync(ct))
+            .GroupBy(h => h.Date).ToDictionary(g => g.Key, g => g.All(x => x.IsHalfDay));
+        return Services.LeaveEntitlement.WorkingDays(start, end, holidays);
+    }
+
+    private async Task<LeaveSettings> SettingsAsync(CancellationToken ct) =>
+        await _db.LeaveSettings.AsNoTracking().FirstOrDefaultAsync(ct) ?? new LeaveSettings();
+
+    private sealed class TeamRow
+    {
+        public Guid Id { get; set; }
+        public string FirstName { get; set; } = "";
+        public string LastName { get; set; } = "";
+    }
+
+    /// <summary>Çalışanın bugünkü departmanındaki diğer aktif çalışanlar (salt okunur, kiracı filtresiyle).</summary>
+    private Task<List<TeamRow>> TeammatesAsync(Guid employeeId, CancellationToken ct) =>
+        _db.Database.SqlQueryRaw<TeamRow>(
+            """
+            SELECT DISTINCT e."Id", e."FirstName", e."LastName" FROM employee_assignments a
+            JOIN employee_employees e ON e."Id" = a."EmployeeId"
+            WHERE a."TenantSlug" = {0} AND e."Status" <> 'Terminated' AND e."Id" <> {1}
+              AND a."EffectiveFrom" <= current_date AND (a."EffectiveTo" IS NULL OR a."EffectiveTo" >= current_date)
+              AND a."DepartmentId" IN (SELECT x."DepartmentId" FROM employee_assignments x
+                    WHERE x."TenantSlug" = {0} AND x."EmployeeId" = {1}
+                      AND x."EffectiveFrom" <= current_date AND (x."EffectiveTo" IS NULL OR x."EffectiveTo" >= current_date))
+            """, _db.CurrentTenantSlug ?? "", employeeId).ToListAsync(ct);
+
+    /// <summary>
+    /// Madde 69: ekipte aynı günlerde izinli ya da izin bekleyen kişiler. <paramref name="excludeLeaveId"/>
+    /// talebin kendisini dışlar (onay ekranı). Dönüş: ekip, çakışanlar (kişi başına en erken tarih).
+    /// </summary>
+    private async Task<(List<TeamRow> Team, List<(Guid EmployeeId, DateOnly Start, DateOnly End)> Overlaps)> TeamOverlapAsync(
+        Guid employeeId, DateOnly start, DateOnly end, Guid? excludeLeaveId, CancellationToken ct)
+    {
+        var team = await TeammatesAsync(employeeId, ct);
+        var ids = team.Select(t => t.Id).ToList();
+        var rows = await _db.LeaveRequests.AsNoTracking()
+            .Where(r => ids.Contains(r.EmployeeId) && r.Id != excludeLeaveId
+                && (r.Status == LeaveRequestStatus.Submitted || r.Status == LeaveRequestStatus.Approved)
+                && r.StartDate <= end && r.EndDate >= start)
+            .Select(r => new { r.EmployeeId, r.StartDate, r.EndDate }).ToListAsync(ct);
+        return (team, rows.Select(r => (r.EmployeeId, r.StartDate, r.EndDate)).ToList());
+    }
+
+    /// <summary>
+    /// Madde 69: izin formunda ve onayda ekip çakışma uyarısı. Talep eden yalnızca sayıyı görür (ekip 5'ten
+    /// küçükse yalnızca "eşik aşıldı"); yönetici (ekibini görebilen) ve İK ayrıca adları ve tarihleri görür.
+    /// İzin türü gösterilmez (hastalık izni gibi özel bilgi sızmasın). <c>leaveRequestId</c> verilirse
+    /// talebin çalışanı ve tarihleri kullanılır (onay ekranı).
+    /// </summary>
+    [HttpGet("team-conflict")]
+    public async Task<IActionResult> TeamConflictCheck([FromQuery] Guid? employeeId, [FromQuery] DateOnly? startDate, [FromQuery] DateOnly? endDate,
+        [FromQuery] Guid? leaveRequestId, CancellationToken ct)
+    {
+        Guid emp;
+        DateOnly start, end;
+        if (leaveRequestId is { } lid)
+        {
+            var r = await _db.LeaveRequests.AsNoTracking().FirstOrDefaultAsync(x => x.Id == lid, ct);
+            if (r is null) return NotFound();
+            (emp, start, end) = (r.EmployeeId, r.StartDate, r.EndDate);
+        }
+        else if (startDate is { } s0 && endDate is { } e0 && e0 >= s0 && e0.DayNumber - s0.DayNumber <= 366)
+        {
+            var me0 = await _approvals.FindMyEmployeeIdAsync(ct);
+            emp = employeeId ?? me0 ?? Guid.Empty;
+            if (emp == Guid.Empty) return Forbid();
+            (start, end) = (s0, e0);
+        }
+        else return BadRequest(new { message = "Tarih aralığı geçersiz" });
+
+        var me = await _approvals.FindMyEmployeeIdAsync(ct);
+        var self = me == emp;
+        var canSeeNames = IsHr || (User.IsInRole("manager") && await VisibleEmployeesAsync(ct) is { } vis && vis.Contains(emp) && !self);
+        // Başkasının çakışmasına bakmak yalnızca İK'ya ya da o kişiyi görebilen yöneticiye açık.
+        if (!self && !canSeeNames) return NotFound();
+
+        var settings = await SettingsAsync(ct);
+        var (team, overlaps) = await TeamOverlapAsync(emp, start, end, leaveRequestId, ct);
+        var people = overlaps.Select(o => o.EmployeeId).Distinct().ToList();
+        var res = Services.TeamConflict.Evaluate(team.Count, people.Count, settings.ConflictThresholdPercent, settings.ConflictWarnEnabled, canSeeNames);
+        return Ok(new
+        {
+            enabled = res.Enabled, thresholdPercent = res.ThresholdPercent, exceeds = res.Exceeds,
+            teamSize = res.TeamSize, overlapping = res.Overlapping, percent = res.Percent,
+            people = canSeeNames && res.Enabled
+                ? people.Select(id => new
+                {
+                    employeeId = id,
+                    name = team.Where(t => t.Id == id).Select(t => $"{t.FirstName} {t.LastName}".Trim()).FirstOrDefault(),
+                    startDate = overlaps.Where(o => o.EmployeeId == id).Min(o => o.Start),
+                    endDate = overlaps.Where(o => o.EmployeeId == id).Max(o => o.End),
+                }).ToList()
+                : null,
+        });
     }
 
     /// <summary>
@@ -232,21 +323,25 @@ public class LeaveRequestsController : ControllerBase
         var workingDays = await WorkingDaysAsync(request.StartDate, request.EndDate, ct);
         if (workingDays == 0)
             return (Bad("Seçilen aralıkta iş günü yok"), null);
+        var settings = await SettingsAsync(ct);
+        var dayHours = Services.LeaveEntitlement.EffectiveDayHours(settings.DayHours);
         // Yarim gun: yalnizca tek gunluk taleplerde istemcinin 0.5 bildirmesine izin var.
-        // Saatlik izin (G8): yalnizca tek gun; gun = saat / gunluk calisma saati (LEAVE_DAY_HOURS).
+        // Saatlik izin (G8): yalnizca tek gun; gun = saat / gunluk calisma saati (sirket ayari,
+        // yoksa LEAVE_DAY_HOURS). Yarim gun tatil (arife) gununde saat, kalan yarim gunu asamaz.
         decimal? hours = null;
+        var dayCap = request.StartDate == request.EndDate ? workingDays : 1m;
         if (request.Hours is { } h)
         {
             if (request.StartDate != request.EndDate)
                 return (Bad("Saatlik izin yalnızca tek gün için girilebilir"), null);
-            if (h <= 0 || h >= Services.LeaveEntitlement.DayHours || h * 2 != Math.Floor(h * 2))
-                return (Bad($"Saatlik izin 0,5 saatlik adımlarla ve {Services.LeaveEntitlement.DayHours:0.#} saatten az olmalı"), null);
+            if (h <= 0 || h >= dayHours * dayCap || h * 2 != Math.Floor(h * 2))
+                return (Bad($"Saatlik izin 0,5 saatlik adımlarla ve {dayHours * dayCap:0.#} saatten az olmalı"), null);
             hours = h;
         }
         var days = hours is { } hh
-            ? Services.LeaveEntitlement.HoursToDays(hh)
+            ? Services.LeaveEntitlement.HoursToDays(hh, dayHours)
             : request.StartDate == request.EndDate && request.Days == 0.5m
-                ? 0.5m
+                ? Math.Min(0.5m, workingDays)
                 : workingDays;
 
         // Ayni calisanin bekleyen/onayli bir izniyle cakisan talep reddedilir.
@@ -317,11 +412,23 @@ public class LeaveRequestsController : ControllerBase
         // onaycıya ve İK'ya gösterilir. KVKK: akış tanımında "reason" gizli alan seçilmişse
         // workflow-service onu talep sahibi ve İK dışındakilere döndürmez. Sohbet kartları ve
         // e-posta bildirimleri yük içeriğini (gerekçeyi) taşımaz.
+        // Madde 69: onaycıya talep anındaki ekip çakışması (yalnızca sayı; adlar onay ekranında canlı sorgulanır).
+        int? teamSize = null, teamOnLeave = null;
+        if (settings.ConflictWarnEnabled)
+        {
+            try
+            {
+                var (team, teamOverlaps) = await TeamOverlapAsync(leave.EmployeeId, leave.StartDate, leave.EndDate, leave.Id, ct);
+                if (team.Count > 0) { teamSize = team.Count; teamOnLeave = teamOverlaps.Select(o => o.EmployeeId).Distinct().Count(); }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException) { /* çakışma bilgisi olmadan da akış açılır */ }
+        }
         var payload = System.Text.Json.JsonSerializer.Serialize(new
         {
             leaveRequestId = leave.Id, type = leave.Type.ToString(), startDate = leave.StartDate.ToString("yyyy-MM-dd"),
             endDate = leave.EndDate.ToString("yyyy-MM-dd"), days = leave.Days, hours = leave.Hours,
             reason = string.IsNullOrWhiteSpace(leave.Reason) ? null : leave.Reason.Trim(),
+            teamSize, teamOnLeave,
         });
         var workflowId = internalCall
             ? await _approvals.StartLeaveApprovalInternalAsync(_db, leave.EmployeeId, subject, ct, payload)
@@ -405,7 +512,7 @@ public class LeaveRequestsController : ControllerBase
             PartitionKey = leave.EmployeeId.ToString(),
             Payload = JsonSerializer.Serialize(new LeaveDecidedEvent(
                 leave.TenantSlug, leave.Id, leave.EmployeeId, leave.StartDate, leave.EndDate,
-                request.Approved, DateTimeOffset.UtcNow, leave.Type.ToString(), leave.Days)),
+                request.Approved, DateTimeOffset.UtcNow, leave.Type.ToString(), leave.Days, leave.Hours)),
         });
 
         try

@@ -9,7 +9,8 @@ import { AlarmClock, Settings2 } from 'lucide-react'
 import { Panel, PanelBody, PanelHead } from '@/components/ui/Panel'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/Modal'
-import { TextAreaField, TextField } from '@/components/ui/Field'
+import { SelectField, TextAreaField, TextField } from '@/components/ui/Field'
+import { Checkbox } from '@/components/ui/checkbox'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { InfoNote, RowsSkeleton } from '@/components/ui/States'
 import { useAuth } from '@/auth/useAuth'
@@ -52,21 +53,62 @@ function OvertimeDraftModal({ row, self, onClose }: { row: AttendanceRow; self: 
   )
 }
 
+type SettingsDraft = {
+  grace: string; start: string; end: string; brk: string
+  rest: string; weekly: string; daily: string; night: string; consec: string
+  geoPolicy: 'Block' | 'Flag'; geoRaw: boolean; geoDays: string
+}
+
+const num = (v: string) => Number(v.replace(',', '.'))
+
+/** Puantaj ayarları + çalışma süresi kuralları (madde 66) + konum doğrulama (madde 67). */
 function SettingsModal({ onClose }: { onClose: () => void }) {
   const q = useQuery({ queryKey: ['attendance', 'settings'], queryFn: ({ signal }) => opsApi.timesheetSettings(signal) })
-  const [d, setD] = useState<{ grace: string; start: string; end: string; brk: string } | null>(null)
-  const v = d ?? (q.data ? { grace: String(q.data.lateGraceMinutes), start: q.data.defaultStart.slice(0, 5), end: q.data.defaultEnd.slice(0, 5), brk: String(q.data.defaultBreakMinutes) } : null)
-  const save = useAction(() => opsApi.saveTimesheetSettings({ lateGraceMinutes: Number(v!.grace), defaultStart: `${v!.start}:00`, defaultEnd: `${v!.end}:00`, defaultBreakMinutes: Number(v!.brk) }),
-    { success: tx('Puantaj ayarları kaydedildi'), invalidate: [['attendance']], onDone: onClose })
+  const [d, setD] = useState<SettingsDraft | null>(null)
+  const v: SettingsDraft | null = d ?? (q.data ? {
+    grace: String(q.data.lateGraceMinutes), start: q.data.defaultStart.slice(0, 5), end: q.data.defaultEnd.slice(0, 5), brk: String(q.data.defaultBreakMinutes),
+    rest: String(q.data.minRestHours ?? 11), weekly: String(q.data.weeklyMaxHours ?? 45), daily: String(q.data.dailyMaxHours ?? 11),
+    night: String(q.data.nightMaxHours ?? 7.5), consec: String(q.data.maxConsecutiveDays ?? 6),
+    geoPolicy: q.data.geoOutsidePolicy ?? 'Block', geoRaw: q.data.geoStoreRaw ?? false, geoDays: String(q.data.geoRawRetentionDays ?? 30),
+  } : null)
+  const bad = !v ? true : [num(v.rest) >= 8 && num(v.rest) <= 24, num(v.weekly) >= 1 && num(v.weekly) <= 72, num(v.daily) >= 1 && num(v.daily) <= 16,
+    num(v.night) >= 1 && num(v.night) <= 16, Number.isInteger(num(v.consec)) && num(v.consec) >= 1 && num(v.consec) <= 14,
+    Number.isInteger(num(v.geoDays)) && num(v.geoDays) >= 1 && num(v.geoDays) <= 90].some((ok) => !ok)
+  const save = useAction(() => opsApi.saveTimesheetSettings({
+    lateGraceMinutes: Number(v!.grace), defaultStart: `${v!.start}:00`, defaultEnd: `${v!.end}:00`, defaultBreakMinutes: Number(v!.brk),
+    minRestHours: num(v!.rest), weeklyMaxHours: num(v!.weekly), dailyMaxHours: num(v!.daily), nightMaxHours: num(v!.night), maxConsecutiveDays: num(v!.consec),
+    geoOutsidePolicy: v!.geoPolicy, geoStoreRaw: v!.geoRaw, geoRawRetentionDays: num(v!.geoDays),
+  }), { success: tx('Puantaj ayarları kaydedildi'), invalidate: [['attendance'], ['timeshift', 'rules']], onDone: onClose })
   return (
-    <Modal open onClose={onClose} title={tx('Puantaj ayarları')} note={tx('Vardiyası olmayan günlerde varsayılan mesai (hafta içi) kullanılır.')}
-      footer={<><Button variant="outline" onClick={onClose}>{tx('Vazgeç')}</Button><Button onClick={() => save.mutate(undefined)} disabled={!v || save.isPending}>{tx('Kaydet')}</Button></>}>
+    <Modal open onClose={onClose} size="lg" title={tx('Puantaj ayarları')} note={tx('Vardiyası olmayan günlerde varsayılan mesai (hafta içi) kullanılır.')}
+      footer={<><Button variant="outline" onClick={onClose}>{tx('Vazgeç')}</Button><Button onClick={() => save.mutate(undefined)} disabled={!v || bad || save.isPending}>{tx('Kaydet')}</Button></>}>
       {!v ? <RowsSkeleton rows={2} /> : (
-        <div className="grid gap-3 sm:grid-cols-2">
-          <TextField label={tx('Geç kalma toleransı (dk)')} type="number" min={0} max={60} value={v.grace} onChange={(e) => setD({ ...v, grace: e.target.value })} />
-          <TextField label={tx('Mola (dk)')} type="number" min={0} max={180} value={v.brk} onChange={(e) => setD({ ...v, brk: e.target.value })} />
-          <TextField label={tx('Mesai başlangıcı')} type="time" value={v.start} onChange={(e) => setD({ ...v, start: e.target.value })} />
-          <TextField label={tx('Mesai bitişi')} type="time" value={v.end} onChange={(e) => setD({ ...v, end: e.target.value })} />
+        <div className="space-y-5">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <TextField label={tx('Geç kalma toleransı (dk)')} type="number" min={0} max={60} value={v.grace} onChange={(e) => setD({ ...v, grace: e.target.value })} />
+            <TextField label={tx('Mola (dk)')} type="number" min={0} max={180} value={v.brk} onChange={(e) => setD({ ...v, brk: e.target.value })} />
+            <TextField label={tx('Mesai başlangıcı')} type="time" value={v.start} onChange={(e) => setD({ ...v, start: e.target.value })} />
+            <TextField label={tx('Mesai bitişi')} type="time" value={v.end} onChange={(e) => setD({ ...v, end: e.target.value })} />
+          </div>
+          <div className="space-y-2 border-t border-border pt-4">
+            <p className="text-[13px] font-medium">{tx('Çalışma süresi kuralları')}</p>
+            <p className="text-[12px] text-muted-foreground">{tx('Varsayılanlar yasal değerlerdir (İş Kanunu m.63/m.69, Çalışma Süreleri Yönetmeliği). Sektörünüzde farklı bir düzenleme varsa değiştirin. Vardiya atamasında uyarı olarak gösterilir; takas onayında dinlenme ve haftalık süre ihlali takası reddeder.')}</p>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <TextField label={tx('Vardiyalar arası dinlenme (saat)')} inputMode="decimal" value={v.rest} onChange={(e) => setD({ ...v, rest: e.target.value })} />
+              <TextField label={tx('Haftalık en çok (saat)')} inputMode="decimal" value={v.weekly} onChange={(e) => setD({ ...v, weekly: e.target.value })} />
+              <TextField label={tx('Günlük en çok (saat)')} inputMode="decimal" value={v.daily} onChange={(e) => setD({ ...v, daily: e.target.value })} />
+              <TextField label={tx('Gece çalışması en çok (saat)')} inputMode="decimal" value={v.night} onChange={(e) => setD({ ...v, night: e.target.value })} />
+              <TextField label={tx('Ardışık çalışma günü en çok')} inputMode="numeric" value={v.consec} onChange={(e) => setD({ ...v, consec: e.target.value })} />
+            </div>
+          </div>
+          <div className="space-y-2 border-t border-border pt-4">
+            <p className="text-[13px] font-medium">{tx('Konum doğrulamalı giriş-çıkış')}</p>
+            <SelectField label={tx('Nokta dışından giriş-çıkış')} value={v.geoPolicy} onChange={(x) => setD({ ...v, geoPolicy: x as 'Block' | 'Flag' })}
+              options={[{ value: 'Block', label: tx('Reddet') }, { value: 'Flag', label: tx('Kaydet, "noktada değil" olarak işaretle') }]} />
+            <label className="flex items-center gap-2 text-[13px]"><Checkbox checked={v.geoRaw} onCheckedChange={(x) => setD({ ...v, geoRaw: x === true })} /> {tx('Ham koordinatı da sakla (varsayılan kapalı)')}</label>
+            {v.geoRaw && <TextField label={tx('Ham koordinat saklama süresi (gün, 1-90)')} inputMode="numeric" value={v.geoDays} onChange={(e) => setD({ ...v, geoDays: e.target.value })} />}
+            <InfoNote>{tx('KVKK: varsayılan olarak yalnızca "noktada mı" ve uzaklık aralığı (ör. 50-100 m) saklanır. Ham koordinat saklamak için meşru amaç ve aydınlatma metni gerekir; süre dolunca otomatik silinir, kapatınca mevcut koordinatlar hemen silinir.')}</InfoNote>
+          </div>
         </div>
       )}
     </Modal>

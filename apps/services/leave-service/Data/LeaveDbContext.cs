@@ -24,6 +24,7 @@ public class LeaveDbContext : DbContext, ITenantAwareContext
     public DbSet<LeaveBalance> LeaveBalances => Set<LeaveBalance>();
     public DbSet<LeaveRequest> LeaveRequests => Set<LeaveRequest>();
     public DbSet<PublicHoliday> PublicHolidays => Set<PublicHoliday>();
+    public DbSet<LeaveSettings> LeaveSettings => Set<LeaveSettings>();
     public DbSet<ProcessedEvent> ProcessedEvents => Set<ProcessedEvent>();
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
 
@@ -52,6 +53,10 @@ public class LeaveDbContext : DbContext, ITenantAwareContext
         modelBuilder.Entity<PublicHoliday>().ConfigureTenantColumn();
         modelBuilder.Entity<PublicHoliday>().ToTable("leave_public_holidays");
         modelBuilder.Entity<PublicHoliday>().HasIndex(h => new { h.TenantSlug, h.Date }).IsUnique();
+
+        // Dalga 9: scripts/sql/2026-10-22_time_leave.sql
+        modelBuilder.Entity<LeaveSettings>().ConfigureTenantColumn();
+        modelBuilder.Entity<LeaveSettings>().ToTable("leave_settings");
 
         modelBuilder.Entity<LeaveRequest>().ConfigureTenantColumn();
         modelBuilder.Entity<LeaveRequest>().ToTable("leave_requests");

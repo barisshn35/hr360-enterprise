@@ -47,6 +47,8 @@ public static class ClockCore
         if (await OpenEntryAsync(db, employeeId, at, ct) is not null)
             return (ErrOpenEntry, null);
         var date = WorkDate(at);
+        // Madde 72: kapatılmış puantaj dönemine kayıt girilemez.
+        if (await PeriodLock.CheckAsync(db, date, ct) is { } locked) return (locked, null);
         var entry = await db.TimeEntries.FirstOrDefaultAsync(t => t.EmployeeId == employeeId && t.Date == date, ct);
         if (entry is not null && entry.ClockIn is not null)
             return (ErrAlreadyIn, null);
@@ -62,6 +64,7 @@ public static class ClockCore
     {
         var entry = await OpenEntryAsync(db, employeeId, at, ct);
         if (entry?.ClockIn is null) return (ErrNoOpenEntry, null);
+        if (await PeriodLock.CheckAsync(db, entry.Date, ct) is { } locked) return (locked, null);
         entry.ClockOut = at;
         var worked = (int)(at - entry.ClockIn.Value).TotalMinutes;
         entry.WorkedMinutes = worked;
@@ -74,7 +77,7 @@ public static class ClockCore
     /// tek SaveChanges ile yazılır. Web/QR, kart/PIN terminali ve sohbet (iç uç) bu yolu kullanır.
     /// </summary>
     public static async Task<(string? Error, TimeClockPunch? Punch, TimeEntry? Entry)> PunchAsync(TimeShiftDbContext db, Guid employeeId,
-        Guid? siteId, string kind, TimeEntrySource method, bool? onSite, CancellationToken ct)
+        Guid? siteId, string kind, TimeEntrySource method, bool? onSite, CancellationToken ct, Action<TimeClockPunch>? decorate = null)
     {
         var at = DateTimeOffset.UtcNow;
         var open = await OpenEntryAsync(db, employeeId, at, ct);
@@ -84,9 +87,34 @@ public static class ClockCore
             : await ClockOutAsync(db, employeeId, at, ct);
         if (err is not null) return (err, null, null);
         var p = new TimeClockPunch { EmployeeId = employeeId, SiteId = siteId, Kind = goingIn ? PunchKind.In : PunchKind.Out, Method = method, OnSite = onSite, At = at };
+        decorate?.Invoke(p);
         db.TimeClockPunches.Add(p);
         await db.SaveChangesAsync(ct);
         return (null, p, entry);
+    }
+
+    private static readonly (int Max, string Label)[] Buckets =
+        { (50, "0-50"), (100, "50-100"), (250, "100-250"), (500, "250-500"), (1000, "500-1000") };
+
+    /// <summary>Madde 67: uzaklığın kaba aralığı (metre). Konum yerine yalnızca bu aralık saklanır.</summary>
+    public static string DistanceBucket(double meters)
+    {
+        foreach (var (max, label) in Buckets)
+            if (meters < max) return label;
+        return "1000+";
+    }
+
+    /// <summary>Saklama süresi dolan ham koordinatları siler (yalnızca şirket ham saklamayı açtıysa oluşur).</summary>
+    public static async Task PurgeExpiredRawAsync(TimeShiftDbContext db, CancellationToken ct)
+    {
+        try
+        {
+            var now = DateTimeOffset.UtcNow;
+            await db.TimeClockPunches.Where(p => p.RawExpiresAt != null && p.RawExpiresAt < now)
+                .ExecuteUpdateAsync(u => u.SetProperty(p => p.RawLatitude, (double?)null).SetProperty(p => p.RawLongitude, (double?)null)
+                    .SetProperty(p => p.RawExpiresAt, (DateTimeOffset?)null), ct);
+        }
+        catch (InvalidOperationException) { /* bellek içi test veritabanı toplu güncellemeyi desteklemez */ }
     }
 
     /// <summary>İki nokta arası uzaklık (metre, haversine).</summary>

@@ -38,6 +38,8 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         "keyhash", "token", "bankaccount", "privatenotes",
         // Giriş-çıkış: kart/PIN özetleri ve QR anahtarı.
         "hash", "pin",
+        // Konum doğrulama (dalga 9): ham koordinat (yalnızca şirket açtıysa) denetim kaydına yazılmaz.
+        "rawlatitude", "rawlongitude",
     };
 
     /// <summary>Teknik/altyapı tabloları denetlenmez (gürültü olur).</summary>

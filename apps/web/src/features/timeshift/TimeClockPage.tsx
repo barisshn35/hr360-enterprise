@@ -20,10 +20,16 @@ import { PersonSelect, errMsg, useAction } from '@/features/shared/kit'
 import { tx, appLocale } from '@/lib/i18n'
 
 const METHOD: Record<ClockPunch['method'], string> = {
-  Manual: tx('Elle'), Device: tx('Cihaz'), Import: tx('Aktarım'), Qr: tx('QR'), Card: tx('Kart'), Pin: tx('PIN'), Web: tx('Web'),
+  Manual: tx('Elle'), Device: tx('Cihaz'), Import: tx('Aktarım'), Qr: tx('QR'), Card: tx('Kart'), Pin: tx('PIN'), Web: tx('Web'), Chat: tx('Sohbet'),
 }
 
-const KVKK_NOTE = tx('Biyometrik veri (parmak izi, yüz) kullanılmaz. Konum yalnızca noktada konum denetimi açıksa o an istenir; koordinat saklanmaz, yalnızca "noktada" bilgisi tutulur.')
+const KVKK_NOTE = tx('Biyometrik veri (parmak izi, yüz) kullanılmaz. Konum yalnızca noktada konum denetimi açıksa giriş-çıkış anında bir kez istenir; sürekli takip yoktur. Saklanan: "noktada mı" ve uzaklık aralığı (ör. 50-100 m); ham koordinat yalnızca şirket açtıysa ve sınırlı süre tutulur.')
+
+/** Konum aydınlatma metni (KVKK m.10): konum ilk kez istenmeden önce gösterilir. */
+const LOCATION_NOTICE = tx('Bu noktada giriş-çıkışınızın işyerinde yapıldığını doğrulamak için tarayıcınızdan yalnızca şimdi, bir kez konum alınacak. Amaç: puantaj kaydının doğruluğu (iş sözleşmesinin ifası, KVKK m.5/2-c). Saklanan: noktada olup olmadığınız ve uzaklık aralığı; şirket ayrıca ham konum saklamayı açtıysa bu bilgi en çok ayarlanan gün kadar tutulup silinir. Konum izni vermezseniz bu noktada giriş-çıkış yapılamaz; İK’ya başvurabilirsiniz. Haklarınız için KVKK m.11.')
+const NOTICE_KEY = 'hr360.timeclock.locationNotice'
+function noticeSeen(): boolean { try { return localStorage.getItem(NOTICE_KEY) === '1' } catch { return false } }
+function markNoticeSeen() { try { localStorage.setItem(NOTICE_KEY, '1') } catch { /* gizli pencere */ } }
 
 /* ------------------------------------------------------------------ çalışan */
 
@@ -39,12 +45,19 @@ export function TimeClockPage() {
   const [busy, setBusy] = useState(false)
   const [pin, setPin] = useState('')
   const done = useRef(false)
+  const confirm = useConfirm()
 
   async function punch(body: { token?: string; siteId?: string }, needsLocation: boolean) {
     setBusy(true)
     try {
       let pos: { latitude: number; longitude: number } | undefined
       if (needsLocation) {
+        // Aydınlatma metni konum ilk kez istenmeden önce bir kez gösterilir.
+        if (!noticeSeen()) {
+          const ok = await confirm({ title: tx('Konum doğrulaması'), note: LOCATION_NOTICE, action: tx('Anladım, konumu paylaş') })
+          if (!ok) { setBusy(false); return }
+          markNoticeSeen()
+        }
         try { pos = await currentPosition() } catch { /* sunucu "konum gerekli" der */ }
       }
       const r = await timeClockApi.punch({ ...body, ...pos })
@@ -94,7 +107,7 @@ export function TimeClockPage() {
                 <ScanLine className="size-4" /> {m?.clockedIn ? tx('Çıkış yap') : tx('Giriş yap')}
               </Button>
             </div>
-            {site?.checkLocation && <p className="flex items-center gap-1.5 text-[12.5px] text-muted-foreground"><MapPin className="size-3.5" /> {tx('Bu noktada konum bir kez denetlenir ve saklanmaz.')}</p>}
+            {site?.checkLocation && <p className="flex items-center gap-1.5 text-[12.5px] text-muted-foreground"><MapPin className="size-3.5" /> {tx('Bu noktada konum giriş-çıkış anında bir kez denetlenir; yalnızca "noktada mı" ve uzaklık aralığı saklanır.')}</p>}
             <InfoNote>{KVKK_NOTE}</InfoNote>
           </PanelBody>
         </Panel>
@@ -122,7 +135,9 @@ export function TimeClockPage() {
                     <li key={p.id} className="flex items-center gap-2 px-4 py-2">
                       <StatusBadge tone={p.kind === 'In' ? 'success' : 'neutral'}>{p.kind === 'In' ? tx('Giriş') : tx('Çıkış')}</StatusBadge>
                       <span className="flex-1">{formatDateTime(p.at)}</span>
-                      <span className="text-muted-foreground">{METHOD[p.method]}</span>
+                      {p.onSite === false && <StatusBadge tone="warning">{tx('noktada değil')}</StatusBadge>}
+                      {p.distanceBucket && <span className="text-[11.5px] text-muted-foreground">{tx('{0} m', [p.distanceBucket])}</span>}
+                      <span className="text-muted-foreground">{METHOD[p.method] ?? p.method}</span>
                     </li>
                   ))}
                 </ul>
@@ -139,7 +154,7 @@ export function TimeClockPage() {
 
 function Kiosk({ site, onClose }: { site: ClockSite; onClose: () => void }) {
   const [svg, setSvg] = useState('')
-  const [left, setLeft] = useState(60)
+  const [left, setLeft] = useState(30)
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     let timer: number | undefined
@@ -161,7 +176,7 @@ function Kiosk({ site, onClose }: { site: ClockSite; onClose: () => void }) {
     return () => { stop = true; window.clearTimeout(timer); window.clearInterval(tick) }
   }, [site.id])
   return (
-    <Modal open onClose={onClose} size="lg" title={tx('Kiosk — {0}', [site.name])} note={tx('Bu ekranı girişteki tablet ya da monitörde açık bırakın. Kod her dakika yenilenir.')}
+    <Modal open onClose={onClose} size="lg" title={tx('Kiosk — {0}', [site.name])} note={tx('Önizleme (İK oturumuyla). Paylaşılan tablette İK oturumu açık bırakmayın: tablette {0} adresini açıp noktanın terminal anahtarını girin. Kod 30 saniyede bir yenilenir.', [`${window.location.origin}/kiosk`])}
       footer={<Button variant="outline" onClick={() => void ref.current?.requestFullscreen?.()}><Maximize2 className="size-4" /> {tx('Tam ekran')}</Button>}>
       <div ref={ref} className="flex flex-col items-center gap-3 bg-white p-6 text-black">
         <p className="text-xl font-semibold">{site.name}</p>
@@ -320,6 +335,7 @@ export function TimeClockAdminPage() {
           footer={<Button onClick={() => { void navigator.clipboard?.writeText(key); setKey(null) }}><CheckCircle2 className="size-4" /> {tx('Kopyala ve kapat')}</Button>}>
           <code className="block break-all rounded-lg bg-muted p-3 text-[12.5px]">{key}</code>
           <p className="mt-3 text-[12.5px] text-muted-foreground">{tx('Terminal, {0} adresine X-Device-Key başlığıyla kart numarası ya da sicil kodu + PIN gönderir.', ['POST /api/timeshift/time-clock/terminal/punch'])}</p>
+          <p className="mt-2 text-[12.5px] text-muted-foreground">{tx('Paylaşılan tablet (kiosk) için tablette {0} adresini açıp bu anahtarı girin: 30 saniyede bir değişen QR ve sicil kodu + PIN ekranı gösterilir.', [`${window.location.origin}/kiosk`])}</p>
         </Modal>
       )}
     </>

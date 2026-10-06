@@ -321,7 +321,7 @@ public class ShiftTeamsController : ControllerBase
 
     private record RosterDayResult(
         DateOnly Date, string? Type, TimeOnly? StartTime, TimeOnly? EndTime,
-        string? Note, Guid? OverrideId);
+        string? Note, Guid? OverrideId, bool Partial = false);
     private record RosterMemberResult(
         Guid EmployeeId, int Rank, string? Tag, DateOnly EffectiveFrom, DateOnly? EffectiveTo,
         List<RosterDayResult> Schedule);
@@ -355,7 +355,7 @@ public class ShiftTeamsController : ControllerBase
                 if (over is not null)
                 {
                     schedule.Add(new RosterDayResult(
-                        date, over.Type.ToString(), over.StartTime, over.EndTime, over.Note, over.Id));
+                        date, over.Type.ToString(), over.StartTime, over.EndTime, over.Note, over.Id, over.IsPartial));
                     continue;
                 }
 

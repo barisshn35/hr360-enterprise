@@ -24,6 +24,9 @@ import {
   useShiftTeams,
 } from '@/api/queries-shift-engine'
 import type { ShiftDayType, ShiftPattern, ShiftPatternDayInput } from '@/api/timeshift'
+import { useQuery } from '@tanstack/react-query'
+import { opsApi } from '@/api/opsPlus'
+import { limitsFrom, patternWarnings } from '@/lib/workRules'
 import { useAuth } from '@/auth/useAuth'
 import { Modal } from '@/components/ui/Modal'
 import {
@@ -127,6 +130,8 @@ function PatternBuilderDialog({ onClose }: { onClose: () => void }) {
   const create = useCreateShiftPattern()
 
   const [days, setDays] = useState<DraftDay[]>(() => PRESETS[0].days())
+  const ruleSettings = useQuery({ queryKey: ['timeshift', 'rules'], queryFn: ({ signal }) => opsApi.timesheetSettings(signal), staleTime: 5 * 60_000 })
+  const ruleWarnings = useMemo(() => patternWarnings(days, limitsFrom(ruleSettings.data)), [days, ruleSettings.data])
   const [selected, setSelected] = useState<number | null>(null)
   const [name, setName] = useState('')
   const [nameTouched, setNameTouched] = useState(false)
@@ -394,6 +399,14 @@ function PatternBuilderDialog({ onClose }: { onClose: () => void }) {
               )}
             </div>
             {dayErrors[selected] && <p className="mt-2 text-[12px] text-destructive">{dayErrors[selected]}</p>}
+          </div>
+        )}
+
+        {/* Madde 66: çalışma süresi kuralları (canlı uyarı; kaydı engellemez). */}
+        {ruleWarnings.length > 0 && (
+          <div role="status" className="rounded-lg border border-[hsl(var(--warning))]/40 bg-[hsl(var(--warning))]/8 px-3 py-2.5 text-[12.5px]">
+            <p className="mb-1 font-medium">{tx('Çalışma süresi kuralı uyarıları')}</p>
+            <ul className="list-disc space-y-0.5 pl-5">{ruleWarnings.map((w, i) => <li key={`${w.code}-${i}`}>{w.message}</li>)}</ul>
           </div>
         )}
 

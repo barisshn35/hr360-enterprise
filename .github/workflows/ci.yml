@@ -119,7 +119,7 @@ jobs:
         # Testler yalnizca ai_tools router'ini yukler; mlflow/shap gibi agir
         # paketler gerekmez. Surumler requirements dosyalarindan alinir.
         run: |
-          grep -E '^(fastapi|starlette|pydantic|httpx|numpy|scikit-learn|prometheus-fastapi-instrumentator)==' requirements.txt > ci-req.txt
+          grep -E '^(fastapi|starlette|pydantic|httpx|numpy|scikit-learn|prometheus-fastapi-instrumentator|ortools)==' requirements.txt > ci-req.txt
           cat requirements-ai.txt requirements-dev.txt >> ci-req.txt
           pip install -r ci-req.txt
       - name: Sozdizimi

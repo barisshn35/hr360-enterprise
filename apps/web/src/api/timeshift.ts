@@ -157,6 +157,8 @@ export type RosterDay =
       endTime: string | null
       note: string | null
       overrideId: string
+      /** Kısmi gün izni (yarım gün / saatlik): çalışan o gün kısmen çalışır (dalga 9). */
+      partial?: boolean
     }
   | { date: string; type: null; startTime: null; endTime: null; note: null; overrideId: null }
 

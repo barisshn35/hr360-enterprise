@@ -65,6 +65,7 @@ public static class PayrollData
             SELECT "EmployeeId", "Type"::text AS "Type", sum(least("EndDate", {2}) - greatest("StartDate", {1}) + 1)::numeric AS "Value"
             FROM leave_requests
             WHERE "TenantSlug" = {0} AND "Type" = ANY({3}) AND "Status" = 'Approved' AND "StartDate" <= {2} AND "EndDate" >= {1}
+              AND NOT ("StartDate" = "EndDate" AND "Days" < 1) -- kısmi gün izni eksik gün değildir (dalga 9)
             GROUP BY "EmployeeId", "Type"
             """, tenant, start, end, types).ToListAsync(ct);
         return rows.GroupBy(r => r.EmployeeId).ToDictionary(g => g.Key, g => g.ToDictionary(r => r.Type, r => r.Value, StringComparer.OrdinalIgnoreCase));

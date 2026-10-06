@@ -5,9 +5,12 @@ import { useShiftPatterns, useShiftTeams } from '@/api/queries-shift-engine'
 import { PatternsView } from './PatternsView'
 import { RosterView } from './RosterView'
 import { TeamsView } from './TeamsView'
+import { OptimizerView } from './OptimizerView'
+import { useAuth } from '@/auth/useAuth'
+import { isHr } from '@/auth/roles'
 import { tx } from '@/lib/i18n'
 
-type Tab = 'takvim' | 'ekipler' | 'desenler'
+type Tab = 'takvim' | 'ekipler' | 'desenler' | 'oneri'
 
 /**
  * Vardiya motoru: döngüsel vardiya desenleri, bu desenleri takip eden ekipler
@@ -22,6 +25,9 @@ export function ShiftEnginePage() {
   const teamId = params.get('ekip')
   const teams = useShiftTeams()
   const patterns = useShiftPatterns()
+  const { roles, hasRole } = useAuth()
+  // Öneri (madde 44): yalnızca planlayıcılar (yönetici ya da İK).
+  const planner = hasRole('manager') || isHr(roles, 'ext-timeshift-manage')
 
   const selectTeam = (id: string, nextTab?: Tab) => {
     const next = new URLSearchParams(params)
@@ -48,6 +54,7 @@ export function ShiftEnginePage() {
           { key: 'takvim', label: tx('Takvim') },
           { key: 'ekipler', label: tx('Ekipler'), count: teams.data?.length },
           { key: 'desenler', label: tx('Desenler'), count: patterns.data?.length },
+          ...(planner ? [{ key: 'oneri' as const, label: tx('Öneri') }] : []),
         ]}
       />
 
@@ -60,6 +67,7 @@ export function ShiftEnginePage() {
         />
       )}
       {tab === 'desenler' && <PatternsView onOpenTeam={(id) => selectTeam(id, 'ekipler')} />}
+      {tab === 'oneri' && planner && <OptimizerView />}
     </div>
   )
 }

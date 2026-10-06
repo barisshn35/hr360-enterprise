@@ -4,6 +4,8 @@ import { LoaderCircle, Trash2 } from 'lucide-react'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/button'
 import { TextField } from '@/components/ui/Field'
+import { Checkbox } from '@/components/ui/checkbox'
+import { StatusBadge } from '@/components/ui/StatusBadge'
 import { EmptyState, RowsSkeleton } from '@/components/ui/States'
 import { useToast } from '@/components/ui/Toast'
 import { leaveApi } from '@/api/leave'
@@ -13,8 +15,9 @@ import { tx } from '@/lib/i18n'
 
 /**
  * Resmi tatil takvimi (İK). Buradaki günler izin günü hesabında düşülür —
- * backend (leave-service) izin gününü artık kendisi hesaplıyor; dini bayramlar
- * her yıl değiştiği için hazır bir liste gömülmedi.
+ * backend (leave-service) izin gününü kendisi hesaplıyor. "Türkiye resmi tatillerini ekle":
+ * 2025–2030 dini bayramları Diyanet takviminden gömülü; arifeler ve 28 Ekim yarım gün (0,5).
+ * Aralık ayında gelecek yılın tatilleri otomatik yüklenir (bu yıl yüklenmişse).
  */
 export function HolidaysModal({ open, onClose, year }: { open: boolean; onClose: () => void; year: number }) {
   const toast = useToast()
@@ -22,17 +25,19 @@ export function HolidaysModal({ open, onClose, year }: { open: boolean; onClose:
   const holidays = useLeaveHolidays(year, open)
   const [date, setDate] = useState('')
   const [name, setName] = useState('')
+  const [half, setHalf] = useState(false)
   const [error, setError] = useState<string | undefined>()
 
   const invalidate = () => void queryClient.invalidateQueries({ queryKey: ['leave', 'holidays'] })
 
   const add = useMutation({
-    mutationFn: () => leaveApi.createHoliday({ date, name: name.trim() }),
+    mutationFn: () => leaveApi.createHoliday({ date, name: name.trim(), isHalfDay: half }),
     onSuccess: () => {
       invalidate()
       toast.ok(tx('Tatil eklendi'))
       setDate('')
       setName('')
+      setHalf(false)
     },
     onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Tatil eklenemedi.')),
   })
@@ -70,7 +75,7 @@ export function HolidaysModal({ open, onClose, year }: { open: boolean; onClose:
       open={open}
       onClose={onClose}
       title={tx('{0} resmi tatilleri', [year])}
-      note={tx('Bu günler izin talebinde gün sayısından düşülür (hafta sonları zaten düşülür).')}
+      note={tx('Bu günler izin talebinde gün sayısından düşülür (hafta sonları zaten düşülür); yarım gün tatil 0,5 gün sayılır.')}
       size="lg"
       footer={
         <>
@@ -89,7 +94,7 @@ export function HolidaysModal({ open, onClose, year }: { open: boolean; onClose:
         </>
       }
     >
-      <form onSubmit={submit} noValidate className="grid gap-3 sm:grid-cols-[180px_1fr_auto] sm:items-end">
+      <form onSubmit={submit} noValidate className="grid gap-3 sm:grid-cols-[180px_1fr_auto_auto] sm:items-end">
         <TextField
           id="holiday-date"
           label={tx('Tarih')}
@@ -108,6 +113,9 @@ export function HolidaysModal({ open, onClose, year }: { open: boolean; onClose:
           onChange={(e) => setName(e.target.value)}
           error={error?.includes('adı') ? error : undefined}
         />
+        <label className="flex h-10 items-center gap-2 text-[13px]">
+          <Checkbox checked={half} onCheckedChange={(v) => setHalf(v === true)} /> {tx('Yarım gün')}
+        </label>
         <Button type="submit" className="cursor-pointer" disabled={add.isPending}>
           {add.isPending && <LoaderCircle className="size-4 animate-spin" />}
           {tx('Ekle')}
@@ -124,7 +132,7 @@ export function HolidaysModal({ open, onClose, year }: { open: boolean; onClose:
             {rows.map((h) => (
               <li key={h.id} className="flex items-center justify-between gap-3 px-4 py-2.5">
                 <div className="min-w-0">
-                  <p className="truncate text-[14px] font-medium">{h.name}</p>
+                  <p className="truncate text-[14px] font-medium">{h.name}{h.isHalfDay && <>{' '}<StatusBadge tone="info">{tx('yarım gün')}</StatusBadge></>}</p>
                   <p className="tabular text-[12px] text-muted-foreground">{formatDate(h.date)}</p>
                 </div>
                 <Button

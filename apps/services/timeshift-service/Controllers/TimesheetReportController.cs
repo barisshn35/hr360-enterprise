@@ -41,10 +41,20 @@ public class TimesheetReportController : ControllerBase
     public async Task<IActionResult> GetSettings(CancellationToken ct)
     {
         var s = await SettingsAsync(ct);
-        return Ok(new { s.LateGraceMinutes, s.DefaultStart, s.DefaultEnd, s.DefaultBreakMinutes });
+        return Ok(SettingsDto(s));
     }
 
-    public record SettingsInput(int LateGraceMinutes, TimeOnly DefaultStart, TimeOnly DefaultEnd, int DefaultBreakMinutes);
+    private static object SettingsDto(TimesheetSettings s) => new
+    {
+        s.LateGraceMinutes, s.DefaultStart, s.DefaultEnd, s.DefaultBreakMinutes,
+        s.MinRestHours, s.WeeklyMaxHours, s.DailyMaxHours, s.NightMaxHours, s.MaxConsecutiveDays,
+        s.GeoOutsidePolicy, s.GeoStoreRaw, s.GeoRawRetentionDays,
+    };
+
+    /// <summary>Dalga 9 alanları isteğe bağlıdır: verilmezse mevcut değer korunur (eski istemciler bozulmaz).</summary>
+    public record SettingsInput(int LateGraceMinutes, TimeOnly DefaultStart, TimeOnly DefaultEnd, int DefaultBreakMinutes,
+        decimal? MinRestHours = null, decimal? WeeklyMaxHours = null, decimal? DailyMaxHours = null, decimal? NightMaxHours = null,
+        int? MaxConsecutiveDays = null, string? GeoOutsidePolicy = null, bool? GeoStoreRaw = null, int? GeoRawRetentionDays = null);
 
     [HttpPut("settings")]
     public async Task<IActionResult> PutSettings([FromBody] SettingsInput b, CancellationToken ct)
@@ -53,15 +63,36 @@ public class TimesheetReportController : ControllerBase
         if (b.LateGraceMinutes is < 0 or > 60) return BadRequest(new { message = "Tolerans 0-60 dakika olmalı" });
         if (b.DefaultBreakMinutes is < 0 or > 180) return BadRequest(new { message = "Mola 0-180 dakika olmalı" });
         if (b.DefaultEnd <= b.DefaultStart) return BadRequest(new { message = "Mesai bitişi başlangıçtan sonra olmalı" });
+        // Madde 66: sektörel istisnalar için değiştirilebilir; makul aralık dışı değerler reddedilir.
+        if (b.MinRestHours is < 8 or > 24) return BadRequest(new { message = "Dinlenme süresi 8-24 saat olmalı" });
+        if (b.WeeklyMaxHours is < 1 or > 72) return BadRequest(new { message = "Haftalık süre 1-72 saat olmalı" });
+        if (b.DailyMaxHours is < 1 or > 16) return BadRequest(new { message = "Günlük süre 1-16 saat olmalı" });
+        if (b.NightMaxHours is < 1 or > 16) return BadRequest(new { message = "Gece çalışması süresi 1-16 saat olmalı" });
+        if (b.MaxConsecutiveDays is < 1 or > 14) return BadRequest(new { message = "Ardışık gün sınırı 1-14 olmalı" });
+        if (b.GeoOutsidePolicy is not (null or "Block" or "Flag")) return BadRequest(new { message = "Konum politikası Block ya da Flag olmalı" });
+        if (b.GeoRawRetentionDays is < 1 or > 90) return BadRequest(new { message = "Ham konum saklama süresi 1-90 gün olmalı" });
         var s = await _db.TimesheetSettings.FirstOrDefaultAsync(ct);
         if (s is null) { s = new TimesheetSettings(); _db.TimesheetSettings.Add(s); }
         s.LateGraceMinutes = b.LateGraceMinutes;
         s.DefaultStart = b.DefaultStart;
         s.DefaultEnd = b.DefaultEnd;
         s.DefaultBreakMinutes = b.DefaultBreakMinutes;
+        if (b.MinRestHours is { } rest) s.MinRestHours = rest;
+        if (b.WeeklyMaxHours is { } wk) s.WeeklyMaxHours = wk;
+        if (b.DailyMaxHours is { } dy) s.DailyMaxHours = dy;
+        if (b.NightMaxHours is { } nt) s.NightMaxHours = nt;
+        if (b.MaxConsecutiveDays is { } cd) s.MaxConsecutiveDays = cd;
+        if (b.GeoOutsidePolicy is { } gp) s.GeoOutsidePolicy = gp;
+        if (b.GeoStoreRaw is { } raw) s.GeoStoreRaw = raw;
+        if (b.GeoRawRetentionDays is { } rd) s.GeoRawRetentionDays = rd;
         s.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);
-        return Ok(new { s.LateGraceMinutes, s.DefaultStart, s.DefaultEnd, s.DefaultBreakMinutes });
+        // Ham konum saklama kapatıldıysa mevcut ham koordinatlar hemen silinir.
+        if (!s.GeoStoreRaw)
+            await _db.TimeClockPunches.Where(p => p.RawLatitude != null || p.RawLongitude != null)
+                .ExecuteUpdateAsync(u => u.SetProperty(p => p.RawLatitude, (double?)null).SetProperty(p => p.RawLongitude, (double?)null)
+                    .SetProperty(p => p.RawExpiresAt, (DateTimeOffset?)null), ct);
+        return Ok(SettingsDto(s));
     }
 
     private static DateTime Local(DateTimeOffset utc) => TimeZoneInfo.ConvertTime(utc, ClockCore.BusinessZone).DateTime;

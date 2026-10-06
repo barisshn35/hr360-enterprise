@@ -57,13 +57,14 @@ BEGIN RETURN t::jsonb; EXCEPTION WHEN others THEN RETURN NULL; END $f$;
 --   test_workflow_docs.py   : test-saatlik
 --   test_telemetry.py       : TEST-telemetry
 --   e2e/test_leave_flow.py  : e2e-NNNNNN
+--   test_time_leave.py      : test-yarim-gun
 CREATE TEMP TABLE c_leave ON COMMIT DROP AS
 SELECT l."Id", l."WorkflowRequestId"
 FROM leave_requests l
 WHERE l."TenantSlug" = 'demo' AND l."EmployeeId" = '{AYSE}'
   AND (l."Reason" IN ('slack-baglama-istemi','slack-onay-testi','slack-komuttan-red','slack-formdan-izin','ters-tarih',
                       'sabah-ozeti','slack-yeniden-deneme','teams-red-testi','teams-kartindan',
-                      'takvim-testi','test-saatlik','TEST-telemetry')
+                      'takvim-testi','test-saatlik','TEST-telemetry','test-yarim-gun')
        OR l."Reason" ~ '^TEST5E-[0-9a-f]{{6}}$'
        OR l."Reason" ~ '^email-(en|tr)-[0-9]{{4}}$'
        OR l."Reason" ~ '^e2e-[0-9]{{6}}$');
@@ -96,7 +97,7 @@ INSERT INTO c_wf SELECT w."Id", 'payload işareti' FROM workflow_requests w
  WHERE w."TenantSlug" = 'demo' AND w."Type" = 'LeaveRequest'
    AND ((pg_temp.js(w."Payload")->>'reason') IN ('slack-baglama-istemi','slack-onay-testi','slack-komuttan-red','slack-formdan-izin',
                                             'sabah-ozeti','slack-yeniden-deneme','teams-red-testi','teams-kartindan',
-                                            'takvim-testi','test-saatlik','TEST-telemetry')
+                                            'takvim-testi','test-saatlik','TEST-telemetry','test-yarim-gun')
         OR (pg_temp.js(w."Payload")->>'reason') ~ '^(TEST5E-[0-9a-f]{{6}}|email-(en|tr)-[0-9]{{4}}|e2e-[0-9]{{6}})$')
 ON CONFLICT DO NOTHING;
 -- c) konu işaretleri: test_workflow_docs.py serbest talepleri (vekâlet), test_chat_plus.py SQL ile açtıkları
@@ -280,6 +281,19 @@ WITH d AS (DELETE FROM timeshift_time_entries t WHERE t."TenantSlug" = 'demo' AN
              AND NOT EXISTS (SELECT 1 FROM timeshift_clock_punches p WHERE p."EmployeeId" = t."EmployeeId"
                                AND (p."At" AT TIME ZONE 'Europe/Istanbul')::date = t."Date") RETURNING 1)
 SELECT 'timeshift_time_entries', count(*) FROM d;
+-- test_time_leave.py: kapatılıp yeniden açılan puantaj dönemi satırı (açık dönem = satırsız dönemle aynı davranış).
+-- Tablo 2026-10-22_time_leave.sql ile gelir; uygulanmamış kurulumda atlanır.
+CREATE FUNCTION pg_temp.del_periods() RETURNS bigint LANGUAGE plpgsql AS $f$
+DECLARE n bigint := 0;
+BEGIN
+  IF to_regclass('timeshift_timesheet_periods') IS NOT NULL THEN
+    EXECUTE $q$DELETE FROM timeshift_timesheet_periods WHERE "TenantSlug" = 'demo' AND "Status" = 'Open'
+                 AND "ReopenReason" = 'Entegrasyon testi dönem kilidi'$q$;
+    GET DIAGNOSTICS n = ROW_COUNT;
+  END IF;
+  RETURN n;
+END $f$;
+SELECT 'timeshift_timesheet_periods', pg_temp.del_periods();
 -- test_payroll_eco.py: sahte TCMB (chatmock.py) kurları genel önbellekte: USD 41.5, EUR 48.25
 WITH d AS (DELETE FROM expense_fx_rates WHERE "TenantSlug" IS NULL AND "Source" = 'TCMB'
              AND (("Currency" = 'USD' AND "Rate" = 41.5) OR ("Currency" = 'EUR' AND "Rate" = 48.25)) RETURNING 1)

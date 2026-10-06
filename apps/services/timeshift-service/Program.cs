@@ -123,6 +123,32 @@ builder.Services.AddControllers()
         options.JsonSerializerOptions.Converters.Add(
             new System.Text.Json.Serialization.JsonStringEnumConverter());
     });
+// Madde 68: giriş-çıkış uçlarında hız sınırı (gateway'deki sınıra ek). Cihaz (terminal/kiosk) anahtarı
+// başına dakikada 120, kişi başına (web/QR giriş-çıkış) dakikada 20 istek; aşılırsa 429.
+builder.Services.AddRateLimiter(o =>
+{
+    o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    o.AddPolicy("clock-device", ctx =>
+    {
+        var key = ctx.Request.Headers["X-Device-Key"].FirstOrDefault();
+        var part = string.IsNullOrEmpty(key)
+            ? "ip:" + (ctx.Connection.RemoteIpAddress?.ToString() ?? "-")
+            : "dev:" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(key)))[..16];
+        return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(part, _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 120, Window = TimeSpan.FromMinutes(1), QueueLimit = 0,
+        });
+    });
+    o.AddPolicy("clock-user", ctx =>
+    {
+        var who = ctx.User.FindFirst("sub")?.Value ?? ctx.User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+            ?? "ip:" + (ctx.Connection.RemoteIpAddress?.ToString() ?? "-");
+        return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(who, _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 20, Window = TimeSpan.FromMinutes(1), QueueLimit = 0,
+        });
+    });
+});
 builder.Services.AddEndpointsApiExplorer();
 // İç içe aynı adlı kayıtlar (ör. iki denetleyicide DecideInput) çakışmasın diye tam ad.
 builder.Services.AddSwaggerGen(c => c.CustomSchemaIds(t => (t.FullName ?? t.Name).Replace('+', '.')));
@@ -135,6 +161,7 @@ app.UseSwaggerUI();
 app.UseAuthentication();
 app.UseTenantContext();
 app.UseAuthorization();
+app.UseRateLimiter();
 app.UseHttpMetrics();
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "timeshift-service" }));

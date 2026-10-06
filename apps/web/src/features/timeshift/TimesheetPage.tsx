@@ -22,6 +22,7 @@ import { tx, appLocale } from '@/lib/i18n'
 import { OvertimePanel } from './OvertimePanel'
 import { AttendanceReportPanel } from './AttendanceReport'
 import { TimesheetAnomalyPanel } from './TimesheetAnomalyPanel'
+import { TimesheetPeriodsPanel } from './TimesheetPeriodsPanel'
 import { isHr } from '@/auth/roles'
 
 /** Dakikayı "7s 30dk" biçimine çevirir. */
@@ -338,6 +339,7 @@ export function TimesheetPage() {
       <AttendanceReportPanel />
 
       {isHr(roles, 'ext-timeshift-manage') && <TimesheetAnomalyPanel />}
+      {isHr(roles, 'ext-timeshift-manage') && <TimesheetPeriodsPanel />}
     </div>
   )
 }

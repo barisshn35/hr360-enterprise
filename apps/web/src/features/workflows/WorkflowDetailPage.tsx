@@ -16,7 +16,7 @@ import { qk, useWorkflow, useMyEmployeeId } from '@/api/queries'
 import { useDirectory } from '@/api/directory'
 import { workflowTypeLabels, type ApprovalStep } from '@/api/types'
 import { formatDate, formatDateTime, formatMoney, formatNumber, formatRelativeToNow } from '@/lib/format'
-import { leaveTypeLabels, type LeaveType } from '@/api/leave'
+import { leaveApi, leaveTypeLabels, type LeaveType } from '@/api/leave'
 import { cn } from '@/lib/utils'
 import { ApprovalChain, activeStepId } from './ApprovalChain'
 import { DecisionModal } from './DecisionModal'
@@ -43,6 +43,8 @@ const PAYLOAD_LABELS: Record<string, string> = {
   destination: tx('Gidilecek yer'),
   abroad: tx('Yurt dışı'),
   anomalyFlags: tx('Masraf denetimi işareti (insan incelemesi; otomatik ret yok)'),
+  teamSize: tx('Ekip büyüklüğü (talep anında)'),
+  teamOnLeave: tx('Aynı günlerde izinli / izin bekleyen ekip arkadaşı (talep anında)'),
 }
 /** Para birimiyle birlikte gösterilen tutar alanları (yükteki "currency" ile). */
 const MONEY_KEYS = ['amount', 'totalAmount', 'grossSalary']
@@ -100,6 +102,15 @@ export function WorkflowDetailPage() {
     queryKey: ['workflows', workflowId, 'leave-balance'],
     queryFn: ({ signal }) => workflowApi.leaveBalance(workflowId!, signal),
     enabled: Boolean(workflowId) && isLeave,
+    retry: false,
+  })
+
+  // Madde 69: onaycıya ekip çakışmasının güncel hâli (adlar yalnızca ekibi görebilen yöneticiye/İK'ya döner).
+  const leaveRequestId = isLeave ? (parsePayload(workflow.data?.payload)?.leaveRequestId as string | undefined) : undefined
+  const teamConflict = useQuery({
+    queryKey: ['workflows', workflowId, 'team-conflict', leaveRequestId],
+    queryFn: ({ signal }) => leaveApi.teamConflict({ leaveRequestId }, signal),
+    enabled: Boolean(leaveRequestId) && workflow.data?.requesterEmployeeId !== myEmployeeId,
     retry: false,
   })
 
@@ -293,6 +304,21 @@ export function WorkflowDetailPage() {
                       <span className="block text-[11.5px] text-muted-foreground">
                         {tx('Hak {0} · kullanılan {1} · bekleyen {2}', [formatNumber(bal.entitledDays), formatNumber(bal.usedDays), formatNumber(bal.pendingDays)])}
                       </span>
+                    </dd>
+                  </div>
+                )}
+                {teamConflict.data?.enabled && teamConflict.data.overlapping != null && (
+                  <div className="flex items-baseline justify-between gap-4 py-2.5">
+                    <dt className="text-[12px] text-muted-foreground">{tx('Ekip çakışması (güncel)')}</dt>
+                    <dd className="text-right text-[13px]">
+                      <span className={cn('font-semibold', teamConflict.data.exceeds && 'text-[hsl(var(--warning))]')}>
+                        {tx('{0} / {1} kişi · %{2} (eşik %{3})', [teamConflict.data.overlapping, teamConflict.data.teamSize ?? 0, teamConflict.data.percent ?? 0, teamConflict.data.thresholdPercent])}
+                      </span>
+                      {teamConflict.data.people && teamConflict.data.people.length > 0 && (
+                        <span className="block text-[11.5px] text-muted-foreground">
+                          {teamConflict.data.people.map((p) => `${p.name ?? '—'} (${formatDate(p.startDate)}–${formatDate(p.endDate)})`).join(', ')}
+                        </span>
+                      )}
                     </dd>
                   </div>
                 )}

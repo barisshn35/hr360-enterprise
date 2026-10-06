@@ -96,7 +96,7 @@ public class ShiftPreferencesController : ControllerBase
 
     public record CheckInput(Guid EmployeeId, Guid ShiftId, DateOnly Date);
 
-    /// <summary>Bir atamanın (çalışan + vardiya + gün) tercihlerle uyuşmazlıkları.</summary>
+    /// <summary>Bir atamanın (çalışan + vardiya + gün) tercihlerle uyuşmazlıkları ve çalışma süresi kural uyarıları.</summary>
     [HttpPost("check")]
     public async Task<IActionResult> Check([FromBody] CheckInput b, CancellationToken ct)
     {
@@ -110,9 +110,13 @@ public class ShiftPreferencesController : ControllerBase
             .ToListAsync(ct);
         var nights = week.Count(a => a.Shift is not null && PreferenceRules.ShiftType(a.Shift.StartTime, a.Shift.EndTime, a.Shift.IsNightShift) == "Night");
         var conflicts = PreferenceRules.Check(pref, b.Date, shift.StartTime, shift.EndTime, shift.IsNightShift, nights);
+        // Madde 66: çalışma süresi kuralları (uyarı; atamayı engellemez).
+        var rules = await WorkRuleCheck.ForAssignmentAsync(_db, b.EmployeeId, b.Date, shift.StartTime, shift.EndTime, shift.BreakMinutes,
+            await WorkRuleCheck.RulesAsync(_db, ct), ct);
         return Ok(new
         {
             conflicts = conflicts.Select(c => new { c.Code, c.Message }),
+            ruleWarnings = rules.Select(w => new { w.Code, w.Message }),
             shiftType = PreferenceRules.ShiftType(shift.StartTime, shift.EndTime, shift.IsNightShift),
             preference = Dto(pref, b.EmployeeId),
         });

@@ -35,6 +35,12 @@ public class LeaveEventConsumer : KafkaConsumerBase
             return;
         }
 
+        // Madde 70: yarım gün / saatlik izin (tek gün, 1 günden az) takvimde "kısmi" görünür.
+        var partial = evt.StartDate == evt.EndDate && evt.Days is > 0 and < 1;
+        var note = !partial ? $"İzin talebi {evt.LeaveRequestId}"
+            : evt.Hours is { } h ? $"Kısmi izin: {h.ToString("0.#", System.Globalization.CultureInfo.GetCultureInfo("tr-TR"))} saat"
+            : "Kısmi izin: yarım gün";
+
         for (var date = evt.StartDate; date <= evt.EndDate; date = date.AddDays(1))
         {
             var existing = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions
@@ -44,8 +50,9 @@ public class LeaveEventConsumer : KafkaConsumerBase
             if (existing is not null)
             {
                 existing.Type = ShiftOverrideType.Leave;
-                existing.Note = $"İzin talebi {evt.LeaveRequestId}";
+                existing.Note = note;
                 existing.IsSystemManaged = true;
+                existing.IsPartial = partial;
                 existing.StartTime = null;
                 existing.EndTime = null;
                 // Bu satir mevcut olmayan (StampTenant sadece INSERT'te
@@ -70,8 +77,9 @@ public class LeaveEventConsumer : KafkaConsumerBase
                     EmployeeId = evt.EmployeeId,
                     Date = date,
                     Type = ShiftOverrideType.Leave,
-                    Note = $"İzin talebi {evt.LeaveRequestId}",
+                    Note = note,
                     IsSystemManaged = true,
+                    IsPartial = partial,
                 });
             }
         }
@@ -83,5 +91,6 @@ public class LeaveEventConsumer : KafkaConsumerBase
 
     private record LeaveDecidedPayload(
         string TenantSlug, Guid LeaveRequestId, Guid EmployeeId,
-        DateOnly StartDate, DateOnly EndDate, bool Approved, DateTimeOffset OccurredAt);
+        DateOnly StartDate, DateOnly EndDate, bool Approved, DateTimeOffset OccurredAt,
+        string? Type = null, decimal? Days = null, decimal? Hours = null);
 }

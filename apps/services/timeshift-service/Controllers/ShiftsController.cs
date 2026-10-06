@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using TimeShiftService.Data;
 using TimeShiftService.Models;
+using TimeShiftService.Services;
 
 namespace TimeShiftService.Controllers;
 
@@ -91,6 +92,30 @@ public class ShiftsController : ControllerBase
         return Created($"/api/shifts/{id}", assignment);
     }
 
+    /// <summary>
+    /// Madde 66: atama/taşıma öncesi çalışma süresi kural uyarıları (11 saat dinlenme, günlük/haftalık
+    /// süre, gece 7,5 saat, ardışık gün). Vardiya tanımı (ShiftId) ya da saatler (Start/End/Break) verilir.
+    /// Uyarıdır; atamayı engellemez.
+    /// </summary>
+    [HttpPost("rule-check")]
+    [Authorize(Policy = "RequireManagerOrAbove")]
+    public async Task<IActionResult> RuleCheck([FromBody] RuleCheckRequest b, CancellationToken ct)
+    {
+        TimeOnly start, end;
+        int brk;
+        if (b.ShiftId is { } sid)
+        {
+            var shift = await _db.Shifts.AsNoTracking().FirstOrDefaultAsync(s => s.Id == sid, ct);
+            if (shift is null) return NotFound(new { message = "Vardiya bulunamadı" });
+            (start, end, brk) = (shift.StartTime, shift.EndTime, shift.BreakMinutes);
+        }
+        else if (b.StartTime is { } st && b.EndTime is { } en && st != en)
+            (start, end, brk) = (st, en, Math.Clamp(b.BreakMinutes ?? 0, 0, 240));
+        else return BadRequest(new { message = "Vardiya ya da başlangıç-bitiş saati gerekli" });
+        var warnings = await WorkRuleCheck.ForAssignmentAsync(_db, b.EmployeeId, b.Date, start, end, brk, await WorkRuleCheck.RulesAsync(_db, ct), ct);
+        return Ok(new { warnings = warnings.Select(w => new { w.Code, w.Message }) });
+    }
+
     [HttpGet("roster")]
     public async Task<IActionResult> GetRoster(
         [FromQuery] DateOnly from, [FromQuery] DateOnly to, [FromQuery] Guid? employeeId)
@@ -105,3 +130,4 @@ public class ShiftsController : ControllerBase
 public record CreateShiftRequest(
     string Name, TimeOnly StartTime, TimeOnly EndTime, int BreakMinutes, Guid? DepartmentId);
 public record AssignShiftRequest(Guid EmployeeId, DateOnly Date);
+public record RuleCheckRequest(Guid EmployeeId, DateOnly Date, Guid? ShiftId, TimeOnly? StartTime, TimeOnly? EndTime, int? BreakMinutes);

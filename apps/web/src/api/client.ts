@@ -135,10 +135,12 @@ interface RequestOptions {
   anonymous?: boolean
   /** Çevrimdışı kuyruğa alma (kuyruğu boşaltırken kullanılır). */
   noQueue?: boolean
+  /** Ek başlıklar (ör. kiosk tabletinin X-Device-Key'i; oturumsuz uçlarla birlikte). */
+  headers?: Record<string, string>
 }
 
 export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = 'GET', body, signal, anonymous = false, noQueue = false } = options
+  const { method = 'GET', body, signal, anonymous = false, noQueue = false, headers: extraHeaders } = options
 
   // Çevrimdışıyken izinli talepler (izin, fazla mesai) cihazda sıraya alınır (PWA).
   if (!noQueue && typeof navigator !== 'undefined' && !navigator.onLine && isQueueable(path, method)) {
@@ -147,7 +149,7 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
   }
 
   // Sunucu yanıt metinlerini (rapor asistanı, hata iletileri…) arayüz dilinde üretsin.
-  const headers: Record<string, string> = { Accept: 'application/json', 'X-HR360-Lang': lang }
+  const headers: Record<string, string> = { Accept: 'application/json', 'X-HR360-Lang': lang, ...extraHeaders }
 
   if (!anonymous) {
     const token = await getValidToken()

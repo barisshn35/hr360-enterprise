@@ -220,7 +220,7 @@ public sealed class MassViewWorker : BackgroundService
               AND "TenantSlug" IS NOT NULL AND "UserId" IS NOT NULL AND "UserId" <> 'system'
             GROUP BY "TenantSlug", "UserId", "EntityType", "EntityId"
             """, r => (Tenant: r.GetString(0), Ev: new AccessEvent(r.GetString(1), r.Str(2), MassViewDetector.Key(r.GetString(3), r.Str(4)),
-                DateTime.SpecifyKind(r.GetFieldValue<DateTime>(5), DateTimeKind.Utc))), ct, MassViewDetector.Actions);
+                DateTime.SpecifyKind(r.GetFieldValue<DateTime>(5), DateTimeKind.Utc))), ct, (object)MassViewDetector.Actions); // dizi tek parametre ($1) olarak gitsin, params açılımı olmasın
         var now = DateTime.UtcNow;
         var total = 0;
         // Saklama: uyarı satırları (kullanıcı adı içerir) bir yıl tutulur; denetim kaydındaki karşılığı kalır.

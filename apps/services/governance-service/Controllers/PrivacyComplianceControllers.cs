@@ -131,8 +131,9 @@ public class PrivacyComplianceController : AppController
     public async Task<IActionResult> DestructionLogs([FromQuery] DateOnly? from, [FromQuery] DateOnly? to, CancellationToken ct)
     {
         var q = _db.DestructionLogs.AsNoTracking();
-        if (from is { } f) { var fu = f.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc); q = q.Where(x => x.RanAt >= fu); }
-        if (to is { } t) { var tu = t.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc); q = q.Where(x => x.RanAt < tu); }
+        // Tarihler Türkiye saatine göre (gün sınırı UTC'ye çevrilir).
+        if (from is { } f) { var fu = TrTime.StartOfDayUtc(f); q = q.Where(x => x.RanAt >= fu); }
+        if (to is { } t) { var tu = TrTime.StartOfDayUtc(t.AddDays(1)); q = q.Where(x => x.RanAt < tu); }
         var rows = await q.OrderByDescending(x => x.RanAt).Take(2000).ToListAsync(ct);
         return Ok(rows.Select(x => new
         {

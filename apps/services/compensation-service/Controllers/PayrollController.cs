@@ -325,10 +325,14 @@ public class PayrollController : ControllerBase
         var empIds = current.Select(r => r.EmployeeId).ToArray();
 
         // Eksik gün: onaylı, ücretten düşen türdeki izinlerin (varsayılan: ücretsiz izin) bu aya düşen takvim günleri.
+        // Dalga 9 (madde 70): tek günlük kısmi izin (yarım gün / saatlik, "Days" < 1) eksik gün SAYILMAZ — SGK'da
+        // eksik gün tam gün üzerinden bildirilir; kısmi ücretsiz iznin ücret kesintisi gerekiyorsa dönemin
+        // kesintisi olarak elle girilir.
         var unpaid = await _db.Database.SqlQueryRaw<EmpNumber>("""
             SELECT "EmployeeId", sum(least("EndDate", {2}) - greatest("StartDate", {1}) + 1)::numeric AS "Value"
             FROM leave_requests
             WHERE "TenantSlug" = {0} AND "Type" = ANY({3}) AND "Status" = 'Approved' AND "StartDate" <= {2} AND "EndDate" >= {1}
+              AND NOT ("StartDate" = "EndDate" AND "Days" < 1)
             GROUP BY "EmployeeId"
             """, tenant, start, end, reducing).ToListAsync(ct);
         // Fazla mesai: yalnızca onaylı talepler (timeshift-service).
@@ -389,7 +393,22 @@ public class PayrollController : ControllerBase
         // Bordro denetimi (ML dalgası 2): olağan dışı fazla mesai / ek ödeme / kesinti / brüt işaretleri.
         // Hesaplama sonucu bu çağrıya BAĞLI DEĞİLDİR: ML yanıt vermezse (6 sn) işaret yazılmaz, dönem yine "Hesaplandı".
         var (anomalyChecked, anomalyFlags) = await RunAnomalyCheckAsync(period, current, ct);
-        return Ok(new { period.Id, status = period.Status.ToString(), employeeCount = current.Count, anomalyChecked, anomalyFlags });
+        // Madde 72: puantaj dönemi kapatılmadıysa fazla mesai sonradan değişebilir; hesaplama engellenmez, uyarılır.
+        var timesheetLocked = await TimesheetLockedAsync(tenant, period.Year, period.Month, ct);
+        return Ok(new { period.Id, status = period.Status.ToString(), employeeCount = current.Count, anomalyChecked, anomalyFlags, timesheetLocked });
+    }
+
+    /// <summary>timeshift-service puantaj dönemi kilidi (salt okunur, aynı veritabanı). Tablo yoksa null.</summary>
+    private async Task<bool?> TimesheetLockedAsync(string tenant, int year, int month, CancellationToken ct)
+    {
+        try
+        {
+            return await _db.Database.SqlQueryRaw<bool>("""
+                SELECT EXISTS (SELECT 1 FROM timeshift_timesheet_periods WHERE "TenantSlug" = {0} AND "Year" = {1} AND "Month" = {2}
+                               AND "Status" = 'Closed') AS "Value"
+                """, tenant, year, month).FirstAsync(ct);
+        }
+        catch (Exception ex) when (ex is Npgsql.PostgresException or InvalidOperationException) { return null; }
     }
 
     private async Task<(bool Checked, int Flags)> RunAnomalyCheckAsync(PayrollPeriod period, List<CompensationRecord> current, CancellationToken ct)

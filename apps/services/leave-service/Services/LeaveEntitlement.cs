@@ -46,5 +46,58 @@ public static class LeaveEntitlement
     }
 
     /// <summary>Saatlik izin → gün (2 ondalık).</summary>
-    public static decimal HoursToDays(decimal hours) => Math.Round(hours / DayHours, 2, MidpointRounding.AwayFromZero);
+    public static decimal HoursToDays(decimal hours) => HoursToDays(hours, DayHours);
+
+    /// <summary>Saatlik izin → gün, şirketin günlük çalışma saatiyle (leave_settings.DayHours).</summary>
+    public static decimal HoursToDays(decimal hours, decimal dayHours) =>
+        Math.Round(hours / (dayHours is > 0 and <= 12 ? dayHours : 7.5m), 2, MidpointRounding.AwayFromZero);
+
+    /// <summary>Şirket ayarı (geçerliyse) yoksa LEAVE_DAY_HOURS / 7,5.</summary>
+    public static decimal EffectiveDayHours(decimal? tenant) => tenant is > 0 and <= 12 ? tenant.Value : DayHours;
+
+    /// <summary>
+    /// Hak yıl dönümünde doğar (m.53): verilen yılın yıl dönümü bugün ya da daha önceyse "tahakkuk etmiş".
+    /// Önizleme bu bilgiyle İK'ya gösterilir; uygulama isteğe bağlı olarak yalnızca tahakkuk edenlere yapılır.
+    /// </summary>
+    public static bool Accrued(DateOnly hire, int year, DateOnly today) =>
+        ServiceYears(hire, year) >= 1 && Anniversary(hire, year) <= today;
+
+    /// <summary>
+    /// İki tarih arası iş günü (bitiş dahil): hafta sonu ve tam gün resmî tatil 0, yarım gün tatil
+    /// (arife, 28 Ekim) 0,5 sayılır. <paramref name="holidays"/>: tarih → yarım gün mü.
+    /// </summary>
+    public static decimal WorkingDays(DateOnly start, DateOnly end, IReadOnlyDictionary<DateOnly, bool> holidays)
+    {
+        var count = 0m;
+        for (var d = start; d <= end; d = d.AddDays(1))
+        {
+            if (d.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday) continue;
+            if (holidays.TryGetValue(d, out var half)) { if (half) count += 0.5m; continue; }
+            count++;
+        }
+        return count;
+    }
+}
+
+/// <summary>
+/// Madde 69: ekip izin çakışması (saf fonksiyon, birim testli). Ekip = talep edenin departmanı (kendisi
+/// hariç). Oran = çakışan (onaylı ya da onay bekleyen izni olan) kişi / ekip büyüklüğü.
+/// KVKK: talep edene yalnızca sayı gösterilir; ekip 5 kişiden küçükse sayı da gösterilmez (yalnızca eşik
+/// aşıldı mı). Adlar yalnızca yöneticiye/İK'ya.
+/// </summary>
+public static class TeamConflict
+{
+    public const int MinGroupForCounts = 5;
+
+    public sealed record Result(bool Enabled, int ThresholdPercent, bool Exceeds, int? TeamSize, int? Overlapping, int? Percent);
+
+    public static Result Evaluate(int teamSize, int overlapping, int thresholdPercent, bool enabled, bool revealCounts)
+    {
+        if (!enabled || teamSize <= 0) return new Result(enabled, thresholdPercent, false, revealCounts ? teamSize : null, revealCounts ? 0 : null, revealCounts ? 0 : null);
+        // Talep eden de izne çıkacağı için oran (çakışan + 1) / (ekip + 1) üzerinden: ekibin ne kadarı aynı anda yok.
+        var percent = (int)Math.Round(100m * (overlapping + 1) / (teamSize + 1), MidpointRounding.AwayFromZero);
+        var exceeds = overlapping > 0 && percent > thresholdPercent;
+        var show = revealCounts || teamSize >= MinGroupForCounts;
+        return new Result(true, thresholdPercent, exceeds, show ? teamSize : null, show ? overlapping : null, show ? percent : null);
+    }
 }

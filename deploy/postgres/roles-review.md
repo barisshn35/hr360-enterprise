@@ -30,15 +30,15 @@ taramanın kesin karar veremediği ya da bilinçli bir tercih gerektiren noktala
 | organization-service | `hr360_organization` | 9 | 5 | 3 | 0 |
 | employee-service | `hr360_employee` | 6 | 2 | 2 | 0 |
 | workflow-service | `hr360_workflow` | 14 | 5 | 7 | 0 |
-| leave-service | `hr360_leave` | 12 | 3 | 6 | 0 |
+| leave-service | `hr360_leave` | 13 | 4 | 6 | 0 |
 | recruitment-service | `hr360_recruitment` | 16 | 8 | 4 | 2 |
 | onboarding-service | `hr360_onboarding` | 15 | 8 | 5 | 1 |
-| timeshift-service | `hr360_timeshift` | 23 | 15 | 5 | 1 |
+| timeshift-service | `hr360_timeshift` | 24 | 16 | 5 | 1 |
 | performance-service | `hr360_performance` | 17 | 11 | 5 | 0 |
 | learning-service | `hr360_learning` | 22 | 15 | 5 | 1 |
 | engagement-service | `hr360_engagement` | 35 | 14 | 19 | 1 |
 | governance-service | `hr360_governance` | 118 | 66 | 44 | 7 |
-| compensation-service | `hr360_compensation` | 32 | 18 | 12 | 1 |
+| compensation-service | `hr360_compensation` | 33 | 18 | 13 | 1 |
 | expense-service | `hr360_expense` | 20 | 9 | 5 | 3 |
 | notification-service | `hr360_notification` | 10 | 6 | 2 | 0 |
 | tenant-service | `hr360_tenant` | 13 | 9 | 2 | 1 |
@@ -55,7 +55,7 @@ taramanın kesin karar veremediği ya da bilinçli bir tercih gerektiren noktala
 ## timeshift-service (`hr360_timeshift`)
 
 - Başka servisin tablosuna yazma: `notification_messages` (INSERT) — apps/services/timeshift-service/Services/TsOps.cs:44
-- apps/services/timeshift-service/Controllers/ShiftSwapsController.cs:282: satır kilidi (FOR UPDATE/SHARE) — metindeki tüm tablolara UPDATE verildi: timeshift_assignments
+- apps/services/timeshift-service/Controllers/ShiftSwapsController.cs:312: satır kilidi (FOR UPDATE/SHARE) — metindeki tüm tablolara UPDATE verildi: timeshift_assignments
 
 ## learning-service (`hr360_learning`)
 

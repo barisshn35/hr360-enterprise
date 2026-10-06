@@ -102,6 +102,8 @@ public class OvertimeController : ControllerBase
         if (body.Date < today.AddDays(-60) || body.Date > today.AddDays(60))
             return BadRequest(new { message = "Tarih bugünden en fazla 60 gün önce ya da sonra olabilir" });
         if (body.Reason is { Length: > 500 }) return BadRequest(new { message = "Gerekçe en fazla 500 karakter olabilir" });
+        // Madde 72: kapatılmış puantaj dönemine fazla mesai girilemez (bordroya aktarılan veri değişmesin).
+        if (await PeriodLock.CheckAsync(_db, body.Date, ct) is { } locked) return Conflict(new { message = locked, code = "period_locked" });
         if (await _db.OvertimeRequests.AnyAsync(o => o.EmployeeId == employeeId && o.Date == body.Date
                 && (o.Status == OvertimeStatus.Pending || o.Status == OvertimeStatus.Approved), ct))
             return Conflict(new { message = "Bu gün için zaten bir fazla mesai talebi var" });

@@ -65,7 +65,10 @@ public class TimeClockCredential : ITenantOwned
 
 public enum PunchKind { In, Out }
 
-/// <summary>Giriş-çıkış hareketi. Yalnızca zaman, yöntem ve "noktada mı" bilgisi; koordinat yok.</summary>
+/// <summary>
+/// Giriş-çıkış hareketi: zaman, yöntem, "noktada mı" ve uzaklık aralığı (ör. "50-100" m). Ham koordinat
+/// yalnızca şirket ayarında açıksa ve saklama süresi kadar tutulur (RawExpiresAt geçince silinir).
+/// </summary>
 public class TimeClockPunch : ITenantOwned
 {
     public string TenantSlug { get; set; } = "";
@@ -75,5 +78,10 @@ public class TimeClockPunch : ITenantOwned
     public PunchKind Kind { get; set; }
     public TimeEntrySource Method { get; set; }
     public bool? OnSite { get; set; }
+    /// <summary>Noktaya uzaklık aralığı (metre): "0-50", "50-100", "100-250", "250-500", "500-1000", "1000+".</summary>
+    public string? DistanceBucket { get; set; }
+    public double? RawLatitude { get; set; }
+    public double? RawLongitude { get; set; }
+    public DateTimeOffset? RawExpiresAt { get; set; }
     public DateTimeOffset At { get; set; } = DateTimeOffset.UtcNow;
 }

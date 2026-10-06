@@ -58,9 +58,34 @@ export interface ClockPunch {
   employeeId: string
   siteId: string | null
   kind: 'In' | 'Out'
-  method: 'Manual' | 'Device' | 'Import' | 'Qr' | 'Card' | 'Pin' | 'Web'
+  method: 'Manual' | 'Device' | 'Import' | 'Qr' | 'Card' | 'Pin' | 'Web' | 'Chat'
   onSite: boolean | null
+  /** Noktaya uzaklık aralığı (m): "0-50" … "1000+". Koordinat hiç dönmez. */
+  distanceBucket?: string | null
   at: string
+}
+
+/** Kiosk (paylaşılan tablet) durumu: o anki imzalı QR jetonu (30 sn) ve PIN ekranı açık mı. */
+export interface KioskState {
+  site: string
+  allowQr: boolean
+  allowPin: boolean
+  checkLocation: boolean
+  token: string | null
+  expiresAt: string
+  windowSeconds: number
+}
+
+/** Kiosk anahtarı yalnızca bu tablette saklanır (terminal anahtarıyla aynı; İK oturumu açık bırakılmaz). */
+export const KIOSK_KEY_STORAGE = 'hr360.kiosk.deviceKey'
+
+export const kioskApi = {
+  state: (deviceKey: string, signal?: AbortSignal) =>
+    apiFetch<KioskState>(`${BASE}/time-clock/kiosk/state`, { anonymous: true, signal, headers: { 'X-Device-Key': deviceKey } }),
+  pinPunch: (deviceKey: string, badgeCode: string, pin: string) =>
+    apiFetch<{ kind: 'In' | 'Out'; at: string; firstName: string | null; site: string }>(`${BASE}/time-clock/terminal/punch`, {
+      method: 'POST', anonymous: true, noQueue: true, headers: { 'X-Device-Key': deviceKey }, body: { badgeCode, pin, source: 'kiosk' },
+    }),
 }
 
 export interface ClockMe {
@@ -103,8 +128,9 @@ export const timeClockApi = {
 }
 
 /**
- * Tarayıcıdan tek seferlik konum (yalnızca noktada konum denetimi açıksa istenir).
- * Koordinat sunucuda "noktada mı" hesabı için kullanılır ve saklanmaz.
+ * Tarayıcıdan tek seferlik konum (yalnızca noktada konum denetimi açıksa, giriş-çıkış anında istenir).
+ * Sunucu "noktada mı" ve uzaklık aralığını saklar; ham koordinat yalnızca şirket açtıysa ve süreli tutulur.
+ * Tarayıcı izni gateway'in Permissions-Policy başlığında geolocation=(self) ile yalnızca bu siteye açıktır.
  */
 export function currentPosition(timeoutMs = 10_000): Promise<{ latitude: number; longitude: number }> {
   return new Promise((resolve, reject) => {

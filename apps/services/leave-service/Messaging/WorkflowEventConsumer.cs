@@ -99,7 +99,7 @@ public class WorkflowEventConsumer : KafkaConsumerBase
             Payload = JsonSerializer.Serialize(new LeaveDecidedEvent(
                 leave.TenantSlug,
                 leave.Id, leave.EmployeeId, leave.StartDate, leave.EndDate,
-                evt.Approved, DateTimeOffset.UtcNow, leave.Type.ToString(), leave.Days)),
+                evt.Approved, DateTimeOffset.UtcNow, leave.Type.ToString(), leave.Days, leave.Hours)),
         });
 
         Logger.LogInformation(

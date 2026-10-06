@@ -165,8 +165,9 @@ code, r = api("ayse", "POST", f"{T}/time-clock/punch", {"token": qr["token"][:-3
 check("QR: sahte imza reddedilir", code == 400 and r.get("code") == "qr_invalid", r)
 code, r = api("ayse", "POST", f"{T}/time-clock/punch", {"token": qr["token"], "latitude": 41.0370, "longitude": 28.9851})
 check("QR + konum: giriş yapıldı (noktada)", code == 200 and r["punch"]["kind"] == "In" and r["punch"]["method"] == "Qr" and r["punch"]["onSite"] is True, r)
-cols = psql("SELECT string_agg(column_name, ',') FROM information_schema.columns WHERE table_name='timeshift_clock_punches'")
-check("KVKK: hareket tablosunda koordinat sütunu yok", "lat" not in cols.lower() and "lon" not in cols.lower(), cols)
+# Ham koordinat saklama kiracı ayarıdır ve varsayılan kapalıdır: yalnızca "noktada mı" + uzaklık aralığı tutulur.
+raw = psql("SELECT count(*) FROM timeshift_clock_punches WHERE \"TenantSlug\"='demo' AND (\"RawLatitude\" IS NOT NULL OR \"RawLongitude\" IS NOT NULL)")
+check("KVKK: ham koordinat saklama kapalıyken koordinat yazılmaz", raw.strip() == "0", raw)
 leaked = psql("SELECT count(*) FROM audit_log WHERE \"Service\"='timeshift-service' AND \"Changes\"::text LIKE '%41.037%' AND \"OccurredAt\" > now() - interval '5 minutes'")
 check("KVKK: koordinat denetim kaydına da yazılmadı", leaked == "0", leaked)
 

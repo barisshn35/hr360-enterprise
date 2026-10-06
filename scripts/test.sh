@@ -50,7 +50,7 @@ unit() {
   (cd apps/web && { [ -d node_modules ] || npm ci --no-audit --no-fund; } && run npx vitest run)
   step "ML servisi (pytest)"
   run docker run --rm -v "$ROOT/apps/ml-inference:/src:ro" python:3.11-slim sh -c \
-    "cp -r /src /w && cd /w && grep -E '^(fastapi|starlette|pydantic|httpx|numpy|scikit-learn|prometheus-fastapi-instrumentator)==' requirements.txt > r.txt && cat requirements-ai.txt requirements-dev.txt >> r.txt && pip install -q -r r.txt >/dev/null 2>&1 && python -m pytest -q -p no:warnings tests"
+    "cp -r /src /w && cd /w && grep -E '^(fastapi|starlette|pydantic|httpx|numpy|scikit-learn|prometheus-fastapi-instrumentator|ortools)==' requirements.txt > r.txt && cat requirements-ai.txt requirements-dev.txt >> r.txt && pip install -q -r r.txt >/dev/null 2>&1 && python -m pytest -q -p no:warnings tests"
 }
 
 integration() {
@@ -74,7 +74,8 @@ integration() {
   sleep 10
   for t in test_chat test_calendar test_ai_llm test_cache test_report_lang test_email_lang test_kvkk \
            test_payroll_time test_push test_workflow_docs test_kvkk_ops test_payroll_eco test_hr_compliance test_recruitment_plus test_learning_perf test_ops_plus \
-           test_platform_reports test_notify_prefs test_identity_sign test_paging test_model_card test_chat_plus test_telemetry test_identity_security; do
+           test_platform_reports test_notify_prefs test_identity_sign test_paging test_model_card test_chat_plus test_telemetry test_identity_security \
+           test_time_leave; do
     step "Entegrasyon: $t"
     run python3 "tests/integration/$t.py"
   done

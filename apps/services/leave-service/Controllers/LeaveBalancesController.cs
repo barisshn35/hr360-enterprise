@@ -114,44 +114,70 @@ public class LeaveBalancesController : ControllerBase
         if (year is < 2000 or > 2100) return BadRequest(new { message = "Geçersiz yıl" });
         var list = await StatutoryAsync(year, ct);
         var balances = await _db.LeaveBalances.AsNoTracking().Where(b => b.Year == year && b.Type == LeaveType.Annual).ToListAsync(ct);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
         return Ok(list.Select(x =>
         {
             var b = balances.FirstOrDefault(y => y.EmployeeId == x.Id);
+            var proposed = ProposedEntitled(b, x.Days);
             return new
             {
                 employeeId = x.Id, x.ServiceYears, anniversary = LeaveEntitlement.Anniversary(x.Hire, year), statutoryDays = x.Days,
                 ageRule = x.AgeRule, currentEntitled = b?.EntitledDays, carriedOver = b?.CarriedOverDays ?? 0,
+                // Dalga 9 (madde 71): hak yıl dönümünde doğar; uygulanınca bakiye ne olur (değişmeyecekse null).
+                accrued = LeaveEntitlement.Accrued(x.Hire, year, today),
+                proposedEntitled = proposed,
             };
         }));
     }
 
-    /// <summary>Yasal hakkı bakiyeye yazar: bakiye yoksa açar, yasal günün altındaysa yükseltir (asla düşürmez).</summary>
+    /// <summary>
+    /// Yasal hakkın bakiyeye yansıması: bakiye yoksa yasal gün; varsa bu yılın kendi hakkı (devir hariç)
+    /// yasal günün altındaysa yükseltilir — asla düşürülmez. Değişiklik yoksa null.
+    /// </summary>
+    public static decimal? ProposedEntitled(LeaveBalance? b, int statutoryDays)
+    {
+        if (statutoryDays <= 0) return null;
+        if (b is null) return statutoryDays;
+        if (b.EntitledDays + b.CarriedOutDays - b.CarriedOverDays < statutoryDays)
+            return statutoryDays + b.CarriedOverDays - b.CarriedOutDays;
+        return null;
+    }
+
+    /// <summary>
+    /// Yasal hakkı bakiyeye yazar: bakiye yoksa açar, yasal günün altındaysa yükseltir (asla düşürmez).
+    /// Dalga 9: İK ön izlemede onayladığı kişileri (EmployeeIds) gönderir; OnlyAccrued ile yalnızca yıl
+    /// dönümü gelmiş (hak doğmuş) kişiler uygulanır. Her bakiye değişikliği denetim kaydına yazılır.
+    /// </summary>
     [HttpPost("statutory/apply")]
     [Authorize(Policy = "RequireHrAdmin")]
     public async Task<IActionResult> ApplyStatutory([FromBody] ApplyStatutoryRequest body, CancellationToken ct)
     {
         if (body.Year is < 2000 or > 2100) return BadRequest(new { message = "Geçersiz yıl" });
+        if (body.EmployeeIds is { Length: > 5000 }) return BadRequest(new { message = "En çok 5000 çalışan" });
         var list = await StatutoryAsync(body.Year, ct);
         var balances = await _db.LeaveBalances.Where(b => b.Year == body.Year && b.Type == LeaveType.Annual).ToListAsync(ct);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var selected = body.EmployeeIds is { Length: > 0 } ids ? ids.ToHashSet() : null;
         var changed = 0;
+        var skippedNotAccrued = 0;
         foreach (var x in list.Where(x => x.Days > 0))
         {
+            if (selected is not null && !selected.Contains(x.Id)) continue;
+            if (body.OnlyAccrued == true && !LeaveEntitlement.Accrued(x.Hire, body.Year, today)) { skippedNotAccrued++; continue; }
             var b = balances.FirstOrDefault(y => y.EmployeeId == x.Id);
+            // Devreden/devredilen günler korunur; yalnızca bu yılın kendi hakkı yasal güne çıkarılır.
+            if (ProposedEntitled(b, x.Days) is not { } target) continue;
             if (b is null)
+                _db.LeaveBalances.Add(new LeaveBalance { EmployeeId = x.Id, Year = body.Year, Type = LeaveType.Annual, EntitledDays = target });
+            else
             {
-                _db.LeaveBalances.Add(new LeaveBalance { EmployeeId = x.Id, Year = body.Year, Type = LeaveType.Annual, EntitledDays = x.Days });
-                changed++;
-            }
-            else if (b.EntitledDays + b.CarriedOutDays - b.CarriedOverDays < x.Days)
-            {
-                // Devreden/devredilen günler korunur; yalnızca bu yılın kendi hakkı yasal güne çıkarılır.
-                b.EntitledDays = x.Days + b.CarriedOverDays - b.CarriedOutDays;
+                b.EntitledDays = target;
                 b.UpdatedAt = DateTimeOffset.UtcNow;
-                changed++;
             }
+            changed++;
         }
         await _db.SaveChangesAsync(ct);
-        return Ok(new { changed });
+        return Ok(new { changed, skippedNotAccrued });
     }
 
     /// <summary>
@@ -191,5 +217,5 @@ public class LeaveBalancesController : ControllerBase
 }
 
 public record UpsertBalanceRequest(Guid EmployeeId, int Year, LeaveType Type, decimal EntitledDays);
-public record ApplyStatutoryRequest(int Year);
+public record ApplyStatutoryRequest(int Year, Guid[]? EmployeeIds = null, bool? OnlyAccrued = null);
 public record CarryOverRequest(int FromYear, decimal? MaxDays);

@@ -285,7 +285,9 @@ export function PayrollPeriodPage() {
   const [reason, setReason] = useState('')
   const inv = [['payroll']]
   const calc = useAction(() => payrollApi.calculate(id), {
-    success: (r) => r.anomalyFlags ? tx('{0} çalışan için hesaplandı; bordro denetimi {1} işaret üretti', [r.employeeCount, r.anomalyFlags]) : tx('{0} çalışan için hesaplandı', [r.employeeCount]),
+    success: (r) => (r.anomalyFlags ? tx('{0} çalışan için hesaplandı; bordro denetimi {1} işaret üretti', [r.employeeCount, r.anomalyFlags]) : tx('{0} çalışan için hesaplandı', [r.employeeCount]))
+      // Madde 72: puantaj dönemi kapatılmadıysa fazla mesai sonradan değişebilir.
+      + (r.timesheetLocked === false ? ` · ${tx('Uyarı: bu ayın puantaj dönemi kapatılmadı; fazla mesai değişebilir')}` : ''),
     invalidate: inv,
   })
   // ML dalgası 2: bordro denetim işaretleri (yalnızca bordro yetkilisi; kapatmayı engellemez).

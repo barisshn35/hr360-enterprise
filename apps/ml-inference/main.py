@@ -125,6 +125,11 @@ from pay_equity import router as pay_equity_router
 for _r in (payroll_ml_router, leave_forecast_router, text_insights_router, skills_router, pay_equity_router):
     app.include_router(_r, dependencies=[Depends(verify_token)])
 
+# Dalga 9 (madde 44): vardiya planı optimizasyonu (OR-Tools CP-SAT, yoksa açgözlü sezgisel). Yalnızca öneri;
+# timeshift-service takma adlı girdiyle çağırır, uygulamayı İK/yönetici yapar.
+from shift_optimizer import router as shift_optimizer_router
+app.include_router(shift_optimizer_router, dependencies=[Depends(verify_token)])
+
 
 # Devir riski modeli: yuklenme, model karti, yeniden egitim ve veri kaymasi
 # (model_routes.py). Yayindaki surum MLflow'da "champion" takma adiyla isaretlenir;

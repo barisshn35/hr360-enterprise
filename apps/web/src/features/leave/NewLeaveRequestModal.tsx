@@ -12,6 +12,8 @@ import { useLeaveBalances, useLeaveHolidays, useMyEmployeeId } from '@/api/queri
 import { useAuth } from '@/auth/useAuth'
 import { leaveTypeLabels, type LeaveType } from '@/api/types'
 import { formatNumber, parseDecimal } from '@/lib/format'
+import { holidayMap, hoursProblem, leaveDays, workingDays, type LeaveUnit } from '@/lib/leaveDays'
+import { useDebouncedValue } from '@/lib/useDebouncedValue'
 import { tx, appLocale } from '@/lib/i18n'
 
 interface Errors {
@@ -21,36 +23,14 @@ interface Errors {
   hours?: string
 }
 
-/**
- * Saatlik izin alanı (tek gün): boşsa tam gün. Önceden "-1"/"abc" sessizce tam güne
- * dönüyordu; artık alan hatası verilir. Kural sunucuyla aynı: 0,5 saatlik adımlarla, 7,5'ten az.
- */
-function hoursError(raw: string): string | undefined {
-  if (!raw.trim()) return undefined
-  const v = parseDecimal(raw)
-  if (v === null) return tx('Geçerli bir saat girin (ör. 2,5).')
-  if (v <= 0 || v >= 7.5) return tx('Saat 0’dan büyük ve 7,5’ten küçük olmalı.')
-  if (!Number.isInteger(v * 2)) return tx('Saat 0,5’lik adımlarla girilmeli.')
+/** Saatlik izin alanı hatası (kural sunucuyla aynı: 0,5 saatlik adımlar, günlük çalışma saatinden az). */
+function hoursError(raw: string, dayHours: number, dayCap: number): string | undefined {
+  if (!raw.trim()) return tx('Saat girin (ör. 2,5).')
+  const p = hoursProblem(parseDecimal(raw), dayHours, dayCap)
+  if (p === 'invalid') return tx('Geçerli bir saat girin (ör. 2,5).')
+  if (p === 'range') return tx('Saat 0’dan büyük ve {0}’dan küçük olmalı.', [formatNumber(dayHours * dayCap)])
+  if (p === 'step') return tx('Saat 0,5’lik adımlarla girilmeli.')
   return undefined
-}
-
-/**
- * Bitiş dahil İŞ GÜNÜ sayısı (Pzt–Cum). Backend gün sayısını artık kendisi aynı
- * kuralla hesaplıyor (istemcinin gönderdiği değere güvenmiyor); önizleme ondan
- * sapmasın. Tarihler UTC olarak ayrıştırılır ki yerel saat dilimi günü kaydırmasın.
- */
-function daysBetween(start: string, end: string, holidays: ReadonlySet<string> = new Set()): number {
-  if (!start || !end) return 0
-  const a = Date.parse(`${start}T00:00:00Z`)
-  const b = Date.parse(`${end}T00:00:00Z`)
-  if (Number.isNaN(a) || Number.isNaN(b) || b < a) return 0
-  let count = 0
-  for (let t = a; t <= b; t += 86_400_000) {
-    const d = new Date(t)
-    const dow = d.getUTCDay()
-    if (dow !== 0 && dow !== 6 && !holidays.has(d.toISOString().slice(0, 10))) count++
-  }
-  return count
 }
 
 export function NewLeaveRequestModal({
@@ -90,6 +70,7 @@ export function NewLeaveRequestModal({
   const [endDate, setEndDate] = useState('')
   const [reason, setReason] = useState('')
   const [hours, setHours] = useState('')
+  const [unit, setUnit] = useState<LeaveUnit>('full')
   const [errors, setErrors] = useState<Errors>({})
   const [submitted, setSubmitted] = useState(false)
 
@@ -102,6 +83,7 @@ export function NewLeaveRequestModal({
       setEndDate('')
       setReason('')
       setHours('')
+      setUnit('full')
       setErrors({})
       setSubmitted(false)
     }
@@ -110,14 +92,33 @@ export function NewLeaveRequestModal({
   const year = startDate ? new Date(startDate).getFullYear() : new Date().getFullYear()
   const balances = useLeaveBalances(employeeId || undefined, year, Boolean(employeeId))
 
-  // Resmi tatiller de düşülür (backend aynı takvimi kullanıyor).
+  // Resmi tatiller de düşülür (backend aynı takvimi kullanıyor); arife/28 Ekim yarım gün sayılır.
   const holidays = useLeaveHolidays(year, open)
-  const holidaySet = useMemo(() => new Set((holidays.data ?? []).map((h) => h.date.slice(0, 10))), [holidays.data])
+  const holidaySet = useMemo(() => holidayMap(holidays.data ?? []), [holidays.data])
+  // Günlük çalışma saati şirket ayarından (saatlik izinde gün = saat / günlük saat).
+  const settings = useQuery({ queryKey: ['leave', 'settings'], queryFn: ({ signal }) => leaveApi.settings(signal), enabled: open, staleTime: 5 * 60_000 })
+  const dayHours = settings.data?.dayHours ?? 7.5
   const singleDay = !!startDate && startDate === endDate
-  const hoursInvalid = singleDay ? hoursError(hours) : undefined
-  const hourValue = singleDay && hours.trim() && !hoursInvalid ? parseDecimal(hours) ?? 0 : 0
-  // Saatlik izin (tek gün): gün = saat / 7,5 (backend aynı kuralı uygular, LEAVE_DAY_HOURS).
-  const days = useMemo(() => (hourValue > 0 ? Math.round((hourValue / 7.5) * 100) / 100 : daysBetween(startDate, endDate, holidaySet)), [startDate, endDate, holidaySet, hourValue])
+  const effectiveUnit: LeaveUnit = singleDay ? unit : 'full'
+  // Yarım gün tatilde (arife) saatlik izin günün kalan yarısını aşamaz.
+  const dayCap = singleDay ? Math.min(1, workingDays(startDate, endDate, holidaySet)) : 1
+  const hoursInvalid = effectiveUnit === 'hours' ? hoursError(hours, dayHours, dayCap || 1) : undefined
+  const hourValue = effectiveUnit === 'hours' && !hoursInvalid ? parseDecimal(hours) ?? 0 : 0
+  const days = useMemo(() => leaveDays(effectiveUnit, startDate, endDate, holidaySet, hourValue, dayHours),
+    [effectiveUnit, startDate, endDate, holidaySet, hourValue, dayHours])
+
+  // Madde 69: ekipte aynı günlerde izinli/izin bekleyen oranı eşiği aşıyorsa uyarı (engel değil).
+  const conflictRange = useDebouncedValue(employeeId && startDate && endDate && endDate >= startDate ? `${employeeId}|${startDate}|${endDate}` : '', 400)
+  const conflict = useQuery({
+    queryKey: ['leave', 'team-conflict', conflictRange],
+    queryFn: ({ signal }) => {
+      const [emp, s0, e0] = conflictRange.split('|')
+      return leaveApi.teamConflict({ employeeId: emp, startDate: s0, endDate: e0 }, signal)
+    },
+    enabled: open && Boolean(conflictRange),
+    retry: false,
+    staleTime: 60_000,
+  })
   const balance = balances.data?.find((b) => b.type === type)
   /**
    * Backend kuralıyla aynı: bakiye yetersizse talep reddedilir; yıllık izin için
@@ -137,7 +138,7 @@ export function NewLeaveRequestModal({
         endDate,
         days,
         reason: reason.trim() || undefined,
-        hours: hourValue > 0 ? hourValue : undefined,
+        hours: effectiveUnit === 'hours' && hourValue > 0 ? hourValue : undefined,
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['leave'] })
@@ -273,15 +274,44 @@ export function NewLeaveRequestModal({
         </div>
 
         {singleDay && (
-          <TextField
-            id="leave-hours"
-            label={tx('Saatlik izin (isteğe bağlı)')}
-            inputMode="decimal"
-            value={hours}
-            onChange={(e) => setHours(e.target.value)}
-            error={hoursInvalid}
-            hint={tx('Günün bir kısmı için: 0,5 saatlik adımlarla, 7,5 saatten az. Boş bırakırsanız tam gün.')}
-          />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <SelectField
+              id="leave-unit"
+              label={tx('Süre')}
+              value={unit}
+              onChange={(v) => setUnit(v as LeaveUnit)}
+              options={[
+                { value: 'full', label: tx('Tam gün') },
+                { value: 'half', label: tx('Yarım gün') },
+                { value: 'hours', label: tx('Saatlik') },
+              ]}
+            />
+            {unit === 'hours' && (
+              <TextField
+                id="leave-hours"
+                label={tx('Saat')}
+                inputMode="decimal"
+                value={hours}
+                onChange={(e) => setHours(e.target.value)}
+                error={submitted || hours ? hoursInvalid : undefined}
+                hint={tx('0,5 saatlik adımlarla, {0} saatten az. Günlük çalışma {1} saat üzerinden güne çevrilir.', [formatNumber(dayHours * (dayCap || 1)), formatNumber(dayHours)])}
+              />
+            )}
+          </div>
+        )}
+
+        {conflict.data?.enabled && conflict.data.exceeds && (
+          <p role="status" className="border-l-2 border-[hsl(var(--warning))] pl-3 text-[12.5px] leading-relaxed">
+            {conflict.data.overlapping != null && conflict.data.teamSize != null
+              ? tx('Bu tarihlerde ekibinizden {0} kişi ({1} kişilik ekip) izinli ya da izin bekliyor; ekibin %{2}’si aynı anda yok olur (eşik %{3}). Talep yine de gönderilebilir; onaycınız da bu bilgiyi görür.',
+                [conflict.data.overlapping, conflict.data.teamSize, conflict.data.percent ?? 0, conflict.data.thresholdPercent])
+              : tx('Bu tarihlerde ekibinizde izinli kişi oranı şirketin eşiğini (%{0}) aşıyor. Talep yine de gönderilebilir.', [conflict.data.thresholdPercent])}
+            {conflict.data.people && conflict.data.people.length > 0 && (
+              <span className="mt-1 block text-muted-foreground">
+                {conflict.data.people.map((p) => `${p.name ?? '—'} (${p.startDate.slice(5)}–${p.endDate.slice(5)})`).join(', ')}
+              </span>
+            )}
+          </p>
         )}
 
         {/* Bakiye özeti: kullanıcı göndermeden önce durumu görsün */}
