@@ -209,6 +209,10 @@ INSERT INTO c_notif SELECT DISTINCT n."Id", '1:1 (silinen test toplantısı)' FR
    AND n."Body" LIKE to_char(m."StartsAt" AT TIME ZONE 'Europe/Istanbul', 'DD.MM.YYYY HH24:MI') || ' —%'
    AND NOT EXISTS (SELECT 1 FROM engagement_one_on_ones o WHERE o."TenantSlug" = 'demo' AND o."EmployeeId" = n."RecipientEmployeeId")
 ON CONFLICT DO NOTHING;
+-- 8) test_payroll_eco.py (bordro dalgası 8): test yılı (2031) dönemleri için e-bordro bildirimleri
+INSERT INTO c_notif SELECT n."Id", 'e-bordro (test dönemi)' FROM notification_messages n
+ WHERE n."TenantSlug" = 'demo' AND n."TemplateCode" = 'compensation.epayslip' AND n."Subject" LIKE 'e-Bordro: 2031/%'
+ON CONFLICT DO NOTHING;
 -- 7) test_push.py: Ayşe'ye "Deneme bildirimi" (POST /push/test)
 INSERT INTO c_notif SELECT n."Id", 'deneme bildirimi' FROM notification_messages n
  WHERE n."TenantSlug" = 'demo' AND n."TemplateCode" IS NULL AND n."RecipientEmployeeId" = '{AYSE}'
@@ -292,6 +296,27 @@ BEGIN
   RETURN n;
 END $f$;
 SELECT 'platform_access_grants', pg_temp.del_grants();
+-- test_payroll_eco.py (bordro dalgası 8): test yılı 2031 kalıntıları — dönemi silinmiş e-bordro teslim kayıtları,
+-- fark bordrosu, Ayşe'nin 2031 kıdem/ihbar hesapları, 2031 parametre satırları. Tablolar
+-- 2026-10-21_payroll_tr.sql ile gelir; uygulanmamış kurulumda atlanır.
+CREATE FUNCTION pg_temp.del_payroll8() RETURNS bigint LANGUAGE plpgsql AS $f$
+DECLARE n bigint := 0; k bigint;
+BEGIN
+  IF to_regclass('compensation_payslip_deliveries') IS NOT NULL THEN
+    EXECUTE $q$DELETE FROM compensation_payslip_deliveries d WHERE d."TenantSlug" = 'demo'
+               AND NOT EXISTS (SELECT 1 FROM compensation_payroll_periods p WHERE p."Id" = d."PeriodId")$q$;
+    GET DIAGNOSTICS k = ROW_COUNT; n := n + k;
+    EXECUTE $q$DELETE FROM compensation_retro_diffs WHERE "TenantSlug" = 'demo' AND "SourceYear" = 2031$q$;
+    GET DIAGNOSTICS k = ROW_COUNT; n := n + k;
+    EXECUTE $q$DELETE FROM compensation_severance_calcs WHERE "TenantSlug" = 'demo' AND "EmployeeId" = '{AYSE}'
+               AND extract(year FROM "LastWorkingDay") = 2031$q$;
+    GET DIAGNOSTICS k = ROW_COUNT; n := n + k;
+    EXECUTE $q$DELETE FROM compensation_payroll_parameters WHERE "TenantSlug" = 'demo' AND "Year" = 2031$q$;
+    GET DIAGNOSTICS k = ROW_COUNT; n := n + k;
+  END IF;
+  RETURN n;
+END $f$;
+SELECT 'compensation (bordro dalgası 8)', pg_temp.del_payroll8();
 
 -- ============================================================== İzin bakiyeleri yeniden hesap
 WITH calc AS (

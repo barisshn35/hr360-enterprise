@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import { motion } from 'motion/react'
 import { Calculator, Check, ClipboardCheck, LogOut, Plus } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -51,6 +52,8 @@ function StartModal({ onClose }: { onClose: () => void }) {
 }
 
 function Settlement({ id }: { id: string }) {
+  const { roles } = useAuth()
+  const canPayroll = roles.some((r) => ['hr-admin', 'tenant-admin', 'platform-admin'].includes(r))
   const q = useQuery({ queryKey: ['offboarding', id, 'settlement'], queryFn: ({ signal }) => engagementApi.settlement(id, signal), retry: false })
   if (q.isPending) return <RowsSkeleton rows={2} />
   if (q.isError) return <p className="text-[13px] text-muted-foreground">{tx('Hak ediş hesabı için ücret görme yetkisi gerekir.')}</p>
@@ -66,6 +69,8 @@ function Settlement({ id }: { id: string }) {
       <p className="text-[13px]">{tx('Kıdem:')}{' '}<b>{tx('{0} yıl', [s.tenureYears])}</b>{' '}{tx('· Toplam brüt:')}{' '}<b>{formatMoney(s.totalGross)}</b></p>
       <details className="text-[12px] text-muted-foreground"><summary className="cursor-pointer">{tx('Yasal dayanaklar')}</summary><ul className="mt-1 list-disc space-y-1 pl-5"><li>{s.severance.basis}</li><li>{s.notice.basis}</li><li>{s.unusedLeave.basis}</li></ul></details>
       <p className="text-[11.5px] text-muted-foreground">{s.disclaimer}</p>
+      {/* Bordro dalgası 8: kesin hesap (giydirilmiş ücret, ihbar gelir vergisi, İK onayı, ibraname) bordro ekranında. */}
+      {canPayroll && <Button size="sm" variant="outline" asChild><Link to={`/panel/bordro?bolum=severance&case=${id}`}><Calculator className="size-4" />{' '}{tx('Bordroda kesin hesap ve ibraname')}</Link></Button>}
     </div>
   )
 }

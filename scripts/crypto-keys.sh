@@ -48,6 +48,7 @@ COLUMNS="engagement_profiles|Iban|prefixed
 engagement_profiles|NationalId|prefixed
 expense_travel_requests|PassportCipher|prefixed
 compensation_payroll_exports|Cipher|bytes
+compensation_payslip_deliveries|SealedCopy|bytes
 notification_vapid_keys|PrivateKeyEnc|text
 platform_tenants|SmtpPasswordEncrypted|text
 tenant_directory_settings|LdapBindPasswordEncrypted|text

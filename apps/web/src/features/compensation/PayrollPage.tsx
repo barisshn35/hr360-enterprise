@@ -11,7 +11,8 @@ import { useConfirm } from '@/components/ui/Confirm'
 import { SelectField, TextField } from '@/components/ui/Field'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { ErrorState, InfoNote, RowsSkeleton } from '@/components/ui/States'
-import { Tabs } from '@/components/ui/Tabs'
+import { Tabs, useTabParam } from '@/components/ui/Tabs'
+import { Checkbox } from '@/components/ui/checkbox'
 import { useAuth } from '@/auth/useAuth'
 import { useDirectory } from '@/api/directory'
 import { payrollApi, type Payslip, type PayrollParameters, type PayrollPeriod, type PayrollPeriodStatus, type TaxBracket } from '@/api/payroll'
@@ -21,6 +22,7 @@ import { tx, appLocale } from '@/lib/i18n'
 import { printPayslip } from './payslipPrint'
 import { AdvancesAdminPanel, PayrollExportsPanel } from './PayrollExtras'
 import { PayrollAnomalyPanel } from './PayrollAnomalyPanel'
+import { BandCompliancePanel, EPayslipPanel, PayrollSettingsPanel, RetroPanel, SeverancePanel } from './PayrollTr'
 import { mlInsightsApi } from '@/api/mlInsights'
 import { worstSeverity } from '@/lib/mlInsights'
 import { severityLabel, severityTone } from '@/lib/expenseAudit'
@@ -93,31 +95,54 @@ const pct = (v: number) => `%${(v * 100).toLocaleString(appLocale, { maximumFrac
 
 function ParametersPanel() {
   const admin = useIsPayrollAdmin()
-  const [year, setYear] = useState(String(new Date().getFullYear()))
-  const q = useQuery({ queryKey: ['payroll', 'params', year], queryFn: ({ signal }) => payrollApi.parameters(Number(year), signal) })
-  const [form, setForm] = useState<PayrollParameters | null>(null)
-  useEffect(() => { if (q.data) setForm(q.data) }, [q.data])
-  const save = useAction(() => payrollApi.saveParameters(Number(year), form!), { success: tx('Parametreler kaydedildi'), invalidate: [['payroll', 'params']] })
-  const reset = useAction(() => payrollApi.resetParameters(Number(year)), { success: tx('Yasal varsayılanlara dönüldü'), invalidate: [['payroll', 'params']] })
-  const num = (s: string) => Number(s.replace(',', '.')) || 0
-  const setBracket = (i: number, patch: Partial<TaxBracket>) => setForm((f) => f && { ...f, brackets: f.brackets.map((b, j) => (j === i ? { ...b, ...patch } : b)) })
+  const confirm = useConfirm()
   const now = new Date().getFullYear()
+  const [year, setYear] = useState(String(now))
+  const [from, setFrom] = useState('1')
+  const q = useQuery({ queryKey: ['payroll', 'params', year, from], queryFn: ({ signal }) => payrollApi.parameters(Number(year), Number(from), signal) })
+  const [form, setForm] = useState<PayrollParameters | null>(null)
+  useEffect(() => { if (q.data) setForm({ ...q.data, validFromMonth: Number(from) }) }, [q.data, from])
+  const save = useAction(() => payrollApi.saveParameters(Number(year), {
+    ...form!, validFromMonth: Number(from), source: form!.source ?? undefined,
+  }), { success: tx('Parametreler kaydedildi'), invalidate: [['payroll', 'params']] })
+  const reset = useAction(() => payrollApi.resetParameters(Number(year), Number(from)), { success: tx('Yürürlük satırı silindi; yasal varsayılanlar ya da önceki satır geçerli'), invalidate: [['payroll', 'params']] })
+  const num = (s: string) => Number(s.replace(',', '.')) || 0
+  const opt = (s: string) => (s.trim() ? Number(s.replace(',', '.')) : null)
+  const setBracket = (i: number, patch: Partial<TaxBracket>) => setForm((f) => f && { ...f, brackets: f.brackets.map((b, j) => (j === i ? { ...b, ...patch } : b)) })
+  const rowExists = !!q.data?.rows.some((r) => r.validFromMonth === Number(from))
+  const fromOptions = Array.from(new Set([1, 7, ...(q.data?.rows.map((r) => r.validFromMonth) ?? [])])).sort((x, y) => x - y)
   return (
-    <Panel className="max-w-3xl">
-      <PanelHead title={tx('Bordro parametreleri')} note={tx('Resmi değerler hazır gelir. Teşvik puanı gibi şirketinize özgü değerleri değiştirebilirsiniz.')}
-        action={<SelectField label={tx('Yıl')} value={year} onChange={setYear} options={[now - 1, now, now + 1].map((y) => ({ value: String(y), label: String(y) }))} />} />
+    <Panel className="max-w-4xl">
+      <PanelHead title={tx('Bordro parametreleri')} note={tx('Yıl ve yürürlük ayına göre. Dönem hesaplanırken ayına göre en son yürürlüğe giren satır kullanılır; kapanmış dönemler değişmez. Her değişiklik denetim kaydına yazılır.')}
+        action={<div className="flex gap-2">
+          <SelectField label={tx('Yıl')} value={year} onChange={setYear} options={[now - 2, now - 1, now, now + 1].map((y) => ({ value: String(y), label: String(y) }))} />
+          <SelectField label={tx('Yürürlük')} value={from} onChange={setFrom} options={fromOptions.map((m) => ({ value: String(m), label: tx('{0} ayından itibaren', [monthName(m)]) }))} />
+        </div>} />
       <PanelBody className="space-y-4">
         {q.isPending || !form ? <RowsSkeleton rows={4} /> : q.isError ? <ErrorState message={String(q.error)} /> : (
           <>
-            {form.isCustom && <InfoNote>{tx('Bu yıl için şirkete özel parametreler kullanılıyor.')}</InfoNote>}
-            <div className="grid gap-3 sm:grid-cols-2">
+            {!form.verified && <InfoNote>{tx('Bu değerler resmî kaynakla doğrulanmadı. Resmî Gazete / GİB / SGK duyurularıyla karşılaştırıp "Doğrulandı" işaretleyin.')}</InfoNote>}
+            {!rowExists && <InfoNote>{form.isCustom ? tx('Bu ay için ayrı satır yok; {0} ayından itibaren geçerli satır gösteriliyor. Kaydederseniz bu aydan itibaren yeni satır oluşur.', [monthName(form.validFromMonth)]) : tx('Bu yıl için tablo satırı yok; yasal varsayılanlar (uygulama içi) gösteriliyor.')}</InfoNote>}
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <TextField label={tx('Brüt asgari ücret (aylık)')} inputMode="decimal" disabled={!admin} value={String(form.minimumWageGross)} onChange={(e) => setForm({ ...form, minimumWageGross: num(e.target.value) })} />
-              <TextField label={tx('SGK tavanı çarpanı')} inputMode="decimal" disabled={!admin} value={String(form.sgkCeilingMultiplier)} onChange={(e) => setForm({ ...form, sgkCeilingMultiplier: num(e.target.value) })} hint={tx('Tavan: {0}', [formatMoney(form.minimumWageGross * form.sgkCeilingMultiplier)])} />
+              <TextField label={tx('Net asgari ücret (bilgi)')} inputMode="decimal" disabled={!admin} value={form.minimumWageNet == null ? '' : String(form.minimumWageNet)} onChange={(e) => setForm({ ...form, minimumWageNet: opt(e.target.value) })} />
+              <TextField label={tx('SGK tavanı çarpanı')} inputMode="decimal" disabled={!admin} value={String(form.sgkCeilingMultiplier)} onChange={(e) => setForm({ ...form, sgkCeilingMultiplier: num(e.target.value) })} hint={tx('Taban: asgari ücret · tavan: {0}', [formatMoney(form.minimumWageGross * form.sgkCeilingMultiplier)])} />
+              <TextField label={tx('SGK işçi oranı')} inputMode="decimal" disabled={!admin} value={String(form.sgkEmployeeRate)} onChange={(e) => setForm({ ...form, sgkEmployeeRate: num(e.target.value) })} hint={pct(form.sgkEmployeeRate)} />
+              <TextField label={tx('İşsizlik işçi oranı')} inputMode="decimal" disabled={!admin} value={String(form.unemploymentEmployeeRate)} onChange={(e) => setForm({ ...form, unemploymentEmployeeRate: num(e.target.value) })} hint={pct(form.unemploymentEmployeeRate)} />
+              <TextField label={tx('İşsizlik işveren oranı')} inputMode="decimal" disabled={!admin} value={String(form.unemploymentEmployerRate)} onChange={(e) => setForm({ ...form, unemploymentEmployerRate: num(e.target.value) })} hint={pct(form.unemploymentEmployerRate)} />
               <TextField label={tx('İşveren SGK oranı (teşviksiz)')} inputMode="decimal" disabled={!admin} value={String(form.sgkEmployerRate)} onChange={(e) => setForm({ ...form, sgkEmployerRate: num(e.target.value) })} hint={pct(form.sgkEmployerRate)} />
               <TextField label={tx('Teşvik indirimi (puan)')} inputMode="decimal" disabled={!admin} value={String(form.employerIncentivePoints)} onChange={(e) => setForm({ ...form, employerIncentivePoints: num(e.target.value) })} hint={tx('İmalat dışı 2, imalat 5 puan')} />
               <TextField label={tx('Damga vergisi oranı')} inputMode="decimal" disabled={!admin} value={String(form.stampTaxRate)} onChange={(e) => setForm({ ...form, stampTaxRate: num(e.target.value) })} hint={pct(form.stampTaxRate)} />
+              <TextField label={tx('Kıdem tavanı (Ocak–Haziran)')} inputMode="decimal" disabled={!admin} value={form.severanceCeilingH1 == null ? '' : String(form.severanceCeilingH1)} onChange={(e) => setForm({ ...form, severanceCeilingH1: opt(e.target.value) })} />
+              <TextField label={tx('Kıdem tavanı (Temmuz–Aralık)')} inputMode="decimal" disabled={!admin} value={form.severanceCeilingH2 == null ? '' : String(form.severanceCeilingH2)} onChange={(e) => setForm({ ...form, severanceCeilingH2: opt(e.target.value) })} />
+              <TextField label={tx('AGİ (aylık, 2022 öncesi — bilgi)')} inputMode="decimal" disabled={!admin} value={form.agiMonthly == null ? '' : String(form.agiMonthly)} onChange={(e) => setForm({ ...form, agiMonthly: opt(e.target.value) })} hint={tx('Hesaplamaya girmez')} />
             </div>
-            <p className="text-[12.5px] text-muted-foreground">{tx('SGK işçi %14, işsizlik işçi %1 ve işveren %2; fazla mesai saatlik ücretin %150\'si (aylık 225 saat).')}</p>
+            <div className="flex flex-wrap gap-5 text-[13px]">
+              <label className="flex items-center gap-2"><Checkbox disabled={!admin} checked={form.minimumWageExemption} onCheckedChange={(v) => setForm({ ...form, minimumWageExemption: v === true })} /> {tx('Asgari ücret GV ve damga vergisi istisnası')}</label>
+              <label className="flex items-center gap-2"><Checkbox disabled={!admin} checked={form.verified} onCheckedChange={(v) => setForm({ ...form, verified: v === true })} /> {tx('Değerler resmî kaynakla doğrulandı')}</label>
+            </div>
+            <TextField label={tx('Kaynak')} disabled={!admin} value={form.source ?? ''} onChange={(e) => setForm({ ...form, source: e.target.value })} hint={tx('Ör. Resmî Gazete tarihi/sayısı, GİB duyurusu')} maxLength={300} />
+            <p className="text-[12.5px] text-muted-foreground">{tx('Fazla mesai saatlik ücretin %150\'si (aylık 225 saat).')}</p>
             <div>
               <p className="mb-2 text-[13px] font-medium">{tx('Gelir vergisi dilimleri (ücret gelirleri)')}</p>
               <ul className="space-y-2">
@@ -130,10 +155,13 @@ function ParametersPanel() {
                 ))}
               </ul>
             </div>
+            {form.updatedBy && <p className="text-[12px] text-muted-foreground">{tx('Son değişiklik: {0} ({1})', [form.updatedBy, formatDateTime(form.updatedAt)])}</p>}
             {admin && (
               <div className="flex flex-wrap gap-2">
                 <Button onClick={() => save.mutate(undefined)} disabled={save.isPending}>{tx('Kaydet')}</Button>
-                {form.isCustom && <Button variant="outline" onClick={() => reset.mutate(undefined)}><RotateCcw className="size-4" /> {tx('Yasal varsayılanlara dön')}</Button>}
+                {rowExists && <Button variant="outline" onClick={async () => {
+                  if (await confirm({ title: tx('Yürürlük satırı silinsin mi?'), note: tx('{0} yılı {1} ayından itibaren geçerli satır silinir. Kapanmış dönemler etkilenmez.', [year, monthName(Number(from))]), action: tx('Sil') })) reset.mutate(undefined)
+                }}><RotateCcw className="size-4" /> {tx('Satırı sil')}</Button>}
               </div>
             )}
           </>
@@ -143,13 +171,21 @@ function ParametersPanel() {
   )
 }
 
+type PayrollTab = 'periods' | 'params' | 'advances' | 'retro' | 'severance' | 'bands' | 'settings'
+
 export function PayrollPage() {
-  const [tab, setTab] = useState<'periods' | 'params' | 'advances'>('periods')
+  const [tab, setTab] = useTabParam<PayrollTab>('bolum', 'periods')
+  const tabs: Array<{ key: PayrollTab; label: string }> = [
+    { key: 'periods', label: tx('Dönemler') }, { key: 'params', label: tx('Parametreler') }, { key: 'advances', label: tx('Avanslar') },
+    { key: 'retro', label: tx('Fark bordrosu') }, { key: 'severance', label: tx('Kıdem ve ihbar') }, { key: 'bands', label: tx('Bant uyumu') },
+    { key: 'settings', label: tx('SGK ve dosya ayarları') },
+  ]
   return (
     <>
       <PageHeader title={tx('Bordro')} description={tx('Aylık bordro dönemi: hesaplama, ek ödeme ve kesintiler, dönem kapatma ve bordro pusulası.')} />
-      <div className="mb-4"><Tabs label={tx('Bölüm')} value={tab} onChange={setTab} tabs={[{ key: 'periods', label: tx('Dönemler') }, { key: 'params', label: tx('Parametreler') }, { key: 'advances', label: tx('Avanslar') }]} /></div>
-      {tab === 'periods' ? <PeriodList /> : tab === 'params' ? <ParametersPanel /> : <AdvancesAdminPanel />}
+      <div className="mb-4"><Tabs label={tx('Bölüm')} value={tab} onChange={setTab} tabs={tabs} /></div>
+      {tab === 'periods' ? <PeriodList /> : tab === 'params' ? <ParametersPanel /> : tab === 'advances' ? <AdvancesAdminPanel />
+        : tab === 'retro' ? <RetroPanel /> : tab === 'severance' ? <SeverancePanel /> : tab === 'bands' ? <BandCompliancePanel /> : <PayrollSettingsPanel />}
       <div className="mt-4"><InfoNote>{tx('KVKK: Bordro pusulasını yalnızca çalışanın kendisi (dönem kapandıktan sonra) ve bordro yetkilisi görür. Bordro listesinin açılması erişim kaydına yazılır; pusulalar 10 yıl saklanıp imha edilir.')}</InfoNote></div>
     </>
   )
@@ -311,6 +347,7 @@ export function PayrollPeriodPage() {
         {period.status !== 'Open' && <PayrollAnomalyPanel query={anomalies} nameOf={nameOf} closed={closed} />}
         <AdjustmentsPanel period={period} editable={admin && !closed} />
         {admin && <PayrollExportsPanel periodId={period.id} closed={closed} />}
+        {closed && <EPayslipPanel periodId={period.id} closed={closed} />}
         {period.status === 'Open'
           ? <InfoNote>{tx('Dönem henüz hesaplanmadı. Hesaplamaya onaylı ücretsiz izin günleri (eksik gün), onaylı fazla mesai ve yukarıdaki ek ödeme/kesintiler girer.')}</InfoNote>
           : <DataTable rows={slips.data} rowKey={(s) => s.id} columns={columns} isLoading={slips.isPending} error={slips.error} onRowClick={setOpen} exportFileName={`bordro-${period.year}-${period.month}`} />}

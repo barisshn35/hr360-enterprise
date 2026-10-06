@@ -26,6 +26,8 @@ builder.Services.AddScoped<ITenantContext>(sp => sp.GetRequiredService<TenantCon
 CompensationService.Security.EncColumn[] encryptedColumns =
 [
     new("compensation_payroll_exports", "Cipher", CompensationService.Security.EncKind.Bytes),
+    // Bordro dalgası 8: e-bordro teslim kopyası (kanonik JSON).
+    new("compensation_payslip_deliveries", "SealedCopy", CompensationService.Security.EncKind.Bytes),
 ];
 builder.Services.AddHostedService(sp => new CompensationService.Security.KeyRotationJob("COMPENSATION_DB_CONNECTION", encryptedColumns,
     sp.GetRequiredService<ILogger<CompensationService.Security.KeyRotationJob>>()));

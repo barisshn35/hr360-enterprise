@@ -35,6 +35,8 @@ export interface CompensationBand {
   maxAmount: number
   currency: string
   year: number
+  /** Yürürlük tarihi (boşsa yılın başı). */
+  effectiveFrom?: string | null
 }
 
 export interface CompensationRecord {
@@ -80,6 +82,7 @@ export interface CreateBandInput {
   maxAmount: number
   currency: string
   year: number
+  effectiveFrom?: string | null
 }
 
 export interface CreateRecordInput {

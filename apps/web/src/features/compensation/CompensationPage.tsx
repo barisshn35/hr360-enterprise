@@ -61,6 +61,7 @@ function NewBandModal({
   const [minAmount, setMin] = useState(band ? String(band.minAmount) : '')
   const [midAmount, setMid] = useState(band ? String(band.midAmount) : '')
   const [maxAmount, setMax] = useState(band ? String(band.maxAmount) : '')
+  const [effectiveFrom, setEffectiveFrom] = useState(band?.effectiveFrom ?? '')
   const [error, setError] = useState<string | undefined>()
   // Tutar alanlarının hataları alan yanında gösterilir (0 < alt ≤ orta ≤ üst).
   const [amountErr, setAmountErr] = useState<{ min?: string; mid?: string; max?: string }>({})
@@ -75,6 +76,7 @@ function NewBandModal({
         maxAmount: parseDecimal(maxAmount) ?? NaN,
         currency: band?.currency ?? 'TRY',
         year: band?.year ?? year,
+        effectiveFrom: effectiveFrom || null,
       }
       return band ? compensationApi.updateBand(band.id, input) : compensationApi.createBand(input)
     },
@@ -188,6 +190,14 @@ function NewBandModal({
             onChange={(e) => setMax(e.target.value)}
           />
         </div>
+        <TextField
+          id="band-effective"
+          type="date"
+          label={tx('Yürürlük tarihi')}
+          hint={tx('İsteğe bağlı; boşsa yılın başı. Aynı kademede yıl içinde yeni bant tanımlamak için kullanın.')}
+          value={effectiveFrom}
+          onChange={(e) => setEffectiveFrom(e.target.value)}
+        />
       </form>
     </Modal>
   )

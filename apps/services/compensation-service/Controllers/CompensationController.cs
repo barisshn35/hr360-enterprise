@@ -72,6 +72,8 @@ public class CompensationController : ControllerBase
 
         if (await _db.SalaryBands.AnyAsync(b => b.Grade == request.Grade && b.Year == request.Year))
             return Conflict("Bu kademe ve yıl için bant zaten tanımlı");
+        if (request.EffectiveFrom is { } ef && ef.Year != request.Year)
+            return BadRequest("Yürürlük tarihi bandın yılı içinde olmalı");
 
         var band = new SalaryBand
         {
@@ -81,10 +83,12 @@ public class CompensationController : ControllerBase
             MidAmount = request.MidAmount,
             MaxAmount = request.MaxAmount,
             Currency = request.Currency,
-            Year = request.Year
+            Year = request.Year,
+            EffectiveFrom = request.EffectiveFrom
         };
         _db.SalaryBands.Add(band);
         await _db.SaveChangesAsync();
+        await AuditBandAsync(band, "Created");
         return Created($"/api/compensation/bands/{band.Id}", band);
     }
 
@@ -94,7 +98,7 @@ public class CompensationController : ControllerBase
         try
         {
             var user = HttpContext.User;
-            var changes = System.Text.Json.JsonSerializer.Serialize(new { band.Grade, band.Year, band.MinAmount, band.MidAmount, band.MaxAmount, band.Currency });
+            var changes = System.Text.Json.JsonSerializer.Serialize(new { band.Grade, band.Year, band.EffectiveFrom, band.MinAmount, band.MidAmount, band.MaxAmount, band.Currency });
             await _db.Database.ExecuteSqlRawAsync(
                 "INSERT INTO audit_log (\"TenantSlug\",\"Service\",\"EntityType\",\"EntityId\",\"Action\",\"Changes\",\"UserId\",\"UserName\",\"CorrelationId\",\"IpAddress\",\"OccurredAt\") " +
                 "VALUES ({0},'compensation-service','SalaryBand',{1},{2},{3}::jsonb,{4},{5},{6},{7},now())",
@@ -130,6 +134,8 @@ public class CompensationController : ControllerBase
         if (request.MinAmount <= 0 || request.MinAmount > request.MidAmount || request.MidAmount > request.MaxAmount)
             return BadRequest("Bant değerleri 0 < alt ≤ orta ≤ üst olmalı");
         var grade = request.Grade.Trim();
+        if (request.EffectiveFrom is { } ef && ef.Year != request.Year)
+            return BadRequest("Yürürlük tarihi bandın yılı içinde olmalı");
         if (grade != band.Grade || request.Year != band.Year)
         {
             // Kademe/yıl değişirse kayıtlar ve zam dönemleri bu banttan kopar: kullanımdaysa izin verilmez.
@@ -145,6 +151,7 @@ public class CompensationController : ControllerBase
         band.MaxAmount = request.MaxAmount;
         band.Currency = string.IsNullOrWhiteSpace(request.Currency) ? band.Currency : request.Currency;
         band.Year = request.Year;
+        band.EffectiveFrom = request.EffectiveFrom;
         await _db.SaveChangesAsync();
         await AuditBandAsync(band, "Updated");
         return Ok(band);
@@ -364,7 +371,7 @@ public class PayEquityController : ControllerBase
 
 public record CreateBandRequest(
     string Grade, string? Title, decimal MinAmount, decimal MidAmount,
-    decimal MaxAmount, string Currency, int Year);
+    decimal MaxAmount, string Currency, int Year, DateOnly? EffectiveFrom = null);
 
 public record CreateRecordRequest(
     Guid EmployeeId, decimal BaseSalary, string Currency, string? Grade,

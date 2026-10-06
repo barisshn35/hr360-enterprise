@@ -23,9 +23,37 @@ export interface PayrollPeriod {
 
 export interface TaxBracket { upTo: number | null; rate: number }
 
+/** Bir yürürlük satırı (yıl + yürürlük ayı). */
+export interface PayrollParameterRow {
+  id: string
+  year: number
+  validFromMonth: number
+  minimumWageGross: number
+  minimumWageNet: number | null
+  sgkEmployeeRate: number
+  unemploymentEmployeeRate: number
+  sgkEmployerRate: number
+  employerIncentivePoints: number
+  unemploymentEmployerRate: number
+  stampTaxRate: number
+  sgkCeilingMultiplier: number
+  brackets: TaxBracket[]
+  minimumWageExemption: boolean
+  agiMonthly: number | null
+  severanceCeilingH1: number | null
+  severanceCeilingH2: number | null
+  verified: boolean
+  source: string | null
+  updatedBy: string | null
+  updatedAt: string
+}
+
 export interface PayrollParameters {
   year: number
+  month: number
+  validFromMonth: number
   minimumWageGross: number
+  minimumWageNet: number | null
   sgkEmployeeRate: number
   unemploymentEmployeeRate: number
   sgkEmployerRate: number
@@ -38,8 +66,21 @@ export interface PayrollParameters {
   overtimeMultiplier: number
   monthlyHours: number
   brackets: TaxBracket[]
+  minimumWageExemption: boolean
+  agiMonthly: number | null
+  severanceCeilingH1: number | null
+  severanceCeilingH2: number | null
+  /** Değerler resmî kaynakla doğrulandı mı (tohum 2026: hayır). */
+  verified: boolean
+  source: string | null
+  updatedBy: string | null
+  updatedAt: string | null
   isCustom: boolean
+  rows: PayrollParameterRow[]
 }
+
+export type PayrollParametersInput = Pick<PayrollParameters, 'minimumWageGross' | 'sgkEmployerRate' | 'employerIncentivePoints' | 'stampTaxRate' | 'sgkCeilingMultiplier' | 'brackets'>
+  & Partial<Pick<PayrollParameters, 'validFromMonth' | 'minimumWageNet' | 'sgkEmployeeRate' | 'unemploymentEmployeeRate' | 'unemploymentEmployerRate' | 'minimumWageExemption' | 'agiMonthly' | 'severanceCeilingH1' | 'severanceCeilingH2' | 'verified' | 'source'>>
 
 export interface Payslip {
   id: string
@@ -92,10 +133,10 @@ export const payrollApi = {
   addAdjustment: (id: string, body: { employeeId: string; kind: AdjustmentKind; amount: number; description: string }) =>
     apiFetch<PayrollAdjustment>(`${BASE}/payroll/periods/${id}/adjustments`, { method: 'POST', body }),
   deleteAdjustment: (id: string, adjId: string) => apiFetch<void>(`${BASE}/payroll/periods/${id}/adjustments/${adjId}`, { method: 'DELETE' }),
-  parameters: (year: number, signal?: AbortSignal) => apiFetch<PayrollParameters>(`${BASE}/payroll/parameters/${year}`, { signal }),
-  saveParameters: (year: number, body: Pick<PayrollParameters, 'minimumWageGross' | 'sgkEmployerRate' | 'employerIncentivePoints' | 'stampTaxRate' | 'sgkCeilingMultiplier' | 'brackets'>) =>
+  parameters: (year: number, month?: number, signal?: AbortSignal) => apiFetch<PayrollParameters>(`${BASE}/payroll/parameters/${year}${qs({ month })}`, { signal }),
+  saveParameters: (year: number, body: PayrollParametersInput) =>
     apiFetch<PayrollParameters>(`${BASE}/payroll/parameters/${year}`, { method: 'PUT', body }),
-  resetParameters: (year: number) => apiFetch<void>(`${BASE}/payroll/parameters/${year}`, { method: 'DELETE' }),
+  resetParameters: (year: number, validFromMonth?: number) => apiFetch<void>(`${BASE}/payroll/parameters/${year}${qs({ validFromMonth })}`, { method: 'DELETE' }),
   myPayslips: (signal?: AbortSignal) => apiFetch<Payslip[]>(`${BASE}/payslips/me`, { signal }),
   payslip: (id: string, signal?: AbortSignal) => apiFetch<PayslipDetail>(`${BASE}/payslips/${id}`, { signal }),
 }

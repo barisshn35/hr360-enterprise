@@ -3,9 +3,15 @@
 taksitleri (Y11), esnek yan haklar (Y13), zam dönemi (Y21), TCMB kuru/km/limit (G9), seyahat ve
 harcırah (Y12), fiş okuma (Y27).
 
+Bordro dalgası 8 (madde 58–65): parametre yürürlük satırları, SGK ayarları ve meslek kodu, APHB
+doğrulama ve TXT, banka örnek şablonu (dosya özeti), masraf merkezi eşlemesi, e-bordro yayım/okundu,
+fark bordrosu, kıdem/ihbar (dört göz) ve ibraname, bant uyumu. Dış sistemler (SGK, banka, e-posta)
+gerçek hesaplarla denenmez: yalnızca dosya üretilir / e-posta notification kuyruğuna yazılır.
+
 Ön koşul: HR360 çalışıyor, deploy/testing/chat-mock.yml katmanı açık (sahte TCMB kurları).
 """
 import datetime as dt
+import hashlib
 import io
 import json
 import os
@@ -62,6 +68,13 @@ def cleanup():
              DELETE FROM expense_travel_requests WHERE "Destination" LIKE 'TEST%';
              DELETE FROM expense_policies WHERE "TenantSlug" = 'demo';
              DELETE FROM expense_fx_rates WHERE "Source" = 'Manual' AND "TenantSlug" = 'demo';""")
+    # Dalga 8 kalıntıları (tablolar 2026-10-21_payroll_tr.sql ile gelir).
+    psql(f"""DELETE FROM compensation_payslip_deliveries d WHERE NOT EXISTS (SELECT 1 FROM compensation_payroll_periods p WHERE p."Id" = d."PeriodId");
+             DELETE FROM compensation_retro_diffs WHERE "SourceYear" = {YEAR};
+             DELETE FROM compensation_severance_calcs WHERE "EmployeeId" = '{AYSE}' AND extract(year FROM "LastWorkingDay") = {YEAR};
+             DELETE FROM compensation_payroll_parameters WHERE "Year" = {YEAR};
+             DELETE FROM compensation_records WHERE "Note" = 'TEST retro {YEAR}';
+             UPDATE compensation_records SET "EffectiveTo" = NULL WHERE "EmployeeId" = '{AYSE}' AND "EffectiveTo" = '{YEAR}-03-31';""")
 
 
 cleanup()
@@ -140,6 +153,154 @@ for _ in range(45):
         break
     time.sleep(2)
 check("Süresi dolan dosyanın içeriği silindi (temizlik işi)", purged == "t", purged)
+# ====================================================================== Dalga 8: parametreler (60)
+code, p26 = api("admin", "GET", f"{C}/payroll/parameters/2026")
+check("Parametreler: 2026 değerleri ve doğrulama bayrağı alanı", code == 200 and p26["minimumWageGross"] == 33030 and "verified" in p26 and "rows" in p26, p26)
+br = [{"upTo": 190000, "rate": 0.15}, {"upTo": 400000, "rate": 0.2}, {"upTo": 1500000, "rate": 0.27}, {"upTo": 5300000, "rate": 0.35}, {"upTo": None, "rate": 0.4}]
+code, r = api("admin", "PUT", f"{C}/payroll/parameters/{YEAR}", {"validFromMonth": 7, "minimumWageGross": 40000, "sgkEmployerRate": 0.2175, "employerIncentivePoints": 2,
+                                                              "stampTaxRate": 0.00759, "sgkCeilingMultiplier": 9, "brackets": br, "severanceCeilingH2": 90000, "verified": False, "source": "TEST"})
+check("Parametre: Temmuz yürürlük satırı kaydedildi", code == 200 and r["validFromMonth"] == 7 and r["minimumWageGross"] == 40000 and r["verified"] is False, (code, r))
+code, m3 = api("admin", "GET", f"{C}/payroll/parameters/{YEAR}?month=3")
+code, m8 = api("admin", "GET", f"{C}/payroll/parameters/{YEAR}?month=8")
+check("Parametre: dönem ayına göre seçim (Mart varsayılan, Ağustos yeni satır)", m3["minimumWageGross"] == 33030 and m8["minimumWageGross"] == 40000, (m3["minimumWageGross"], m8["minimumWageGross"]))
+code, _ = api("ayse", "PUT", f"{C}/payroll/parameters/{YEAR}", {"minimumWageGross": 1, "sgkEmployerRate": 0.2, "employerIncentivePoints": 0, "stampTaxRate": 0.007, "sgkCeilingMultiplier": 9, "brackets": br})
+check("Parametre: çalışan değiştiremez", code == 403, code)
+code, _ = api("admin", "PUT", f"{C}/payroll/parameters/{YEAR}", {"validFromMonth": 13, "minimumWageGross": 1, "sgkEmployerRate": 0.2, "employerIncentivePoints": 0, "stampTaxRate": 0.007, "sgkCeilingMultiplier": 9, "brackets": br})
+check("Parametre: geçersiz yürürlük ayı reddedilir", code == 400, code)
+aud = psql(f"""SELECT count(*) FROM audit_log WHERE "EntityType" = 'PayrollParameterSet' AND "EntityId" = '{YEAR}-07' AND "Changes" ? 'after'""")
+check("Parametre değişikliği denetim kaydında (önce/sonra)", aud.isdigit() and int(aud) >= 1, aud)
+code, _ = api("admin", "DELETE", f"{C}/payroll/parameters/{YEAR}?validFromMonth=7")
+code, m8 = api("admin", "GET", f"{C}/payroll/parameters/{YEAR}?month=8")
+check("Parametre: satır silinince varsayılana dönülür", code == 200 and m8["minimumWageGross"] == 33030 and m8["isCustom"] is False, m8)
+
+# ====================================================================== Dalga 8: SGK ayarları, meslek kodu, APHB (58)
+code, settings0 = api("admin", "GET", f"{C}/payroll/settings")
+check("Bordro ayarları okunur (varsayılan eksik gün kodu: ücretsiz izin 21)", code == 200 and any(m["leaveType"] == "Unpaid" and m["code"] == "21" for m in settings0["sgk"]["missingDayCodes"]), settings0.get("sgk"))
+code, _ = api("ayse", "GET", f"{C}/payroll/settings")
+check("Bordro ayarları: çalışan göremez", code == 403, code)
+code, _ = api("admin", "PUT", f"{C}/payroll/sgk/employees/{AYSE}", {"occupationCode": "25120", "sgdp": False})
+check("Meslek kodu biçimi denetlenir", code == 400, code)
+code, r = api("admin", "PUT", f"{C}/payroll/sgk/employees/{AYSE}", {"occupationCode": "2512.01", "documentType": None, "lawNo": None, "sgdp": False})
+check("Meslek kodu kaydedildi", code == 200 and r["occupationCode"] == "2512.01", (code, r))
+code, val = api("admin", "GET", f"{C}/payroll/periods/{pid}/sgk/validation")
+ayse_issues = [i for i in val.get("issues", []) if i["employeeId"] == AYSE] if code == 200 else []
+check("APHB doğrulaması: Ayşe dosyada, meslek kodu/TCKN uyarısı yok", code == 200 and val["included"] >= 1
+      and not any(i["code"] in ("tckn", "occupation") for i in ayse_issues) and "10000000146" not in json.dumps(val), (code, ayse_issues))
+code, _ = api("ayse", "GET", f"{C}/payroll/periods/{pid}/sgk/validation")
+check("APHB doğrulaması: çalışan göremez", code == 403, code)
+code, txt = api("admin", "POST", f"{C}/payroll/periods/{pid}/exports", {"kind": "SgkAphb", "format": "txt"})
+check("APHB TXT dosyası üretildi (özetle)", code == 200 and txt["fileName"].endswith(".txt") and len(txt.get("contentSha256") or "") == 64, (code, txt))
+code, body = download("admin", f"{C}/payroll/exports/{txt['id']}/download")
+lines = [ln for ln in body.decode("utf-8", "replace").split("\r\n") if TCKN in ln]
+check("APHB TXT: 14 sütun, meslek kodu ve özet tutarlı", code == 200 and len(lines) == 1 and len(lines[0].split(";")) == 14 and lines[0].endswith(";2512.01")
+      and hashlib.sha256(body).hexdigest() == txt["contentSha256"], lines[:1])
+code, xml2 = api("admin", "POST", f"{C}/payroll/periods/{pid}/exports", {"kind": "SgkAphb", "format": "xml"})
+code, body = download("admin", f"{C}/payroll/exports/{xml2['id']}/download")
+check("APHB XML: meslek kodu ve belge grubu", code == 200 and "<MESLEKKODU>2512.01</MESLEKKODU>" in body.decode("utf-8") and "<BELGE " in body.decode("utf-8"), code)
+
+# ====================================================================== Dalga 8: banka örnek şablonu (62) ve muhasebe eşlemesi (64)
+code, bb = api("admin", "POST", f"{C}/payroll/periods/{pid}/exports", {"kind": "Bank", "format": "ornek-b", "payDate": f"{YEAR}-05-01"})
+check("Banka örnek şablon B üretildi", code == 200 and bb["fileName"].endswith(".txt"), (code, bb))
+code, body = download("admin", f"{C}/payroll/exports/{bb['id']}/download")
+blines = body.decode("latin-1").split("\r\n")
+check("Banka TXT: başlık/detay/toplam kayıtları, IBAN, özet tutarlı", code == 200 and blines[0].startswith("H") and any(ln.startswith("D") and IBAN in ln for ln in blines)
+      and any(ln.startswith("T") for ln in blines) and hashlib.sha256(body).hexdigest() == bb["contentSha256"], blines[:2])
+hlog = psql(f"""SELECT count(*) FROM audit_log WHERE "EntityType" = 'PayrollExport' AND "EntityId" = '{bb['id']}' AND "Changes"->>'sha256' = '{bb['contentSha256']}'""")
+check("Banka dosyası özeti denetim kaydında", hlog.isdigit() and int(hlog) >= 2, hlog)
+code, _ = api("admin", "PUT", f"{C}/payroll/settings", {"costCenters": {"Mühendislik": "MM-TEST"}})
+code, acc2 = api("admin", "POST", f"{C}/payroll/periods/{pid}/exports", {"kind": "Accounting", "format": "generic"})
+code, body = download("admin", f"{C}/payroll/exports/{acc2['id']}/download")
+check("Muhasebe: masraf merkezi kodu eşlendi, fiş dengeli", code == 200 and "MM-TEST" in body.decode("utf-8-sig") and acc2["warnings"] == [], acc2.get("warnings"))
+api("admin", "PUT", f"{C}/payroll/settings", {"sgk": settings0["sgk"], "accounts": settings0["accounts"], "costCenters": settings0["costCenters"], "bank": settings0["bank"]})
+
+# ====================================================================== Dalga 8: e-bordro (59)
+code, pub = api("admin", "POST", f"{C}/payroll/periods/{pid}/e-payslips/publish")
+check("e-Bordro yayımlandı", code == 200 and pub["created"] + pub["republished"] + pub["unchanged"] >= 1, (code, pub))
+code, mine = api("ayse", "GET", f"{C}/payslips/me")
+slip = next((x for x in mine if x["year"] == YEAR and x["month"] == 4), None)
+code, ep = api("ayse", "GET", f"{C}/payslips/{slip['id']}/e-payslip") if slip else (0, {})
+check("e-Bordro: çalışan görür, içerik özeti tutarlı, onaylayabilir", code == 200 and ep["integrity"] == "ok" and ep["canAcknowledge"] is True, ep)
+code, ep2 = api("admin", "GET", f"{C}/payslips/{slip['id']}/e-payslip")
+opened = psql(f"""SELECT "OpenCount" FROM compensation_payslip_deliveries WHERE "PayslipId" = '{slip['id']}'""")
+check("e-Bordro: çalışanın açması okundu sayılır, İK'nınki sayılmaz", ep.get("firstOpenedAt") is not None and opened == "1", (ep.get("firstOpenedAt"), opened))
+code, _ = api("mehmet", "POST", f"{C}/payslips/{slip['id']}/acknowledge")
+check("e-Bordro: başkası teslim alamaz", code == 404, code)
+code, ack = api("ayse", "POST", f"{C}/payslips/{slip['id']}/acknowledge")
+check("e-Bordro: Okudum, teslim aldım", code == 200 and ack["contentSha256"] == ep["currentSha256"], (code, ack))
+code, r = api("ayse", "POST", f"{C}/payslips/{slip['id']}/acknowledge")
+check("e-Bordro: ikinci onay reddedilir", code == 409, code)
+code, st = api("admin", "GET", f"{C}/payroll/periods/{pid}/e-payslips")
+check("e-Bordro: İK teslim durumunu görür", code == 200 and st["acknowledged"] >= 1, st)
+nb = psql(f"""SELECT count(*) FROM notification_messages WHERE "TemplateCode" = 'compensation.epayslip' AND "RecipientEmployeeId" = '{AYSE}'
+              AND "Subject" = 'e-Bordro: {YEAR}/04' AND "Body" NOT LIKE '%{slip['net']}%'""")
+check("e-Bordro bildirimi gitti (tutar yazılmadan)", nb.isdigit() and int(nb) >= 1, nb)
+
+# ====================================================================== Dalga 8: fark bordrosu (63)
+code, recs = api("admin", "GET", f"{C}/records?employeeId={AYSE}")
+cur = next((x for x in recs if x["effectiveTo"] is None), None)
+code, newrec = api("admin", "POST", f"{C}/records", {"employeeId": AYSE, "baseSalary": round(cur["baseSalary"] * 1.1, 2), "currency": cur["currency"],
+                                                    "grade": cur.get("grade"), "reason": "AnnualIncrease", "effectiveFrom": f"{YEAR}-04-01", "note": f"TEST retro {YEAR}"})
+check("Fark: geriye dönük zam kaydı (kapanmış Nisan dönemine)", code == 201, (code, newrec))
+code, cands = api("admin", "GET", f"{C}/payroll/retro/candidates?employeeId={AYSE}")
+cand = next((c for c in cands if c["sourcePeriodId"] == pid), None) if code == 200 else None
+check("Fark: aday listede, brüt fark pozitif", cand is not None and cand["diffGross"] > 0 and cand["applicable"] and cand["label"] == f"Fark: {YEAR}/04", cands)
+code, per5 = api("admin", "POST", f"{C}/payroll/periods", {"year": YEAR, "month": 5})
+code, r = api("admin", "POST", f"{C}/payroll/retro/apply", {"targetPeriodId": pid, "items": [{"employeeId": AYSE, "sourcePeriodId": pid}]})
+check("Fark: kapanmış döneme eklenemez", code == 409, (code, r))
+code, r = api("ayse", "POST", f"{C}/payroll/retro/apply", {"targetPeriodId": per5["id"], "items": [{"employeeId": AYSE, "sourcePeriodId": pid}]})
+check("Fark: çalışan onaylayamaz", code == 403, code)
+code, r = api("admin", "POST", f"{C}/payroll/retro/apply", {"targetPeriodId": per5["id"], "items": [{"employeeId": AYSE, "sourcePeriodId": pid}]})
+check("Fark: İK onayıyla hedef döneme eklendi", code == 200 and r["applied"] == 1, (code, r))
+code, adjs5 = api("admin", "GET", f"{C}/payroll/periods/{per5['id']}/adjustments")
+fark = [a for a in adjs5 if a["description"] == f"Fark: {YEAR}/04" and a["employeeId"] == AYSE]
+check("Fark: 'Fark: YYYY/AA' ek ödemesi (onaylayan kayıtlı)", len(fark) == 1 and abs(fark[0]["amount"] - cand["diffGross"]) < 0.01 and fark[0].get("createdBy"), fark)
+code, _ = api("admin", "POST", f"{C}/payroll/periods/{per5['id']}/calculate")
+code, slips5 = api("admin", "GET", f"{C}/payroll/periods/{per5['id']}/payslips")
+s5 = next((x for x in slips5 if x["employeeId"] == AYSE), None)
+check("Fark: hedef dönem pusulasında ek ödeme olarak", s5 is not None and s5["additions"] >= cand["diffGross"] - 0.01, s5 and s5["additions"])
+st_old = psql(f"""SELECT "Status" FROM compensation_payroll_periods WHERE "Id" = '{pid}'""")
+check("Fark: kaynak (kapanmış) dönem açılmadı", st_old == "Closed", st_old)
+code, cands2 = api("admin", "GET", f"{C}/payroll/retro/candidates?employeeId={AYSE}")
+check("Fark: ödenen fark yeniden önerilmez", code == 200 and not any(c["sourcePeriodId"] == pid for c in cands2), cands2)
+code, cl = api("admin", "POST", f"{C}/payroll/periods/{per5['id']}/close")
+check("Fark: görevler ayrılığı — hazırlayan/onaylayan kapatamaz", code == 409 and cl.get("code") == "sod_same_user", (code, cl))
+code, _ = api("admin", "DELETE", f"{C}/payroll/periods/{per5['id']}")
+code, cands3 = api("admin", "GET", f"{C}/payroll/retro/candidates?employeeId={AYSE}")
+check("Fark: hedef dönem silinince fark yeniden önerilir", code == 200 and any(c["sourcePeriodId"] == pid for c in cands3), cands3)
+psql(f"""DELETE FROM compensation_records WHERE "Note" = 'TEST retro {YEAR}';
+         UPDATE compensation_records SET "EffectiveTo" = NULL WHERE "EmployeeId" = '{AYSE}' AND "EffectiveTo" = '{YEAR}-03-31';""")
+
+# ====================================================================== Dalga 8: kıdem ve ihbar (61)
+sev_body = {"employeeId": AYSE, "lastWorkingDay": f"{YEAR}-12-31", "reason": "Termination", "otherBenefitsMonthly": 1000, "unusedLeaveDays": 5}
+code, pv = api("admin", "POST", f"{C}/severance/preview", sev_body)
+check("Kıdem/ihbar: önizleme (kıdem, ihbar GV'si, giydirme)", code == 200 and pv["result"]["severanceEligible"] and pv["result"]["severanceGross"] > 0
+      and pv["result"]["noticeGross"] > 0 and pv["result"]["noticeIncomeTax"] > 0 and pv["input"]["otherBenefitsMonthly"] == 1000, (code, pv.get("result")))
+code, _ = api("ayse", "POST", f"{C}/severance/preview", sev_body)
+check("Kıdem/ihbar: çalışan hesaplayamaz", code == 403, code)
+code, sv = api("admin", "POST", f"{C}/severance", sev_body)
+check("Kıdem/ihbar: taslak kaydedildi", code == 200 and sv["status"] == "Draft", (code, sv))
+code, _ = api("admin", "GET", f"{C}/severance/{sv['id']}/document")
+check("Kıdem/ihbar: onaysız ibraname üretilmez", code == 409, code)
+code, d = api("admin", "POST", f"{C}/severance/{sv['id']}/decide", {"approve": True})
+check("Kıdem/ihbar: hazırlayan onaylayamaz (dört göz)", code == 409 and d.get("code") == "sod_same_user", (code, d))
+code, d = api("ik", "POST", f"{C}/severance/{sv['id']}/decide", {"approve": True})
+check("Kıdem/ihbar: başka bordro yetkilisi onayladı", code == 200 and d["status"] == "Approved", (code, d))
+code, doc = api("admin", "GET", f"{C}/severance/{sv['id']}/document")
+check("Kıdem/ihbar: ibraname belgesi (yer tutucular dolu)", code == 200 and "İBRANAME" in doc["html"] and "{{" not in doc["html"] and "TL" in doc["html"], (code, doc.get("html", "")[:200]))
+dl_log = psql(f"""SELECT count(*) FROM audit_log WHERE "EntityType" = 'SeveranceCalc' AND "EntityId" = '{sv['id']}' AND "Action" = 'Exported'""")
+check("İbraname üretimi denetim kaydında", dl_log == "1", dl_log)
+
+# ====================================================================== Dalga 8: bant uyumu (65)
+code, cov = api("admin", "GET", f"{C}/bands/coverage")
+check("Bant kapsama raporu (5'ten küçük grup gizli)", code == 200 and cov["minGroup"] == 5 and all(g["hidden"] or g["count"] >= 5 for g in cov["byDepartment"]), (code, cov))
+code, _ = api("ayse", "GET", f"{C}/bands/coverage")
+check("Bant kapsama: çalışan göremez", code == 403, code)
+code, cr = api("admin", "GET", f"{C}/bands/compa-ratios")
+check("Compa-ratio listesi", code == 200 and any(x["employeeId"] == AYSE for x in cr), code)
+cr_log = psql("""SELECT count(*) FROM audit_log WHERE "EntityType" = 'CompensationRecord' AND "EntityId" = 'compa-ratio' AND "OccurredAt" > now() - interval '5 minutes'""")
+check("Compa-ratio görüntülemesi erişim kaydında", cr_log.isdigit() and int(cr_log) >= 1, cr_log)
+psql(f"""DELETE FROM compensation_employee_sgk WHERE "EmployeeId" = '{AYSE}' AND "OccupationCode" = '2512.01' AND "UpdatedAt" > now() - interval '1 hour'""")
+
 code, r = api("admin", "POST", f"{C}/payroll/periods/{pid}/reopen", {"reason": "TEST yeniden açma gerekçesi"})
 code, mine = api("ayse", "GET", f"{C}/advances")
 a1 = next(a for a in mine if a["id"] == adv["id"])

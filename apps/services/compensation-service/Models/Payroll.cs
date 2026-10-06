@@ -23,19 +23,42 @@ public class PayrollPeriod : ITenantOwned
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
-/// <summary>Kiracının yıl bazında bordro parametreleri (yoksa yasal varsayılanlar kullanılır).</summary>
+/// <summary>
+/// Kiracının bordro parametreleri, yıl ve yürürlük ayına göre (madde 60). Yılda birden fazla satır
+/// olabilir (ör. Temmuz'da asgari ücret artışı: ValidFromMonth = 7); dönem ayına göre en son yürürlüğe
+/// giren satır kullanılır. O yıl için satır yoksa koddaki yasal varsayılanlar (PayrollDefaults) geçerlidir.
+/// Tohum satırları scripts/sql/2026-10-21_payroll_tr.sql'dedir (2026: "doğrulanmadı").
+/// </summary>
 public class PayrollParameterSet : ITenantOwned
 {
     public string TenantSlug { get; set; } = "";
     public Guid Id { get; set; } = Guid.NewGuid();
     public int Year { get; set; }
+    /// <summary>Yürürlük ayı (1–12); 1 = yıl başı.</summary>
+    public int ValidFromMonth { get; set; } = 1;
     public decimal MinimumWageGross { get; set; }
+    /// <summary>Bilgi amaçlı net asgari ücret (hesaplamaya girmez).</summary>
+    public decimal? MinimumWageNet { get; set; }
+    public decimal SgkEmployeeRate { get; set; } = 0.14m;
+    public decimal UnemploymentEmployeeRate { get; set; } = 0.01m;
     public decimal SgkEmployerRate { get; set; }
     public decimal EmployerIncentivePoints { get; set; }
+    public decimal UnemploymentEmployerRate { get; set; } = 0.02m;
     public decimal StampTaxRate { get; set; }
     public decimal SgkCeilingMultiplier { get; set; }
     /// <summary>JSON: [{"upTo":190000,"rate":0.15},...,{"upTo":null,"rate":0.40}]</summary>
     public string BracketsJson { get; set; } = "[]";
+    /// <summary>Asgari ücret GV ve damga vergisi istisnası (GVK m.23/18, 2022'den beri).</summary>
+    public bool MinimumWageExemption { get; set; } = true;
+    /// <summary>Asgari geçim indirimi (2022 öncesi; yalnızca bilgi — hesaplamaya girmez).</summary>
+    public decimal? AgiMonthly { get; set; }
+    /// <summary>Kıdem tazminatı tavanı: Ocak–Haziran ve Temmuz–Aralık.</summary>
+    public decimal? SeveranceCeilingH1 { get; set; }
+    public decimal? SeveranceCeilingH2 { get; set; }
+    /// <summary>Değerler resmî kaynakla doğrulandı mı (tohum 2026: hayır).</summary>
+    public bool Verified { get; set; } = true;
+    public string? Source { get; set; }
+    public string? UpdatedBy { get; set; }
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 

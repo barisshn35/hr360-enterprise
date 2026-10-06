@@ -69,71 +69,101 @@ public class PayrollController : ControllerBase
             _tenant.TenantSlug, sub).FirstOrDefaultAsync(ct);
     }
 
-    // ------------------------------------------------------------------ parametreler
+    // ------------------------------------------------------------------ parametreler (madde 60)
 
-    private async Task<PayrollParams> ParamsAsync(int year, CancellationToken ct)
+    /// <summary>Dönem ayına göre geçerli parametreler (yıl içinde birden fazla yürürlük satırı olabilir).</summary>
+    private async Task<PayrollParams> ParamsAsync(int year, int month, CancellationToken ct)
     {
-        var d = PayrollDefaults.For(year);
-        var row = await _db.PayrollParameters.AsNoTracking().FirstOrDefaultAsync(p => p.Year == year, ct);
-        if (row is null) return d;
-        var brackets = JsonSerializer.Deserialize<List<TaxBracket>>(row.BracketsJson, Json);
-        return d with
-        {
-            MinimumWageGross = row.MinimumWageGross, SgkEmployerRate = row.SgkEmployerRate,
-            EmployerIncentivePoints = row.EmployerIncentivePoints, StampTaxRate = row.StampTaxRate,
-            SgkCeilingMultiplier = row.SgkCeilingMultiplier,
-            Brackets = brackets is { Count: > 0 } ? brackets : d.Brackets,
-        };
+        var rows = await _db.PayrollParameters.AsNoTracking().Where(p => p.Year == year).ToListAsync(ct);
+        return PayrollParameterResolver.Resolve(rows, year, month);
     }
 
+    private static object RowView(PayrollParameterSet r) => new
+    {
+        r.Id, r.Year, r.ValidFromMonth, r.MinimumWageGross, r.MinimumWageNet, r.SgkEmployeeRate, r.UnemploymentEmployeeRate,
+        r.SgkEmployerRate, r.EmployerIncentivePoints, r.UnemploymentEmployerRate, r.StampTaxRate, r.SgkCeilingMultiplier,
+        brackets = JsonSerializer.Deserialize<List<TaxBracket>>(r.BracketsJson, Json), r.MinimumWageExemption, r.AgiMonthly,
+        r.SeveranceCeilingH1, r.SeveranceCeilingH2, r.Verified, r.Source, r.UpdatedBy, r.UpdatedAt,
+    };
+
+    /// <summary>
+    /// Yılın parametreleri: istenen ay (varsayılan Ocak) için geçerli değerler üst düzeyde, yılın tüm yürürlük
+    /// satırları "rows"ta. Satır yoksa koddaki yasal varsayılanlar döner (isCustom=false).
+    /// </summary>
     [HttpGet("payroll/parameters/{year:int}")]
-    public async Task<IActionResult> GetParameters(int year, CancellationToken ct)
+    public async Task<IActionResult> GetParameters(int year, [FromQuery] int? month, CancellationToken ct)
     {
         if (!IsPayrollViewer) return Forbid();
         if (year is < 2020 or > 2100) return BadRequest(new { message = "Geçersiz yıl" });
-        var custom = await _db.PayrollParameters.AsNoTracking().AnyAsync(p => p.Year == year, ct);
-        var p = await ParamsAsync(year, ct);
+        var m = Math.Clamp(month ?? 1, 1, 12);
+        var rows = await _db.PayrollParameters.AsNoTracking().Where(p => p.Year == year).OrderBy(p => p.ValidFromMonth).ToListAsync(ct);
+        var p = PayrollParameterResolver.Resolve(rows, year, m);
+        var row = PayrollParameterResolver.RowFor(rows, year, m);
         return Ok(new
         {
-            p.Year, p.MinimumWageGross, p.SgkEmployeeRate, p.UnemploymentEmployeeRate, p.SgkEmployerRate, p.EmployerIncentivePoints,
+            p.Year, month = m, validFromMonth = row?.ValidFromMonth ?? 1, p.MinimumWageGross, minimumWageNet = row?.MinimumWageNet,
+            p.SgkEmployeeRate, p.UnemploymentEmployeeRate, p.SgkEmployerRate, p.EmployerIncentivePoints,
             effectiveEmployerSgkRate = p.EffectiveEmployerSgkRate, p.UnemploymentEmployerRate, p.StampTaxRate, p.SgkCeilingMultiplier,
             sgkCeiling = Math.Round(p.MinimumWageGross * p.SgkCeilingMultiplier, 2), p.OvertimeMultiplier, p.MonthlyHours,
-            brackets = p.Brackets, isCustom = custom,
+            brackets = p.Brackets, p.MinimumWageExemption, agiMonthly = row?.AgiMonthly,
+            severanceCeilingH1 = row?.SeveranceCeilingH1, severanceCeilingH2 = row?.SeveranceCeilingH2,
+            verified = row?.Verified ?? year <= 2025, source = row?.Source, updatedBy = row?.UpdatedBy, updatedAt = row?.UpdatedAt,
+            isCustom = row is not null, rows = rows.Select(RowView),
         });
     }
 
     public record ParametersInput(decimal MinimumWageGross, decimal SgkEmployerRate, decimal EmployerIncentivePoints,
-        decimal StampTaxRate, decimal SgkCeilingMultiplier, List<TaxBracket> Brackets);
+        decimal StampTaxRate, decimal SgkCeilingMultiplier, List<TaxBracket> Brackets,
+        int? ValidFromMonth = null, decimal? MinimumWageNet = null, decimal? SgkEmployeeRate = null, decimal? UnemploymentEmployeeRate = null,
+        decimal? UnemploymentEmployerRate = null, bool? MinimumWageExemption = null, decimal? AgiMonthly = null,
+        decimal? SeveranceCeilingH1 = null, decimal? SeveranceCeilingH2 = null, bool? Verified = null, string? Source = null);
 
+    /// <summary>
+    /// Yıl + yürürlük ayı satırını yazar (bordro yetkilisi). Eski ve yeni değerler denetim kaydına yazılır.
+    /// Kapanmış dönemler etkilenmez (pusulalar saklıdır); açık dönemler yeniden hesaplanınca yeni değer girer.
+    /// </summary>
     [HttpPut("payroll/parameters/{year:int}")]
     public async Task<IActionResult> PutParameters(int year, [FromBody] ParametersInput body, CancellationToken ct)
     {
         if (!IsPayrollAdmin) return Forbid();
-        if (year is < 2020 or > 2100) return BadRequest(new { message = "Geçersiz yıl" });
-        if (body.MinimumWageGross <= 0 || body.SgkEmployerRate is < 0 or > 1 || body.StampTaxRate is < 0 or > 0.1m
-            || body.EmployerIncentivePoints is < 0 or > 20 || body.SgkCeilingMultiplier is < 1 or > 20)
-            return BadRequest(new { message = "Parametre değerleri geçersiz" });
-        var br = body.Brackets ?? new();
-        if (br.Count is < 1 or > 10 || br[^1].UpTo is not null || br.Any(b => b.Rate is < 0 or > 1)
-            || br.Take(br.Count - 1).Any(b => b.UpTo is null or <= 0)
-            || br.Take(br.Count - 1).Zip(br.Skip(1).Take(br.Count - 2)).Any(x => x.First.UpTo >= x.Second.UpTo))
-            return BadRequest(new { message = "Vergi dilimleri artan sınırlarla girilmeli; son dilimin üst sınırı boş olmalı" });
-        var row = await _db.PayrollParameters.FirstOrDefaultAsync(p => p.Year == year, ct);
-        if (row is null) { row = new PayrollParameterSet { Year = year }; _db.PayrollParameters.Add(row); }
+        var from = body.ValidFromMonth ?? 1;
+        var d = PayrollDefaults.For(year);
+        var sgkEmp = body.SgkEmployeeRate ?? d.SgkEmployeeRate;
+        var unEmp = body.UnemploymentEmployeeRate ?? d.UnemploymentEmployeeRate;
+        var unEr = body.UnemploymentEmployerRate ?? d.UnemploymentEmployerRate;
+        var err = PayrollParameterResolver.Validate(year, from, body.MinimumWageGross, sgkEmp, unEmp, body.SgkEmployerRate, body.EmployerIncentivePoints,
+            unEr, body.StampTaxRate, body.SgkCeilingMultiplier, body.Brackets, body.SeveranceCeilingH1, body.SeveranceCeilingH2);
+        if (err is not null) return BadRequest(new { message = err });
+        if (body.Source is { Length: > 300 }) return BadRequest(new { message = "Kaynak notu en fazla 300 karakter olabilir" });
+        var row = await _db.PayrollParameters.FirstOrDefaultAsync(p => p.Year == year && p.ValidFromMonth == from, ct);
+        var before = row is null ? null : RowView(row);
+        if (row is null) { row = new PayrollParameterSet { Year = year, ValidFromMonth = from }; _db.PayrollParameters.Add(row); }
         row.MinimumWageGross = body.MinimumWageGross; row.SgkEmployerRate = body.SgkEmployerRate;
         row.EmployerIncentivePoints = body.EmployerIncentivePoints; row.StampTaxRate = body.StampTaxRate;
-        row.SgkCeilingMultiplier = body.SgkCeilingMultiplier; row.BracketsJson = JsonSerializer.Serialize(br, Json);
-        row.UpdatedAt = DateTimeOffset.UtcNow;
+        row.SgkCeilingMultiplier = body.SgkCeilingMultiplier; row.BracketsJson = JsonSerializer.Serialize(body.Brackets, Json);
+        row.SgkEmployeeRate = sgkEmp; row.UnemploymentEmployeeRate = unEmp; row.UnemploymentEmployerRate = unEr;
+        row.MinimumWageNet = body.MinimumWageNet; row.MinimumWageExemption = body.MinimumWageExemption ?? true; row.AgiMonthly = body.AgiMonthly;
+        row.SeveranceCeilingH1 = body.SeveranceCeilingH1; row.SeveranceCeilingH2 = body.SeveranceCeilingH2;
+        // Elle girilen değer, kullanıcı aksini belirtmedikçe "doğrulandı" sayılır (kaynağı yazması istenir).
+        row.Verified = body.Verified ?? true; row.Source = string.IsNullOrWhiteSpace(body.Source) ? row.Source : body.Source.Trim();
+        row.UpdatedBy = UserName ?? UserId; row.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);
-        return await GetParameters(year, ct);
+        await AuditAsync("PayrollParameterSet", $"{year}-{from:00}", before is null ? "Created" : "Updated", new { before, after = RowView(row) }, row.TenantSlug);
+        return await GetParameters(year, from, ct);
     }
 
+    /// <summary>Yürürlük satırını siler (validFromMonth verilmezse yılın tüm satırları): yasal varsayılanlara dönülür.</summary>
     [HttpDelete("payroll/parameters/{year:int}")]
-    public async Task<IActionResult> ResetParameters(int year, CancellationToken ct)
+    public async Task<IActionResult> ResetParameters(int year, [FromQuery] int? validFromMonth, CancellationToken ct)
     {
         if (!IsPayrollAdmin) return Forbid();
-        var row = await _db.PayrollParameters.FirstOrDefaultAsync(p => p.Year == year, ct);
-        if (row is not null) { _db.PayrollParameters.Remove(row); await _db.SaveChangesAsync(ct); }
+        var rows = await _db.PayrollParameters.Where(p => p.Year == year && (validFromMonth == null || p.ValidFromMonth == validFromMonth)).ToListAsync(ct);
+        if (rows.Count > 0)
+        {
+            _db.PayrollParameters.RemoveRange(rows);
+            await _db.SaveChangesAsync(ct);
+            await AuditAsync("PayrollParameterSet", year.ToString(), "Deleted", new { before = rows.Select(RowView) }, rows[0].TenantSlug);
+        }
         return NoContent();
     }
 
@@ -146,7 +176,7 @@ public class PayrollController : ControllerBase
         if (!IsPayrollViewer) return Forbid();
         if (body.Month is < 1 or > 12 || body.MonthlyGross <= 0 || body.UnpaidDays is < 0 or > 30)
             return BadRequest(new { message = "Geçersiz girdi" });
-        var p = await ParamsAsync(body.Year, ct);
+        var p = await ParamsAsync(body.Year, body.Month, ct);
         return Ok(PayrollCalculator.Calculate(p, new PayrollInput(body.Month, body.MonthlyGross, body.UnpaidDays,
             body.OvertimeHours, body.Additions, body.Deductions, body.PriorCumulativeTaxBase)));
     }
@@ -206,6 +236,7 @@ public class PayrollController : ControllerBase
         if (err is not null) return err;
         await _db.Payslips.Where(s => s.PeriodId == id).ExecuteDeleteAsync(ct);
         await _db.PayrollAdjustments.Where(a => a.PeriodId == id).ExecuteDeleteAsync(ct);
+        await _db.RetroDiffs.Where(r => r.TargetPeriodId == id && r.Status == "Approved").ExecuteUpdateAsync(u => u.SetProperty(r => r.Status, "Cancelled"), ct);
         _db.PayrollPeriods.Remove(period!);
         await _db.SaveChangesAsync(ct);
         return NoContent();
@@ -244,6 +275,9 @@ public class PayrollController : ControllerBase
         var a = await _db.PayrollAdjustments.FirstOrDefaultAsync(x => x.Id == adjId && x.PeriodId == id, ct);
         if (a is null) return NotFound();
         _db.PayrollAdjustments.Remove(a);
+        // Fark bordrosu kalemi silinirse fark kaydı iptal olur (yeniden önerilebilir).
+        if (a.SourceId is { } src)
+            foreach (var rd in await _db.RetroDiffs.Where(r => r.Id == src && r.Status == "Approved").ToListAsync(ct)) rd.Status = "Cancelled";
         RequireRecalculation(period!);
         await _db.SaveChangesAsync(ct);
         return NoContent();
@@ -271,7 +305,10 @@ public class PayrollController : ControllerBase
         var tenant = _tenant.TenantSlug ?? "";
         var start = new DateOnly(period!.Year, period.Month, 1);
         var end = start.AddMonths(1).AddDays(-1);
-        var p = await ParamsAsync(period.Year, ct);
+        var p = await ParamsAsync(period.Year, period.Month, ct);
+        // Madde 58: eksik gün sayılan izin türleri şirketin eşlemesinden (varsayılan yalnızca ücretsiz izin — önceki davranış).
+        var settings = PayrollSettingsModel.From(await _db.PayrollSettings.AsNoTracking().FirstOrDefaultAsync(ct));
+        var reducing = settings.Sgk.PayReducingLeaveTypes().ToArray();
 
         var records = await _db.Records.AsNoTracking()
             .Where(r => r.EffectiveFrom <= end && (r.EffectiveTo == null || r.EffectiveTo >= start))
@@ -287,13 +324,13 @@ public class PayrollController : ControllerBase
         current = current.Where(r => !leftBefore.Contains(r.EmployeeId)).ToList();
         var empIds = current.Select(r => r.EmployeeId).ToArray();
 
-        // Eksik gün: onaylı ücretsiz izinlerin bu aya düşen takvim günleri.
+        // Eksik gün: onaylı, ücretten düşen türdeki izinlerin (varsayılan: ücretsiz izin) bu aya düşen takvim günleri.
         var unpaid = await _db.Database.SqlQueryRaw<EmpNumber>("""
             SELECT "EmployeeId", sum(least("EndDate", {2}) - greatest("StartDate", {1}) + 1)::numeric AS "Value"
             FROM leave_requests
-            WHERE "TenantSlug" = {0} AND "Type" = 'Unpaid' AND "Status" = 'Approved' AND "StartDate" <= {2} AND "EndDate" >= {1}
+            WHERE "TenantSlug" = {0} AND "Type" = ANY({3}) AND "Status" = 'Approved' AND "StartDate" <= {2} AND "EndDate" >= {1}
             GROUP BY "EmployeeId"
-            """, tenant, start, end).ToListAsync(ct);
+            """, tenant, start, end, reducing).ToListAsync(ct);
         // Fazla mesai: yalnızca onaylı talepler (timeshift-service).
         var overtime = await _db.Database.SqlQueryRaw<EmpNumber>("""
             SELECT "EmployeeId", sum("Hours") AS "Value" FROM timeshift_overtime_requests
@@ -470,7 +507,8 @@ public class PayrollController : ControllerBase
     {
         if (!await SodEnforcedAsync(ct)) return null;
         var authors = await _db.PayrollAdjustments.AsNoTracking()
-            .Where(a => a.PeriodId == period.Id && a.SourceId == null && a.CreatedBy != null)
+            // Otomatik avans taksitlerinde CreatedBy boştur; elle girilen ve fark bordrosu (onaylayan) kalemleri sayılır.
+            .Where(a => a.PeriodId == period.Id && a.CreatedBy != null)
             .Select(a => a.CreatedBy!).Distinct().ToListAsync(ct);
         var since = await _db.PayrollPeriods.AsNoTracking()
             .Where(p => p.Id != period.Id && p.ClosedAt != null)
@@ -554,7 +592,7 @@ public class PayrollController : ControllerBase
             if (!IsPayrollViewer) return NotFound();
             await AuditAsync("Payslip", s.EmployeeId.ToString(), "SensitiveViewed", new { field = "payslip", s.Year, s.Month }, s.TenantSlug);
         }
-        var p = await ParamsAsync(s.Year, ct);
+        var p = await ParamsAsync(s.Year, s.Month, ct);
         return Ok(new { payslip = s, rates = new { p.SgkEmployeeRate, p.UnemploymentEmployeeRate, p.StampTaxRate, employerSgkRate = p.EffectiveEmployerSgkRate, p.UnemploymentEmployerRate } });
     }
 }

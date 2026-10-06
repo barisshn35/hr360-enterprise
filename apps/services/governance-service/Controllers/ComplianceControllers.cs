@@ -405,6 +405,21 @@ public class DocumentTemplatesController : AppController
                 <p>Bu yazı, ilgilinin talebi üzerine ve yalnızca belirtilen amaçla kullanılmak üzere düzenlenmiştir.</p>
                 <p style="margin-top:48px">{{bugun}}<br/>Belge no: {{belge.no}}</p><p style="text-align:right">İnsan Kaynakları<br/>{{sirket.ad}}</p>
                 """),
+            // Bordro dalgası 8 (madde 61): kıdem/ihbar hesabından ibraname. Kıdem/ihbar yer tutucularını
+            // compensation-service doldurur (Bordro › Kıdem ve ihbar › onaylı hesap › İbraname); burada
+            // yalnızca metin düzenlenir. Hukuk birimince uyarlanmalıdır (TBK m.420).
+            ("İbraname", "Gizli", """
+                <h2 style="text-align:center">İBRANAME</h2>
+                <p><b>{{sirket.ad}}</b> nezdinde <b>{{calisan.iseGiris}}</b> – <b>{{ayrilis.tarih}}</b> tarihleri arasında
+                <b>{{calisan.pozisyon}}</b> olarak çalıştım. İş sözleşmem <b>{{ayrilis.neden}}</b> nedeniyle sona ermiştir.</p>
+                <p>Hizmet süresi: {{kidem.gun}} gün ({{kidem.yil}} yıl). Giydirilmiş aylık brüt ücret: {{ucret.giydirilmis}}.</p>
+                <p>Kıdem tazminatı: brüt {{kidem.brut}}, damga vergisi {{kidem.damga}}, net {{kidem.net}}.<br/>
+                İhbar tazminatı ({{ihbar.hafta}} hafta): brüt {{ihbar.brut}}, gelir vergisi {{ihbar.gv}}, damga vergisi {{ihbar.damga}}, net {{ihbar.net}}.<br/>
+                Kullanılmayan yıllık izin ({{izin.gun}} gün): brüt {{izin.brut}}.<br/>
+                <b>Toplam net (kıdem + ihbar): {{toplam.net}}</b></p>
+                <p>Yukarıdaki tutarların banka aracılığıyla tarafıma ödendiğini beyan ederim.</p>
+                <p style="margin-top:48px">{{bugun}}</p><p style="text-align:right">{{calisan.adSoyad}}<br/>İmza</p>
+                """),
             ("Ücret bilgilendirme yazısı", "Gizli", """
                 <p>Sayın {{calisan.adSoyad}},</p><p>{{bugun}} itibarıyla güncel aylık brüt ücretiniz <b>{{ucret.brut}}</b> olarak belirlenmiştir.</p>
                 <p>Bu yazı kişiye özeldir.</p><p>{{sirket.ad}}</p>

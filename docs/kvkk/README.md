@@ -87,6 +87,11 @@ edilmiş kayıtlar yeniden silinir (bkz. README › Yedekleme). Tutanaklar silin
 | Yasal izin hakkı | Doğum tarihi yalnızca yaş kuralı için kullanılır, gösterilmez. |
 | Bordro dosyaları | SGK/banka dosyası TCKN/IBAN içerir: şifreli saklanır, banka dosyası tek indirme, tümü 24 saatte silinir, indirmeler erişim kaydında; muhasebe fişi yalnızca masraf merkezi toplamı. |
 | Avans | Yalnızca çalışan ve bordro yetkilisi görür; bildirimde tutar yazmaz. |
+| SGK bildirimi (APHB) | TCKN yalnızca dosyada (şifreli saklanır); doğrulama raporu ad gösterir, TCKN göstermez ve erişim kaydına yazılır. Meslek kodu ve SGDP (emekli çalışan) özel nitelikli veri değildir. Eksik gün nedeni "01 istirahat" yasal bildirim içindir; tanı tutulmaz. |
+| e-Bordro | Bildirimde (uygulama içi/e-posta) tutar yok; pusula yalnızca uygulamada. Teslim edilen içerik özeti (SHA-256) ve şifreli kopyası saklanır; "teslim aldım" kaydında IP yalnızca /24 öneki. |
+| Kıdem/ihbar | Yalnızca bordro yetkilisi; önizleme ve ibraname üretimi erişim kaydında; hazırlayan onaylayamaz (dört göz), otomatik karar yok. |
+| Fark bordrosu | Aday listesi ücret içerdiği için görüntüleme erişim kaydında; kapanmış dönem değişmez. |
+| Ücret bandı uyumu | Kişi bazlı compa-ratio yalnızca İK/ücret görme izni, görüntüleme kaydedilir; toplu raporda 5 kişiden az grup gizli. |
 | Esnek yan haklar | Sağlık beyanı alınmaz; İK özeti seçenek bazında sayı gösterir. |
 | Zam dönemi | Yönetici yalnızca kendi bölümünü görür; çalışma sayfası açılışı erişim kaydında; 5 kişiden az grup özette gizli. |
 | Seyahat | Pasaport no şifreli, yalnızca yurt dışında istenir, seyahat bitince 7 gün içinde silinir; açılışı kaydedilir. |

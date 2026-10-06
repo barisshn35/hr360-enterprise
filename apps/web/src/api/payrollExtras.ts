@@ -18,6 +18,9 @@ export interface PayrollExportRow {
   downloadCount: number
   available: boolean
   purgedAt: string | null
+  /** Bordro dalgası 8: biçim/şablon ve dosyanın SHA-256 özeti. */
+  format?: string | null
+  contentSha256?: string | null
 }
 
 export type AdvanceStatus = 'Pending' | 'Approved' | 'Rejected' | 'Closed' | 'Cancelled'
@@ -66,8 +69,8 @@ export interface Worksheet { cycle: RaiseCycle; rows: WorksheetRow[]; budget: nu
 
 export const payrollExtrasApi = {
   exports: (periodId: string, signal?: AbortSignal) => apiFetch<PayrollExportRow[]>(`${BASE}/payroll/periods/${periodId}/exports`, { signal }),
-  createExport: (periodId: string, body: { kind: ExportKind; format?: string }) =>
-    apiFetch<{ id: string; fileName: string; rowCount: number; singleUse: boolean; warnings: string[] }>(`${BASE}/payroll/periods/${periodId}/exports`, { method: 'POST', body }),
+  createExport: (periodId: string, body: { kind: ExportKind; format?: string; payDate?: string }) =>
+    apiFetch<{ id: string; fileName: string; rowCount: number; singleUse: boolean; warnings: string[]; contentSha256?: string }>(`${BASE}/payroll/periods/${periodId}/exports`, { method: 'POST', body }),
   download: (id: string, fileName: string) => downloadAuthed(`${BASE}/payroll/exports/${id}/download`, fileName),
 
   advances: (status?: AdvanceStatus, signal?: AbortSignal) => apiFetch<SalaryAdvance[]>(`${BASE}/advances${qs({ status })}`, { signal }),

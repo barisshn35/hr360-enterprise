@@ -31,6 +31,10 @@ public class PayrollExport : ITenantOwned
     public string? DownloadedBy { get; set; }
     public int DownloadCount { get; set; }
     public DateTimeOffset? PurgedAt { get; set; }
+    /// <summary>Üretilen dosyanın SHA-256 özeti (onaltılık); denetim kaydına da yazılır.</summary>
+    public string? ContentSha256 { get; set; }
+    /// <summary>Biçim/şablon: xml | txt (SGK), generic | ornek-a | ornek-b | custom (banka), logo/mikro/netsis (muhasebe).</summary>
+    public string? Format { get; set; }
 }
 
 public enum AdvanceStatus { Pending, Approved, Rejected, Closed, Cancelled }

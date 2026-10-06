@@ -33,6 +33,11 @@ public class CompensationDbContext : DbContext, ITenantAwareContext
     public DbSet<BenefitElection> BenefitElections => Set<BenefitElection>();
     public DbSet<RaiseCycle> RaiseCycles => Set<RaiseCycle>();
     public DbSet<RaiseProposal> RaiseProposals => Set<RaiseProposal>();
+    public DbSet<PayrollSettings> PayrollSettings => Set<PayrollSettings>();
+    public DbSet<EmployeeSgkInfo> EmployeeSgk => Set<EmployeeSgkInfo>();
+    public DbSet<RetroDiff> RetroDiffs => Set<RetroDiff>();
+    public DbSet<SeveranceCalc> SeveranceCalcs => Set<SeveranceCalc>();
+    public DbSet<PayslipDelivery> PayslipDeliveries => Set<PayslipDelivery>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -52,7 +57,7 @@ public class CompensationDbContext : DbContext, ITenantAwareContext
 
         modelBuilder.Entity<PayrollParameterSet>().ConfigureTenantColumn();
         modelBuilder.Entity<PayrollParameterSet>().ToTable("compensation_payroll_parameters");
-        modelBuilder.Entity<PayrollParameterSet>().HasIndex(p => new { p.TenantSlug, p.Year }).IsUnique();
+        modelBuilder.Entity<PayrollParameterSet>().HasIndex(p => new { p.TenantSlug, p.Year, p.ValidFromMonth }).IsUnique();
 
         modelBuilder.Entity<PayrollAdjustment>().ConfigureTenantColumn();
         modelBuilder.Entity<PayrollAdjustment>().ToTable("compensation_payroll_adjustments");
@@ -85,6 +90,20 @@ public class CompensationDbContext : DbContext, ITenantAwareContext
         modelBuilder.Entity<RaiseProposal>().ToTable("compensation_raise_proposals");
         modelBuilder.Entity<RaiseProposal>().Property(c => c.Status).HasConversion<string>();
         modelBuilder.Entity<RaiseProposal>().HasIndex(p => new { p.CycleId, p.EmployeeId }).IsUnique();
+
+        // Bordro dalgası 8 (madde 58–65).
+        modelBuilder.Entity<PayrollSettings>().ConfigureTenantColumn();
+        modelBuilder.Entity<PayrollSettings>().ToTable("compensation_payroll_settings");
+        modelBuilder.Entity<EmployeeSgkInfo>().ConfigureTenantColumn();
+        modelBuilder.Entity<EmployeeSgkInfo>().ToTable("compensation_employee_sgk");
+        modelBuilder.Entity<EmployeeSgkInfo>().HasIndex(e => new { e.TenantSlug, e.EmployeeId }).IsUnique();
+        modelBuilder.Entity<RetroDiff>().ConfigureTenantColumn();
+        modelBuilder.Entity<RetroDiff>().ToTable("compensation_retro_diffs");
+        modelBuilder.Entity<SeveranceCalc>().ConfigureTenantColumn();
+        modelBuilder.Entity<SeveranceCalc>().ToTable("compensation_severance_calcs");
+        modelBuilder.Entity<PayslipDelivery>().ConfigureTenantColumn();
+        modelBuilder.Entity<PayslipDelivery>().ToTable("compensation_payslip_deliveries");
+        modelBuilder.Entity<PayslipDelivery>().HasIndex(d => new { d.TenantSlug, d.PayslipId }).IsUnique();
 
         modelBuilder.ApplyTenantFilters(this);
     }

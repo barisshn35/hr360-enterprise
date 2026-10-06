@@ -133,16 +133,37 @@ public static class Exporters
             $"sgk-giris-cikis-{period.Year}-{period.Month:00}.csv", "text/csv", rows, warnings);
     }
 
+    /// <summary>
+    /// Maaş ödemesi IBAN denetimi: TR IBAN'ı (26 karakter) ve mod-97 = 1 (ISO 13616). Türkiye'deki bankalara
+    /// verilen toplu ödeme dosyaları yalnızca TR IBAN'ı kabul ettiği için yabancı IBAN geçersiz sayılır.
+    /// </summary>
     public static bool ValidIban(string? raw)
+    {
+        var iban = raw?.Replace(" ", "").ToUpperInvariant();
+        return iban is { Length: 26 } && iban.StartsWith("TR") && ValidIbanAny(iban);
+    }
+
+    /// <summary>Herhangi bir ülkenin IBAN'ı: biçim (2 harf + 2 rakam, 15–34 karakter) ve mod-97 = 1.</summary>
+    public static bool ValidIbanAny(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw)) return false;
         var iban = raw.Replace(" ", "").ToUpperInvariant();
-        if (iban.Length != 26 || !iban.StartsWith("TR")) return false;
+        if (iban.Length is < 15 or > 34 || !char.IsAsciiLetterUpper(iban[0]) || !char.IsAsciiLetterUpper(iban[1])
+            || !char.IsAsciiDigit(iban[2]) || !char.IsAsciiDigit(iban[3]) || !iban.All(char.IsAsciiLetterOrDigit)) return false;
+        return IbanMod97(iban) == 1;
+    }
+
+    /// <summary>IBAN'ın mod-97 kalanı (ilk dört karakter sona taşınır, harfler 10–35).</summary>
+    public static int IbanMod97(string iban)
+    {
         var r = iban[4..] + iban[..4];
-        var digits = string.Concat(r.Select(c => char.IsLetter(c) ? (c - 'A' + 10).ToString(Inv) : c.ToString()));
         var mod = 0;
-        foreach (var ch in digits) mod = (mod * 10 + (ch - '0')) % 97;
-        return mod == 1;
+        foreach (var c in r)
+        {
+            if (char.IsAsciiDigit(c)) mod = (mod * 10 + (c - '0')) % 97;
+            else { var v = c - 'A' + 10; mod = (mod * 100 + v) % 97; }
+        }
+        return mod;
     }
 
     /// <summary>Banka toplu maaş ödeme dosyası (genel CSV): ad soyad, IBAN, net tutar, açıklama.</summary>
@@ -172,11 +193,14 @@ public static class Exporters
     /// Borç: ücret gideri (brüt) ve işveren SGK/işsizlik payı. Alacak: personele borçlar (net),
     /// ödenecek GV ve damga vergisi (istisna düşülmüş), ödenecek SGK (işçi + işveren), avans kesintileri.
     /// </summary>
-    public static List<JournalLine> Journal(PayrollPeriod period, IReadOnlyList<Payslip> slips, IReadOnlyDictionary<Guid, ExportPerson> people, AccountMap a)
+    public static List<JournalLine> Journal(PayrollPeriod period, IReadOnlyList<Payslip> slips, IReadOnlyDictionary<Guid, ExportPerson> people, AccountMap a,
+        IReadOnlyDictionary<string, string>? costCenters = null)
     {
         var lines = new List<JournalLine>();
         var desc = $"{period.Year}-{period.Month:00} bordro";
-        foreach (var g in slips.GroupBy(s => people.TryGetValue(s.EmployeeId, out var p) ? p.Department ?? "Genel" : "Genel").OrderBy(g => g.Key))
+        // Madde 64: bölüm adı → şirketin masraf merkezi kodu (eşleme yoksa bölüm adı).
+        string Cc(string dept) => costCenters is not null && costCenters.TryGetValue(dept, out var code) && !string.IsNullOrWhiteSpace(code) ? code.Trim() : dept;
+        foreach (var g in slips.GroupBy(s => Cc(people.TryGetValue(s.EmployeeId, out var p) ? p.Department ?? "Genel" : "Genel")).OrderBy(g => g.Key))
         {
             var cc = g.Key;
             lines.Add(new(a.Salary, "Ücret giderleri", cc, g.Sum(s => s.Gross), 0, desc));
@@ -186,15 +210,25 @@ public static class Exporters
             lines.Add(new(a.StampTax, "Ödenecek damga vergisi", cc, 0, g.Sum(s => s.StampTax - s.StampTaxExemption), desc));
             lines.Add(new(a.Sgk, "Ödenecek SGK primleri", cc, 0, g.Sum(s => s.SgkEmployee + s.UnemploymentEmployee + s.SgkEmployer + s.UnemploymentEmployer), desc));
             var adv = g.Sum(s => s.Deductions);
-            if (adv != 0) lines.Add(new(a.Advances, "Personel avansları", cc, 0, adv, desc));
+            if (adv != 0) lines.Add(new(a.Advances, "Personel avansları ve diğer kesintiler", cc, 0, adv, desc));
         }
         return lines.Where(l => l.Debit != 0 || l.Credit != 0).ToList();
     }
 
     /// <summary>Muhasebe yazılımına aktarım CSV'si. format: generic | logo | mikro | netsis (sütun adları/sırası).</summary>
-    public static ExportResult Accounting(PayrollPeriod period, IReadOnlyList<Payslip> slips, IReadOnlyDictionary<Guid, ExportPerson> people, string format, AccountMap map)
+    /// <summary>Fişin borç-alacak farkı (kuruş yuvarlaması dahil; dengeli fişte 0).</summary>
+    public static decimal JournalDifference(IEnumerable<JournalLine> lines)
     {
-        var lines = Journal(period, slips, people, map);
+        var list = lines.ToList();
+        return list.Sum(l => l.Debit) - list.Sum(l => l.Credit);
+    }
+
+    public static bool JournalBalanced(IEnumerable<JournalLine> lines) => Math.Abs(JournalDifference(lines)) < 0.005m;
+
+    public static ExportResult Accounting(PayrollPeriod period, IReadOnlyList<Payslip> slips, IReadOnlyDictionary<Guid, ExportPerson> people, string format, AccountMap map,
+        IReadOnlyDictionary<string, string>? costCenters = null)
+    {
+        var lines = Journal(period, slips, people, map, costCenters);
         var date = new DateOnly(period.Year, period.Month, 1).AddMonths(1).AddDays(-1).ToString("dd.MM.yyyy");
         var sb = new StringBuilder();
         switch (format)
@@ -217,8 +251,8 @@ public static class Exporters
                 break;
         }
         var warnings = new List<string>();
-        var diff = lines.Sum(l => l.Debit) - lines.Sum(l => l.Credit);
-        if (Math.Abs(diff) > 0.05m) warnings.Add($"Fiş dengesiz: borç-alacak farkı {M(diff)}");
+        var diff = JournalDifference(lines);
+        if (!JournalBalanced(lines)) warnings.Add($"Fiş dengesiz: borç-alacak farkı {M(diff)}");
         return new ExportResult(Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(sb.ToString())).ToArray(),
             $"muhasebe-{format}-{period.Year}-{period.Month:00}.csv", "text/csv", lines.Count, warnings);
     }

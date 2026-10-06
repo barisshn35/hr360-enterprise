@@ -16,7 +16,8 @@ import { useDirectory } from '@/api/directory'
 import { payrollExtrasApi, type AdvanceStatus, type BenefitOption, type ExportKind, type RaiseCycle, type SalaryAdvance, type WorksheetRow } from '@/api/payrollExtras'
 import { formatDate, formatDateTime, formatMoney, formatNumber, parseDecimal } from '@/lib/format'
 import { Metric, errMsg, isoDate, useAction } from '@/features/shared/kit'
-import { tx } from '@/lib/i18n'
+import { tx, txServer } from '@/lib/i18n'
+import { SgkValidationBox } from './PayrollTr'
 
 function useIsPayrollAdmin() {
   const { hasRole } = useAuth()
@@ -32,18 +33,28 @@ const exportLabels: Record<ExportKind, string> = {
   Accounting: tx('Muhasebe fişi (masraf merkezi özeti)'),
 }
 
+const formatOptions: Partial<Record<ExportKind, Array<{ value: string; label: string }>>> = {
+  SgkAphb: [{ value: 'xml', label: 'XML' }, { value: 'txt', label: tx('TXT (noktalı virgüllü)') }],
+  Bank: [{ value: 'settings', label: tx('Şirket ayarındaki şablon') }, { value: 'generic', label: tx('HR360 genel CSV') }, { value: 'ornek-a', label: tx('Örnek şablon A (noktalı virgüllü CSV)') },
+    { value: 'ornek-b', label: tx('Örnek şablon B (sabit uzunluklu TXT)') }, { value: 'custom', label: tx('Özel düzen') }],
+  Accounting: [{ value: 'generic', label: tx('Genel CSV') }, { value: 'logo', label: 'Logo' }, { value: 'mikro', label: 'Mikro' }, { value: 'netsis', label: 'Netsis' }],
+}
+const defaultFormat: Partial<Record<ExportKind, string>> = { SgkAphb: 'xml', Bank: 'settings', Accounting: 'generic' }
+
 export function PayrollExportsPanel({ periodId, closed }: { periodId: string; closed: boolean }) {
   const q = useQuery({ queryKey: ['payroll', 'exports', periodId], queryFn: ({ signal }) => payrollExtrasApi.exports(periodId, signal), enabled: closed })
   const [kind, setKind] = useState<ExportKind>('SgkAphb')
-  const [format, setFormat] = useState('generic')
+  const [format, setFormat] = useState('xml')
+  const [payDate, setPayDate] = useState(isoDate())
   const [warnings, setWarnings] = useState<string[]>([])
   const toast = useToast()
-  const create = useAction(() => payrollExtrasApi.createExport(periodId, { kind, format: kind === 'Accounting' ? format : undefined }), {
+  const create = useAction(() => payrollExtrasApi.createExport(periodId, { kind, format: format && format !== 'settings' ? format : undefined, payDate: kind === 'Bank' ? payDate : undefined }), {
     success: (r) => tx('{0} hazır ({1} satır)', [r.fileName, r.rowCount]), invalidate: [['payroll', 'exports', periodId]], onDone: (r) => setWarnings(r.warnings),
   })
   const dl = async (id: string, name: string) => {
     try { await payrollExtrasApi.download(id, name); void q.refetch() } catch (e) { toast.stop(errMsg(e)) }
   }
+  const opts = formatOptions[kind]
   return (
     <Panel>
       <PanelHead title={<span className="flex items-center gap-2"><FileDown className="size-4 text-primary" />{' '}{tx('Resmî, banka ve muhasebe dosyaları')}</span>}
@@ -51,18 +62,20 @@ export function PayrollExportsPanel({ periodId, closed }: { periodId: string; cl
       <PanelBody className="space-y-4">
         {!closed ? <p className="text-[13px] text-muted-foreground">{tx('Dosya üretmek için önce dönemi kapatın.')}</p> : (
           <>
+            <SgkValidationBox periodId={periodId} />
             <div className="flex flex-wrap items-end gap-3">
-              <div className="w-80"><SelectField label={tx('Dosya')} value={kind} onChange={(v) => setKind(v as ExportKind)} options={(Object.keys(exportLabels) as ExportKind[]).map((k) => ({ value: k, label: exportLabels[k] }))} /></div>
-              {kind === 'Accounting' && <div className="w-44"><SelectField label={tx('Biçim')} value={format} onChange={setFormat} options={[{ value: 'generic', label: tx('Genel CSV') }, { value: 'logo', label: 'Logo' }, { value: 'mikro', label: 'Mikro' }, { value: 'netsis', label: 'Netsis' }]} /></div>}
+              <div className="w-80"><SelectField label={tx('Dosya')} value={kind} onChange={(v) => { setKind(v as ExportKind); setFormat(defaultFormat[v as ExportKind] ?? '') }} options={(Object.keys(exportLabels) as ExportKind[]).map((k) => ({ value: k, label: exportLabels[k] }))} /></div>
+              {opts && <div className="w-64"><SelectField label={tx('Biçim')} value={format} onChange={setFormat} options={opts} placeholder={tx('Şirket ayarındaki şablon')} /></div>}
+              {kind === 'Bank' && <div className="w-44"><TextField type="date" label={tx('Ödeme tarihi')} value={payDate} onChange={(e) => setPayDate(e.target.value)} /></div>}
               <Button onClick={() => create.mutate(undefined)} disabled={create.isPending}>{tx('Üret')}</Button>
             </div>
-            {warnings.length > 0 && <InfoNote>{tx('Dosyaya alınmayanlar:')} {warnings.join(' · ')}</InfoNote>}
-            <InfoNote>{tx('SGK XML ve muhasebe şablonları yaygın alan adlarıyla üretilir; e-Bildirge ya da muhasebe yazılımına yüklemeden önce güncel şablonla karşılaştırın.')}</InfoNote>
+            {warnings.length > 0 && <InfoNote>{tx('Uyarılar ve dosyaya alınmayanlar:')} {warnings.map((w) => txServer(w)).join(' · ')}</InfoNote>}
+            <InfoNote>{tx('SGK, banka ve muhasebe dosyaları kamuya açık kaynaklardaki yaygın düzenlerle üretilir; HR360 SGK e-Bildirge\'ye, bankaya ya da muhasebe yazılımına bağlanmaz. Yüklemeden önce güncel şablonla karşılaştırın. Banka örnek şablonları hiçbir bankanın resmî biçimi olarak doğrulanmamıştır.')}</InfoNote>
             {q.data && q.data.length > 0 && (
               <ul className="divide-y divide-border rounded-xl border border-border text-[13px]">
                 {q.data.map((e) => (
                   <li key={e.id} className="flex flex-wrap items-center gap-3 px-3 py-2">
-                    <span className="min-w-0 flex-1">{e.fileName}<span className="block text-[12px] text-muted-foreground">{tx('{0} satır · {1} · {2}', [e.rowCount, e.createdBy, formatDateTime(e.createdAt)])}{e.downloadedAt ? ` · ${tx('indirildi: {0}', [formatDateTime(e.downloadedAt)])}` : ''}</span></span>
+                    <span className="min-w-0 flex-1">{e.fileName}<span className="block text-[12px] text-muted-foreground">{tx('{0} satır · {1} · {2}', [e.rowCount, e.createdBy, formatDateTime(e.createdAt)])}{e.downloadedAt ? ` · ${tx('indirildi: {0}', [formatDateTime(e.downloadedAt)])}` : ''}{e.contentSha256 ? ` · SHA-256 ${e.contentSha256.slice(0, 16)}…` : ''}</span></span>
                     {e.singleUse && <StatusBadge tone="warning">{tx('Tek indirme')}</StatusBadge>}
                     {e.available ? <Button size="sm" variant="outline" onClick={() => void dl(e.id, e.fileName)}><Download className="size-4" />{' '}{tx('İndir')}</Button> : <StatusBadge tone="neutral">{tx('Silindi')}</StatusBadge>}
                   </li>

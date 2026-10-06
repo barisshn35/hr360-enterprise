@@ -13,5 +13,7 @@ public class SalaryBand : ITenantOwned
     public decimal MaxAmount { get; set; }
     public string Currency { get; set; } = "TRY";
     public int Year { get; set; }
+    /// <summary>Yürürlük tarihi (boşsa yılın başı).</summary>
+    public DateOnly? EffectiveFrom { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }

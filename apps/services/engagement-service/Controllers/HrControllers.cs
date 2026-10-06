@@ -859,6 +859,21 @@ public class OffboardingController : AppController
         return Ok(new { c.Status });
     }
 
+    private async Task<decimal> CeilingAsync(DateOnly day, CancellationToken ct)
+    {
+        try
+        {
+            var v = await Db.ScalarAsync(
+                """
+                SELECT CASE WHEN $3 <= 6 THEN "SeveranceCeilingH1" ELSE coalesce("SeveranceCeilingH2", "SeveranceCeilingH1") END
+                FROM compensation_payroll_parameters WHERE "TenantSlug" = $1 AND "Year" = $2 AND "ValidFromMonth" <= $3
+                ORDER BY "ValidFromMonth" DESC LIMIT 1
+                """, ct, Tenant, day.Year, day.Month) as decimal?;
+            return v is > 0 ? v.Value : SeveranceCeiling;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException) { return SeveranceCeiling; }
+    }
+
     /// <summary>Tahmini hak ediş (yalnızca ücret görme yetkisi olanlar).</summary>
     [HttpGet("{id:guid}/settlement")]
     public async Task<IActionResult> Settlement(Guid id, CancellationToken ct)
@@ -880,12 +895,15 @@ public class OffboardingController : AppController
             WHERE "TenantSlug" = $1 AND "EmployeeId" = $2 AND "Type" = 'Annual' AND "Year" = $3
             """, ct, Tenant, emp.Id, c.LastWorkingDay.Year) as decimal? ?? 0;
 
-        var r = Infrastructure.SettlementCalculator.Compute(emp.HireDate, c.LastWorkingDay, c.Reason, gross, remainingLeave, SeveranceCeiling);
+        // Bordro dalgası 8: kıdem tavanı bordro parametrelerinden (yıl/yarıyıl; compensation_payroll_parameters,
+        // yalnızca okuma); girilmemişse ortam değişkeni / kod varsayılanı. Kesin hesap: Bordro › Kıdem ve ihbar.
+        var ceiling = await CeilingAsync(c.LastWorkingDay, ct);
+        var r = Infrastructure.SettlementCalculator.Compute(emp.HireDate, c.LastWorkingDay, c.Reason, gross, remainingLeave, ceiling);
 
         return Ok(new
         {
             employee = emp.Name, hireDate = emp.HireDate, c.LastWorkingDay, c.Reason,
-            tenureYears = r.TenureYears, grossMonthly = gross, severanceCeiling = SeveranceCeiling,
+            tenureYears = r.TenureYears, grossMonthly = gross, severanceCeiling = ceiling,
             severance = new { eligible = r.SeveranceEligible, gross = r.Severance, stampTax = r.SeveranceStampTax, net = r.SeveranceNet,
                 basis = "4857 s. Kanun geçici 6 / 1475 s. Kanun m.14 — her tam yıl için 30 günlük brüt ücret (tavanla sınırlı); gelir vergisinden istisna, yalnızca damga vergisi." },
             notice = new { weeks = r.NoticeWeeks, applies = r.NoticeApplies, gross = r.Notice,

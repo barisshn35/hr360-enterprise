@@ -14,6 +14,7 @@ import { tx } from '@/lib/i18n'
 import { PayslipBreakdown, monthName } from './PayrollPage'
 import { printPayslip } from './payslipPrint'
 import { MyAdvancesPanel } from './PayrollExtras'
+import { MyEPayslipBox } from './PayrollTr'
 
 /** Çalışanın kendi bordro pusulaları (yalnızca kapanmış dönemler). */
 export function MyPayslipsPage() {
@@ -49,7 +50,7 @@ export function MyPayslipsPage() {
             <Panel>
               <PanelHead title={tx('{0} {1} pusulası', [monthName(current.month), current.year])}
                 action={<Button size="sm" variant="outline" onClick={() => printPayslip(current, name)}><Printer className="size-4" /> {tx('Yazdır / PDF')}</Button>} />
-              <PanelBody><PayslipBreakdown s={current} /></PanelBody>
+              <PanelBody><PayslipBreakdown s={current} /><MyEPayslipBox key={current.id} payslipId={current.id} /></PanelBody>
             </Panel>
           )}
         </div>

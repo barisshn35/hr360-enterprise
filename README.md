@@ -312,6 +312,15 @@ eklenerek `tenant` etiketi açılabilir.
   verisi içermez). Dosyalar şifreli saklanır, her indirme kaydedilir; banka dosyası bir kez
   indirilir, tümü 24 saatte silinir. SGK XML'i ve muhasebe şablonları SGK'nın/yazılımların güncel
   şablonuyla birebir doğrulanmadı; yüklemeden önce karşılaştırın.
+- **Türkiye bordrosu (dalga 8)** — ayrıntı: [docs/bordro](docs/bordro/README.md). Yıl/yarıyıl yürürlüklü
+  bordro parametreleri (asgari ücret, SGK/işsizlik oranları, tavan, damga, dilimler, istisna, kıdem
+  tavanı; 2026 tohumu "doğrulanmadı"), APHB XML/TXT + indirmeden önce doğrulama raporu (meslek kodu,
+  eksik gün nedeni eşlemesi, belge türü/kanun, SGDP), banka örnek şablonları ve özel düzen (IBAN
+  mod-97, toplam satırı, dosya özeti denetim kaydında), şirket hesap planı ve masraf merkezi eşlemesi
+  (dengesiz fiş üretilmez), fark bordrosu (kapanmış dönem açılmadan "Fark: YYYY/AA"), kıdem/ihbar
+  (giydirilmiş ücret, ihbar GV'si, dört göz onayı, ibraname), e-bordro (yayım, okundu, "Okudum, teslim
+  aldım"), bant uyumu ve compa-ratio. SGK, banka ve e-posta sağlayıcısına bağlanılmaz: dosya üretilir,
+  e-posta bildirimi notification kuyruğuna yazılır (test ortamında mailpit).
 - **Avans ve borç** (Bordrolarım › Avans ve borçlarım; İK: Bordro › Avanslar): çalışan talep eder,
   İK onaylar; taksitler dönem hesabında kesinti olarak otomatik eklenir, dönem kapanınca ödenmiş
   sayılır. Taksit brüt ücretin %25'ini aşarsa İK uyarı görür.

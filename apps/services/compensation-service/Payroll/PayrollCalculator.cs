@@ -19,7 +19,8 @@ public sealed record PayrollParams(
     decimal SgkCeilingMultiplier,        // SGK tavanı = asgari ücret x çarpan
     decimal OvertimeMultiplier,          // fazla mesai zammı (İş K. m.41: %50)
     decimal MonthlyHours,                // saatlik ücret böleni (225 saat)
-    IReadOnlyList<TaxBracket> Brackets)
+    IReadOnlyList<TaxBracket> Brackets,
+    bool MinimumWageExemption = true)    // asgari ücret GV/damga istisnası (2022'den beri)
 {
     public decimal EffectiveEmployerSgkRate => Math.Max(0, SgkEmployerRate - EmployerIncentivePoints / 100m);
 }
@@ -121,10 +122,10 @@ public static class PayrollCalculator
         var mwBaseFull = p.MinimumWageGross * (1 - p.SgkEmployeeRate - p.UnemploymentEmployeeRate);
         var mwMonthBase = R(mwBaseFull * dayRatio);
         var mwPrior = R(mwBaseFull * (i.Month - 1));
-        var taxExemption = Math.Min(incomeTax, MonthlyTax(mwPrior, mwMonthBase, p.Brackets));
+        var taxExemption = p.MinimumWageExemption ? Math.Min(incomeTax, MonthlyTax(mwPrior, mwMonthBase, p.Brackets)) : 0;
 
         var stamp = R(gross * p.StampTaxRate);
-        var stampExemption = Math.Min(stamp, R(p.MinimumWageGross * dayRatio * p.StampTaxRate));
+        var stampExemption = p.MinimumWageExemption ? Math.Min(stamp, R(p.MinimumWageGross * dayRatio * p.StampTaxRate)) : 0;
 
         var deductions = R(Math.Max(0, i.Deductions));
         var net = gross - sgkEmp - unempEmp - (incomeTax - taxExemption) - (stamp - stampExemption) - deductions;

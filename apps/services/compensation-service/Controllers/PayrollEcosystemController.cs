@@ -70,44 +70,21 @@ public class PayrollEcosystemController : ControllerBase
         catch (Exception) { }
     }
 
-    public sealed class PersonRow
-    {
-        public Guid Id { get; set; }
-        public string FirstName { get; set; } = "";
-        public string LastName { get; set; } = "";
-        public string? NationalId { get; set; }
-        public string? Iban { get; set; }
-        public string? Department { get; set; }
-        public Guid? DepartmentId { get; set; }
-        public Guid? HeadId { get; set; }
-        public DateOnly HireDate { get; set; }
-        public string Status { get; set; } = "";
-        public DateOnly? EndDate { get; set; }
-    }
+    private Task<List<PayrollData.PersonRow>> PeopleRowsAsync(CancellationToken ct) => PayrollData.PeopleAsync(_db, Tenant, ct);
 
-    private Task<List<PersonRow>> PeopleRowsAsync(CancellationToken ct) => _db.Database.SqlQueryRaw<PersonRow>("""
-        SELECT e."Id", e."FirstName", e."LastName", p."NationalId", p."Iban", d."Name" AS "Department", d."Id" AS "DepartmentId",
-               d."HeadEmployeeId" AS "HeadId", e."HireDate", e."Status",
-               CASE WHEN e."Status" = 'Terminated' THEN (SELECT max(x."EffectiveTo") FROM employee_assignments x WHERE x."EmployeeId" = e."Id") END AS "EndDate"
-        FROM employee_employees e
-        LEFT JOIN engagement_profiles p ON p."TenantSlug" = e."TenantSlug" AND p."EmployeeId" = e."Id"
-        LEFT JOIN LATERAL (SELECT a."DepartmentId" FROM employee_assignments a WHERE a."EmployeeId" = e."Id"
-                           ORDER BY (a."EffectiveTo" IS NULL) DESC, a."EffectiveFrom" DESC LIMIT 1) a ON true
-        LEFT JOIN organization_departments d ON d."Id" = a."DepartmentId"
-        WHERE e."TenantSlug" = {0}
-        """, Tenant).ToListAsync(ct);
-
-    private static ExportPerson ToExport(PersonRow r) => new(r.Id, r.FirstName, r.LastName,
-        ExportCrypto.OpenPii(r.NationalId)?.Trim(), ExportCrypto.OpenPii(r.Iban), r.Department, r.HireDate, r.EndDate);
+    private static ExportPerson ToExport(PayrollData.PersonRow r) => PayrollData.ToExport(r);
 
     /* ============================================================ Y1/Y3/Y4 dosyalar */
 
-    public record ExportInput(string Kind, string? Format, AccountMap? Accounts);
+    public record ExportInput(string Kind, string? Format, AccountMap? Accounts, DateOnly? PayDate = null);
 
     /// <summary>
     /// Kapanmış dönem için dosya üretir. SGK ve banka dosyaları TCKN/IBAN içerir: içerik şifreli
     /// saklanır, banka dosyası bir kez indirilir, hepsi 24 saat sonra silinir. Muhasebe dosyası
-    /// yalnızca masraf merkezi toplamlarını içerir.
+    /// yalnızca masraf merkezi toplamlarını içerir. Dalga 8: SGK APHB XML/TXT (format), banka şablonu
+    /// (format: generic | ornek-a | ornek-b | custom; boşsa şirket ayarı), şirketin hesap planı ve masraf
+    /// merkezi eşlemesi; dengesiz muhasebe fişi üretilmez. Dosyanın SHA-256 özeti kayda ve denetime yazılır.
+    /// Dış sistemlere (SGK e-Bildirge, banka, muhasebe yazılımı) bağlanılmaz; yalnızca dosya üretilir.
     /// </summary>
     [HttpPost("payroll/periods/{id:guid}/exports")]
     public async Task<IActionResult> CreateExport(Guid id, [FromBody] ExportInput body, CancellationToken ct)
@@ -122,27 +99,53 @@ public class PayrollEcosystemController : ControllerBase
         var rows = await PeopleRowsAsync(ct);
         var people = rows.ToDictionary(r => r.Id, ToExport);
         var title = (await _db.Database.SqlQueryRaw<string>("SELECT \"Name\" AS \"Value\" FROM platform_tenants WHERE \"Slug\" = {0}", Tenant).FirstOrDefaultAsync(ct)) ?? Tenant;
-        var format = (body.Format ?? "generic").ToLowerInvariant();
+        var settings = await PayrollData.SettingsAsync(_db, ct);
+        string format;
         ExportResult r;
         switch (body.Kind)
         {
-            case "SgkAphb": r = Exporters.SgkAphb(period, slips, people, title); break;
-            case "SgkHires": r = Exporters.SgkHires(period, people.Values); break;
-            case "Bank": r = Exporters.Bank(period, slips, people); break;
+            case "SgkAphb":
+            {
+                format = (body.Format ?? "xml").ToLowerInvariant();
+                if (format is not ("xml" or "txt")) return BadRequest(new { message = "Geçersiz biçim" });
+                var (aphbPeople, leave, _, prm) = await PayrollData.AphbInputAsync(_db, Tenant, period, ct);
+                var (aphbRows, issues) = Aphb.Build(period, slips, aphbPeople, leave, settings.Sgk, prm);
+                var content = format == "xml" ? Aphb.Xml(period, aphbRows, aphbPeople, title, settings.Sgk) : Aphb.Txt(aphbRows, aphbPeople);
+                r = new ExportResult(content, $"sgk-aphb-{period.Year}-{period.Month:00}.{format}", format == "xml" ? "application/xml" : "text/plain",
+                    aphbRows.Count, issues.Select(i => $"{i.Name}: {i.Message}").ToList());
+                break;
+            }
+            case "SgkHires": format = "csv"; r = Exporters.SgkHires(period, people.Values); break;
+            case "Bank":
+                format = (body.Format ?? settings.Bank.Template ?? "generic").ToLowerInvariant();
+                if (format is not ("generic" or "ornek-a" or "ornek-b" or "custom")) return BadRequest(new { message = "Geçersiz banka şablonu" });
+                r = BankFiles.Build(period, slips, people, settings.Bank with { Template = format },
+                    body.PayDate ?? DateOnly.FromDateTime(DateTime.UtcNow.AddHours(3)));
+                break;
             case "Accounting":
+            {
+                format = (body.Format ?? "generic").ToLowerInvariant();
                 if (format is not ("generic" or "logo" or "mikro" or "netsis")) return BadRequest(new { message = "Geçersiz biçim" });
-                r = Exporters.Accounting(period, slips, people, format, body.Accounts ?? new AccountMap()); break;
+                var map = body.Accounts ?? settings.Accounts;
+                // Madde 64: borç = alacak denetimi; dengesiz fiş dosyaya dönüşmez.
+                var journal = Exporters.Journal(period, slips, people, map, settings.CostCenters);
+                if (!Exporters.JournalBalanced(journal))
+                    return UnprocessableEntity(new { message = $"Muhasebe fişi dengesiz (borç-alacak farkı {Exporters.JournalDifference(journal):0.00}); dosya üretilmedi.", code = "journal_unbalanced" });
+                r = Exporters.Accounting(period, slips, people, format, map, settings.CostCenters);
+                break;
+            }
             default: return BadRequest(new { message = "Geçersiz dosya türü" });
         }
+        var sha = EPayslip.Sha256Bytes(r.Content);
         var e = new PayrollExport
         {
             PeriodId = id, Kind = body.Kind, FileName = r.FileName, ContentType = r.ContentType, Cipher = ExportCrypto.Encrypt(r.Content),
-            RowCount = r.Rows, SingleUse = body.Kind == "Bank", CreatedBy = UserName,
+            RowCount = r.Rows, SingleUse = body.Kind == "Bank", CreatedBy = UserName, ContentSha256 = sha, Format = format,
         };
         _db.PayrollExports.Add(e);
         await _db.SaveChangesAsync(ct);
-        await AuditAsync("PayrollExport", e.Id.ToString(), "Created", new { e.Kind, e.RowCount, period.Year, period.Month }, e.TenantSlug);
-        return Ok(new { e.Id, e.Kind, e.FileName, e.RowCount, e.SingleUse, e.ExpiresAt, warnings = r.Warnings });
+        await AuditAsync("PayrollExport", e.Id.ToString(), "Created", new { e.Kind, e.RowCount, period.Year, period.Month, e.Format, sha256 = sha }, e.TenantSlug);
+        return Ok(new { e.Id, e.Kind, e.FileName, e.RowCount, e.SingleUse, e.ExpiresAt, e.Format, contentSha256 = sha, warnings = r.Warnings });
     }
 
     [HttpGet("payroll/periods/{id:guid}/exports")]
@@ -153,7 +156,7 @@ public class PayrollEcosystemController : ControllerBase
         return Ok(list.Select(e => new
         {
             e.Id, e.Kind, e.FileName, e.RowCount, e.SingleUse, e.CreatedBy, e.CreatedAt, e.ExpiresAt, e.DownloadedAt, e.DownloadedBy,
-            e.DownloadCount, available = e.Cipher is not null && e.ExpiresAt > DateTimeOffset.UtcNow, e.PurgedAt,
+            e.DownloadCount, available = e.Cipher is not null && e.ExpiresAt > DateTimeOffset.UtcNow, e.PurgedAt, e.Format, e.ContentSha256,
         }));
     }
 
@@ -173,7 +176,7 @@ public class PayrollEcosystemController : ControllerBase
         await _db.SaveChangesAsync(ct);
         var trace = CompensationService.Auditing.TraceCode.New();
         await AuditAsync("PayrollExport", e.Id.ToString(), e.Kind is "SgkAphb" or "SgkHires" or "Bank" ? "Exported" : "Downloaded",
-            new { field = e.Kind, e.FileName, e.RowCount, traceCode = trace }, e.TenantSlug);
+            new { field = e.Kind, e.FileName, e.RowCount, traceCode = trace, sha256 = e.ContentSha256 }, e.TenantSlug);
         // Banka/SGK/muhasebe dosyaları dış sistemlerin biçimindedir; içine filigran satırı eklenmez.
         // İz kodu yalnızca denetim kaydında ve yanıt başlığında taşınır.
         Response.Headers["X-HR360-Trace"] = trace;
