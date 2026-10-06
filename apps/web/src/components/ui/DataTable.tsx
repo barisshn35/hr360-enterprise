@@ -42,6 +42,7 @@ import { ApiError } from '@/api/client'
 import { normalizeSearch } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { tx } from '@/lib/i18n'
+import { requestTrace, withCsvWatermark } from '@/lib/watermark'
 
 export type Column<T> = {
   id: string
@@ -258,15 +259,14 @@ export function DataTable<T>({
   const visible = server ? sorted : sorted.slice((safePage - 1) * pageSize, safePage * pageSize)
   const goTo = (p: number) => (server ? server.onPageChange(p) : setPage(p))
 
+  // Güvenlik dalgası 2B: dosyanın ilk satırı indiren kişi · zaman · iz kodu (denetim kaydına bağlı).
   const exportCsv = async () => {
     if (!exportFileName) return
-    if (!server?.fetchAll) {
-      download(`${exportFileName}.csv`, toCsv(sorted, columns))
-      return
-    }
     setExporting(true)
     try {
-      download(`${exportFileName}.csv`, toCsv(await server.fetchAll(), columns))
+      const list = server?.fetchAll ? await server.fetchAll() : sorted
+      const trace = await requestTrace(`table:${exportFileName}`.slice(0, 60), { format: 'csv', rows: list.length })
+      download(`${exportFileName}.csv`, withCsvWatermark(toCsv(list, columns), trace?.text))
     } finally {
       setExporting(false)
     }

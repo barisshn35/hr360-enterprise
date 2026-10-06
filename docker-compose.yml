@@ -531,8 +531,18 @@ services:
       TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=3"
       KEYCLOAK_BASE_URL: "http://keycloak:8080/auth"
       KEYCLOAK_REALM: "hr360"
-      KEYCLOAK_ADMIN_USER: ${KEYCLOAK_ADMIN_USER}
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      # Guvenlik dalgasi 2A: yonetim API'si hr360 realm'indeki "hr360-tenant-admin" servis
+      # hesabiyla (client_credentials, en az yetki). Anahtari scripts/keycloak-service-account.sh
+      # uretir. Master yonetici parolasi yalnizca gecis icin geri donus yoludur; betik servis
+      # hesabini dogruladiktan sonra KEYCLOAK_TENANT_ADMIN_LEGACY_* degiskenlerini bos yazar
+      # ve master parolasi bu konteynere hic verilmez.
+      KEYCLOAK_TENANT_ADMIN_CLIENT_SECRET: "${KEYCLOAK_TENANT_ADMIN_CLIENT_SECRET:-}"
+      KEYCLOAK_ADMIN_USER: "${KEYCLOAK_TENANT_ADMIN_LEGACY_USER-${KEYCLOAK_ADMIN_USER}}"
+      KEYCLOAK_ADMIN_PASSWORD: "${KEYCLOAK_TENANT_ADMIN_LEGACY_PASSWORD-${KEYCLOAK_ADMIN_PASSWORD}}"
+      # Iki adimli dogrulama: platform yoneticisi hesaplarinda da zorunlu (MFA_REQUIRE_PLATFORM_ADMIN=true).
+      # Testler platform.admin ile tarayicidan parola girisi yaptigi icin varsayilan kapali.
+      MFA_REQUIRE_PLATFORM_ADMIN: "${MFA_REQUIRE_PLATFORM_ADMIN:-false}"
+      NOTIFICATION_SERVICE_URL: "http://notification-service:8080"
       TENANT_SECRET_KEY: ${TENANT_SECRET_KEY}
       # /internal/users/disable (offboarding hesap kapatma) yalnizca bu jetonla.
       INTERNAL_SERVICE_TOKEN: "${INTERNAL_SERVICE_TOKEN:-}"

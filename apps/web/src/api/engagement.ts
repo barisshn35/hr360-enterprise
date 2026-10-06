@@ -1,4 +1,4 @@
-import { apiFetch, qs } from './client'
+import { apiFetch, platformTenantHeaders, qs } from './client'
 import { getValidToken } from '@/auth/keycloak'
 import { env } from '@/lib/env'
 import { tx } from '@/lib/i18n'
@@ -447,7 +447,7 @@ export interface ScenarioImpact {
 /** Dosya (ics/json/csv) indiren yardımcı — Authorization başlığıyla. */
 export async function downloadAuthed(path: string, fileName: string) {
   const token = await getValidToken()
-  const res = await fetch(`${env.apiBase}${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+  const res = await fetch(`${env.apiBase}${path}`, { headers: token ? { Authorization: `Bearer ${token}`, ...platformTenantHeaders() } : {} })
   if (!res.ok) throw new Error(tx('İndirilemedi (HTTP {0})', [res.status]))
   const blob = await res.blob()
   const url = URL.createObjectURL(blob)

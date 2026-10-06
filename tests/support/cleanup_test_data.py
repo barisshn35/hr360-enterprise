@@ -280,6 +280,18 @@ SELECT 'timeshift_time_entries', count(*) FROM d;
 WITH d AS (DELETE FROM expense_fx_rates WHERE "TenantSlug" IS NULL AND "Source" = 'TCMB'
              AND (("Currency" = 'USD' AND "Rate" = 41.5) OR ("Currency" = 'EUR' AND "Rate" = 48.25)) RETURNING 1)
 SELECT 'expense_fx_rates', count(*) FROM d;
+-- test_identity_security.py: platform yöneticisi test erişim izinleri (gerekçe öneki "TEST-2A").
+-- Tablo 2026-10-16_identity_security.sql ile gelir; uygulanmamış kurulumda atlanır.
+CREATE FUNCTION pg_temp.del_grants() RETURNS bigint LANGUAGE plpgsql AS $f$
+DECLARE n bigint := 0;
+BEGIN
+  IF to_regclass('platform_access_grants') IS NOT NULL THEN
+    EXECUTE $q$DELETE FROM platform_access_grants WHERE "TenantSlug" = 'demo' AND "Reason" LIKE 'TEST-2A%'$q$;
+    GET DIAGNOSTICS n = ROW_COUNT;
+  END IF;
+  RETURN n;
+END $f$;
+SELECT 'platform_access_grants', pg_temp.del_grants();
 
 -- ============================================================== İzin bakiyeleri yeniden hesap
 WITH calc AS (

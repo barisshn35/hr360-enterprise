@@ -137,6 +137,11 @@ check "kullanici adi = gonderen adres" [ "$(envv "$d" SMTP_USER)" = "'ik@example
 check "deneme e-postasi STARTTLS ile yoneticiye gitti" grep -q "smtp://smtp.gmail.com:587 --ssl-reqd --user ik@example.com:uygulama-sifresi --mail-from ik@example.com --mail-rcpt admin@example.com" "$WORK/log-le"
 check "uyari alicisi = yonetici e-postasi" [ "$(envv "$d" ALERT_EMAIL_TO)" = admin@example.com ]
 check "realm SMTP ayari dolduruldu" grep -q '"host" *: *"smtp.gmail.com"' "$d/deploy/keycloak/realm-export.json"
+sa_secret="$(envv "$d" KEYCLOAK_TENANT_ADMIN_CLIENT_SECRET)"
+check "Keycloak servis hesabi anahtari uretildi" [ "${#sa_secret}" -ge 32 ]
+check "realm sablonunda servis hesabi anahtari dolduruldu" grep -q "\"secret\": \"${sa_secret}\"" "$d/deploy/keycloak/realm-export.json"
+check "tenant-service'e master parola verilmez" eval 'grep -q "^KEYCLOAK_TENANT_ADMIN_LEGACY_PASSWORD=$" "$d/.env"'
+check "servis hesabi ve parola politikasi Keycloak'a uygulandi" eval 'grep -q "hr360-tenant-admin" "$WORK/log-le" && grep -q "passwordPolicy" "$WORK/log-le"'
 check "bekleyen yeniden deneme yok" eval '[ -z "$(envv "$d" TLS_LE_PENDING)" ] && [ ! -s "$WORK/cron-le" ]'
 check "ozet: dogrulama tamam" eval 'grep -q "HTTPS:    calisiyor, sertifika gecerli" <<< "$out" && grep -q "Giris:    tamam" <<< "$out"'
 check "ozet: deneme e-postasi gonderildi" grep -q "deneme e-postasi gonderildi: admin@example.com" <<< "$out"
@@ -209,6 +214,8 @@ check "Google Workspace sunucusu ve kullanici adi" eval '[ "$(envv "$d" SMTP_HOS
 echo "8) Guncelleme yolu: mevcut .env korunur, --domain ve --keycloak-admin uygulanir"
 d="$(new_copy upd)"
 cp "$WORK/repo-smtpfail/.env" "$d/.env"
+# Eski kurulum: servis hesabi anahtari yok (Guvenlik dalgasi 2A oncesi).
+sed -i '/^KEYCLOAK_TENANT_ADMIN_/d' "$d/.env"
 secret_before="$(envv "$d" TENANT_SECRET_KEY)"
 out="$(run_in upd "$d" FAKE_DNS_A=203.0.113.10 FAKE_LE=ok ./install.sh --domain hr.example.com --email admin@example.com \
         --tls letsencrypt --keycloak-admin ip:198.51.100.0/24 --yes 2>&1)"; rc=$?
@@ -218,6 +225,8 @@ check "adres https://hr.example.com oldu" [ "$(envv "$d" PUBLIC_ORIGIN)" = https
 check "Let's Encrypt yonetici e-postasiyla istendi" grep -q "certonly.*-d hr.example.com.*--email admin@example.com" "$WORK/log-upd"
 check "Keycloak paneli IP listesine kisitlandi" eval '[ "$(envv "$d" KEYCLOAK_ADMIN_MODE)" = ip ] && [ "$(envv "$d" KEYCLOAK_ADMIN_ALLOWED_IPS)" = 198.51.100.0/24 ]'
 check "ufw'ye dokunulmadi" eval '! grep -Eq "ufw (allow|enable|deny|reject|delete|reset|disable)" "$WORK/log-upd"'
+check "eski kurulumda servis hesabi olusturuldu, master parola geri donusu kapandi" eval '[ "$(envv "$d" KEYCLOAK_TENANT_ADMIN_CLIENT_SECRET | wc -c)" -ge 33 ] && grep -q "^KEYCLOAK_TENANT_ADMIN_LEGACY_USER=$" "$d/.env" && grep -q "hr360-tenant-admin" "$WORK/log-upd"'
+check "servis hesabiyla master kaba kuvvet korumasi acilir" grep -q 'BF=true' "$WORK/log-upd"
 
 echo ""
 if [ "$FAILS" = 0 ]; then echo "Tum kurulum testleri gecti."; else echo "$FAILS test basarisiz."; fi

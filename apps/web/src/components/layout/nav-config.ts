@@ -208,6 +208,8 @@ export const navGroups: NavGroupData[] = [
       { id: 'rules', title: tx('Kural motoru'), description: tx('"Olursa → yap" otomasyonları'), icon: Workflow, path: '/panel/kural-motoru', permission: 'employee:manage', feature: 'rules' },
       { id: 'integrations', title: tx('Entegrasyonlar'), description: tx('Webhook, API, Slack/Teams'), icon: PlugZap, path: '/panel/entegrasyonlar', permission: 'employee:manage', feature: 'webhooks' },
       { id: 'security', title: tx('Güvenlik'), description: tx('SSO ve iki adımlı doğrulama'), icon: Lock, path: '/panel/guvenlik', permission: 'tenant:manage', requireRoles: ['tenant-admin', 'platform-admin'], feature: 'sso' },
+      { id: 'data-protection', title: tx('Veri koruma'), description: tx('Erişim gözden geçirme, toplu görüntüleme, iz kodu'), icon: ShieldCheck, path: '/panel/veri-koruma', permission: 'employee:manage', requireRoles: ['hr-admin', 'tenant-admin'] },
+      { id: 'access-review', title: tx('Erişim gözden geçirme'), description: tx('Ekibimin rol ve izinleri'), icon: ClipboardCheck, path: '/panel/erisim-gozden-gecirme', requireRoles: ['manager', 'hr-admin', 'tenant-admin'] },
       { id: 'import-export', title: tx('İçe/dışa aktarım'), description: tx('Excel ile toplu veri'), icon: FileSpreadsheet, path: '/panel/ice-disa-aktarim', permission: 'employee:manage', feature: 'import-export' },
       { id: 'api-docs', title: tx('API belgeleri'), description: tx('Tüm servislerin uçları, deneme'), icon: BookOpenText, path: '/panel/api-belgeleri', permission: 'employee:manage' },
       { id: 'billing', title: tx('Abonelik'), description: tx('Plan, koltuk ve faturalar'), icon: Receipt, path: '/panel/abonelik', permission: 'tenant:manage', feature: 'billing' },

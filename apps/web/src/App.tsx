@@ -128,6 +128,8 @@ const DocTemplatesPage = page(() => import('@/features/governance/DocTemplatesPa
 const RulesPage = page(() => import('@/features/governance/RulesPage'), 'RulesPage')
 const IntegrationsPage = page(() => import('@/features/governance/IntegrationsPage'), 'IntegrationsPage')
 const SecurityPage = page(() => import('@/features/governance/SecurityPage'), 'SecurityPage')
+const DataProtectionPage = page(() => import('@/features/governance/DataProtectionPage'), 'DataProtectionPage')
+const AccessReviewMyPage = page(() => import('@/features/governance/DataProtectionPage'), 'AccessReviewMyPage')
 const ImportExportPage = page(() => import('@/features/governance/ImportExportPage'), 'ImportExportPage')
 const ApiDocsPage = page(() => import('@/features/governance/ApiDocsPage'), 'ApiDocsPage')
 const BillingPage = page(() => import('@/features/governance/BillingPage'), 'BillingPage')
@@ -419,6 +421,9 @@ export function App() {
                     <Route path="kural-motoru" element={guarded('employee:manage', <PlanGate feature="rules"><RulesPage /></PlanGate>)} />
                     <Route path="entegrasyonlar" element={guarded('employee:manage', <PlanGate feature="webhooks"><IntegrationsPage /></PlanGate>)} />
                     <Route path="guvenlik" element={guarded('tenant:manage', <PlanGate feature="sso"><SecurityPage /></PlanGate>, ['tenant-admin', 'platform-admin'])} />
+                    {/* Güvenlik dalgası 2B: veri koruma (İK/şirket yöneticisi) ve yöneticinin erişim gözden geçirmesi */}
+                    <Route path="veri-koruma" element={guarded('employee:manage', <TenantOnly><DataProtectionPage /></TenantOnly>, ['hr-admin', 'tenant-admin'])} />
+                    <Route path="erisim-gozden-gecirme" element={guarded('employee:viewAll', <TenantOnly><AccessReviewMyPage /></TenantOnly>, ['manager', 'hr-admin', 'tenant-admin'])} />
                     <Route path="ice-disa-aktarim" element={guarded('employee:manage', <PlanGate feature="import-export"><ImportExportPage /></PlanGate>)} />
                     <Route path="api-belgeleri" element={guarded('employee:manage', <ApiDocsPage />)} />
                     <Route path="abonelik" element={guarded('tenant:manage', <PlanGate feature="billing"><BillingPage /></PlanGate>)} />

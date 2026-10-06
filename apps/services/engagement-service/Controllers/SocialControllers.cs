@@ -275,10 +275,28 @@ public class ProfileController : AppController
         // KVKK m.12: başkasının TCKN/IBAN'ını açan kişi gerekçe yazar; gerekçe erişim kaydına girer.
         if (!own && (string.IsNullOrWhiteSpace(reason) || reason.Trim().Length < 5))
             return BadRequest(new { message = "Başka bir çalışanın bu bilgisini görmek için gerekçe yazın (en az 5 karakter).", code = "reason_required" });
+        // Güvenlik dalgası 2B: toplu görüntüleme uyarısı sonrası (kiracı ayarı açıksa) geçici engel.
+        if (!own && await RevealBlockedAsync(ct))
+            return StatusCode(423, new { message = "Kısa sürede çok sayıda çalışan kaydı açıldığı için hassas alan açma geçici olarak engellendi. Şirket yöneticinize başvurun.", code = "mass_view_block" });
         var pr = await _db.Profiles.AsNoTracking().FirstOrDefaultAsync(x => x.EmployeeId == employeeId, ct);
         string? value = field == "iban" ? pr?.Iban : pr?.NationalId;
         await LogSensitiveAsync(employeeId, "Revealed", field, own ? null : reason!.Trim(), ct);
         return Ok(new { field, value });
+    }
+
+    /// <summary>governance-service'in toplu görüntüleme dedektörünün yazdığı geçici engel (governance_security_alerts) okunur.</summary>
+    private async Task<bool> RevealBlockedAsync(CancellationToken ct)
+    {
+        try
+        {
+            return await Db.ScalarAsync("""
+                SELECT 1 FROM governance_security_alerts WHERE "TenantSlug" = $1 AND "UserId" = $2 AND "BlockedUntil" > now() LIMIT 1
+                """, ct, Tenant, Me.UserId) is not null;
+        }
+        catch (Npgsql.PostgresException)
+        {
+            return false; // tablo yoksa (göç uygulanmadı) engel yok
+        }
     }
 
     /// <summary>Hassas veri erişimini denetim kaydına yazar (KVKK › Erişim kayıtları ekranı okur).</summary>

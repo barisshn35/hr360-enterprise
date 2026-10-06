@@ -1,4 +1,5 @@
 import { tx } from '@/lib/i18n'
+import { isWatermarkLine } from '@/lib/watermarkText'
 /**
  * Tablo dosyası okuma/yazma (.xlsx ve .csv).
  *
@@ -68,7 +69,10 @@ export function rowsToRecords(rows: Cell[][]): Record<string, unknown>[] {
 
 /** RFC 4180 CSV; ayırıcı ilk satırdan (; , sekme) tahmin edilir. Türkçe Excel ';' kullanır. */
 export function parseCsv(text: string): string[][] {
-  const src = text.replace(/^﻿/, '')
+  // Dışa aktarılan CSV'nin başındaki HR360 filigran satırı ("# ad · zaman · kod") veri sayılmaz.
+  const noBom = text.replace(/^﻿/, '')
+  const firstEnd = noBom.search(/\r?\n/)
+  const src = firstEnd > 0 && isWatermarkLine(noBom.slice(0, firstEnd)) ? noBom.slice(firstEnd).replace(/^\r?\n/, '') : noBom
   const firstLine = src.split(/\r?\n/, 1)[0] ?? ''
   const count = (ch: string) => firstLine.split(ch).length - 1
   const delim = [';', ',', '\t'].sort((a, b) => count(b) - count(a))[0]
@@ -126,10 +130,12 @@ function toCell(v: unknown): Cell {
 }
 
 /** Her biri ayrı sayfa olan nesne listelerini .xlsx olarak indirir. */
-export async function downloadWorkbook(fileName: string, sheets: Record<string, Record<string, unknown>[]>): Promise<void> {
+export async function downloadWorkbook(fileName: string, sheets: Record<string, Record<string, unknown>[]>, opts: { watermark?: string | null } = {}): Promise<void> {
   const { default: writeXlsxFile } = await import('write-excel-file/browser')
   const used = new Set<string>()
-  const data = Object.entries(sheets).map(([title, list]) => {
+  // Güvenlik dalgası 2B: indiren kişiyi ve iz kodunu gösteren ayrı bir sayfa (hücre içeriğine dokunulmaz).
+  const all = opts.watermark ? { ...sheets, [tx('İz kaydı')]: [{ [tx('İndiren · zaman · iz kodu')]: opts.watermark }] } : sheets
+  const data = Object.entries(all).map(([title, list]) => {
     const rows = list.length ? list : [{ Bilgi: tx('Kayıt yok') }]
     const keys = [...new Set(rows.flatMap((r) => Object.keys(r)))]
     // Excel sayfa adı: en çok 31 karakter, []:*?/\ içeremez, benzersiz olmalı.

@@ -11,6 +11,7 @@ import {
   writePreferredTenant,
 } from './keycloak'
 import { hasPermission, type Permission, type Role } from './roles'
+import { platformTenantFor, readGrantTenant, writeGrantTenant } from './platformAccess'
 import { AuthContext, type AuthContextValue, type AuthUser } from './AuthContext'
 import { lang, tx, appLocale } from '@/lib/i18n'
 
@@ -88,8 +89,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     const sync = () => {
-      setUser(readUser())
-      setTenantSlug(readTenantSlug())
+      const u = readUser()
+      setUser(u)
+      // Platform yöneticisi kiracıya bağlı değildir; Kiracılar ekranında seçtiği şirket
+      // (süreli erişim izniyle) şirket ekranlarını açar. İzin servislerde denetlenir.
+      setTenantSlug(readTenantSlug() ?? platformTenantFor(u?.roles ?? [], null, readGrantTenant()))
     }
 
     // Token yenilendiğinde/süresi dolduğunda React state'i senkron tut.
@@ -165,6 +169,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return
     }
     writePreferredTenant(null)
+    writeGrantTenant(null)
     // KVKK: bu cihazdaki çevrimdışı kuyruk ve anlık bildirim aboneliği silinir.
     void clearDeviceData().finally(() => keycloak.logout({ redirectUri: window.location.origin }))
   }, [])
@@ -179,6 +184,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * scope'uyla yeniden gidiliyor.
    */
   const switchTenant = useCallback((slug: string) => {
+    // Platform yöneticisi organizasyon üyesi değildir: `organization:<slug>` kapsamıyla yeniden
+    // giriş Keycloak'ta "invalid_scope" ile reddedilir. Seçilen kiracı bu sekmede tutulur ve
+    // istekler X-HR360-Tenant başlığıyla gider; veri erişimi süreli izinle açılır (Kiracılar).
+    if ((keycloak.tokenParsed as TokenClaims | undefined)?.realm_access?.roles?.includes('platform-admin')) {
+      writeGrantTenant(slug)
+      window.location.assign('/panel')
+      return
+    }
     writePreferredTenant(slug)
     void keycloak.login({
       redirectUri: window.location.href,

@@ -265,7 +265,9 @@ export function PayrollPeriodPage() {
   return (
     <>
       <PageHeader title={tx('Bordro — {0}', [periodLabel(period)])}
-        description={closed ? tx('Kapandı: {0} ({1})', [formatDateTime(period.closedAt), period.closedBy ?? '—']) : tx('Hesapla → kontrol et → kapat. Kapanan dönem değiştirilemez.')}
+        description={closed ? tx('Kapandı: {0} ({1})', [formatDateTime(period.closedAt), period.closedBy ?? '—'])
+          : period.calculatedBy ? tx('Hazırlayan: {0}. Kapanan dönem değiştirilemez.', [period.calculatedBy])
+          : tx('Hesapla → kontrol et → kapat. Kapanan dönem değiştirilemez.')}
         actions={
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" asChild><Link to="/panel/bordro">{tx('Dönemler')}</Link></Button>

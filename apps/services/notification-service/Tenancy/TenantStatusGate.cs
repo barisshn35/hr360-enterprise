@@ -15,6 +15,9 @@ namespace NotificationService.Tenancy;
 /// listesi) gateway'den gelen (X-Real-IP tasiyan) istekler yalnizca bu adreslerden
 /// kabul edilir. Servisler arasi ic cagrilar (gateway'den gecmeyen) etkilenmez.
 ///
+/// Guvenlik dalgasi 2A: platform yoneticisinin kiraci verisi istekleri sureli erisim izni
+/// ister (PlatformAccessGate).
+///
 /// Baglanti: TENANT_STATUS_DB_CONNECTION (tanimsizsa kapi devre disi). Veritabani
 /// gecici olarak okunamazsa istek gecirilir (kesinti yerine kisa sureli izin) ve
 /// uyari yazilir.
@@ -38,7 +41,22 @@ public class TenantStatusGate
 
     public async Task InvokeAsync(HttpContext context, TenantContext tenant)
     {
+        // Guvenlik dalgasi 2A: platform yoneticisi kiraci verisine yalnizca sureli erisim
+        // izniyle ulasir (bkz. PlatformAccessGate). Izinle sinirlanan istekte kiracinin durum/IP
+        // kurali platform yoneticisine uygulanmaz (eskisi gibi).
+        var viaGrant = false;
         if (!string.IsNullOrEmpty(ConnectionString)
+            && context.User?.Identity?.IsAuthenticated == true
+            && tenant.IsPlatformAdmin
+            && PlatformAccessGate.Enforced
+            && !PlatformAccessGate.IsExempt(context.Request.Path.Value))
+        {
+            if (!await PlatformAccessGate.AuthorizeAsync(context, tenant, ConnectionString!, _logger)) return;
+            viaGrant = true;
+        }
+
+        if (!viaGrant
+            && !string.IsNullOrEmpty(ConnectionString)
             && context.User?.Identity?.IsAuthenticated == true
             && !tenant.IsPlatformAdmin
             && !string.IsNullOrWhiteSpace(tenant.TenantSlug))

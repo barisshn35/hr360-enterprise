@@ -323,7 +323,10 @@ export const complianceApi = {
   /* Y15 — herkese açık uçlar oturumsuz çağrılır (jeton gönderilmez) */
   ethicsPublicInfo: (tenant: string, s?: AbortSignal) =>
     apiFetch<EthicsPublicInfo>(`${BASE}/ethics/public/${encodeURIComponent(tenant)}`, { signal: s, anonymous: true }),
-  ethicsSubmit: (tenant: string, b: { category: string; description: string; contact?: string | null }) =>
+  /** Bot koruması: imzalı zaman jetonu (form açılırken alınır, gönderimde eklenir). */
+  ethicsFormToken: (tenant: string) =>
+    apiFetch<{ token: string; minSeconds: number }>(`${BASE}/ethics/public/${encodeURIComponent(tenant)}/form-token`, { anonymous: true }),
+  ethicsSubmit: (tenant: string, b: { category: string; description: string; contact?: string | null; formToken?: string; website?: string }) =>
     apiFetch<{ followUpCode: string; message: string }>(`${BASE}/ethics/public/${encodeURIComponent(tenant)}/reports`, { method: 'POST', body: b, anonymous: true, noQueue: true }),
   /** Kod URL'de taşınmaz (kayıtlara düşmesin): gövdede gönderilir. */
   ethicsStatus: (tenant: string, code: string) =>

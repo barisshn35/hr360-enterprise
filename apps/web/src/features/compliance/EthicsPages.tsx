@@ -15,6 +15,7 @@ import { formatDate } from '@/lib/format'
 import { errMsg, PersonSelect, useAction } from '@/features/shared/kit'
 import { tx } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
+import { useFormToken } from '@/lib/formGuard'
 
 const statusView: Record<EthicsStatus, { label: string; tone: 'warning' | 'info' | 'neutral' }> = {
   Received: { label: tx('Alındı'), tone: 'warning' }, InReview: { label: tx('İnceleniyor'), tone: 'info' }, Closed: { label: tx('Kapatıldı'), tone: 'neutral' },
@@ -208,10 +209,13 @@ export function PublicEthicsPage() {
   const { tenant = '' } = useParams()
   const info = useQuery({ queryKey: ['ethics-public', tenant], queryFn: ({ signal }) => complianceApi.ethicsPublicInfo(tenant, signal), retry: false })
   const [mode, setMode] = useState<'new' | 'follow'>('new')
-  const [f, setF] = useState({ category: '', description: '', contact: '' })
+  const [f, setF] = useState({ category: '', description: '', contact: '', website: '' })
   const [issued, setIssued] = useState<string | null>(null)
-  const submit = useAction(() => complianceApi.ethicsSubmit(tenant, { category: f.category, description: f.description, contact: f.contact || null }), {
-    onDone: (r) => { setIssued(r.followUpCode); setF({ category: '', description: '', contact: '' }) },
+  const guard = useFormToken(() => complianceApi.ethicsFormToken(tenant), tenant)
+  const submit = useAction(async () => complianceApi.ethicsSubmit(tenant, {
+    category: f.category, description: f.description, contact: f.contact || null, website: f.website || undefined, formToken: await guard.take(),
+  }), {
+    onDone: (r) => { setIssued(r.followUpCode); setF({ category: '', description: '', contact: '', website: '' }) },
   })
   return (
     <PublicShell>
@@ -248,6 +252,8 @@ export function PublicEthicsPage() {
                 hint={tx('Ne, nerede, ne zaman? Kendinizi tanıtacak ayrıntılardan kaçının. En az 20 karakter.')} />
               <TextField label={tx('İletişim (isteğe bağlı)')} value={f.contact} onChange={(e) => setF({ ...f, contact: e.target.value })}
                 hint={tx('Yalnızca sizinle iletişime geçilmesini istiyorsanız. Şifreli saklanır ve yalnızca etik kurulu görebilir.')} />
+              {/* Bot tuzağı: görünmez alan (insanlar boş bırakır). */}
+              <input type="text" name="website" tabIndex={-1} autoComplete="off" aria-hidden="true" className="hidden" value={f.website} onChange={(e) => setF({ ...f, website: e.target.value })} />
               <Button onClick={() => submit.mutate(undefined)} disabled={!f.category || f.description.trim().length < 20 || submit.isPending}>{tx('Gönder')}</Button>
             </div>
           )}

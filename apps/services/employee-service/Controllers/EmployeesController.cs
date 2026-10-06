@@ -212,7 +212,16 @@ public class EmployeesController : ControllerBase
             await PlatformAccessAudit.WriteAsync(_db, HttpContext, "Employee", employee.Id.ToString(),
                 new[] { (employee.TenantSlug, (object)new { field = "employeeRecord" }) }, HttpContext.RequestAborted);
         if (IsManagerOrAbove || (CallerSub is { } sub && employee.KeycloakUserId == sub))
+        {
+            // Başkasının tam kaydı: erişim satırı (toplu görüntüleme dedektörü için; 10 dk'da bir).
+            if (CallerSub is { } viewer && employee.KeycloakUserId != viewer && !string.IsNullOrEmpty(employee.TenantSlug)
+                && Request.Headers.ContainsKey("X-Real-IP")
+                && !PlatformAccessAudit.ShouldLog(_tenant.IsPlatformAdmin, _tenant.TenantSlug, employee.TenantSlug)
+                && RecordViewLog.ShouldLog(employee.TenantSlug, viewer, employee.Id))
+                await PlatformAccessAudit.WriteAsync(_db, HttpContext, "Employee", employee.Id.ToString(),
+                    new[] { (employee.TenantSlug, (object)new { field = "employeeRecord" }) }, HttpContext.RequestAborted, action: "Viewed");
             return Ok(employee);
+        }
         return Ok(new
         {
             employee.Id, employee.FirstName, employee.LastName, employee.Email, employee.Status,

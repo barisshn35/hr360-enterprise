@@ -110,19 +110,34 @@ set_master_frontend() {
     docker compose exec -T keycloak sh -c 'exec 3<>/dev/tcp/127.0.0.1/8080' >/dev/null 2>&1 && break
     sleep 3
   done
-  docker compose exec -T -e URL="$url" -e SSL="$ssl" keycloak sh -c '
+  # Master realm'de kaba kuvvet korumasi yalnizca tenant-service yonetim API'sine kendi servis
+  # hesabiyla (hr360 realm'i, client_credentials) giriyorsa acilir. Eskiden tenant-service ayni
+  # master yonetici hesabiyla sik ve eszamanli parola girisi yapiyordu; koruma bunu saldiri sayip
+  # hesabi gecici olarak kilitliyordu (user_temporarily_disabled, guvenlik ekrani 500 veriyordu).
+  # Servis hesabi anahtari .env'de yoksa (scripts/keycloak-service-account.sh calistirilmamis)
+  # koruma acilmaz; o durumda panel erisimini IP listesiyle kisitlayin.
+  local bf=false
+  [ -n "$(get_env KEYCLOAK_TENANT_ADMIN_CLIENT_SECRET)" ] && bf=true
+  docker compose exec -T -e URL="$url" -e SSL="$ssl" -e BF="$bf" keycloak sh -c '
     K=/opt/keycloak/bin/kcadm.sh; C=/tmp/kcadm-access.config
     for i in $(seq 1 30); do
       $K config credentials --config $C --server http://127.0.0.1:8080/auth --realm master \
         --user "$KEYCLOAK_ADMIN" --password "$KEYCLOAK_ADMIN_PASSWORD" >/dev/null 2>&1 && break
       sleep 3
     done
+    # Anahtar tanimli olsa da istemci Keycloak uzerinde yoksa (betik yarida kalmis) tenant-service eski
+    # yola (master parola girisi) duser; o durumda da koruma acilmaz.
+    if [ "$BF" = true ] && [ -z "$($K get clients -r hr360 -q clientId=hr360-tenant-admin --fields id --format csv --noquotes --config $C 2>/dev/null)" ]; then
+      BF=false
+      echo "UYARI: hr360-tenant-admin istemcisi yok; master kaba kuvvet korumasi acilmadi (scripts/keycloak-service-account.sh)." >&2
+    fi
     # Yonetim/giris olaylarinin 90 gun kaydi (kim neyi degistirdi; master realm yalnizca yoneticiler).
-    # NOT: master realm'de kaba kuvvet korumasi ACILMAZ: tenant-service yonetim API'sine ayni
-    # yonetici hesabiyla sik ve eszamanli parola girisi yapar; koruma bunu saldiri sayip hesabi
-    # kilitliyor (guvenlik ekrani 500 veriyordu). Panel erisimi IP listesiyle kisitlanmalidir.
+    # Kaba kuvvet: 10 hatali denemede artan bekleme (en fazla 15 dk), kalici kilit yok.
     $K update realms/master --config $C -s "attributes.frontendUrl=$URL" -s "sslRequired=$SSL" \
-      -s eventsEnabled=true -s eventsExpiration=7776000 -s adminEventsEnabled=true -s adminEventsDetailsEnabled=false && rm -f $C
+      -s eventsEnabled=true -s eventsExpiration=7776000 -s adminEventsEnabled=true -s adminEventsDetailsEnabled=false \
+      -s "bruteForceProtected=$BF" -s permanentLockout=false -s failureFactor=10 -s waitIncrementSeconds=60 \
+      -s maxFailureWaitSeconds=900 -s maxDeltaTimeSeconds=43200 && rm -f $C
+    [ "$BF" = true ] && echo "Master realm kaba kuvvet korumasi: acik" || echo "Master realm kaba kuvvet korumasi: kapali (servis hesabi yok)"
   ' || die "master realm adresi guncellenemedi"
 }
 

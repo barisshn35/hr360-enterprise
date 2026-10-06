@@ -16,7 +16,7 @@ import time
 import urllib.parse
 
 sys.path.insert(0, os.path.dirname(__file__))
-from common import AYSE, FAIL, api, check, http  # noqa: E402
+from common import form_token, AYSE, FAIL, api, check, http  # noqa: E402
 
 G = "/api/governance"
 ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
@@ -184,8 +184,17 @@ check("Bilinmeyen şirket 404", code == 404, code)
 UA = "TEST-UA-izlenebilir/9.9"
 SPOOF_IP = "203.0.113.77"
 CONTACT = "ihbarci-test@example.invalid"
+# Güvenlik dalgası 2B: herkese açık form imzalı zaman jetonu ister; görünmez tuzak alanı dolu gelirse kayıt yapılmaz.
+code, _ = http("POST", f"{G}/ethics/public/demo/reports", {"category": "Fraud", "description": "TEST-ETIK jetonsuz bildirim denemesi yapılıyor."})
+check("Bot koruması: jetonsuz etik bildirimi reddedilir", code == 400, code)
+code, bot = http("POST", f"{G}/ethics/public/demo/reports", {"category": "Fraud", "description": "TEST-ETIK bot tuzağı doldurulmuş bildirim.",
+                                                              "website": "http://spam.example", "formToken": form_token(f"{G}/ethics/public/demo/form-token")})
+bot_hash = hashlib.sha256(bot["followUpCode"].replace("-", "").encode()).hexdigest() if code == 200 and bot.get("followUpCode") else "x"
+check("Bot tuzağı: başarı görünür ama kayıt yapılmaz",
+      code == 200 and psql(f"""SELECT count(*) FROM governance_ethics_reports WHERE "CodeHash" = '{bot_hash}'""") == "0", (code, bot))
 code, rep = http("POST", f"{G}/ethics/public/demo/reports",
-                 {"category": "Fraud", "description": "TEST-ETIK fatura usulsüzlüğü şüphesi, ayrıntılar ekte değil.", "contact": CONTACT},
+                 {"category": "Fraud", "description": "TEST-ETIK fatura usulsüzlüğü şüphesi, ayrıntılar ekte değil.", "contact": CONTACT,
+                  "formToken": form_token(f"{G}/ethics/public/demo/form-token")},
                  {"User-Agent": UA, "X-Real-IP": SPOOF_IP, "X-Forwarded-For": SPOOF_IP})
 fcode = rep.get("followUpCode") if code == 200 else None
 check("Oturumsuz anonim bildirim, takip kodu bir kez döner", code == 200 and fcode and len(fcode) == 19, (code, rep))

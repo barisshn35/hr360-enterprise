@@ -164,7 +164,7 @@ public class PayrollController : ControllerBase
         return Ok(periods.Select(p =>
         {
             var t = totals.FirstOrDefault(x => x.PeriodId == p.Id);
-            return new { p.Id, p.Year, p.Month, status = p.Status.ToString(), p.CalculatedAt, p.ClosedAt, p.ClosedBy,
+            return new { p.Id, p.Year, p.Month, status = p.Status.ToString(), p.CalculatedAt, calculatedBy = p.CalculatedByName, p.ClosedAt, p.ClosedBy,
                 employeeCount = t?.Count ?? 0, totalGross = t?.Gross ?? 0, totalNet = t?.Net ?? 0, totalEmployerCost = t?.Cost ?? 0 };
         }));
     }
@@ -224,7 +224,7 @@ public class PayrollController : ControllerBase
         if (err is not null) return err;
         if (body.Amount is <= 0 or > 100_000_000) return BadRequest(new { message = "Tutar sıfırdan büyük olmalı" });
         if (string.IsNullOrWhiteSpace(body.Description) || body.Description.Length > 200) return BadRequest(new { message = "Açıklama gerekli (en fazla 200 karakter)" });
-        var a = new PayrollAdjustment { PeriodId = id, EmployeeId = body.EmployeeId, Kind = body.Kind, Amount = Math.Round(body.Amount, 2), Description = body.Description.Trim() };
+        var a = new PayrollAdjustment { PeriodId = id, EmployeeId = body.EmployeeId, Kind = body.Kind, Amount = Math.Round(body.Amount, 2), Description = body.Description.Trim(), CreatedBy = UserId };
         _db.PayrollAdjustments.Add(a);
         RequireRecalculation(period!);
         await _db.SaveChangesAsync(ct);
@@ -340,6 +340,9 @@ public class PayrollController : ControllerBase
         }
         period.Status = PayrollPeriodStatus.Calculated;
         period.CalculatedAt = DateTimeOffset.UtcNow;
+        // Görevler ayrılığı: hazırlayan kayda geçer, aynı kişi dönemi kapatamaz.
+        period.CalculatedBy = UserId;
+        period.CalculatedByName = UserName ?? UserId;
         await _db.SaveChangesAsync(ct);
         return Ok(new { period.Id, status = period.Status.ToString(), employeeCount = current.Count });
     }
@@ -367,6 +370,12 @@ public class PayrollController : ControllerBase
         var (err, period) = await EditablePeriodAsync(id, ct);
         if (err is not null) return err;
         if (period!.Status != PayrollPeriodStatus.Calculated) return BadRequest(new { message = "Önce dönemi hesaplayın" });
+        var sod = await SodViolationAsync(period, ct);
+        if (sod is not null)
+        {
+            await AuditAsync("PayrollPeriod", id.ToString(), "SodBlocked", new { period.Year, period.Month, code = sod.Code }, period.TenantSlug);
+            return Conflict(new { message = sod.Message, code = sod.Code });
+        }
         period.Status = PayrollPeriodStatus.Closed;
         period.ClosedAt = DateTimeOffset.UtcNow;
         period.ClosedBy = UserName ?? UserId;
@@ -374,6 +383,58 @@ public class PayrollController : ControllerBase
         await _db.SaveChangesAsync(ct);
         await AuditAsync("PayrollPeriod", id.ToString(), "Closed", new { period.Year, period.Month }, period.TenantSlug);
         return Ok(new { period.Id, status = period.Status.ToString(), period.ClosedAt });
+    }
+
+    /// <summary>Kiracının görevler ayrılığı ayarı (governance-service yazar; satır yoksa ya da okunamazsa kural AÇIK).</summary>
+    private async Task<bool> SodEnforcedAsync(CancellationToken ct)
+    {
+        try
+        {
+            var v = await _db.Database.SqlQueryRaw<bool>(
+                "SELECT \"PayrollSod\" AS \"Value\" FROM governance_security_settings WHERE \"TenantSlug\" = {0}", _tenant.TenantSlug ?? "")
+                .ToListAsync(ct);
+            return v.Count == 0 || v[0];
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// Görevler ayrılığı denetimi: hesaplayan / elle kalem giren kapatamaz; ayrıca bu dönemde ilk kez
+    /// uygulanacak IBAN değişikliğini yapan kişi de kapatamaz. IBAN değişikliği engagement-service'in
+    /// denetim kaydından (audit_log, EmployeeProfile, "Iban" alanı değişti) okunur: önceki kapanmış
+    /// dönemden bu yana değişen ve bu dönemde pusulası olan çalışanlar sayılır.
+    /// </summary>
+    private async Task<SegregationOfDuties.Violation?> SodViolationAsync(PayrollPeriod period, CancellationToken ct)
+    {
+        if (!await SodEnforcedAsync(ct)) return null;
+        var authors = await _db.PayrollAdjustments.AsNoTracking()
+            .Where(a => a.PeriodId == period.Id && a.SourceId == null && a.CreatedBy != null)
+            .Select(a => a.CreatedBy!).Distinct().ToListAsync(ct);
+        var since = await _db.PayrollPeriods.AsNoTracking()
+            .Where(p => p.Id != period.Id && p.ClosedAt != null)
+            .MaxAsync(p => (DateTimeOffset?)p.ClosedAt, ct) ?? DateTimeOffset.MinValue;
+        var ibanEdits = 0;
+        try
+        {
+            ibanEdits = await _db.Database.SqlQueryRaw<int>("""
+                SELECT count(DISTINCT pr."EmployeeId")::int AS "Value"
+                FROM audit_log l
+                JOIN engagement_profiles pr ON pr."Id"::text = l."EntityId" AND pr."TenantSlug" = l."TenantSlug"
+                WHERE l."TenantSlug" = {0} AND l."Service" = 'engagement-service' AND l."EntityType" = 'EmployeeProfile'
+                  AND l."Action" IN ('Created', 'Updated') AND l."Changes" ? 'Iban'
+                  AND l."UserId" = {1} AND l."OccurredAt" > {2}
+                  AND pr."EmployeeId" IN (SELECT s."EmployeeId" FROM compensation_payslips s WHERE s."PeriodId" = {3})
+                """, period.TenantSlug, UserId, since == DateTimeOffset.MinValue ? new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero) : since, period.Id)
+                .FirstAsync(ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            HttpContext.RequestServices.GetService<ILogger<PayrollAudit>>()?.LogWarning(ex, "IBAN değişikliği denetimi okunamadı");
+        }
+        return SegregationOfDuties.Evaluate(new SegregationOfDuties.CloseCheck(UserId, period.CalculatedBy, authors, ibanEdits), enforced: true);
     }
 
     public record ReopenInput(string Reason);

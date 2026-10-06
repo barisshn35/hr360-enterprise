@@ -18,6 +18,7 @@ import { useDirectory } from '@/api/directory'
 import { ImportEmployeesModal } from '@/features/employees/ImportEmployeesModal'
 import { PlanGate, errMsg } from '@/features/shared/kit'
 import { tx } from '@/lib/i18n'
+import { requestTrace } from '@/lib/watermark'
 
 type Dataset = { id: string; title: string; detail: string; icon: React.ElementType; load: () => Promise<Record<string, unknown>[]> }
 
@@ -64,7 +65,8 @@ export function ImportExportPage() {
     setBusy(d.id)
     try {
       const rows = await d.load()
-      await download(`hr360-${d.id}-${new Date().toISOString().slice(0, 10)}.xlsx`, { [d.title]: rows })
+      const trace = await requestTrace(`xlsx:${d.id}`, { format: 'xlsx', rows: rows.length })
+      await download(`hr360-${d.id}-${new Date().toISOString().slice(0, 10)}.xlsx`, { [d.title]: rows }, { watermark: trace?.text })
       toast.ok(tx('{0} satır indirildi', [rows.length]))
     } catch (e) { toast.stop(errMsg(e)) } finally { setBusy(null) }
   }
@@ -75,7 +77,8 @@ export function ImportExportPage() {
       for (const d of datasets) {
         try { sheets[d.title] = await d.load() } catch { sheets[d.title] = [] }
       }
-      await download(`hr360-tum-veriler-${new Date().toISOString().slice(0, 10)}.xlsx`, sheets)
+      const trace = await requestTrace('xlsx:all', { format: 'xlsx', rows: Object.values(sheets).reduce((n, r) => n + r.length, 0) })
+      await download(`hr360-tum-veriler-${new Date().toISOString().slice(0, 10)}.xlsx`, sheets, { watermark: trace?.text })
       toast.ok(tx('Tüm veriler tek dosyada indirildi'))
     } catch (e) { toast.stop(errMsg(e)) } finally { setBusy(null) }
   }

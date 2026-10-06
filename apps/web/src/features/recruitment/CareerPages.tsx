@@ -20,6 +20,7 @@ import { formatDate, formatDateTime } from '@/lib/format'
 import { errMsg, useAction } from '@/features/shared/kit'
 import { printLetter } from './RecruitmentPlus'
 import { tx } from '@/lib/i18n'
+import { useFormToken } from '@/lib/formGuard'
 
 function Shell({ company, children }: { company?: string; children: React.ReactNode }) {
   return (
@@ -55,10 +56,12 @@ function ApplyForm({ tenant, job, notice, version, poolMonths, onDone }: {
 }) {
   const [f, setF] = useState({ firstName: '', lastName: '', email: '', phone: '', coverNote: '', resumeText: '', consent: false, website: '' })
   const [error, setError] = useState<string>()
-  const apply = useAction(() => careerApi.apply(tenant, job.id, {
+  const guard = useFormToken(() => careerApi.formToken(tenant), tenant)
+  const apply = useAction(async () => careerApi.apply(tenant, job.id, {
     firstName: f.firstName.trim(), lastName: f.lastName.trim(), email: f.email.trim(), phone: f.phone.trim() || undefined,
     coverNote: f.coverNote.trim() || undefined, resumeText: f.resumeText.trim() || undefined,
     talentPoolConsent: f.consent, privacyNoticeVersion: version, website: f.website || undefined,
+    formToken: await guard.take(),
   }), { onDone })
   const submit = (e: React.FormEvent) => {
     e.preventDefault()

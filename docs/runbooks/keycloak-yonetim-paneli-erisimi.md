@@ -57,3 +57,6 @@ Emin değilseniz nginx katmanını da ekleyin: `scripts/keycloak-admin-access.sh
   paneli yeniden açar (sunucu kabuğu yeterli, panele erişim gerekmez).
 - Uygulamanın kendi servisleri Keycloak yönetim API'sine iç ağdan (`keycloak:8080`) erişir;
   bu ayar onları etkilemez.
+- tenant-service yönetim API'sine hr360 realm'indeki `hr360-tenant-admin` servis hesabıyla girer
+  (`scripts/keycloak-service-account.sh`). Bu hesap `.env`'de tanımlı ve Keycloak'ta varsa betik
+  master realm'de kaba kuvvet korumasını da açar (10 hatalı denemede artan bekleme, en fazla 15 dk).

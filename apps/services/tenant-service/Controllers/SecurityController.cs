@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using TenantService.Data;
+using TenantService.Security;
 using TenantService.Services;
 
 namespace TenantService.Controllers;
@@ -135,24 +136,56 @@ public class SecurityController : ControllerBase
     }
 
     [HttpGet("mfa")]
-    public async Task<IActionResult> GetMfa(CancellationToken ct)
+    public async Task<IActionResult> GetMfa([FromServices] MfaPolicyService mfa, CancellationToken ct)
     {
         var t = await TenantAsync();
         if (t is null) return NotFound();
+        var policy = MfaPolicyRules.Normalize(await _db.Tenants.Where(x => x.Slug == t.Value.Slug).Select(x => x.MfaPolicy).FirstOrDefaultAsync(ct));
         var ids = await _kc.ListOrganizationMemberIdsAsync(t.Value.OrgId, ct);
-        var rows = new List<object>();
-        int withOtp = 0, pending = 0;
-        foreach (var id in ids.Take(500))
+        var rows = await mfa.MembersAsync(t.Value.OrgId, policy, ct);
+        // Passkey (WebAuthn) de ikinci adim sayilir; "Etkin" = TOTP ya da passkey.
+        var withOtp = rows.Count(r => r.HasOtp || r.HasPasskey);
+        var pending = rows.Count(r => !r.HasOtp && !r.HasPasskey && r.PendingSetup);
+        return Ok(new
         {
-            var (has, pend, username) = await _kc.GetOtpStatusAsync(id, ct);
-            if (has) withOtp++;
-            else if (pend) pending++;
-            rows.Add(new { userId = id, username, hasOtp = has, pendingSetup = pend && !has });
-        }
-        return Ok(new { members = ids.Count, withOtp, pendingSetup = pending, without = ids.Count - withOtp - pending, users = rows });
+            policy,
+            privilegedRoles = MfaPolicyRules.PrivilegedRoles,
+            platformAdminRequired = MfaPolicyService.PlatformAdminRequired,
+            members = ids.Count, withOtp, pendingSetup = pending, without = ids.Count - withOtp - pending,
+            requiredWithout = rows.Count(r => r.Required && !r.HasOtp && !r.HasPasskey),
+            users = rows.Select(r => new
+            {
+                userId = r.UserId, username = r.Username, hasOtp = r.HasOtp, hasPasskey = r.HasPasskey,
+                pendingSetup = r.PendingSetup && !r.HasOtp && !r.HasPasskey, privileged = r.Privileged, required = r.Required,
+            }),
+        });
     }
 
-    /// <summary>OTP'si olmayan tüm şirket kullanıcılarına bir sonraki girişte kurulum zorunluluğu ekler.</summary>
+    public record MfaPolicyInput(string Policy);
+
+    /// <summary>
+    /// Guvenlik dalgasi 2A: iki adimli dogrulama politikasi (off | privileged | all). Hemen
+    /// uygulanir ve tenant-service duzenli olarak yeniden uygular (sonradan role atananlar,
+    /// dogrulayicisini silenler).
+    /// </summary>
+    [HttpPut("mfa/policy")]
+    public async Task<IActionResult> SetMfaPolicy(MfaPolicyInput body, [FromServices] MfaPolicyService mfa, CancellationToken ct)
+    {
+        var t = await TenantAsync();
+        if (t is null) return NotFound();
+        if (!MfaPolicyRules.IsValid(body.Policy))
+            return BadRequest(new { message = "Politika off, privileged ya da all olmalı." });
+        var tenant = await _db.Tenants.FirstAsync(x => x.Slug == t.Value.Slug, ct);
+        tenant.MfaPolicy = body.Policy == MfaPolicyRules.Off ? null : body.Policy;
+        await _db.SaveChangesAsync(ct);
+        var required = await mfa.ApplyTenantAsync(t.Value.Slug, ct);
+        return Ok(new { policy = MfaPolicyRules.Normalize(tenant.MfaPolicy), required });
+    }
+
+    /// <summary>
+    /// Ikinci adimi (TOTP ya da passkey) olmayan tum sirket kullanicilarina bir sonraki giriste
+    /// kurulum zorunlulugu ekler (tek seferlik; kalici kural icin mfa/policy "all").
+    /// </summary>
     [HttpPost("mfa/enforce")]
     public async Task<IActionResult> EnforceMfa(CancellationToken ct)
     {
@@ -162,12 +195,37 @@ public class SecurityController : ControllerBase
         var changed = 0;
         foreach (var id in ids)
         {
-            var (has, pend, _) = await _kc.GetOtpStatusAsync(id, ct);
-            if (has || pend) continue;
+            var st = await _kc.GetUserMfaStateAsync(id, ct);
+            if (st is null || !MfaPolicyRules.NeedsSetup(true, st.CredentialTypes, st.RequiredActions)) continue;
             await _kc.RequireOtpSetupAsync(id, ct);
             changed++;
         }
         return Ok(new { required = changed, members = ids.Count });
+    }
+
+    /* ------------------------------------------------- Güvenlik dalgası 2A: şüpheli giriş */
+
+    /// <summary>Son 90 gunun supheli giris uyarilari (yeni ag, art arda hatali giris). IP tutulmaz.</summary>
+    [HttpGet("login-alerts")]
+    public async Task<IActionResult> LoginAlerts(CancellationToken ct)
+    {
+        var t = await TenantAsync();
+        if (t is null) return NotFound();
+        var since = DateTimeOffset.UtcNow.AddDays(-90);
+        var rows = await _db.Database.SqlQuery<LoginAlertRow>($"""
+            SELECT "Id", "Kind", "Username", "Count", "CreatedAt" FROM tenant_security_alerts
+            WHERE "TenantSlug" = {t.Value.Slug} AND "CreatedAt" >= {since} ORDER BY "CreatedAt" DESC LIMIT 100
+            """).ToListAsync(ct);
+        return Ok(rows);
+    }
+
+    public sealed class LoginAlertRow
+    {
+        public Guid Id { get; set; }
+        public string Kind { get; set; } = "";
+        public string? Username { get; set; }
+        public int Count { get; set; }
+        public DateTimeOffset CreatedAt { get; set; }
     }
 
     /* ------------------------------------------------------------ G22 IP kısıtı */

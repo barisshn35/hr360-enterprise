@@ -18,6 +18,7 @@ public class TenantDbContext : DbContext
     public DbSet<DirectorySettings> DirectorySettings => Set<DirectorySettings>();
     public DbSet<DirectoryUser> DirectoryUsers => Set<DirectoryUser>();
     public DbSet<CustomDomain> CustomDomains => Set<CustomDomain>();
+    public DbSet<PlatformAccessGrant> PlatformAccessGrants => Set<PlatformAccessGrant>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -37,5 +38,9 @@ public class TenantDbContext : DbContext
         modelBuilder.Entity<DirectorySettings>().ToTable("tenant_directory_settings");
         modelBuilder.Entity<DirectoryUser>().ToTable("tenant_directory_users");
         modelBuilder.Entity<CustomDomain>().ToTable("tenant_custom_domains");
+
+        // Guvenlik dalgasi 2A - scripts/sql/2026-10-16_identity_security.sql. Platform seviyesinde:
+        // kiraci yoneticisi yalnizca kendi kiracisinin satirlarini (TenantSlug ile acikca) gorur.
+        modelBuilder.Entity<PlatformAccessGrant>().ToTable("platform_access_grants");
     }
 }

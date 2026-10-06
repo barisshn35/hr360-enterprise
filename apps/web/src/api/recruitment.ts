@@ -322,6 +322,8 @@ export interface PublicApplyInput {
   talentPoolConsent: boolean
   privacyNoticeVersion: string
   website?: string
+  /** Bot koruması: careerApi.formToken ile alınan jeton. */
+  formToken?: string
 }
 
 export interface PublicApplyResult {
@@ -466,6 +468,9 @@ export const recruitmentApi = {
 export const careerApi = {
   jobs: (tenant: string, signal?: AbortSignal) =>
     apiFetch<PublicJobs>(`${BASE}/public/${encodeURIComponent(tenant)}/jobs`, { signal, anonymous: true }),
+  /** Bot koruması: imzalı zaman jetonu (form açılırken alınır, gönderimde eklenir). */
+  formToken: (tenant: string) =>
+    apiFetch<{ token: string; minSeconds: number }>(`${BASE}/public/${encodeURIComponent(tenant)}/form-token`, { anonymous: true }),
   apply: (tenant: string, jobId: string, input: PublicApplyInput) =>
     apiFetch<PublicApplyResult>(`${BASE}/public/${encodeURIComponent(tenant)}/jobs/${jobId}/apply`, { method: 'POST', body: input, anonymous: true, noQueue: true }),
   selfService: (tenant: string, token: string, signal?: AbortSignal) =>

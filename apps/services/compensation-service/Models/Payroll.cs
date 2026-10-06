@@ -13,6 +13,9 @@ public class PayrollPeriod : ITenantOwned
     public int Month { get; set; }
     public PayrollPeriodStatus Status { get; set; } = PayrollPeriodStatus.Open;
     public DateTimeOffset? CalculatedAt { get; set; }
+    /// <summary>Görevler ayrılığı: son hesaplayanın kullanıcı kimliği (sub) ve adı. Hesaplayan dönemi kapatamaz.</summary>
+    public string? CalculatedBy { get; set; }
+    public string? CalculatedByName { get; set; }
     public DateTimeOffset? ClosedAt { get; set; }
     public string? ClosedBy { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
@@ -48,6 +51,8 @@ public class PayrollAdjustment : ITenantOwned
     public string Description { get; set; } = "";
     /// <summary>Kaynağı başka bir kayıtsa (ör. avans taksiti) onun kimliği.</summary>
     public Guid? SourceId { get; set; }
+    /// <summary>Elle girenin kullanıcı kimliği (sub); otomatik kalemlerde (avans taksiti) boş. Görevler ayrılığı için.</summary>
+    public string? CreatedBy { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 

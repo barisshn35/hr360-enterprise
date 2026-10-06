@@ -111,9 +111,21 @@ public class PublicCareerController : ControllerBase
         });
     }
 
+    /// <summary>
+    /// Bot koruması (güvenlik dalgası 2B): başvuru formu açılırken alınan imzalı zaman jetonu. Gönderim en
+    /// erken 3 sn, en geç 2 saat sonra ve bir kez kabul edilir; "Website" görünmez tuzak alanıyla birlikte.
+    /// </summary>
+    [HttpGet("form-token")]
+    public async Task<IActionResult> FormToken(string tenantSlug, CancellationToken ct)
+    {
+        var t = await ResolveAsync(tenantSlug, ct);
+        if (t is null) return NotFoundPage();
+        return Ok(new { token = FormGuard.Shared.Issue("career:" + tenantSlug), minSeconds = (int)FormGuard.MinAge.TotalSeconds });
+    }
+
     public record ApplyRequest(
         string? FirstName, string? LastName, string? Email, string? Phone, string? CoverNote, string? ResumeText,
-        bool TalentPoolConsent, string? PrivacyNoticeVersion, string? Website);
+        bool TalentPoolConsent, string? PrivacyNoticeVersion, string? Website, string? FormToken = null);
 
     [HttpPost("jobs/{id:guid}/apply")]
     public async Task<IActionResult> Apply(string tenantSlug, Guid id, [FromBody] ApplyRequest req, CancellationToken ct)
@@ -139,6 +151,9 @@ public class PublicCareerController : ControllerBase
 
         // Bot tuzağı: görünmez alan doldurulduysa kayıt yapılmadan başarı döner.
         if (!string.IsNullOrEmpty(req.Website)) return Ok(new { received = true });
+        var guard = FormGuard.Shared.Verify(req.FormToken, "career:" + tenantSlug);
+        if (guard != FormTokenStatus.Ok)
+            return BadRequest(new { message = FormGuard.Message(guard), code = guard == FormTokenStatus.TooFast ? "form_too_fast" : "form_token" });
 
         var ne = DuplicateDetector.NormalizeEmail(email);
         var np = DuplicateDetector.NormalizePhone(phone);

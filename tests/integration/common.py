@@ -44,6 +44,18 @@ def http(method, path, body=None, headers=None, form=None, raw_body=None):
         return code, txt
 
 
+def form_token(path, wait=True):
+    """Herkese açık form jetonu (güvenlik dalgası 2B): GET path → {token, minSeconds}. Sunucu jetonu en
+    erken minSeconds sonra kabul eder; wait=True ise o kadar beklenir. Jeton tek kullanımlıktır."""
+    import time
+    code, r = http("GET", path)
+    if code != 200:
+        return None
+    if wait:
+        time.sleep(float(r.get("minSeconds", 3)) + 0.3)
+    return r["token"]
+
+
 def check(name, cond, detail=""):
     print(("OK  " if cond else "XX  ") + name + ("" if cond else f"  -> {detail}"))
     if not cond:

@@ -29,6 +29,12 @@ builder.Services.AddSingleton<TenantService.Services.LogoStorageService>();
 // calisir bir demo tenant'i olmasini saglar - bkz. dosyanin basindaki aciklama.
 builder.Services.AddHostedService<DemoTenantSeederHostedService>();
 builder.Services.AddHostedService<KeycloakHardeningHostedService>();
+// Guvenlik dalgasi 2A: iki adimli dogrulama politikasi, supheli giris tespiti (Keycloak
+// LOGIN/LOGIN_ERROR olaylari), platform yoneticisi sureli erisim izni bildirimleri.
+builder.Services.AddScoped<SecurityNotifier>();
+builder.Services.AddScoped<MfaPolicyService>();
+builder.Services.AddHostedService<MfaPolicyHostedService>();
+builder.Services.AddHostedService<LoginWatchHostedService>();
 // Dalga 5d (Y26/G28): SCIM 2.0 + LDAP/AD dizin saglama, ozel alan adi dogrulama.
 builder.Services.AddScoped<TenantService.Directory.ScimTokenService>();
 builder.Services.AddScoped<TenantService.Directory.DirectoryProvisioningService>();

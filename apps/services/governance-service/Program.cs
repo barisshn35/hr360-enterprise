@@ -53,6 +53,9 @@ builder.Services.AddHostedService<GovernanceService.Infrastructure.AuditChainGua
 builder.Services.AddHostedService<GovernanceService.Infrastructure.Chat.ChatOutboxWorker>();
 builder.Services.AddHostedService<GovernanceService.Infrastructure.Chat.ChatDigestWorker>();
 builder.Services.AddHostedService<GovernanceService.Controllers.SavedReportWorker>();
+// Güvenlik dalgası 2B: toplu görüntüleme (sızdırma) dedektörü ve erişim gözden geçirme hatırlatmaları.
+builder.Services.AddHostedService<GovernanceService.Infrastructure.MassViewWorker>();
+builder.Services.AddHostedService<GovernanceService.Controllers.AccessReviewWorker>();
 
 
 

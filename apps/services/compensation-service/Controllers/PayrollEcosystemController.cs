@@ -171,8 +171,12 @@ public class PayrollEcosystemController : ControllerBase
         e.DownloadedBy = UserName;
         if (e.SingleUse) { e.Cipher = null; e.PurgedAt = DateTimeOffset.UtcNow; }
         await _db.SaveChangesAsync(ct);
+        var trace = CompensationService.Auditing.TraceCode.New();
         await AuditAsync("PayrollExport", e.Id.ToString(), e.Kind is "SgkAphb" or "SgkHires" or "Bank" ? "Exported" : "Downloaded",
-            new { field = e.Kind, e.FileName, e.RowCount }, e.TenantSlug);
+            new { field = e.Kind, e.FileName, e.RowCount, traceCode = trace }, e.TenantSlug);
+        // Banka/SGK/muhasebe dosyaları dış sistemlerin biçimindedir; içine filigran satırı eklenmez.
+        // İz kodu yalnızca denetim kaydında ve yanıt başlığında taşınır.
+        Response.Headers["X-HR360-Trace"] = trace;
         return File(plain, e.ContentType + (e.ContentType.StartsWith("text/") ? "; charset=utf-8" : ""), e.FileName);
     }
 

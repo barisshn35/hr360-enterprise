@@ -141,11 +141,9 @@ Gerekirse kancanın yeri, çağrı yerinde `FileSniffer.Check` sonrasıdır ve d
   silinmesi de görünür. Sorun olursa `hr360_audit_chain_problems > 0` → `DenetimZinciriBozuk` alarmı.
   Son sonuç Gizlilik › denetim zinciri panelinde.
 - **Keycloak yönetim girişi (master realm):** giriş ve yönetim olayları 90 gün saklanır
-  (`scripts/keycloak-admin-access.sh` her çalıştığında uygular). Kaba kuvvet koruması master'da
-  açılmadı: tenant-service yönetim API'sine aynı yönetici hesabıyla sık ve eşzamanlı parola girişi
-  yaptığından koruma hesabı kilitliyor (denendi, güvenlik ekranı 500 verdi). Kalıcı çözüm tenant-service'in
-  ayrı bir servis hesabına (client credentials) geçmesi; o zamana kadar paneli IP'ye kısıtlayın:
-  `scripts/keycloak-admin-access.sh ip <adres>/32`.
+  (`scripts/keycloak-admin-access.sh` her çalıştığında uygular). Kaba kuvvet koruması ilk başta
+  açılamadı (tenant-service aynı yönetici hesabıyla sık parola girişi yapıyor, koruma hesabı
+  kilitliyordu); dalga 2A'da tenant-service servis hesabına geçti ve koruma açıldı (aşağıda).
 - **Konteyner sertleştirme:** .NET servisleri ve arayüz salt okunur kök dosya sistemiyle (yalnızca
   bellek içi `/tmp` yazılabilir), tüm Linux yetkileri düşürülmüş ve `no-new-privileges` ile çalışır;
   ML servisi ve gateway'de `no-new-privileges` (ML kök dosya sistemi model indirmesi için yazılabilir).
@@ -160,6 +158,56 @@ Gerekirse kancanın yeri, çağrı yerinde `FileSniffer.Check` sonrasıdır ve d
   (90 gün) saklar; `.github/dependabot.yml` haftalık toplu bağımlılık PR'ları açar. İmaj imzalama
   imajlar bir kayıt deposuna gönderilmediği için yapılmadı.
 - **Kurulum:** `install.sh` güncelleme yolunda `--domain/--tls` ve `--keycloak-admin` artık uygulanır.
+
+## Güvenlik dalgası 2A — kimlik (Ekim 2026)
+
+- **tenant-service Keycloak servis hesabı:** yönetim API'sine artık hr360 realm'indeki gizli
+  `hr360-tenant-admin` istemcisiyle (client credentials) girilir; master yönetici parolası
+  tenant-service'e verilmez. Servis hesabının realm-management rolleri yalnızca gerekenler
+  (canlı Keycloak 25'te tek tek denendi): `manage-users` (kullanıcı, rol atama, oturum, davet),
+  `manage-realm` (organizasyonlar — KC 25 organizasyon API'si bunu ister —, realm rolleri, giriş
+  akışı, gerekli eylemler), `manage-identity-providers` (kurumsal SSO), `manage-clients` (özel alan
+  adının hr360-web'e eklenmesi), `view-events` (şüpheli giriş). Master realm'e yetkisi yoktur.
+  Jeton süreç genelinde tek (eşzamanlı istekler ayrı giriş yapmaz). Kurulum/güncelleme:
+  `scripts/keycloak-service-account.sh` (idempotent; anahtarı `.env`'e
+  `KEYCLOAK_TENANT_ADMIN_CLIENT_SECRET` olarak üretir, istemciyi oluşturur/eşitler, jetonla dener,
+  başarılıysa `KEYCLOAK_TENANT_ADMIN_LEGACY_*` değişkenlerini boşaltıp tenant-service'i yeniler).
+  Anahtar yoksa ya da Keycloak reddederse tenant-service eski yola (master parola) düşer ve uyarı yazar.
+- **Master realm kaba kuvvet koruması:** `scripts/keycloak-admin-access.sh` servis hesabı anahtarı
+  `.env`'de varsa ve istemci Keycloak'ta tanımlıysa korumayı açar (10 hatalı denemede artan
+  bekleme, en fazla 15 dk, kalıcı kilit yok); yoksa kapalı bırakır ve uyarır.
+- **Parola politikası (hr360 realm):** en az 12 karakter, kullanıcı adı ve e-posta olamaz, son 3
+  parola tekrar kullanılamaz. Mevcut parolalar geçerli kalır; politika parola değişiminde uygulanır.
+  Test/demo parolaları (seed_demo.py ve rotate-passwords.py `Hr360-…` 22+ karakter, install.sh
+  üretimi 24 karakter) uyumludur. Keycloak realm'i içeri alırken (ilk kurulum) şablondaki
+  parolaları da politikaya göre denetler ve uymazsa HİÇ AÇILMAZ; bu yüzden `install.sh` elle girilen
+  demo.admin/platform.admin parolalarında en az 12 karakter ister. SCIM/LDAP/kayıt kullanıcıları
+  parolasız oluşturulur (parolayı kendileri belirler ya da LDAP doğrular).
+- **İki adımlı doğrulama politikası:** Güvenlik ekranında şirket başına “Zorunlu değil / İK,
+  yönetici ve platform rollerinde zorunlu / Herkes için zorunlu”. Zorunlu olup ne TOTP ne passkey'i
+  olan kullanıcıya Keycloak'ta `CONFIGURE_TOTP` gerekli eylemi eklenir; tenant-service kuralı
+  10 dakikada bir yeniden uygular (sonradan role atananlar, doğrulayıcısını silenler). Yetkili
+  roller: `tenant-admin`, `hr-admin`, `manager`. Platform yöneticisi hesapları kiracıya bağlı
+  olmadığından ayrı anahtar: `MFA_REQUIRE_PLATFORM_ADMIN=true` (varsayılan kapalı: entegrasyon
+  testleri platform.admin ile tarayıcıdan parola girişi yapar). Demo şirketinde politikayı açmak
+  test kullanıcılarının girişini (doğrulayıcı kurulumu) gerektirir; testler bu yüzden açmaz.
+- **Şüpheli giriş tespiti:** hr360 realm'inde yalnızca `LOGIN` ve `LOGIN_ERROR` olayları 30 gün
+  saklanır. tenant-service bunları dakikada bir okur: kullanıcının kayıtlı ağları dışından (IPv4 /24,
+  IPv6 /48) başarılı girişte kullanıcıya “Yeni bir ağdan giriş” bildirimi; 10 dakikada 5+ hatalı
+  girişte (aynı kullanıcı ya da aynı ağ) İK ve şirket yöneticilerine bildirim + `audit_log`
+  (`SuspiciousLogin`). Aynı konu için saatte bir uyarı; kullanıcının ilk gözlemi yalnızca kaydedilir.
+  KVKK: ham IP saklanmaz (ağ öneki `TENANT_SECRET_KEY`'den türetilen anahtarla HMAC), GeoIP/dış servis
+  yok; Keycloak olayları cihaz/tarayıcı bilgisi taşımadığından “yeni cihaz” ayrımı yapılmaz.
+  Durum `tenant_login_networks` ve `tenant_security_alerts` tablolarında (180 gün).
+- **Platform yöneticisi “cam kırma” erişimi:** platform yöneticisi kiracı verisine yalnızca
+  Kiracılar ekranından açtığı gerekçeli, en fazla 4 saatlik izinle (`platform_access_grants`)
+  ulaşır. 14 servisin kiracı kapısı (`Tenancy/PlatformAccessGate.cs`) izni denetler, isteği o
+  kiracıyla sınırlar (kiracı filtresi uygulanır) ve her erişimi (yöntem + kimliksiz yol, 10 dk'da
+  bir) şirketin `audit_log`'una yazar. Şirket yöneticileri bildirim alır, Güvenlik ekranında etkin
+  ve geçmiş izinleri görür ve kapatabilir. Kiracı listesi, faturalar, plan ve kayıt izinsiz çalışır.
+  Acil geri dönüş: `PLATFORM_ACCESS_GRANTS=off` (eski davranış). tenant-service'in kendi kiracı
+  uçları (my-tenant, güvenlik) platform yöneticisinde organizasyon üyeliğine bağlıdır; bu kapıya
+  dahil değildir.
 
 ## Bilinen ve kabul edilen riskler
 

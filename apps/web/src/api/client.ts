@@ -1,4 +1,5 @@
-import { getValidToken, keycloak } from '@/auth/keycloak'
+import { getValidToken, keycloak, readTenantSlug } from '@/auth/keycloak'
+import { PLATFORM_TENANT_HEADER, hasPlatformGrant, needsPlatformGrant, platformTenantFor, readGrantTenant } from '@/auth/platformAccess'
 import { env } from '@/lib/env'
 import { lang, translateServerData, tx } from '@/lib/i18n'
 import { QueuedOfflineError, enqueueOffline, isQueueable } from '@/lib/push'
@@ -101,6 +102,31 @@ async function toApiError(res: Response): Promise<ApiError> {
   return new ApiError(res.status, message, detail)
 }
 
+/**
+ * Güvenlik dalgası 2A: platform yöneticisinin seçtiği kiracı başlığı (yoksa boş). apiFetch dışında
+ * doğrudan fetch yapan yardımcılar (yükleme, indirme, olay akışı) da eklemeli.
+ */
+export function platformTenantHeaders(): Record<string, string> {
+  const roles = (keycloak.tokenParsed as { realm_access?: { roles?: string[] } } | undefined)?.realm_access?.roles ?? []
+  const target = platformTenantFor(roles, readTenantSlug(), readGrantTenant())
+  return target ? { [PLATFORM_TENANT_HEADER]: target } : {}
+}
+
+const GRANT_REQUIRED = 'platform_access_grant_required'
+
+/** Platform yöneticisi izinsiz kiracı verisi isterse istek gönderilmeden 403 verilir. */
+async function assertPlatformGrant(path: string) {
+  const roles = (keycloak.tokenParsed as { realm_access?: { roles?: string[] } } | undefined)?.realm_access?.roles ?? []
+  if (!roles.includes('platform-admin') || !needsPlatformGrant(path)) return
+  const target = platformTenantFor(roles, readTenantSlug(), readGrantTenant())
+  const ok = target
+    ? await hasPlatformGrant(target, () =>
+        apiFetch<{ tenantSlug: string; active: boolean; expiresAt: string }[]>('/api/tenant/platform-access/grants/mine'))
+    : false
+  if (!ok)
+    throw new ApiError(403, tx('Bu şirketin verisini görmek için Kiracılar ekranından süreli erişim izni açın.'), { code: GRANT_REQUIRED })
+}
+
 interface RequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   body?: unknown
@@ -130,6 +156,9 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
       throw new ApiError(401, tx('Oturumunuzun süresi doldu. Lütfen yeniden giriş yapın.'))
     }
     headers.Authorization = `Bearer ${token}`
+    // Platform yöneticisi: seçili kiracı (süreli erişim izni servislerde denetlenir).
+    Object.assign(headers, platformTenantHeaders())
+    await assertPlatformGrant(path)
   }
 
   if (body !== undefined) headers['Content-Type'] = 'application/json'
@@ -219,7 +248,7 @@ export async function apiUploadFile<T>(
 
   const res = await fetch(`${env.apiBase}${path}`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, Accept: 'application/json', 'X-HR360-Lang': lang },
+    headers: { Authorization: `Bearer ${token}`, Accept: 'application/json', 'X-HR360-Lang': lang, ...platformTenantHeaders() },
     body: formData,
   })
 

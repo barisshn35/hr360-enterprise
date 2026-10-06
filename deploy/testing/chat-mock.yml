@@ -100,6 +100,8 @@ services:
       DNS_TXT_OVERRIDE_FILE: "/tmp/hr360-dns-override.json"
       LDAP_ALLOW_PRIVATE_HOSTS: "openldap"
       DIRECTORY_SYNC_MINUTES: "0.2"
+      # Guvenlik dalgasi 2A: supheli giris tespiti Keycloak olaylarini 5 sn'de bir okur (uretimde 60 sn).
+      LOGIN_WATCH_INTERVAL_SECONDS: "5"
   # YALNIZCA TEST (Y26 LDAP esitlemesi): iki TEST kullanicili OpenLDAP.
   #   docker compose -f docker-compose.yml -f deploy/testing/chat-mock.yml up -d openldap
   # bitnami/openldap Docker Hub'dan kaldirildigi icin bitnamilegacy kopyasi kullanilir.

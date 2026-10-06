@@ -184,10 +184,13 @@ public class CustomFieldsController : AppController
         var stored = await Db.QueryAsync("SELECT \"FieldId\", \"Value\", \"UpdatedAt\" FROM governance_custom_field_values WHERE \"TenantSlug\" = $1 AND \"EmployeeId\" = $2",
             r => (Field: r.GetGuid(0), Value: r.GetString(1), At: r.GetFieldValue<DateTime>(2)), ct, Tenant, employeeId);
         var revealed = new List<string>();
+        // Güvenlik dalgası 2B: toplu görüntüleme uyarısıyla geçici engellenen kullanıcıya özel nitelikli değer açılmaz.
+        var blocked = viewer != "self" && fields.Any(f => f.IsSpecialCategory)
+            && await SecuritySettingsStore.IsBlockedAsync(Db, Tenant, Me.UserId, ct);
         var list = fields.Select(f =>
         {
             var s = stored.FirstOrDefault(x => x.Field == f.Id);
-            string? value = s.Value is null ? null : CustomFields.Open(s.Value);
+            string? value = s.Value is null || (blocked && f.IsSpecialCategory) ? null : CustomFields.Open(s.Value);
             if (f.IsSpecialCategory && value is not null && viewer != "self") revealed.Add(f.Key);
             return new
             {
@@ -199,7 +202,7 @@ public class CustomFieldsController : AppController
         // Özel nitelikli değeri başkası (İK) görüntülediyse erişim kaydı.
         foreach (var key in revealed)
             await AuditAsync(employeeId.ToString(), "SensitiveViewed", new { field = $"custom:{key}" }, ct);
-        return Ok(new { employeeId, viewer, canEdit = list.Any(x => x.editable), fields = list });
+        return Ok(new { employeeId, viewer, canEdit = list.Any(x => x.editable), fields = list, sensitiveBlocked = blocked });
     }
 
     public record ValuesInput(Dictionary<string, JsonElement?> Values);

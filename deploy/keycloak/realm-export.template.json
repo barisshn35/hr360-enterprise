@@ -24,6 +24,10 @@
   },
   "editUsernameAllowed": false,
   "bruteForceProtected": true,
+  "passwordPolicy": "length(12) and notUsername and notEmail and passwordHistory(3)",
+  "eventsEnabled": true,
+  "eventsExpiration": 2592000,
+  "enabledEventTypes": ["LOGIN", "LOGIN_ERROR"],
   "browserSecurityHeaders": {
     "contentSecurityPolicy": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; frame-src 'self'; frame-ancestors 'self'; object-src 'none'; base-uri 'self'",
     "contentSecurityPolicyReportOnly": "",
@@ -68,9 +72,30 @@
       "standardFlowEnabled": false,
       "directAccessGrantsEnabled": false,
       "secret": "__ML_KEYCLOAK_CLIENT_SECRET__"
+    },
+    {
+      "clientId": "hr360-tenant-admin",
+      "name": "tenant-service yonetim API servis hesabi",
+      "publicClient": false,
+      "protocol": "openid-connect",
+      "enabled": true,
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "frontchannelLogout": false,
+      "secret": "__TENANT_ADMIN_CLIENT_SECRET__"
     }
   ],
   "users": [
+    {
+      "username": "service-account-hr360-tenant-admin",
+      "enabled": true,
+      "serviceAccountClientId": "hr360-tenant-admin",
+      "clientRoles": {
+        "realm-management": ["manage-users", "manage-realm", "manage-identity-providers", "manage-clients", "view-events"]
+      }
+    },
     {
       "username": "demo.admin",
       "email": "demo.admin@hr360.local",

@@ -11,6 +11,7 @@ import { errMsg } from '@/features/shared/kit'
 import { ApiError } from '@/api/client'
 import { formatDate } from '@/lib/format'
 import { appLocale, tx } from '@/lib/i18n'
+import { requestTrace, WATERMARK_CSS, watermarkHtml } from '@/lib/watermark'
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
 
@@ -18,6 +19,13 @@ const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&
 function printCertificate(c: CertificateView) {
   const w = window.open('', '_blank')
   if (!w) throw new Error(tx('Açılır pencere engellendi; tarayıcıda izin verin.'))
+  w.document.write(`<!doctype html><meta charset="utf-8"><title>…</title><p style="font-family:Arial,sans-serif">${esc(tx('Hazırlanıyor…'))}</p>`)
+  // Güvenlik dalgası 2B: indirene ait filigran + iz kodu (denetim kaydına bağlı).
+  void requestTrace('certificate', { subject: c.verificationCode ?? c.credentialId ?? undefined, format: 'print' }).then((trace) => writeCertificate(w, c, trace?.text))
+}
+
+function writeCertificate(w: Window, c: CertificateView, watermark?: string) {
+  w.document.open()
   const title = c.courseTitle ?? c.name
   w.document.write(`<!doctype html><html lang="${appLocale}"><head><meta charset="utf-8"><title>${esc(tx('Sertifika'))} — ${esc(c.employeeName)}</title>
 <style>@page{size:A4 landscape;margin:14mm}body{font-family:Georgia,'Times New Roman',serif;color:#1a1a1a;margin:0}
@@ -25,7 +33,7 @@ function printCertificate(c: CertificateView) {
 .k{letter-spacing:.3em;text-transform:uppercase;font-size:11pt;color:#8a6d1f}h1{font-size:30pt;margin:6mm 0 2mm}
 .n{font-size:24pt;margin:8mm 0 2mm;border-bottom:1px solid #999;padding:0 12mm 2mm}.t{font-size:15pt;margin:4mm 0}
 .m{margin-top:auto;display:flex;justify-content:space-between;width:100%;font-size:10pt;color:#444;font-family:Arial,sans-serif}
-.c{font-family:'Courier New',monospace;font-size:12pt;letter-spacing:.08em}</style></head><body><div class="f">
+.c{font-family:'Courier New',monospace;font-size:12pt;letter-spacing:.08em}${WATERMARK_CSS}</style></head><body>${watermarkHtml(watermark)}<div class="f">
 <div class="k">${esc(c.company ?? c.issuer ?? 'HR360')}</div><h1>${esc(tx('Başarı Sertifikası'))}</h1>
 <div>${esc(tx('Bu belge,'))}</div><div class="n">${esc(c.employeeName)}</div>
 <div class="t">${esc(tx('«{0}» eğitimini başarıyla tamamladığını gösterir.', [title]))}</div>

@@ -6,7 +6,6 @@ import { PageHeader } from '@/components/layout/PageHeader'
 import { Panel, PanelBody, PanelHead } from '@/components/ui/Panel'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/Modal'
-import { TextField } from '@/components/ui/Field'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { InfoNote, RowsSkeleton } from '@/components/ui/States'
 import { useConfirm } from '@/components/ui/Confirm'
@@ -16,6 +15,9 @@ import { Metric, PlanGate, useAction } from '@/features/shared/kit'
 import { tx } from '@/lib/i18n'
 import { IpAllowlistPanel, TenantSessionsPanel } from './AccessControlPanels'
 import { IdentityProvisioningPanels } from './IdentityProvisioningPanels'
+import { LoginAlertsPanel, TenantPlatformAccessPanel } from './IdentitySecurityPanels'
+import { identitySecurityApi, type MfaPolicy } from '@/api/platformAccess'
+import { SelectField, TextField } from '@/components/ui/Field'
 
 function SsoModal({ provider, s, onClose }: { provider: SsoStatus['supported'][number]; s: SsoStatus; onClose: () => void }) {
   const toast = useToast()
@@ -51,6 +53,10 @@ export function SecurityPage() {
   const [adding, setAdding] = useState<SsoStatus['supported'][number] | null>(null)
   const remove = useAction((alias: string) => securityApi.removeSso(alias), { success: tx('Sağlayıcı kaldırıldı'), invalidate: [['security']] })
   const enforce = useAction(() => securityApi.enforceMfa(), { success: (r) => tx('{0} kullanıcıya bir sonraki girişte doğrulayıcı kurulumu zorunlu kılındı', [r.required]), invalidate: [['security']] })
+  const setPolicy = useAction((p: MfaPolicy) => identitySecurityApi.setMfaPolicy(p), {
+    success: (r) => r.policy === 'off' ? tx('İki adımlı doğrulama zorunluluğu kaldırıldı') : tx('Politika kaydedildi; {0} kullanıcıya kurulum zorunluluğu eklendi', [r.required]),
+    invalidate: [['security']],
+  })
   const confirm = useConfirm()
   const m = mfa.data
   const pct = m && m.members ? Math.round((100 * m.withOtp) / m.members) : 0
@@ -94,12 +100,26 @@ export function SecurityPage() {
                   <Metric label={tx('Kapalı')} value={m.without} tone={m.without ? 'bad' : 'good'} />
                 </div>
                 <div className="h-2.5 overflow-hidden rounded-full bg-muted"><motion.div initial={{ width: 0 }} animate={{ width: `${pct}%` }} className="h-full rounded-full bg-[hsl(var(--success))]" /></div>
-                <p className="text-[12.5px] text-muted-foreground">{tx('İki adımlı doğrulama açık hesaplar: %{0}', [pct])}</p>
+                <p className="text-[12.5px] text-muted-foreground">{tx('İki adımlı doğrulama (doğrulayıcı uygulama ya da passkey) açık hesaplar: %{0}', [pct])}</p>
+                <SelectField label={tx('Zorunluluk')} value={m.policy ?? 'off'} disabled={setPolicy.isPending}
+                  hint={tx('Seçilen rollerde doğrulayıcı uygulaması ya da passkey olmayan kullanıcı bir sonraki girişinde kurulum yapmadan devam edemez. Kural düzenli olarak yeniden uygulanır (sonradan role atananlar dahil).')}
+                  onChange={async (v) => {
+                    const p = v as MfaPolicy
+                    if (p === 'off' || await confirm({ title: tx('İki adımlı doğrulama zorunlu kılınsın mı?'), note: p === 'all' ? tx('Tüm şirket kullanıcıları için zorunlu olur.') : tx('İK, şirket yöneticisi ve yönetici rollerindeki kullanıcılar için zorunlu olur.'), action: tx('Zorunlu kıl') })) setPolicy.mutate(p)
+                  }}
+                  options={[
+                    { value: 'off', label: tx('Zorunlu değil') },
+                    { value: 'privileged', label: tx('İK, yönetici ve platform rollerinde zorunlu') },
+                    { value: 'all', label: tx('Herkes için zorunlu') },
+                  ]} />
+                {m.policy && m.policy !== 'off' && (m.requiredWithout ?? 0) > 0 && (
+                  <InfoNote>{tx('Zorunluluk kapsamında {0} kullanıcının henüz ikinci adımı yok; bir sonraki girişlerinde kurulum istenecek.', [m.requiredWithout ?? 0])}</InfoNote>
+                )}
                 <Button disabled={m.without === 0 || enforce.isPending} onClick={async () => {
                   if (await confirm({ title: tx('İki adımlı doğrulama zorunlu kılınsın mı?'), note: tx('{0} kullanıcı bir sonraki girişinde doğrulayıcı uygulaması kurmadan devam edemez.', [m.without]), action: tx('Zorunlu kıl') })) enforce.mutate(undefined)
-                }}><Lock className="size-4" />{' '}{tx('Herkes için zorunlu kıl')}</Button>
+                }}><Lock className="size-4" />{' '}{tx('Şimdi herkese kurulum iste (tek sefer)')}</Button>
                 <ul className="max-h-60 divide-y divide-border overflow-y-auto rounded-xl border border-border text-[12.5px]">
-                  {m.users.map((u) => <li key={u.userId} className="flex items-center justify-between px-3 py-2"><span className="flex items-center gap-2"><KeyRound className="size-3.5 text-muted-foreground" /> {u.username}</span><StatusBadge tone={u.hasOtp ? 'success' : u.pendingSetup ? 'warning' : 'neutral'}>{u.hasOtp ? tx('Açık') : u.pendingSetup ? tx('Bekliyor') : tx('Kapalı')}</StatusBadge></li>)}
+                  {m.users.map((u) => <li key={u.userId} className="flex items-center justify-between px-3 py-2"><span className="flex items-center gap-2"><KeyRound className="size-3.5 text-muted-foreground" /> {u.username}</span><span className="flex items-center gap-1.5">{u.required && <StatusBadge tone="info">{tx('Zorunlu')}</StatusBadge>}<StatusBadge tone={u.hasOtp || u.hasPasskey ? 'success' : u.pendingSetup ? 'warning' : 'neutral'}>{u.hasOtp ? tx('Açık') : u.hasPasskey ? tx('Passkey') : u.pendingSetup ? tx('Bekliyor') : tx('Kapalı')}</StatusBadge></span></li>)}
                 </ul>
               </>
             )}
@@ -107,6 +127,7 @@ export function SecurityPage() {
         </Panel>
       </div>
       <div className="mt-6 grid gap-6 xl:grid-cols-2"><IpAllowlistPanel /><TenantSessionsPanel /></div>
+      <div className="mt-6 grid gap-6 xl:grid-cols-2"><LoginAlertsPanel /><TenantPlatformAccessPanel /></div>
       <IdentityProvisioningPanels />
       {adding && sso.data && <SsoModal provider={adding} s={sso.data} onClose={() => setAdding(null)} />}
     </PlanGate>

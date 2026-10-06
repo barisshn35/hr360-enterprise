@@ -6,7 +6,7 @@ import { apiFetch, apiUploadFile, qs } from './client'
 import { getValidToken } from '@/auth/keycloak'
 import { env } from '@/lib/env'
 import { lang, tx } from '@/lib/i18n'
-import { ApiError } from './client'
+import { ApiError, platformTenantHeaders } from './client'
 
 const BASE = '/api/learning'
 
@@ -233,7 +233,7 @@ async function uploadScorm(file: File, title?: string): Promise<ScormPackage> {
   fd.append('title', title)
   const res = await fetch(`${env.apiBase}${BASE}/scorm/packages`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, Accept: 'application/json', 'X-HR360-Lang': lang },
+    headers: { Authorization: `Bearer ${token}`, Accept: 'application/json', 'X-HR360-Lang': lang, ...platformTenantHeaders() },
     body: fd,
   })
   const text = await res.text()

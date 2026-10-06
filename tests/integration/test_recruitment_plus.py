@@ -14,7 +14,7 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(__file__))
-from common import AYSE, FAIL, api, check, http  # noqa: E402
+from common import AYSE, FAIL, api, check, form_token, http  # noqa: E402
 
 R = "/api/recruitment"
 P = f"{R}/public/demo"
@@ -34,6 +34,11 @@ def psql(sql):
 
 def pub(method, path, body=None):
     return http(method, P + path, body)
+
+
+def apply_pub(path, body):
+    """Başvuru: önce form jetonu alınır (bot koruması, en erken 3 sn sonra geçerli), sonra gönderilir."""
+    return pub("POST", path, {**body, "formToken": form_token(P + "/form-token")})
 
 
 def email(tag):
@@ -84,8 +89,18 @@ check("Taslak ilana başvuru yapılamaz", code == 404, code)
 code, _ = pub("POST", f"/jobs/{MAIN}/apply", {"firstName": "A", "lastName": "B", "email": "gecersiz"})
 check("Geçersiz başvuru reddedilir", code == 400, code)
 
+# Güvenlik dalgası 2B: herkese açık başvuru formu imzalı zaman jetonu ister (tek kullanımlık, en erken 3 sn).
+code, _ = pub("POST", f"/jobs/{MAIN}/apply", {"firstName": "Jeton", "lastName": "Yok", "email": email("notoken")})
+check("Bot koruması: jetonsuz başvuru reddedilir", code == 400, code)
+code, r = pub("POST", f"/jobs/{MAIN}/apply", {"firstName": "Hızlı", "lastName": "Bot", "email": email("fast"), "formToken": form_token(P + "/form-token", wait=False)})
+check("Bot koruması: 3 sn dolmadan gönderilen form reddedilir", code == 400 and r.get("code") == "form_too_fast", (code, r))
+code, r = pub("POST", f"/jobs/{MAIN}/apply", {"firstName": "Sahte", "lastName": "Jeton", "email": email("forged"), "formToken": "1.000000000000000000000000.x"})
+check("Bot koruması: sahte jeton reddedilir", code == 400 and r.get("code") == "form_token", (code, r))
+n_bot = psql(f"""SELECT count(*) FROM recruitment_candidates WHERE "Email" IN ('{email("notoken")}','{email("fast")}','{email("forged")}')""")
+check("Reddedilen bot başvuruları kaydedilmez", n_bot == "0", n_bot)
+
 A_EMAIL = email("a")
-code, ra = pub("POST", f"/jobs/{MAIN}/apply", {"firstName": "Gülşen", "lastName": "Testçi", "email": A_EMAIL, "phone": "0532 555 12 34",
+code, ra = apply_pub(f"/jobs/{MAIN}/apply", {"firstName": "Gülşen", "lastName": "Testçi", "email": A_EMAIL, "phone": "0532 555 12 34",
                                               "coverNote": "TEST5c ön yazı", "resumeText": "Python, SQL", "privacyNoticeVersion": jobs["privacyNotice"]["version"]})
 check("Oturumsuz başvuru (rızasız) alınır ve öz-hizmet jetonu döner", code == 200 and ra.get("token") and ra["linkedToExisting"] is False and ra["talentPoolConsent"] is False, (code, ra))
 TOK_A, APP_A = ra["token"], ra["applicationId"]
@@ -99,7 +114,7 @@ mail = psql(f"""SELECT count(*) FROM notification_messages WHERE "RecipientEmail
 check("Onay e-postası adaya gider, jeton bildirimlerde saklanmaz", leak == "0" and mail == "1", (leak, mail))
 
 B_EMAIL = email("b")
-code, rb = pub("POST", f"/jobs/{MAIN}/apply", {"firstName": "Bora", "lastName": "Havuzcu", "email": B_EMAIL, "talentPoolConsent": True})
+code, rb = apply_pub(f"/jobs/{MAIN}/apply", {"firstName": "Bora", "lastName": "Havuzcu", "email": B_EMAIL, "talentPoolConsent": True})
 TOK_B = rb.get("token") if code == 200 else None
 row = psql(f"""SELECT c."TalentPoolConsent", c."TalentPoolConsentAt" IS NOT NULL, c."Id" FROM recruitment_applications a
                JOIN recruitment_candidates c ON c."Id" = a."CandidateId" WHERE a."Id" = '{rb.get('applicationId')}'""").split("|")
@@ -113,9 +128,9 @@ code, _ = pub("GET", "/self-service/" + "x" * 43)
 check("Geçersiz jeton 404", code == 404, code)
 
 # ====================================================================== G13 tekrar aday
-code, rd = pub("POST", f"/jobs/{MAIN}/apply", {"firstName": "Gülşen", "lastName": "Testçi", "email": A_EMAIL.upper()})
+code, rd = apply_pub(f"/jobs/{MAIN}/apply", {"firstName": "Gülşen", "lastName": "Testçi", "email": A_EMAIL.upper()})
 check("Aynı ilana ikinci başvuru 409", code == 409, (code, rd))
-code, rl = pub("POST", f"/jobs/{NOHEAD}/apply", {"firstName": "Gulsen", "lastName": "Testci", "email": A_EMAIL.replace("@", "+cv@").upper()})
+code, rl = apply_pub(f"/jobs/{NOHEAD}/apply", {"firstName": "Gulsen", "lastName": "Testci", "email": A_EMAIL.replace("@", "+cv@").upper()})
 check("Normalize e-posta eşleşmesi mevcut adaya bağlanır", code == 200 and rl["linkedToExisting"] is True, (code, rl))
 TOK_L = rl.get("token")
 n = psql(f"""SELECT count(*) FROM recruitment_candidates WHERE "NormalizedEmail" = '{A_EMAIL}'""")
@@ -126,7 +141,7 @@ check("Bağlanan başvurunun bağlantısı mevcut kaydı maskeler", code == 200 
       and "*" in ssl["data"]["email"] and ssl["data"]["resumeText"] is None, (code, ssl.get("data") if code == 200 else ssl))
 
 # Farklı e-posta, aynı telefon + bulanık ad → aynı aday sayılır: A zaten bu ilana başvurduğu için 409.
-code, rp = pub("POST", f"/jobs/{MAIN}/apply", {"firstName": "Gulşen", "lastName": "TESTÇİ", "email": email("a2"), "phone": "+90 (532) 555-1234"})
+code, rp = apply_pub(f"/jobs/{MAIN}/apply", {"firstName": "Gulşen", "lastName": "TESTÇİ", "email": email("a2"), "phone": "+90 (532) 555-1234"})
 n2 = psql(f"""SELECT count(*) FROM recruitment_candidates WHERE "NormalizedEmail" = '{email("a2")}'""")
 check("Telefon + benzer ad (bulanık) eşleşmesi mevcut adaya bağlanır", code == 409 and "daha önce" in rp.get("message", "") and n2 == "0", (code, rp, n2))
 
@@ -299,8 +314,8 @@ check("Bağlanan başvurunun bağlantısı yalnızca o başvuruyu siler", code =
 
 # ====================================================================== Y16 saklama süresi
 C_EMAIL, D_EMAIL = email("c"), email("d")
-code, rc = pub("POST", f"/jobs/{NOHEAD}/apply", {"firstName": "Cemil", "lastName": "Eskiaday", "email": C_EMAIL, "coverNote": "TEST5c eski"})
-code2, rdd = pub("POST", f"/jobs/{NOHEAD}/apply", {"firstName": "Deniz", "lastName": "Havuzda", "email": D_EMAIL, "talentPoolConsent": True})
+code, rc = apply_pub(f"/jobs/{NOHEAD}/apply", {"firstName": "Cemil", "lastName": "Eskiaday", "email": C_EMAIL, "coverNote": "TEST5c eski"})
+code2, rdd = apply_pub(f"/jobs/{NOHEAD}/apply", {"firstName": "Deniz", "lastName": "Havuzda", "email": D_EMAIL, "talentPoolConsent": True})
 psql(f"""UPDATE recruitment_applications SET "Status" = 'Rejected', "StatusChangedAt" = now() - interval '200 days'
          WHERE "Id" IN ('{rc.get('applicationId')}', '{rdd.get('applicationId')}')""")
 code3, run = api("admin", "POST", f"{R}/retention/run")

@@ -123,6 +123,7 @@ kayıt ekranından açılır. Demo şirketini `platform.admin` hesabıyla askıy
 | Let's Encrypt (olmazsa geçici sertifika + saatlik yeniden deneme) | `scripts/tls.sh auto --host hr.sirket.com --email it@sirket.com`; ön koşullar `scripts/tls.sh check`, hemen dene `scripts/tls.sh retry`, uçtan uca denetim `scripts/tls.sh verify` |
 | TLS'i öndeki bir yük dengeleyici sonlandırıyorsa | `scripts/tls.sh external --host hr.sirket.com` |
 | Keycloak paneli erişimi | `scripts/keycloak-admin-access.sh open / ip <IP,...> / port [IP,...] / status` |
+| Keycloak servis hesabı, parola politikası, giriş olayları (idempotent) | `scripts/keycloak-service-account.sh [apply / client / policy / status]` — kurulum ve güncelleme bir kez kendisi çalıştırır |
 | E-posta (SMTP) sunucusu | `scripts/smtp.sh set --from ik@sirket.com --password '…'` (sunucu adresten bulunur), `scripts/smtp.sh set` (soru sorar), `scripts/smtp.sh test adres@sirket.com`, `scripts/smtp.sh status`, `scripts/smtp.sh mailpit` |
 | Keycloak giriş ekranı teması (HR360 görünümü + Türkçe) | Kurulum ve güncelleme (`./install.sh`) sırasında otomatik uygulanır. Elle: `scripts/keycloak-theme.sh`; Keycloak'ın kendi temasına dönmek için `scripts/keycloak-theme.sh default` |
 | Yeni sürüme güncelleme (tek komut, otomatik geri dönüş) | `scripts/update.sh` (önce yedek, sonra sürüm, göçler, imajlar ve tüm servislerin sağlık denetimi; denetim geçmezse önceki sürüme döner). `scripts/update.sh --ref v2.1`, `scripts/update.sh rollback`, `scripts/update.sh status` |
@@ -641,6 +642,7 @@ deploy/
 scripts/
   tls.sh                 HTTPS aç/kapat (Let's Encrypt, kendi sertifika, kendinden imzalı)
   keycloak-admin-access.sh  Keycloak yönetim paneli erişimi (açık / IP kısıtı / ayrı port)
+  keycloak-service-account.sh  tenant-service Keycloak servis hesabı, hr360 parola politikası ve giriş olayları
   smtp.sh                E-posta (SMTP) sunucusunu sonradan ayarlama/deneme
   keycloak-theme.sh      Keycloak giriş ekranını HR360 temasına ve Türkçeye alma
   monitoring.sh          İzleme yığınını aç/kapat, durum, Grafana parolası

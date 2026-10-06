@@ -17,6 +17,7 @@ ROUTES = [
     "/panel/olay-radari", "/panel/ai-araclari", "/panel/denetim", "/panel/kvkk", "/panel/belge-sablonlari",
     "/panel/kural-motoru", "/panel/entegrasyonlar", "/panel/entegrasyonlar?sekme=takvim", "/panel/guvenlik",
     "/panel/ice-disa-aktarim", "/panel/abonelik", "/panel/organizasyon/sunum", "/panel/api-belgeleri",
+    "/panel/veri-koruma", "/panel/veri-koruma?sekme=uyarilar", "/panel/veri-koruma?sekme=iz-kodu", "/panel/veri-koruma?sekme=ayarlar", "/panel/erisim-gozden-gecirme",
 ]
 
 

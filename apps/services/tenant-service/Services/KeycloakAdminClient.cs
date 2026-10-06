@@ -8,8 +8,21 @@ namespace TenantService.Services;
 /// Keycloak Admin REST API sarmalayicisi. Organization olusturma, kullanici
 /// saglama ve rol atama islerini yapar.
 ///
-/// Kimlik dogrulama: master realm'de admin-cli client'i uzerinden
-/// service account. Parola ortam degiskeninden okunur.
+/// Kimlik dogrulama (Guvenlik dalgasi 2A): hr360 realm'indeki ayri, gizli
+/// "hr360-tenant-admin" istemcisinin servis hesabiyla (client_credentials).
+/// Hesap yalnizca realm-management'in gerekli rollerine sahiptir (manage-users,
+/// manage-realm, manage-identity-providers, manage-clients, view-events) ve master
+/// realm'e hic erisemez. Gizli anahtar: KEYCLOAK_TENANT_ADMIN_CLIENT_SECRET
+/// (scripts/keycloak-service-account.sh uretir ve Keycloak'a tanimlar).
+///
+/// Eski kurulumlar icin geri donus: anahtar tanimli degilse (ya da Keycloak istemciyi
+/// henuz tanimiyorsa) master realm yonetici hesabiyla parola girisi yapilir ve bir kez
+/// uyari yazilir. Bu yol, master realm'de kaba kuvvet korumasi acikken hesabi
+/// kilitleyebildigi icin yalnizca gecis icindir.
+///
+/// Jeton surec genelinde tek (statik onbellek + SemaphoreSlim): HttpClient ile kayitli
+/// bu sinif istek basina yeniden olusturulur; onceden her istek ayri ve eszamanli
+/// giris yapiyordu.
 /// </summary>
 public class KeycloakAdminClient
 {
@@ -17,11 +30,16 @@ public class KeycloakAdminClient
     private readonly ILogger<KeycloakAdminClient> _logger;
     private readonly string _baseUrl;
     private readonly string _realm;
-    private readonly string _adminUser;
-    private readonly string _adminPassword;
+    private readonly string? _adminUser;
+    private readonly string? _adminPassword;
+    private readonly string _clientId;
+    private readonly string? _clientSecret;
 
-    private string? _token;
-    private DateTimeOffset _tokenExpiresAt = DateTimeOffset.MinValue;
+    // Surec genelinde paylasilan jeton (bkz. sinif aciklamasi).
+    private static readonly SemaphoreSlim TokenLock = new(1, 1);
+    private sealed record CachedToken(string Value, DateTimeOffset ExpiresAt);
+    private static volatile CachedToken? _cached;
+    private static int _legacyWarned;
 
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
@@ -36,37 +54,93 @@ public class KeycloakAdminClient
         _baseUrl = (Environment.GetEnvironmentVariable("KEYCLOAK_BASE_URL")
             ?? "http://keycloak:8080/auth").TrimEnd('/');
         _realm = Environment.GetEnvironmentVariable("KEYCLOAK_REALM") ?? "hr360";
-        _adminUser = Environment.GetEnvironmentVariable("KEYCLOAK_ADMIN_USER")
-            ?? throw new InvalidOperationException("KEYCLOAK_ADMIN_USER tanımlı olmalı");
-        _adminPassword = Environment.GetEnvironmentVariable("KEYCLOAK_ADMIN_PASSWORD")
-            ?? throw new InvalidOperationException("KEYCLOAK_ADMIN_PASSWORD tanımlı olmalı");
+        _clientId = Environment.GetEnvironmentVariable("KEYCLOAK_TENANT_ADMIN_CLIENT_ID") is { Length: > 0 } cid
+            ? cid : "hr360-tenant-admin";
+        _clientSecret = Environment.GetEnvironmentVariable("KEYCLOAK_TENANT_ADMIN_CLIENT_SECRET") is { Length: > 0 } sec
+            ? sec : null;
+        _adminUser = Environment.GetEnvironmentVariable("KEYCLOAK_ADMIN_USER");
+        _adminPassword = Environment.GetEnvironmentVariable("KEYCLOAK_ADMIN_PASSWORD");
+        if (_clientSecret is null && (string.IsNullOrEmpty(_adminUser) || string.IsNullOrEmpty(_adminPassword)))
+            throw new InvalidOperationException(
+                "KEYCLOAK_TENANT_ADMIN_CLIENT_SECRET (ya da eski yol icin KEYCLOAK_ADMIN_USER/PASSWORD) tanımlı olmalı");
     }
+
+    /// <summary>Servis hesabi (client_credentials) yapilandirilmis mi?</summary>
+    public bool UsesServiceAccount => _clientSecret is not null;
 
     // ------------------------------------------------------------ token
 
+    /// <summary>Onbellekteki jetonu gecersiz kilar (orn. 401 sonrasi).</summary>
+    public static void InvalidateToken() => _cached = null;
+
     private async Task<string> GetTokenAsync(CancellationToken ct)
     {
-        if (_token is not null && DateTimeOffset.UtcNow < _tokenExpiresAt)
-            return _token;
+        var cached = _cached;
+        if (cached is not null && DateTimeOffset.UtcNow < cached.ExpiresAt)
+            return cached.Value;
 
-        var form = new FormUrlEncodedContent(new Dictionary<string, string>
+        await TokenLock.WaitAsync(ct);
+        try
         {
-            ["grant_type"] = "password",
-            ["client_id"] = "admin-cli",
-            ["username"] = _adminUser,
-            ["password"] = _adminPassword,
-        });
+            // Bekleyen diger istek bu arada yenilemis olabilir.
+            cached = _cached;
+            if (cached is not null && DateTimeOffset.UtcNow < cached.ExpiresAt)
+                return cached.Value;
 
-        var resp = await _http.PostAsync(
-            $"{_baseUrl}/realms/master/protocol/openid-connect/token", form, ct);
-        resp.EnsureSuccessStatusCode();
+            string? json = null;
+            if (_clientSecret is not null)
+            {
+                using var resp = await _http.PostAsync(
+                    $"{_baseUrl}/realms/{_realm}/protocol/openid-connect/token",
+                    new FormUrlEncodedContent(new Dictionary<string, string>
+                    {
+                        ["grant_type"] = "client_credentials",
+                        ["client_id"] = _clientId,
+                        ["client_secret"] = _clientSecret,
+                    }), ct);
+                if (resp.IsSuccessStatusCode)
+                    json = await resp.Content.ReadAsStringAsync(ct);
+                else if (string.IsNullOrEmpty(_adminUser) || string.IsNullOrEmpty(_adminPassword)
+                         || (int)resp.StatusCode >= 500)
+                    throw new InvalidOperationException(
+                        $"Keycloak servis hesabı jetonu alınamadı ({(int)resp.StatusCode})");
+                else
+                    // Istemci Keycloak'ta henuz yok / anahtar uyusmuyor (guncellemede
+                    // scripts/keycloak-service-account.sh calistirilmadan once): eski yola dus.
+                    _logger.LogWarning(
+                        "Keycloak servis hesabı ({ClientId}) reddedildi ({Status}); geçici olarak yönetici parola girişi kullanılıyor. scripts/keycloak-service-account.sh çalıştırın.",
+                        _clientId, (int)resp.StatusCode);
+            }
 
-        using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
-        _token = doc.RootElement.GetProperty("access_token").GetString()!;
-        var expiresIn = doc.RootElement.TryGetProperty("expires_in", out var e) ? e.GetInt32() : 60;
-        // Erken yenile: sinira dayanmadan 10 saniye once gecersiz say.
-        _tokenExpiresAt = DateTimeOffset.UtcNow.AddSeconds(Math.Max(10, expiresIn - 10));
-        return _token;
+            if (json is null)
+            {
+                if (Interlocked.Exchange(ref _legacyWarned, 1) == 0 && _clientSecret is null)
+                    _logger.LogWarning(
+                        "KEYCLOAK_TENANT_ADMIN_CLIENT_SECRET tanımlı değil: Keycloak yönetim API'sine master yönetici parolasıyla giriliyor (eski yol). scripts/keycloak-service-account.sh ile servis hesabına geçin.");
+                using var resp = await _http.PostAsync(
+                    $"{_baseUrl}/realms/master/protocol/openid-connect/token",
+                    new FormUrlEncodedContent(new Dictionary<string, string>
+                    {
+                        ["grant_type"] = "password",
+                        ["client_id"] = "admin-cli",
+                        ["username"] = _adminUser!,
+                        ["password"] = _adminPassword!,
+                    }), ct);
+                resp.EnsureSuccessStatusCode();
+                json = await resp.Content.ReadAsStringAsync(ct);
+            }
+
+            using var doc = JsonDocument.Parse(json);
+            var token = doc.RootElement.GetProperty("access_token").GetString()!;
+            var expiresIn = doc.RootElement.TryGetProperty("expires_in", out var e) ? e.GetInt32() : 60;
+            // Erken yenile: sinira dayanmadan 30 saniye once gecersiz say.
+            _cached = new CachedToken(token, DateTimeOffset.UtcNow.AddSeconds(Math.Max(10, expiresIn - 30)));
+            return token;
+        }
+        finally
+        {
+            TokenLock.Release();
+        }
     }
 
     private async Task<HttpRequestMessage> BuildAsync(
@@ -768,5 +842,70 @@ public class KeycloakAdminClient
         if (!resp.IsSuccessStatusCode)
             throw new InvalidOperationException($"Uygulama istemcisi güncellenemedi ({(int)resp.StatusCode})");
         return true;
+    }
+
+    // ------------------------------------------------- Guvenlik dalgasi 2A: MFA politikasi, olaylar
+
+    /// <summary>Realm rolune DOGRUDAN sahip kullanicilarin kimlikleri (sayfali; grup/bilesik rol haric).</summary>
+    public async Task<HashSet<string>> ListRoleUserIdsAsync(string roleName, CancellationToken ct)
+    {
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        const int page = 200;
+        for (var first = 0; ; first += page)
+        {
+            var req = await BuildAsync(HttpMethod.Get,
+                $"/roles/{Uri.EscapeDataString(roleName)}/users?first={first}&max={page}&briefRepresentation=true", null, ct);
+            using var resp = await _http.SendAsync(req, ct);
+            if (resp.StatusCode == System.Net.HttpStatusCode.NotFound) return ids;
+            if (!resp.IsSuccessStatusCode)
+                throw new InvalidOperationException($"Rol kullanıcıları okunamadı ({(int)resp.StatusCode})");
+            using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
+            var count = 0;
+            foreach (var u in doc.RootElement.EnumerateArray())
+            {
+                count++;
+                if (u.TryGetProperty("id", out var id) && id.GetString() is { } v) ids.Add(v);
+            }
+            if (count < page) break;
+        }
+        return ids;
+    }
+
+    public sealed record MfaState(string? Username, IReadOnlyList<string> CredentialTypes, IReadOnlyList<string> RequiredActions);
+
+    /// <summary>Kullanicinin adi, kimlik bilgisi turleri ve bekleyen gerekli eylemleri (null: kullanici yok).</summary>
+    public async Task<MfaState?> GetUserMfaStateAsync(string userId, CancellationToken ct)
+    {
+        var user = await GetUserRepresentationAsync(userId, ct);
+        if (user is null) return null;
+        var actions = (user["requiredActions"] as System.Text.Json.Nodes.JsonArray)?
+            .Select(a => a?.GetValue<string>() ?? "").Where(a => a != "").ToList() ?? new List<string>();
+        return new MfaState(user["username"]?.GetValue<string>(), await GetCredentialTypesAsync(userId, ct), actions);
+    }
+
+    public sealed record LoginEvent(long Time, string Type, string? UserId, string? IpAddress, string? Error, string? ClientId, string? Username);
+
+    /// <summary>
+    /// Realm'in LOGIN / LOGIN_ERROR olaylari (yeniden eskiye). Keycloak olay deposu
+    /// (eventsEnabled, 30 gun) acik olmali; servis hesabinda view-events rolu gerekir.
+    /// </summary>
+    public async Task<List<LoginEvent>> ListLoginEventsAsync(DateOnly dateFrom, int first, int max, CancellationToken ct)
+    {
+        var req = await BuildAsync(HttpMethod.Get,
+            $"/events?type=LOGIN&type=LOGIN_ERROR&dateFrom={dateFrom:yyyy-MM-dd}&first={first}&max={max}", null, ct);
+        using var resp = await _http.SendAsync(req, ct);
+        if (!resp.IsSuccessStatusCode)
+            throw new InvalidOperationException($"Keycloak giriş olayları okunamadı ({(int)resp.StatusCode})");
+        using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
+        static string? Str(JsonElement e, string name) =>
+            e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+        return doc.RootElement.EnumerateArray().Select(e => new LoginEvent(
+            e.TryGetProperty("time", out var t) && t.ValueKind == JsonValueKind.Number ? t.GetInt64() : 0,
+            Str(e, "type") ?? "",
+            Str(e, "userId"),
+            Str(e, "ipAddress"),
+            Str(e, "error"),
+            Str(e, "clientId"),
+            e.TryGetProperty("details", out var d) && d.ValueKind == JsonValueKind.Object ? Str(d, "username") : null)).ToList();
     }
 }

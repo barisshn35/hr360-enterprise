@@ -1,4 +1,4 @@
-import { apiFetch, qs } from './client'
+import { apiFetch, platformTenantHeaders, qs } from './client'
 import { getValidToken } from '@/auth/keycloak'
 import { env } from '@/lib/env'
 import { downloadAuthed } from './engagement'
@@ -318,7 +318,7 @@ export interface HireSaga {
 export async function streamEvents(onEvent: (e: RadarEvent) => void, signal: AbortSignal, onOpen?: () => void) {
   const token = await getValidToken()
   const res = await fetch(`${env.apiBase}${BASE}/events/stream`, {
-    headers: { Authorization: `Bearer ${token}`, Accept: 'text/event-stream' },
+    headers: { Authorization: `Bearer ${token}`, Accept: 'text/event-stream', ...platformTenantHeaders() },
     signal,
   })
   if (!res.ok || !res.body) throw new Error(tx('Akış açılamadı (HTTP {0})', [res.status]))
@@ -795,11 +795,17 @@ export interface SsoStatus {
   supported: Array<{ id: 'google' | 'microsoft'; label: string; redirectUri: string }>
 }
 export interface MfaStatus {
+  /** Güvenlik dalgası 2A: şirketin iki adımlı doğrulama politikası. */
+  policy?: 'off' | 'privileged' | 'all'
+  privilegedRoles?: string[]
+  platformAdminRequired?: boolean
   members: number
+  /** TOTP ya da passkey'i olan kullanıcılar. */
   withOtp: number
   pendingSetup: number
   without: number
-  users: Array<{ userId: string; username: string | null; hasOtp: boolean; pendingSetup: boolean }>
+  requiredWithout?: number
+  users: Array<{ userId: string; username: string | null; hasOtp: boolean; hasPasskey?: boolean; pendingSetup: boolean; privileged?: boolean; required?: boolean }>
 }
 export const securityApi = {
   sso: (signal?: AbortSignal) => apiFetch<SsoStatus>('/api/tenant/security/sso', { signal }),

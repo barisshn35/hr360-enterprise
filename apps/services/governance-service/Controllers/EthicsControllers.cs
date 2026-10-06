@@ -54,7 +54,20 @@ public class EthicsPublicController : ControllerBase
         });
     }
 
-    public record ReportInput(string Category, string Description, string? Contact);
+    /// <summary>
+    /// Bot koruması (güvenlik dalgası 2B): form açılırken alınan imzalı zaman jetonu. Gönderim en erken
+    /// 3 sn, en geç 2 saat sonra ve bir kez kabul edilir. IP ya da tarayıcı bilgisi kullanılmaz.
+    /// </summary>
+    [HttpGet("form-token")]
+    public async Task<IActionResult> FormToken(string tenant, CancellationToken ct)
+    {
+        var t = await TenantAsync(tenant, ct);
+        if (!t.Ok) return NotFound(new { message = "Şirket bulunamadı." });
+        return Ok(new { token = FormGuard.Shared.Issue("ethics:" + tenant), minSeconds = (int)FormGuard.MinAge.TotalSeconds });
+    }
+
+    /// <param name="Website">Görünmez bot tuzağı alanı: insanlar boş bırakır.</param>
+    public record ReportInput(string Category, string Description, string? Contact, string? FormToken = null, string? Website = null);
 
     [HttpPost("reports")]
     public async Task<IActionResult> Create(string tenant, [FromBody] ReportInput body, CancellationToken ct)
@@ -67,6 +80,12 @@ public class EthicsPublicController : ControllerBase
         if (description.Length is < 20 or > 10_000) return BadRequest(new { message = "Açıklama 20-10000 karakter olmalı." });
         var contact = string.IsNullOrWhiteSpace(body.Contact) ? null : body.Contact.Trim();
         if (contact is { Length: > 300 }) return BadRequest(new { message = "İletişim bilgisi en fazla 300 karakter olabilir." });
+        var guard = FormGuard.Shared.Verify(body.FormToken, "ethics:" + tenant);
+        if (guard != FormTokenStatus.Ok)
+            return BadRequest(new { message = FormGuard.Message(guard), code = guard == FormTokenStatus.TooFast ? "form_too_fast" : "form_token" });
+        // Bot tuzağı doldurulduysa kayıt yapılmadan başarı görünümü döner (bot ayırt edemesin).
+        if (!string.IsNullOrEmpty(body.Website))
+            return Ok(new { followUpCode = EthicsCode.New(), message = "Bildiriminiz alındı. Takip kodunuzu güvenli bir yere kaydedin; yalnızca bir kez gösterilir ve kaybolursa yeniden üretilemez." });
         if (!Intake.Allow(tenant)) return StatusCode(429, new { message = "Çok fazla bildirim alındı; lütfen daha sonra tekrar deneyin." });
 
         var code = EthicsCode.New();

@@ -11,6 +11,8 @@ export interface PayrollPeriod {
   month: number
   status: PayrollPeriodStatus
   calculatedAt: string | null
+  /** Son hesaplayan (görevler ayrılığı: bu kişi dönemi kapatamaz). */
+  calculatedBy?: string | null
   closedAt: string | null
   closedBy: string | null
   employeeCount: number

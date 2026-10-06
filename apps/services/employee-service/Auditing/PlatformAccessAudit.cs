@@ -25,7 +25,7 @@ public static class PlatformAccessAudit
         && (string.IsNullOrEmpty(callerTenant) || !string.Equals(callerTenant, recordTenant, StringComparison.Ordinal));
 
     public static async Task WriteAsync(DbContext db, HttpContext http, string entityType, string entityId,
-        IEnumerable<(string Tenant, object Changes)> rows, CancellationToken ct)
+        IEnumerable<(string Tenant, object Changes)> rows, CancellationToken ct, string action = "PlatformAccess")
     {
         var list = rows.ToList();
         if (list.Count == 0) return;
@@ -50,7 +50,7 @@ public static class PlatformAccessAudit
                 {
                     var cmd = new NpgsqlBatchCommand(
                         "INSERT INTO audit_log (\"TenantSlug\",\"Service\",\"EntityType\",\"EntityId\",\"Action\",\"Changes\",\"UserId\",\"UserName\",\"CorrelationId\",\"IpAddress\",\"OccurredAt\") " +
-                        "VALUES ($1,'employee-service',$2,$3,'PlatformAccess',$4::jsonb,$5,$6,$7,$8,now())");
+                        "VALUES ($1,'employee-service',$2,$3,$9,$4::jsonb,$5,$6,$7,$8,now())");
                     cmd.Parameters.Add(new NpgsqlParameter { Value = tenant });
                     cmd.Parameters.Add(new NpgsqlParameter { Value = entityType });
                     cmd.Parameters.Add(new NpgsqlParameter { Value = entityId });
@@ -59,6 +59,7 @@ public static class PlatformAccessAudit
                     cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)userName ?? DBNull.Value });
                     cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)correlation ?? DBNull.Value });
                     cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)ip ?? DBNull.Value });
+                    cmd.Parameters.Add(new NpgsqlParameter { Value = action });
                     batch.BatchCommands.Add(cmd);
                 }
                 await batch.ExecuteNonQueryAsync(ct);
@@ -72,5 +73,29 @@ public static class PlatformAccessAudit
         {
             Console.Error.WriteLine($"[audit] employee-service: platform erişim kaydı yazılamadı: {ex.Message}");
         }
+    }
+}
+
+/// <summary>
+/// Güvenlik dalgası 2B: yönetici/İK'nın BAŞKA bir çalışanın tam kaydını açması audit_log'a "Viewed" olarak
+/// yazılır; governance-service'in toplu görüntüleme dedektörü (kısa sürede çok sayıda farklı kayıt)
+/// bu satırları sayar. Gürültüyü azaltmak için aynı kişi-kayıt çifti 10 dakikada bir kez yazılır;
+/// yalnızca gateway'den gelen (X-Real-IP taşıyan) istekler sayılır — servislerin kullanıcı jetonuyla
+/// yaptığı iç okumalar (bildirim, onaycı bulma) kişinin görüntülemesi değildir.
+/// </summary>
+public static class RecordViewLog
+{
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> Recent = new();
+    public static readonly TimeSpan Dedupe = TimeSpan.FromMinutes(10);
+
+    public static bool ShouldLog(string tenant, string userId, Guid employeeId, DateTime? now = null)
+    {
+        var t = now ?? DateTime.UtcNow;
+        if (Recent.Count > 50_000)
+            foreach (var kv in Recent.Where(kv => t - kv.Value > Dedupe).ToList()) Recent.TryRemove(kv.Key, out _);
+        var key = $"{tenant}|{userId}|{employeeId}";
+        var fresh = true;
+        Recent.AddOrUpdate(key, t, (_, prev) => { if (t - prev < Dedupe) { fresh = false; return prev; } return t; });
+        return fresh;
     }
 }

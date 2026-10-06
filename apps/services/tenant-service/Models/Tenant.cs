@@ -100,4 +100,11 @@ public class Tenant
     /// virgulle ayrilmis) erisebilir. Tum servislerdeki TenantStatusGate uygular.
     /// </summary>
     public string? IpAllowlist { get; set; }
+
+    /// <summary>
+    /// Guvenlik dalgasi 2A: iki adimli dogrulama zorunlulugu. null/"off" = yok, "privileged" =
+    /// IK, sirket yoneticisi ve yonetici rolleri, "all" = tum sirket kullanicilari. Bkz.
+    /// Security/MfaPolicyRules ve Services/MfaPolicyHostedService.
+    /// </summary>
+    public string? MfaPolicy { get; set; }
 }

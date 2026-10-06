@@ -123,8 +123,15 @@ public class AuditController : AppController
         var rows = await Db.QueryAsync($"SELECT {Cols} FROM audit_log {where} ORDER BY \"OccurredAt\" DESC LIMIT 50000",
             r => new[] { r.GetFieldValue<DateTime>(10).ToString("u"), r.GetString(1), r.GetString(2), r.Str(3) ?? "", r.GetString(4), r.Str(7) ?? r.Str(6) ?? "", r.Str(8) ?? "", r.Str(9) ?? "", r.Str(5) ?? "" },
             ct, args.ToArray());
-        var sb = new StringBuilder("﻿Zaman;Servis;Varlık;Kimlik;İşlem;Kullanıcı;İstek kimliği;IP;Değişiklik\n");
+        // Güvenlik dalgası 2B: indirene ait filigran satırı + iz kodu (denetim kaydına bağlı).
+        var trace = Watermark.NewCode();
+        var at = DateTimeOffset.UtcNow;
+        // Platform yöneticisinin kiracısız oturumunda satır platform düzeyinde (TenantSlug NULL) kalır.
+        await Watermark.AuditAsync(Db, HttpContext.RequestServices.GetRequiredService<ITenantContext>().TenantSlug!, "audit-log-csv", null, "csv", rows.Count, trace, Me.UserId, Me.Name, ct);
+        var sb = new StringBuilder("﻿# " + Watermark.Text(Me.Name, at, trace).Replace(";", ",") + "\n");
+        sb.Append("Zaman;Servis;Varlık;Kimlik;İşlem;Kullanıcı;İstek kimliği;IP;Değişiklik\n");
         foreach (var row in rows) sb.AppendLine(string.Join(';', row.Select(c => "\"" + c.Replace("\"", "\"\"") + "\"")));
+        Response.Headers["X-HR360-Trace"] = trace;
         return File(Encoding.UTF8.GetBytes(sb.ToString()), "text/csv; charset=utf-8", $"denetim-kaydi-{DateTime.UtcNow:yyyyMMdd}.csv");
     }
 }

@@ -168,6 +168,13 @@ git reset -q --hard "$TARGET"
 info "Goc betikleri, imajlar ve servisler"
 if deploy && healthy; then
   record "result=basarili"
+  # Guvenlik dalgasi 2A (bir kez): tenant-service'in Keycloak yonetim API servis hesabi yoksa
+  # olusturulur (anahtar .env'e eklenir, parola politikasi ve giris olaylari uygulanir).
+  if [ -x scripts/keycloak-service-account.sh ] && ! grep -q '^KEYCLOAK_TENANT_ADMIN_CLIENT_SECRET=.' .env; then
+    info "Keycloak yonetim API servis hesabi olusturuluyor"
+    scripts/keycloak-service-account.sh apply \
+      || echo "UYARI: servis hesabi olusturulamadi; scripts/keycloak-service-account.sh ile tekrar deneyin." >&2
+  fi
   info "Guncelleme tamamlandi: ${TARGET:0:12}"
   exit 0
 fi

@@ -31,6 +31,7 @@ import {
 import { formatDate, formatDateTime, formatNumber } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { tx, appLocale } from '@/lib/i18n'
+import { GrantAccessModal, MyGrantsPanel } from './PlatformAccessPanels'
 
 const ALL = '__all__'
 
@@ -377,6 +378,7 @@ export function TenantsPage() {
   const [openId, setOpenId] = useState<string | null>(null)
   const [suspendFor, setSuspendFor] = useState<Tenant | null>(null)
   const [planFor, setPlanFor] = useState<Tenant | null>(null)
+  const [grantFor, setGrantFor] = useState<Tenant | null>(null)
 
   // Tüm kiracılar bir kez çekilir; durum filtresi istemcide uygulanır. Böylece üstteki
   // istatistik kartları (toplam/aktif/…) filtreden bağımsız, tüm platformu gösterir.
@@ -551,6 +553,8 @@ export function TenantsPage() {
         </div>
       )}
 
+      <MyGrantsPanel />
+
       <DataTable
         rows={rows}
         rowKey={(t) => t.id}
@@ -568,6 +572,11 @@ export function TenantsPage() {
         emptyDetail={tx('Bu filtreye uyan kiracı bulunmuyor.')}
         rowActions={[
           { label: tx('Detay ve kurulum kaydı'), onSelect: (t) => setOpenId(t.id) },
+          {
+            label: tx('Süreli erişim izni aç'),
+            hidden: (t) => t.status !== 'Active',
+            onSelect: (t) => setGrantFor(t),
+          },
           {
             label: tx('Planı değiştir'),
             hidden: (t) => t.status === 'Cancelled',
@@ -589,6 +598,7 @@ export function TenantsPage() {
 
       <TenantDetail tenantId={openId} onClose={() => setOpenId(null)} />
       <SuspendModal tenant={suspendFor} onClose={() => setSuspendFor(null)} />
+      <GrantAccessModal key={grantFor?.id ?? 'none-grant'} tenant={grantFor} onClose={() => setGrantFor(null)} />
       <PlanModal
         key={planFor?.id ?? 'none'}
         tenant={planFor}

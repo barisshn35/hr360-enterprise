@@ -17,16 +17,24 @@ import { cn } from '@/lib/utils'
 import { PlanGate, errMsg, useAction } from '@/features/shared/kit'
 import { tx, appLocale } from '@/lib/i18n'
 import { useConfirm } from '@/components/ui/Confirm'
+import { requestTrace, WATERMARK_CSS, watermarkHtml } from '@/lib/watermark'
 
 /** Belgeleri sayfa sonlarıyla tek pencerede açar ve yazdırma diyaloğunu tetikler (PDF olarak kaydet). */
 export function printDocuments(title: string, docs: RenderedDoc[]) {
   const w = window.open('', '_blank')
   if (!w) throw new Error(tx('Açılır pencere engellendi; tarayıcıda izin verin.'))
+  w.document.write(`<!doctype html><meta charset="utf-8"><title>…</title><p style="font-family:Arial,sans-serif">${tx('Hazırlanıyor…')}</p>`)
+  // Güvenlik dalgası 2B: indirene ait filigran + iz kodu (denetim kaydına bağlı).
+  void requestTrace('document', { subject: title.slice(0, 100), format: 'print', rows: docs.length }).then((trace) => writeDocuments(w, title, docs, trace?.text))
+}
+
+function writeDocuments(w: Window, title: string, docs: RenderedDoc[], watermark?: string) {
+  w.document.open()
   const pages = docs.map((d, i) => `<section class="page"${i < docs.length - 1 ? ' style="page-break-after:always"' : ''}>${d.html}</section>`).join('')
   w.document.write(`<!doctype html><html lang="tr"><head><meta charset="utf-8"><title>${title}</title>
     <style>@page{size:A4;margin:22mm 20mm}body{font-family:Inter,'Segoe UI',Arial,sans-serif;color:#111;font-size:12pt;line-height:1.6}
-    .page{max-width:170mm;margin:0 auto}h1,h2{letter-spacing:-.01em}@media screen{body{background:#f4f4f5}.page{background:#fff;padding:24mm 20mm;margin:16px auto;box-shadow:0 2px 12px #0002}}</style>
-    </head><body>${pages}<script>window.onload=()=>setTimeout(()=>window.print(),300)<\/script></body></html>`)
+    .page{max-width:170mm;margin:0 auto}h1,h2{letter-spacing:-.01em}@media screen{body{background:#f4f4f5}.page{background:#fff;padding:24mm 20mm;margin:16px auto;box-shadow:0 2px 12px #0002}}${WATERMARK_CSS}</style>
+    </head><body>${watermarkHtml(watermark)}${pages}<script>window.onload=()=>setTimeout(()=>window.print(),300)<\/script></body></html>`)
   w.document.close()
 }
 

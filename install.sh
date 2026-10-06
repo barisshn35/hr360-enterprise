@@ -176,11 +176,13 @@ ask_secret_aes_key() {
 }
 
 ask_secret() {
-  # ask_secret <degisken_adi> <soru_metni>
+  # ask_secret <degisken_adi> <soru_metni> [en_az_uzunluk]
   # Elle girilen sirlar .env'e tirnaksiz yazilir ve baglanti dizelerinde/URI'lerde
   # kullanilir ($, ;, @, /, :, bosluk, # gibi karakterler bunlari bozar). Bu yuzden
   # yalnizca guvenli karakterlere izin verilir.
-  local var_name="$1"; local prompt="$2"
+  # Keycloak kullanici parolalari (demo.admin, platform.admin) realm parola politikasina
+  # (en az 12 karakter) uymali: uymazsa Keycloak realm'i iceri alirken acilmaz.
+  local var_name="$1"; local prompt="$2"; local min="${3:-8}"
   local input=""
   while :; do
     input=""
@@ -190,8 +192,8 @@ ask_secret() {
       echo "   -> otomatik uretildi: $input"
       break
     fi
-    [[ "$input" =~ ^[A-Za-z0-9._~+=-]{8,}$ ]] && break
-    warn "En az 8 karakter; yalnizca harf, rakam ve . _ ~ + = - kullanin."
+    [[ "$input" =~ ^[A-Za-z0-9._~+=-]+$ ]] && [ "${#input}" -ge "$min" ] && break
+    warn "En az ${min} karakter; yalnizca harf, rakam ve . _ ~ + = - kullanin."
   done
   printf -v "$var_name" '%s' "$input"
 }
@@ -567,6 +569,15 @@ if [ -f .env ]; then
 
     docker compose up -d --build
 
+    # Guvenlik dalgasi 2A: tenant-service eski kurulumlarda Keycloak yonetim API'sine master
+    # yonetici parolasiyla giriyordu. Servis hesabi bir kez olusturulur (anahtar .env'e eklenir,
+    # parola politikasi ve giris olaylari uygulanir, tenant-service yeniden olusturulur).
+    if [ -z "${KEYCLOAK_TENANT_ADMIN_CLIENT_SECRET:-}" ]; then
+      info "Keycloak yonetim API servis hesabi olusturuluyor..."
+      scripts/keycloak-service-account.sh apply \
+        || warn "Servis hesabi olusturulamadi; sonra scripts/keycloak-service-account.sh ile deneyin."
+    fi
+
     # Guncellemede verilen --domain/--tls ve --keycloak-admin de uygulanir (onceden yalnizca
     # uyari veriliyordu; alan adina gecis elle scripts/tls.sh ile yapilmak zorundaydi).
     if [ -n "$OPT_DOMAIN" ]; then
@@ -889,14 +900,16 @@ ask_secret KEYCLOAK_ADMIN_PASSWORD    "Keycloak master admin parolasi"
 ask_secret_aes_key TENANT_SECRET_KEY  "tenant-service imza anahtari"
 ask_secret MINIO_ROOT_PASSWORD        "MinIO root parolasi"
 ask_secret ML_KEYCLOAK_CLIENT_SECRET  "ml-inference Keycloak client secret'i"
-ask_secret DEMO_ADMIN_PASSWORD        "Demo giris kullanicisi (demo.admin) parolasi"
-ask_secret PLATFORM_ADMIN_PASSWORD    "Platform yoneticisi (platform.admin) parolasi"
+ask_secret DEMO_ADMIN_PASSWORD        "Demo giris kullanicisi (demo.admin) parolasi" 12
+ask_secret PLATFORM_ADMIN_PASSWORD    "Platform yoneticisi (platform.admin) parolasi" 12
 
 KEYCLOAK_ADMIN_USER=admin
 MINIO_ROOT_USER=hr360minio
 INTERNAL_SERVICE_TOKEN="$(random_secret)$(random_secret)"
 REDIS_PASSWORD="$(random_secret)$(random_secret)"
 BACKUP_ENCRYPTION_KEY="$(random_secret)$(random_secret)$(random_secret)"
+# tenant-service'in Keycloak yonetim API servis hesabi (hr360-tenant-admin, client_credentials).
+KEYCLOAK_TENANT_ADMIN_CLIENT_SECRET="$(random_secret)$(random_secret)"
 
 # --- 3) .env yaz ----------------------------------------------------------
 cat > .env <<EOF
@@ -914,6 +927,12 @@ MINIO_ROOT_USER=${MINIO_ROOT_USER}
 MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
 
 ML_KEYCLOAK_CLIENT_SECRET=${ML_KEYCLOAK_CLIENT_SECRET}
+
+# Keycloak yonetim API servis hesabi (hr360-tenant-admin, client_credentials). tenant-service
+# master yonetici parolasini kullanmaz (LEGACY degerleri bos); bkz. scripts/keycloak-service-account.sh
+KEYCLOAK_TENANT_ADMIN_CLIENT_SECRET=${KEYCLOAK_TENANT_ADMIN_CLIENT_SECRET}
+KEYCLOAK_TENANT_ADMIN_LEGACY_USER=
+KEYCLOAK_TENANT_ADMIN_LEGACY_PASSWORD=
 
 # Servisler arasi ic cagri anahtari (yalnizca konteynerler arasi; gateway disariya acmaz).
 INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN}
@@ -973,6 +992,7 @@ shopt -u patsub_replacement 2>/dev/null || true
 realm="$(<deploy/keycloak/realm-export.template.json)"
 for pair in \
   "__ML_KEYCLOAK_CLIENT_SECRET__=${ML_KEYCLOAK_CLIENT_SECRET}" \
+  "__TENANT_ADMIN_CLIENT_SECRET__=${KEYCLOAK_TENANT_ADMIN_CLIENT_SECRET}" \
   "__DEMO_ADMIN_PASSWORD__=${DEMO_ADMIN_PASSWORD}" \
   "__PLATFORM_ADMIN_PASSWORD__=${PLATFORM_ADMIN_PASSWORD}" \
   "__PUBLIC_ORIGIN__=${PUBLIC_ORIGIN}" \
@@ -1026,6 +1046,12 @@ until curl -sf "http://localhost:${GATEWAY_PORT}/auth/realms/hr360" >/dev/null 2
   fi
   sleep 3
 done
+
+# Servis hesabi, parola politikasi ve giris olaylari realm sablonunda var; Keycloak veritabani
+# onceki bir kurulumdan kaldiysa (realm iceri alinmadan atlanir) burada uygulanir. Panel erisimi
+# ayari (asagida) servis hesabini gorunce master realm'de kaba kuvvet korumasini acar.
+scripts/keycloak-service-account.sh apply \
+  || warn "Keycloak servis hesabi ayarlanamadi; sonra scripts/keycloak-service-account.sh ile deneyin."
 
 info "Keycloak yonetim paneli erisimi ayarlaniyor (${KEYCLOAK_ADMIN_MODE})..."
 if [ "$KEYCLOAK_ADMIN_MODE" = "open" ]; then
