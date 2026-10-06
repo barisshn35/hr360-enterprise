@@ -541,6 +541,10 @@ public static class Retention
         });
     }
 
+    private static readonly Lazy<Sql?> RetentionSql = new(() =>
+        Environment.GetEnvironmentVariable("RETENTION_DB_CONNECTION") is { Length: > 0 } cs
+            ? new Sql(Npgsql.NpgsqlDataSource.Create(cs)) : null);
+
     public static async Task<int> RunAsync(Sql sql, RetentionPolicy p, CancellationToken ct)
     {
         var t = p.TenantSlug;
@@ -564,7 +568,9 @@ public static class Retention
             case "TerminatedEmployees":
                 return await AnonymizeEmployeesAsync(sql, t, null, months, ct);
             case "AuditLog":
-                return await sql.ExecuteAsync("DELETE FROM audit_log WHERE \"TenantSlug\" = $1 AND \"OccurredAt\" < now() - make_interval(months => $2)", ct, t, months);
+                // audit_log'dan silme yetkisi en az yetki kurulumunda yalnızca hr360_retention rolündedir
+                // (deploy/postgres/roles.sql); RETENTION_DB_CONNECTION tanımlıysa bu adım o bağlantıyla yapılır.
+                return await (RetentionSql.Value ?? sql).ExecuteAsync("DELETE FROM audit_log WHERE \"TenantSlug\" = $1 AND \"OccurredAt\" < now() - make_interval(months => $2)", ct, t, months);
             case "Notifications":
                 return await sql.ExecuteAsync("DELETE FROM notification_messages WHERE \"TenantSlug\" = $1 AND \"CreatedAt\" < now() - make_interval(months => $2)", ct, t, months);
             case "AiUsage":

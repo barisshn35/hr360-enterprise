@@ -10,6 +10,8 @@ using WorkflowService.Tenancy;
 using WorkflowService.Messaging;
 using WorkflowService.Services;
 
+// Sırlar dosyadan da okunabilir (X_FILE, Docker secrets); X tanımlıysa davranış aynı.
+WorkflowService.Security.SecretEnv.Load();
 var builder = WebApplication.CreateBuilder(args);
 // G25: OpenTelemetry izleme (yalnizca OTEL_EXPORTER_OTLP_ENDPOINT tanimliysa) + KVKK maskeleme.
 WorkflowService.Observability.Telemetry.AddHrTelemetry(builder.Services, "workflow-service");

@@ -248,10 +248,10 @@ services:
     <<: *dotnet-service
     build: ./apps/services/organization-service
     environment:
-      ORG_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=12"
+      ORG_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=${HR360_DB_USER_ORGANIZATION:-hr360admin};Password=${HR360_DB_PASSWORD_ORGANIZATION:-${HR360_DB_PASSWORD:-}};Maximum Pool Size=12"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
       KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
-      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=3"
+      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=${HR360_DB_USER_ORGANIZATION:-hr360admin};Password=${HR360_DB_PASSWORD_ORGANIZATION:-${HR360_DB_PASSWORD:-}};Maximum Pool Size=3"
       ASPNETCORE_ENVIRONMENT: "Production"
     mem_limit: "512m"
 
@@ -259,10 +259,10 @@ services:
     <<: *dotnet-service
     build: ./apps/services/employee-service
     environment:
-      EMPLOYEE_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=12"
+      EMPLOYEE_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=${HR360_DB_USER_EMPLOYEE:-hr360admin};Password=${HR360_DB_PASSWORD_EMPLOYEE:-${HR360_DB_PASSWORD:-}};Maximum Pool Size=12"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
       KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
-      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=3"
+      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=${HR360_DB_USER_EMPLOYEE:-hr360admin};Password=${HR360_DB_PASSWORD_EMPLOYEE:-${HR360_DB_PASSWORD:-}};Maximum Pool Size=3"
       KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
       ORGANIZATION_SERVICE_URL: "http://organization-service:8080"
       # Dizin sağlama (SCIM/LDAP) iç ucu: /api/internal/employees/directory-upsert.
@@ -277,10 +277,10 @@ services:
     environment:
       INTERNAL_SERVICE_TOKEN: "${INTERNAL_SERVICE_TOKEN:-}"
       INTERNAL_SERVICE_TOKEN_PREVIOUS: "${INTERNAL_SERVICE_TOKEN_PREVIOUS:-}"
-      WORKFLOW_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=12"
+      WORKFLOW_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=${HR360_DB_USER_WORKFLOW:-hr360admin};Password=${HR360_DB_PASSWORD_WORKFLOW:-${HR360_DB_PASSWORD:-}};Maximum Pool Size=12"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
       KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
-      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=3"
+      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=${HR360_DB_USER_WORKFLOW:-hr360admin};Password=${HR360_DB_PASSWORD_WORKFLOW:-${HR360_DB_PASSWORD:-}};Maximum Pool Size=3"
       KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
       EMPLOYEE_SERVICE_URL: "http://employee-service:8080"
       ASPNETCORE_ENVIRONMENT: "Production"
@@ -290,10 +290,10 @@ services:
     <<: *dotnet-service
     build: ./apps/services/leave-service
     environment:
-      LEAVE_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=12"
+      LEAVE_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=${HR360_DB_USER_LEAVE:-hr360admin};Password=${HR360_DB_PASSWORD_LEAVE:-${HR360_DB_PASSWORD:-}};Maximum Pool Size=12"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
       KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
-      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=3"
+      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=${HR360_DB_USER_LEAVE:-hr360admin};Password=${HR360_DB_PASSWORD_LEAVE:-${HR360_DB_PASSWORD:-}};Maximum Pool Size=3"
       KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
       EMPLOYEE_SERVICE_URL: "http://employee-service:8080"
       ORGANIZATION_SERVICE_URL: "http://organization-service:8080"
@@ -311,10 +311,10 @@ services:
       # Teklif onay akisi (workflow-service) ve karar olaylari (Kafka).
       KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
       WORKFLOW_SERVICE_URL: "http://workflow-service:8080"
-      RECRUITMENT_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=12"
+      RECRUITMENT_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=${HR360_DB_USER_RECRUITMENT:-hr360admin};Password=${HR360_DB_PASSWORD_RECRUITMENT:-${HR360_DB_PASSWORD:-}};Maximum Pool Size=12"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
       KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
-      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=3"
+      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=${HR360_DB_USER_RECRUITMENT:-hr360admin};Password=${HR360_DB_PASSWORD_RECRUITMENT:-${HR360_DB_PASSWORD:-}};Maximum Pool Size=3"
       ASPNETCORE_ENVIRONMENT: "Production"
     mem_limit: "512m"
 
@@ -326,10 +326,10 @@ services:
       INTERNAL_SERVICE_TOKEN: "${INTERNAL_SERVICE_TOKEN:-}"
       INTERNAL_SERVICE_TOKEN_PREVIOUS: "${INTERNAL_SERVICE_TOKEN_PREVIOUS:-}"
       EMPLOYEE_SERVICE_URL: "http://employee-service:8080"
-      ONBOARDING_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=12"
+      ONBOARDING_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=${HR360_DB_USER_ONBOARDING:-hr360admin};Password=${HR360_DB_PASSWORD_ONBOARDING:-${HR360_DB_PASSWORD:-}};Maximum Pool Size=12"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
       KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
-      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=3"
+      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=${HR360_DB_USER_ONBOARDING:-hr360admin};Password=${HR360_DB_PASSWORD_ONBOARDING:-${HR360_DB_PASSWORD:-}};Maximum Pool Size=3"
       ASPNETCORE_ENVIRONMENT: "Production"
     mem_limit: "512m"
 
@@ -337,10 +337,10 @@ services:
     <<: *dotnet-service
     build: ./apps/services/timeshift-service
     environment:
-      TIMESHIFT_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=12"
+      TIMESHIFT_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=${HR360_DB_USER_TIMESHIFT:-hr360admin};Password=${HR360_DB_PASSWORD_TIMESHIFT:-${HR360_DB_PASSWORD:-}};Maximum Pool Size=12"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
       KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
-      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=3"
+      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=${HR360_DB_USER_TIMESHIFT:-hr360admin};Password=${HR360_DB_PASSWORD_TIMESHIFT:-${HR360_DB_PASSWORD:-}};Maximum Pool Size=3"
       KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
       ORGANIZATION_SERVICE_URL: "http://organization-service:8080"
       EMPLOYEE_SERVICE_URL: "http://employee-service:8080"
@@ -355,10 +355,10 @@ services:
     <<: *dotnet-service
     build: ./apps/services/performance-service
     environment:
-      PERFORMANCE_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=12"
+      PERFORMANCE_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=${HR360_DB_USER_PERFORMANCE:-hr360admin};Password=${HR360_DB_PASSWORD_PERFORMANCE:-${HR360_DB_PASSWORD:-}};Maximum Pool Size=12"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
       KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
-      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=3"
+      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=${HR360_DB_USER_PERFORMANCE:-hr360admin};Password=${HR360_DB_PASSWORD_PERFORMANCE:-${HR360_DB_PASSWORD:-}};Maximum Pool Size=3"
       ORGANIZATION_SERVICE_URL: "http://organization-service:8080"
       EMPLOYEE_SERVICE_URL: "http://employee-service:8080"
       ML_INFERENCE_URL: "http://ml-inference:8000"
@@ -371,11 +371,11 @@ services:
     environment:
       EMPLOYEE_SERVICE_URL: "http://employee-service:8080"
       # SCORM iframe başlatma jetonu (imzalı çerez) bu anahtardan türetilir.
-      TENANT_SECRET_KEY: "${TENANT_SECRET_KEY}"
-      LEARNING_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=12"
+      TENANT_SECRET_KEY: "${TENANT_SECRET_KEY:-}"
+      LEARNING_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=${HR360_DB_USER_LEARNING:-hr360admin};Password=${HR360_DB_PASSWORD_LEARNING:-${HR360_DB_PASSWORD:-}};Maximum Pool Size=12"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
       KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
-      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=3"
+      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=${HR360_DB_USER_LEARNING:-hr360admin};Password=${HR360_DB_PASSWORD_LEARNING:-${HR360_DB_PASSWORD:-}};Maximum Pool Size=3"
       ASPNETCORE_ENVIRONMENT: "Production"
     mem_limit: "512m"
 
@@ -385,18 +385,22 @@ services:
     <<: *dotnet-service
     build: ./apps/services/engagement-service
     environment:
-      ENGAGEMENT_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=12"
+      ENGAGEMENT_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=${HR360_DB_USER_ENGAGEMENT:-hr360admin};Password=${HR360_DB_PASSWORD_ENGAGEMENT:-${HR360_DB_PASSWORD:-}};Maximum Pool Size=12"
       PLAN_ENFORCEMENT: "${PLAN_ENFORCEMENT:-false}"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
       KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
-      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=3"
+      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=${HR360_DB_USER_ENGAGEMENT:-hr360admin};Password=${HR360_DB_PASSWORD_ENGAGEMENT:-${HR360_DB_PASSWORD:-}};Maximum Pool Size=3"
       EMPLOYEE_SERVICE_URL: "http://employee-service:8080"
       # Offboarding: ayrilan calisanin hesabini tenant-service ic ucuyla kapatir (G15).
       TENANT_SERVICE_URL: "http://tenant-service:8080"
       INTERNAL_SERVICE_TOKEN: "${INTERNAL_SERVICE_TOKEN:-}"
       INTERNAL_SERVICE_TOKEN_PREVIOUS: "${INTERNAL_SERVICE_TOKEN_PREVIOUS:-}"
       # KVKK m.12: profildeki TCKN ve IBAN bu anahtarla veritabaninda sifrelenir.
-      TENANT_SECRET_KEY: "${TENANT_SECRET_KEY}"
+      TENANT_SECRET_KEY: "${TENANT_SECRET_KEY:-}"
+      # Anahtar yenileme (docs/guvenlik/README.md "Şifreleme anahtarı yenileme"): "kimlik:base64,..."
+      # ilk = etkin. Bos ise tek anahtar TENANT_SECRET_KEY (k0).
+      TENANT_SECRET_KEYS: "${TENANT_SECRET_KEYS:-}"
+      CRYPTO_REENCRYPT: "${CRYPTO_REENCRYPT:-auto}"
       # Paylasilan onbellek (dizin, ofis dolulugu, ekip sagligi). Bos ise kapali.
       REDIS_URL: "redis:6379,password=${REDIS_PASSWORD:-}"
       ASPNETCORE_ENVIRONMENT: "Production"
@@ -413,10 +417,10 @@ services:
       OCR_CLIENT_SECRET: "${ML_KEYCLOAK_CLIENT_SECRET:-}"
       INTERNAL_SERVICE_TOKEN: "${INTERNAL_SERVICE_TOKEN:-}"
       INTERNAL_SERVICE_TOKEN_PREVIOUS: "${INTERNAL_SERVICE_TOKEN_PREVIOUS:-}"
-      GOVERNANCE_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=12"
+      GOVERNANCE_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=${HR360_DB_USER_GOVERNANCE:-hr360admin};Password=${HR360_DB_PASSWORD_GOVERNANCE:-${HR360_DB_PASSWORD:-}};Maximum Pool Size=12"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
       KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
-      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=3"
+      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=${HR360_DB_USER_GOVERNANCE:-hr360admin};Password=${HR360_DB_PASSWORD_GOVERNANCE:-${HR360_DB_PASSWORD:-}};Maximum Pool Size=3"
       KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
       # Paylasilan onbellek (dizin, analitik) ve acik API hiz siniri sayaci. Bos ise kapali.
       REDIS_URL: "redis:6379,password=${REDIS_PASSWORD:-}"
@@ -426,7 +430,13 @@ services:
       # Slack/Teams'e verilecek geri cagri adresleri ve mesajlardaki baglantilar icin.
       PUBLIC_ORIGIN: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}"
       # Entegrasyon sirlari (bot jetonlari, OAuth) bu anahtarla sifrelenir.
-      TENANT_SECRET_KEY: "${TENANT_SECRET_KEY}"
+      TENANT_SECRET_KEY: "${TENANT_SECRET_KEY:-}"
+      # Anahtar yenileme (docs/guvenlik/README.md "Şifreleme anahtarı yenileme"): "kimlik:base64,..."
+      # ilk = etkin. Bos ise tek anahtar TENANT_SECRET_KEY (k0).
+      TENANT_SECRET_KEYS: "${TENANT_SECRET_KEYS:-}"
+      CRYPTO_REENCRYPT: "${CRYPTO_REENCRYPT:-auto}"
+      # Saklama isi audit_log silmesini bu baglantiyla yapar (en az yetki: hr360_retention rolu).
+      RETENTION_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=${HR360_DB_USER_RETENTION:-hr360admin};Password=${HR360_DB_PASSWORD_RETENTION:-${HR360_DB_PASSWORD:-}};Maximum Pool Size=2"
       ML_INFERENCE_URL: "http://ml-inference:8000"
       LEAVE_SERVICE_URL: "http://leave-service:8080"
       # KVKK uyum ekrani: SMTP saglayicisi yurt disindaysa uyari verir.
@@ -460,11 +470,15 @@ services:
     build: ./apps/services/compensation-service
     environment:
       # Bordro/masraf dosyaları ve pasaport no bu anahtarla şifrelenir; TCKN/IBAN açılır.
-      TENANT_SECRET_KEY: "${TENANT_SECRET_KEY}"
-      COMPENSATION_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=12"
+      TENANT_SECRET_KEY: "${TENANT_SECRET_KEY:-}"
+      # Anahtar yenileme (docs/guvenlik/README.md "Şifreleme anahtarı yenileme"): "kimlik:base64,..."
+      # ilk = etkin. Bos ise tek anahtar TENANT_SECRET_KEY (k0).
+      TENANT_SECRET_KEYS: "${TENANT_SECRET_KEYS:-}"
+      CRYPTO_REENCRYPT: "${CRYPTO_REENCRYPT:-auto}"
+      COMPENSATION_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=${HR360_DB_USER_COMPENSATION:-hr360admin};Password=${HR360_DB_PASSWORD_COMPENSATION:-${HR360_DB_PASSWORD:-}};Maximum Pool Size=12"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
       KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
-      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=3"
+      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=${HR360_DB_USER_COMPENSATION:-hr360admin};Password=${HR360_DB_PASSWORD_COMPENSATION:-${HR360_DB_PASSWORD:-}};Maximum Pool Size=3"
       ASPNETCORE_ENVIRONMENT: "Production"
     mem_limit: "512m"
 
@@ -473,14 +487,18 @@ services:
     build: ./apps/services/expense-service
     environment:
       # Bordro/masraf dosyaları ve pasaport no bu anahtarla şifrelenir; TCKN/IBAN açılır.
-      TENANT_SECRET_KEY: "${TENANT_SECRET_KEY}"
+      TENANT_SECRET_KEY: "${TENANT_SECRET_KEY:-}"
+      # Anahtar yenileme (docs/guvenlik/README.md "Şifreleme anahtarı yenileme"): "kimlik:base64,..."
+      # ilk = etkin. Bos ise tek anahtar TENANT_SECRET_KEY (k0).
+      TENANT_SECRET_KEYS: "${TENANT_SECRET_KEYS:-}"
+      CRYPTO_REENCRYPT: "${CRYPTO_REENCRYPT:-auto}"
       # Sohbet botunun masraf taslağı / İK vakası çağrıları (servisler arası iç uç)
       INTERNAL_SERVICE_TOKEN: "${INTERNAL_SERVICE_TOKEN:-}"
       INTERNAL_SERVICE_TOKEN_PREVIOUS: "${INTERNAL_SERVICE_TOKEN_PREVIOUS:-}"
-      EXPENSE_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=12"
+      EXPENSE_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=${HR360_DB_USER_EXPENSE:-hr360admin};Password=${HR360_DB_PASSWORD_EXPENSE:-${HR360_DB_PASSWORD:-}};Maximum Pool Size=12"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
       KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
-      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=3"
+      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=${HR360_DB_USER_EXPENSE:-hr360admin};Password=${HR360_DB_PASSWORD_EXPENSE:-${HR360_DB_PASSWORD:-}};Maximum Pool Size=3"
       KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
       EMPLOYEE_SERVICE_URL: "http://employee-service:8080"
       ORGANIZATION_SERVICE_URL: "http://organization-service:8080"
@@ -494,10 +512,10 @@ services:
     environment:
       INTERNAL_SERVICE_TOKEN: "${INTERNAL_SERVICE_TOKEN:-}"
       INTERNAL_SERVICE_TOKEN_PREVIOUS: "${INTERNAL_SERVICE_TOKEN_PREVIOUS:-}"
-      NOTIFICATION_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=12"
+      NOTIFICATION_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=${HR360_DB_USER_NOTIFICATION:-hr360admin};Password=${HR360_DB_PASSWORD_NOTIFICATION:-${HR360_DB_PASSWORD:-}};Maximum Pool Size=12"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
       KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
-      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=3"
+      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=${HR360_DB_USER_NOTIFICATION:-hr360admin};Password=${HR360_DB_PASSWORD_NOTIFICATION:-${HR360_DB_PASSWORD:-}};Maximum Pool Size=3"
       KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
       TENANT_SERVICE_URL: "http://tenant-service:8080"
       # NOT: POST /api/notifications (Email kanali), calisanin e-postasini
@@ -508,7 +526,11 @@ services:
       # dakikalarca askida kaliyor (POST /api/notifications zaman asimina
       # ugruyordu). Bu adresi kullanan diger servisler de degiskeni tanimliyor.
       EMPLOYEE_SERVICE_URL: "http://employee-service:8080"
-      TENANT_SECRET_KEY: ${TENANT_SECRET_KEY}
+      TENANT_SECRET_KEY: "${TENANT_SECRET_KEY:-}"
+      # Anahtar yenileme (docs/guvenlik/README.md "Şifreleme anahtarı yenileme"): "kimlik:base64,..."
+      # ilk = etkin. Bos ise tek anahtar TENANT_SECRET_KEY (k0).
+      TENANT_SECRET_KEYS: "${TENANT_SECRET_KEYS:-}"
+      CRYPTO_REENCRYPT: "${CRYPTO_REENCRYPT:-auto}"
       # E-postadaki karar bağlantısı ve anlık bildirim (VAPID) için genel adres.
       PUBLIC_ORIGIN: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}"
       ASPNETCORE_ENVIRONMENT: "Production"
@@ -525,10 +547,10 @@ services:
     build: ./apps/services/tenant-service
     environment:
       KEYCLOAK_PASSKEYS: "${KEYCLOAK_PASSKEYS:-true}"
-      TENANT_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=12"
+      TENANT_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=${HR360_DB_USER_TENANT:-hr360admin};Password=${HR360_DB_PASSWORD_TENANT:-${HR360_DB_PASSWORD:-}};Maximum Pool Size=12"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
       KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"
-      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=hr360admin;Password=${HR360_DB_PASSWORD};Maximum Pool Size=3"
+      TENANT_STATUS_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=${HR360_DB_USER_TENANT:-hr360admin};Password=${HR360_DB_PASSWORD_TENANT:-${HR360_DB_PASSWORD:-}};Maximum Pool Size=3"
       KEYCLOAK_BASE_URL: "http://keycloak:8080/auth"
       KEYCLOAK_REALM: "hr360"
       # Guvenlik dalgasi 2A: yonetim API'si hr360 realm'indeki "hr360-tenant-admin" servis
@@ -543,7 +565,11 @@ services:
       # Testler platform.admin ile tarayicidan parola girisi yaptigi icin varsayilan kapali.
       MFA_REQUIRE_PLATFORM_ADMIN: "${MFA_REQUIRE_PLATFORM_ADMIN:-false}"
       NOTIFICATION_SERVICE_URL: "http://notification-service:8080"
-      TENANT_SECRET_KEY: ${TENANT_SECRET_KEY}
+      TENANT_SECRET_KEY: "${TENANT_SECRET_KEY:-}"
+      # Anahtar yenileme (docs/guvenlik/README.md "Şifreleme anahtarı yenileme"): "kimlik:base64,..."
+      # ilk = etkin. Bos ise tek anahtar TENANT_SECRET_KEY (k0).
+      TENANT_SECRET_KEYS: "${TENANT_SECRET_KEYS:-}"
+      CRYPTO_REENCRYPT: "${CRYPTO_REENCRYPT:-auto}"
       # /internal/users/disable (offboarding hesap kapatma) yalnizca bu jetonla.
       INTERNAL_SERVICE_TOKEN: "${INTERNAL_SERVICE_TOKEN:-}"
       INTERNAL_SERVICE_TOKEN_PREVIOUS: "${INTERNAL_SERVICE_TOKEN_PREVIOUS:-}"

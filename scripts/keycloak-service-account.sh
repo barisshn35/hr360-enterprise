@@ -66,7 +66,10 @@ fi
 read -r -a COMPOSE <<< "${COMPOSE_ARGS:-}"
 dc() { docker compose ${COMPOSE[@]+"${COMPOSE[@]}"} "$@"; }
 
-get_env() { grep "^$1=" "$ENV_FILE" | tail -1 | cut -d= -f2- || true; }
+# shellcheck source=lib/secrets.sh
+. scripts/lib/secrets.sh
+# .env'de bossa secrets/<ad>.txt (scripts/secrets-migrate.sh) okunur.
+get_env() { secret_get "$1"; }
 has_env() { grep -q "^$1=" "$ENV_FILE"; }
 set_env() { # set_env KEY VALUE (deger .env'e tirnaksiz yazilir; yalnizca guvenli karakterler)
   local k="$1" v="$2"

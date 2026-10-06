@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-
 namespace NotificationService.Security;
 
 /// <summary>
@@ -11,46 +9,19 @@ namespace NotificationService.Security;
 /// kendi Dockerfile'iyla bagimsiz build edilir), o yuzden kucuk,
 /// bagimsiz sinifları kopyalamak, cross-service paket bagimliligi
 /// eklemekten daha basit ve servisleri birbirinden ayri tutuyor.
+/// Anahtar halkasi (TENANT_SECRET_KEYS, enc2 bicimi) icin bkz. KeyRing.
 /// </summary>
 public class SmtpCredentialProtector
 {
-    private readonly byte[] _key;
-
     public SmtpCredentialProtector()
     {
-        var keyBase64 = Environment.GetEnvironmentVariable("TENANT_SECRET_KEY")
-            ?? throw new InvalidOperationException("TENANT_SECRET_KEY tanimli olmali");
-        _key = Convert.FromBase64String(keyBase64);
-        if (_key.Length != 32)
-            throw new InvalidOperationException("TENANT_SECRET_KEY 32 byte (base64) olmali");
+        // Eskiden oldugu gibi: anahtar yoksa servis acilisinda (DI) hata verir.
+        if (!KeyRing.Enabled)
+            throw new InvalidOperationException(KeyRing.Error ?? "TENANT_SECRET_KEY tanimli olmali");
     }
 
-    /// <summary>AES-256-GCM: nonce | etiket | şifreli metin (Decrypt ile aynı biçim).</summary>
-    public string Encrypt(string plain)
-    {
-        var nonce = RandomNumberGenerator.GetBytes(AesGcm.NonceByteSizes.MaxSize);
-        var tagSize = AesGcm.TagByteSizes.MaxSize;
-        var p = System.Text.Encoding.UTF8.GetBytes(plain);
-        var c = new byte[p.Length];
-        var tag = new byte[tagSize];
-        using var aes = new AesGcm(_key, tagSize);
-        aes.Encrypt(nonce, p, c, tag);
-        return Convert.ToBase64String([.. nonce, .. tag, .. c]);
-    }
+    /// <summary>AES-256-GCM: etkin anahtar k0 ise base64(nonce | etiket | sifreli metin), degilse "enc2:kimlik:" + base64.</summary>
+    public string Encrypt(string plainText) => KeyRing.Seal(plainText, legacyPrefix: "");
 
-    public string Decrypt(string encryptedBase64)
-    {
-        var data = Convert.FromBase64String(encryptedBase64);
-        var nonceSize = AesGcm.NonceByteSizes.MaxSize;
-        var tagSize = AesGcm.TagByteSizes.MaxSize;
-
-        var nonce = data[..nonceSize];
-        var tag = data[nonceSize..(nonceSize + tagSize)];
-        var cipherBytes = data[(nonceSize + tagSize)..];
-        var plainBytes = new byte[cipherBytes.Length];
-
-        using var aes = new AesGcm(_key, tagSize);
-        aes.Decrypt(nonce, cipherBytes, tag, plainBytes);
-        return System.Text.Encoding.UTF8.GetString(plainBytes);
-    }
+    public string Decrypt(string encryptedBase64) => KeyRing.Open(encryptedBase64);
 }

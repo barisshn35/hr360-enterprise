@@ -8,55 +8,31 @@ namespace CompensationService.Payroll;
 
 /// <summary>
 /// Dışa aktarım dosyalarının şifrelenmesi ve TCKN/IBAN'ın (engagement-service'in şifrelediği
-/// "enc1:" biçimi) açılması. Anahtar: TENANT_SECRET_KEY (32 bayt, base64).
+/// "enc1:" / "enc2:&lt;kimlik&gt;:" biçimi) açılması. Anahtarlar: TENANT_SECRET_KEYS / TENANT_SECRET_KEY
+/// (bkz. <see cref="CompensationService.Security.KeyRing"/>).
 /// </summary>
 public static class ExportCrypto
 {
-    private static readonly byte[]? Key = Load();
-
-    private static byte[]? Load()
-    {
-        var b64 = Environment.GetEnvironmentVariable("TENANT_SECRET_KEY");
-        if (string.IsNullOrWhiteSpace(b64)) return null;
-        try { var k = Convert.FromBase64String(b64); return k.Length == 32 ? k : null; }
-        catch (FormatException) { return null; }
-    }
-
-    public static bool Enabled => Key is not null;
+    public static bool Enabled => CompensationService.Security.KeyRing.Enabled;
 
     public static byte[] Encrypt(byte[] plain)
     {
-        if (Key is null) throw new InvalidOperationException("TENANT_SECRET_KEY tanımlı değil; dosya şifrelenemiyor.");
-        var nonce = RandomNumberGenerator.GetBytes(12);
-        var tag = new byte[16];
-        var cipher = new byte[plain.Length];
-        using var aes = new AesGcm(Key, 16);
-        aes.Encrypt(nonce, plain, cipher, tag);
-        return [.. nonce, .. tag, .. cipher];
+        if (!Enabled) throw new InvalidOperationException("TENANT_SECRET_KEY tanımlı değil; dosya şifrelenemiyor.");
+        return CompensationService.Security.KeyRing.SealBytes(plain);
     }
 
     public static byte[] Decrypt(byte[] data)
     {
-        if (Key is null) throw new InvalidOperationException("TENANT_SECRET_KEY tanımlı değil.");
-        var plain = new byte[data.Length - 28];
-        using var aes = new AesGcm(Key, 16);
-        aes.Decrypt(data.AsSpan(0, 12), data.AsSpan(28), data.AsSpan(12, 16), plain);
-        return plain;
+        if (!Enabled) throw new InvalidOperationException("TENANT_SECRET_KEY tanımlı değil.");
+        return CompensationService.Security.KeyRing.OpenBytes(data);
     }
 
     /// <summary>engagement_profiles'taki şifreli TCKN/IBAN'ı açar (düz metinse olduğu gibi).</summary>
     public static string? OpenPii(string? stored)
     {
-        if (string.IsNullOrEmpty(stored) || !stored.StartsWith("enc1:", StringComparison.Ordinal)) return stored;
-        if (Key is null) return null;
-        try
-        {
-            var data = Convert.FromBase64String(stored[5..]);
-            var plain = new byte[data.Length - 28];
-            using var aes = new AesGcm(Key, 16);
-            aes.Decrypt(data.AsSpan(0, 12), data.AsSpan(28), data.AsSpan(12, 16), plain);
-            return Encoding.UTF8.GetString(plain);
-        }
+        if (string.IsNullOrEmpty(stored) || !CompensationService.Security.KeyRing.IsSealed(stored)) return stored;
+        if (!Enabled) return null;
+        try { return CompensationService.Security.KeyRing.Open(stored); }
         catch (Exception) { return null; }
     }
 }

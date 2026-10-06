@@ -83,7 +83,7 @@ code, logs = api("admin", "GET", f"{P}/destruction-logs?from={today.isoformat()}
 check("Elle imha tutanağa yazıldı", code == 200 and any(l["category"] == "WebhookDeliveries" and l["trigger"] == "Manual" and l["method"] for l in logs), logs[:2] if code == 200 else code)
 
 # --- hassas veri: şifreleme, gerekçe, erişim kaydı -------------------------------
-enc = psql("""SELECT count(*) FILTER (WHERE coalesce("Iban", '') <> '' AND "Iban" NOT LIKE 'enc1:%') + count(*) FILTER (WHERE coalesce("NationalId", '') <> '' AND "NationalId" NOT LIKE 'enc1:%') FROM engagement_profiles""")
+enc = psql("""SELECT count(*) FILTER (WHERE coalesce("Iban", '') <> '' AND "Iban" NOT LIKE 'enc1:%' AND "Iban" NOT LIKE 'enc2:%') + count(*) FILTER (WHERE coalesce("NationalId", '') <> '' AND "NationalId" NOT LIKE 'enc1:%' AND "NationalId" NOT LIKE 'enc2:%') FROM engagement_profiles""")
 check("TCKN/IBAN veritabanında düz metin yok", enc == "0", enc)
 # Ayşe'nin mevcut IBAN'ı saklanır, test sonunda geri yazılır.
 _, _orig = api("ayse", "GET", f"/api/engagement/profile/{AYSE}/reveal?field=iban")
@@ -92,7 +92,7 @@ ORIG_IBAN = (_orig or {}).get("value") or ""
 code, prof = api("ayse", "PUT", "/api/engagement/profile/me", {"iban": "TR330006100519786457841326"})
 check("IBAN kaydı (şifreli saklanır, maskeli döner)", code == 200 and prof["iban"].startswith("•") and prof["iban"].endswith("1326"), (code, prof.get("iban") if isinstance(prof, dict) else prof))
 raw = psql(f"""SELECT left("Iban", 5) FROM engagement_profiles WHERE "EmployeeId" = '{AYSE}'""")
-check("Veritabanında IBAN şifreli", raw == "enc1:", raw)
+check("Veritabanında IBAN şifreli", raw in ("enc1:", "enc2:"), raw)  # enc2: anahtar yenilendiyse
 code, r = api("ayse", "GET", f"/api/engagement/profile/{AYSE}/reveal?field=iban")
 check("Kişi kendi IBAN'ını gerekçesiz açar", code == 200 and r["value"] == "TR330006100519786457841326", (code, r))
 code, r = api("admin", "GET", f"/api/engagement/profile/{AYSE}/reveal?field=iban")

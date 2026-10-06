@@ -2,16 +2,17 @@
 # scripts/backup.sh ile alinmis bir yedegi geri yukler.
 #
 # Kullanim:
-#   scripts/restore.sh <yedek.tar.gz> [--yes] [--only-db] [--with-env]
+#   scripts/restore.sh <yedek.tar.gz> [--yes] [--only-db] [--with-env] [--ignore-manifest]
 #
 #   --yes        Onay sormadan devam et (otomasyon icin).
 #   --only-db    Yalnizca veritabanlarini geri yukle; MinIO'ya dokunma.
 #   --with-env   Arsivdeki .env'i de geri yukle (mevcut .env, .env.before-restore-*
 #                olarak saklanir). Bos bir sunucuya tasirken kullanin: kayitli
 #                sifreler ve anahtarlar olmadan eski veriler acilamaz.
+#   --ignore-manifest  Imzali ozet (<arsiv>.manifest) tutmasa da devam et (yalnizca bilerek).
 #
 # Ne yapar:
-#   1. Arsivi acar ve SHA256SUMS ile dogrular.
+#   1. Imzali ozeti (varsa) ve arsivi acip SHA256SUMS'u dogrular.
 #   2. Uygulama konteynerlerini durdurur (postgres ve minio calismaya devam eder).
 #   3. Arsivdeki her veritabanini SILIP yeniden olusturur ve pg_restore ile doldurur.
 #   4. MinIO verisini arsivdekiyle degistirir.
@@ -26,15 +27,18 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+# shellcheck source=lib/backup-common.sh
+. scripts/lib/backup-common.sh
 die() { echo "HATA: $*" >&2; exit 1; }
 
-ARCHIVE=""; YES=0; ONLY_DB=0; WITH_ENV=0
+ARCHIVE=""; YES=0; ONLY_DB=0; WITH_ENV=0; IGNORE_MANIFEST=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --yes|-y) YES=1; shift ;;
     --only-db) ONLY_DB=1; shift ;;
     --with-env) WITH_ENV=1; shift ;;
-    -h|--help) sed -n '2,22p' "$0"; exit 0 ;;
+    --ignore-manifest) IGNORE_MANIFEST=1; shift ;;
+    -h|--help) sed -n '2,24p' "$0"; exit 0 ;;
     -*) die "bilinmeyen secenek: $1" ;;
     *) [ -z "$ARCHIVE" ] || die "tek bir arsiv verin"; ARCHIVE="$1"; shift ;;
   esac
@@ -47,10 +51,19 @@ if ! declare -F docker >/dev/null && ! docker info >/dev/null 2>&1 && sudo docke
   docker() { command sudo docker "$@"; }
 fi
 
+# Imzali ozet: arsiv ya da ozet degistirilmisse durulur (eski yedeklerde ozet yoksa uyarilir).
+mrc=0; manifest_verify "$ARCHIVE" || mrc=$?
+case "$mrc" in
+  0) echo "Ozet: $MANIFEST_MSG" ;;
+  1) if [ "$IGNORE_MANIFEST" = 1 ]; then echo "UYARI: $MANIFEST_MSG (--ignore-manifest ile devam ediliyor)" >&2
+     else die "$MANIFEST_MSG. Bilerek devam etmek icin --ignore-manifest"; fi ;;
+  *) echo "UYARI: $MANIFEST_MSG" >&2 ;;
+esac
+
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 if [[ "$ARCHIVE" == *.enc ]]; then
-  KEY="$( { [ -f .env ] && grep -E '^BACKUP_ENCRYPTION_KEY=' .env | tail -1 | cut -d= -f2-; } || true)"
+  KEY="$(secret_env BACKUP_ENCRYPTION_KEY)"
   [ -n "$KEY" ] || die "arsiv sifreli; .env'de BACKUP_ENCRYPTION_KEY gerekli"
   HR360_BK="$KEY" openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in "$ARCHIVE" -out "$WORK/archive.tar.gz" -pass env:HR360_BK 2>/dev/null \
     || die "sifre cozulemedi (anahtar yanlis ya da arsiv bozuk)"
@@ -83,6 +96,14 @@ if [ "$WITH_ENV" = 1 ]; then
   [ -f .env ] && cp .env ".env.before-restore-$(date +%Y%m%d-%H%M%S)"
   cp "$D/env" .env && chmod 600 .env
   echo ".env geri yuklendi."
+  # .env'den tasinmis sirlar (secrets/, scripts/secrets-migrate.sh) da geri gelir.
+  if [ -d "$D/secrets" ]; then
+    [ -d secrets ] && mv secrets "secrets.before-restore-$(date +%Y%m%d-%H%M%S)"
+    cp -rp "$D/secrets" secrets
+    chmod 700 secrets
+    find secrets -type f -exec chmod 640 {} +
+    echo "secrets/ geri yuklendi."
+  fi
 fi
 unset COMPOSE_PROFILES HR360_DB_PASSWORD
 
@@ -95,7 +116,7 @@ done
 if [ "$WITH_ENV" = 1 ]; then
   # Postgres verisi bu sunucuda yeni .env'den farkli bir sifreyle olusturulmus
   # olabilir; rol sifresi geri yuklenen .env ile esitlenir (konteyner ici soket).
-  pw="$(grep '^HR360_DB_PASSWORD=' .env | tail -1 | cut -d= -f2-)"
+  pw="$(secret_env HR360_DB_PASSWORD)"
   # -c ile verilen komutlarda psql degiskenleri acilmaz; stdin kullanilir.
   [ -n "$pw" ] && echo "ALTER ROLE hr360admin PASSWORD :'pw';" | docker compose exec -T postgres \
     psql -U hr360admin -d postgres -v ON_ERROR_STOP=1 -q -v pw="$pw" >/dev/null
@@ -122,8 +143,13 @@ if [ "$HAS_MINIO" = 1 ]; then
   printf '  - minio ... '
   docker compose stop minio >/dev/null
   docker pull -q alpine:3.20 >/dev/null
-  docker run --rm -v "${PROJECT}_minio-data:/data" -v "$D:/backup:ro" alpine:3.20 \
-    sh -c 'find /data -mindepth 1 -delete && tar xzf /backup/minio.tar.gz -C /data' >/dev/null
+  # Kurulumun kendi MinIO'sundaki degismez yedek kovasi (backup.sh --to-minio) korunur.
+  LB=""; [ -z "$(lock_external_url)" ] && LB="$(lock_bucket)"
+  docker run --rm -v "${PROJECT}_minio-data:/data" -v "$D:/backup:ro" -e LB="$LB" alpine:3.20 \
+    sh -c 'find /data -mindepth 1 -maxdepth 1 ! -name .minio.sys ${LB:+! -name "$LB"} -exec rm -rf {} + &&
+           { [ ! -d /data/.minio.sys ] || find /data/.minio.sys -mindepth 1 -maxdepth 1 ! -name buckets -exec rm -rf {} +; } &&
+           { [ ! -d /data/.minio.sys/buckets ] || find /data/.minio.sys/buckets -mindepth 1 -maxdepth 1 ${LB:+! -name "$LB"} -exec rm -rf {} +; } &&
+           tar xzf /backup/minio.tar.gz -C /data' >/dev/null
   echo tamam
 fi
 
@@ -131,7 +157,7 @@ echo "Servisler baslatiliyor..."
 docker compose up -d >/dev/null 2>&1 || docker compose up -d
 
 # KVKK: yedekten sonra imha edilen kayitlar geri gelmis olabilir; saklama politikalari yeniden calisir.
-TOKEN="$(grep -E '^INTERNAL_SERVICE_TOKEN=' .env | tail -1 | cut -d= -f2- || true)"
+TOKEN="$(secret_env INTERNAL_SERVICE_TOKEN)"
 if [ -n "$TOKEN" ]; then
   printf 'KVKK: saklama politikalari yeniden calistiriliyor ... '
   done_ok=0

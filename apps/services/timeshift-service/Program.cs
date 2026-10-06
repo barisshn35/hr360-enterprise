@@ -10,6 +10,8 @@ using TimeShiftService.Messaging;
 using TimeShiftService.Services;
 using TimeShiftService.Tenancy;
 
+// Sırlar dosyadan da okunabilir (X_FILE, Docker secrets); X tanımlıysa davranış aynı.
+TimeShiftService.Security.SecretEnv.Load();
 var builder = WebApplication.CreateBuilder(args);
 // G25: OpenTelemetry izleme (yalnizca OTEL_EXPORTER_OTLP_ENDPOINT tanimliysa) + KVKK maskeleme.
 TimeShiftService.Observability.Telemetry.AddHrTelemetry(builder.Services, "timeshift-service");

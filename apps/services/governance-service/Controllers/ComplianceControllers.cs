@@ -237,8 +237,8 @@ public class PrivacyController : AppController
     private static Dictionary<string, object?> OpenPii(Dictionary<string, object?> row)
     {
         foreach (var k in new[] { "Iban", "NationalId" })
-            if (row.TryGetValue(k, out var v) && v is string sv && sv.StartsWith("enc1:", StringComparison.Ordinal))
-                row[k] = SecretBox.Unprotect(sv[5..]);
+            if (row.TryGetValue(k, out var v) && v is string sv && GovernanceService.Security.KeyRing.IsSealed(sv))
+                row[k] = SecretBox.Unprotect(sv);
         return row;
     }
 

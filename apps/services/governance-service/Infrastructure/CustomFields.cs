@@ -130,8 +130,9 @@ public static class CustomFields
         }
     }
 
-    public static string Seal(bool special, string value) => special ? EncPrefix + SecretBox.Protect(value) : value;
-    public static string Open(string stored) => stored.StartsWith(EncPrefix) ? SecretBox.Unprotect(stored[EncPrefix.Length..]) ?? "" : stored;
+    /// <summary>Özel nitelikli değer: "enc1:" + şifreli (anahtar yenilendikten sonra "enc2:&lt;kimlik&gt;:"), bkz. Security.KeyRing.</summary>
+    public static string Seal(bool special, string value) => special ? GovernanceService.Security.KeyRing.Seal(value, EncPrefix) : value;
+    public static string Open(string stored) => stored == EncPrefix ? "" : GovernanceService.Security.KeyRing.IsSealed(stored) ? SecretBox.Unprotect(stored) ?? "" : stored;
 
     /// <summary>JSON değer: number/boolean türleri tipli döner.</summary>
     public static object? Typed(string type, string? value) => value is null ? null : type switch

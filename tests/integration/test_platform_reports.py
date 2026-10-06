@@ -143,7 +143,7 @@ try:
 
     stored = psql(f"""SELECT v."Value" FROM governance_custom_field_values v JOIN governance_custom_fields f ON f."Id" = v."FieldId"
                       WHERE f."Key" = 'test5d_blood' AND v."EmployeeId" = '{AYSE}'""")
-    check("Y24: özel nitelikli değer veritabanında şifreli (enc1:)", stored.startswith("enc1:") and "Rh" not in stored, stored[:40])
+    check("Y24: özel nitelikli değer veritabanında şifreli (enc1:/enc2:)", stored.startswith(("enc1:", "enc2:")) and "Rh" not in stored, stored[:40])
     plain = psql(f"""SELECT v."Value" FROM governance_custom_field_values v JOIN governance_custom_fields f ON f."Id" = v."FieldId"
                      WHERE f."Key" = 'test5d_tshirt' AND v."EmployeeId" = '{AYSE}'""")
     check("Y24: normal alan düz metin", plain == "M", plain)

@@ -8,6 +8,8 @@ using Microsoft.IdentityModel.Tokens;
 using GovernanceService.Data;
 using GovernanceService.Tenancy;
 
+// Sırlar dosyadan da okunabilir (X_FILE, Docker secrets); X tanımlıysa davranış aynı.
+GovernanceService.Security.SecretEnv.Load();
 var builder = WebApplication.CreateBuilder(args);
 // G25: OpenTelemetry izleme (yalnizca OTEL_EXPORTER_OTLP_ENDPOINT tanimliysa) + KVKK maskeleme.
 GovernanceService.Observability.Telemetry.AddHrTelemetry(builder.Services, "governance-service");
@@ -46,6 +48,29 @@ builder.Services.AddSingleton<GovernanceService.Infrastructure.Calendar.Calendar
 builder.Services.AddSingleton<GovernanceService.Infrastructure.Ai.LlmClient>();
 builder.Services.AddScoped<GovernanceService.Infrastructure.Ai.AiGateway>();
 builder.Services.AddScoped<GovernanceService.Infrastructure.HrAssistant>();
+// Anahtar yenileme: etkin olmayan anahtarla şifreli değerleri yeniden yazar (scripts/crypto-keys.sh).
+// Bu servisin sahibi olduğu tüm şifreli sütunlar burada listelenir; yenisini eklerken buraya ve
+// scripts/crypto-keys.sh içindeki listeye ekleyin.
+GovernanceService.Security.EncColumn[] encryptedColumns =
+[
+    new("governance_chat_apps", "SlackBotTokenEnc", GovernanceService.Security.EncKind.Text),
+    new("governance_chat_apps", "SlackSigningSecretEnc", GovernanceService.Security.EncKind.Text),
+    new("governance_chat_apps", "TeamsAppPasswordEnc", GovernanceService.Security.EncKind.Text),
+    new("governance_chat_apps", "BotTokenEnc", GovernanceService.Security.EncKind.Text),
+    new("governance_chat_apps", "IncomingTokenEnc", GovernanceService.Security.EncKind.Text),
+    new("governance_calendar_connections", "AccessTokenEnc", GovernanceService.Security.EncKind.Text),
+    new("governance_calendar_connections", "RefreshTokenEnc", GovernanceService.Security.EncKind.Text),
+    new("governance_provider_configs", "ClientSecretEnc", GovernanceService.Security.EncKind.Text),
+    new("governance_chat_context", "TextEnc", GovernanceService.Security.EncKind.Text),
+    new("governance_chat_exit_progress", "AnswersEnc", GovernanceService.Security.EncKind.Text),
+    new("governance_chat_pending", "PayloadEnc", GovernanceService.Security.EncKind.Text),
+    new("governance_document_requests", "DocumentEnc", GovernanceService.Security.EncKind.Text),
+    new("governance_ethics_reports", "ContactEnc", GovernanceService.Security.EncKind.Text),
+    new("governance_osh_exams", "NotesEnc", GovernanceService.Security.EncKind.Text),
+    new("governance_custom_field_values", "Value", GovernanceService.Security.EncKind.Prefixed),
+];
+builder.Services.AddHostedService(sp => new GovernanceService.Security.KeyRotationJob("GOVERNANCE_DB_CONNECTION", encryptedColumns,
+    sp.GetRequiredService<ILogger<GovernanceService.Security.KeyRotationJob>>()));
 builder.Services.AddHostedService<GovernanceService.Infrastructure.EventConsumer>();
 builder.Services.AddHostedService<GovernanceService.Infrastructure.Housekeeping>();
 builder.Services.AddHostedService<GovernanceService.Infrastructure.SiemExporter>();

@@ -10,6 +10,8 @@ using ExpenseService.Tenancy;
 using ExpenseService.Messaging;
 using ExpenseService.Services;
 
+// Sırlar dosyadan da okunabilir (X_FILE, Docker secrets); X tanımlıysa davranış aynı.
+ExpenseService.Security.SecretEnv.Load();
 var builder = WebApplication.CreateBuilder(args);
 // G25: OpenTelemetry izleme (yalnizca OTEL_EXPORTER_OTLP_ENDPOINT tanimliysa) + KVKK maskeleme.
 ExpenseService.Observability.Telemetry.AddHrTelemetry(builder.Services, "expense-service");
@@ -22,6 +24,15 @@ builder.Services.AddScoped<ITenantContext>(sp => sp.GetRequiredService<TenantCon
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddHttpClient<ApprovalWorkflowClient>();
 builder.Services.AddHttpClient<ExpenseService.Services.GovernanceSignatureClient>();
+// Anahtar yenileme: etkin olmayan anahtarla şifreli değerleri yeniden yazar (scripts/crypto-keys.sh).
+// Bu servisin sahibi olduğu tüm şifreli sütunlar burada listelenir; yenisini eklerken buraya ve
+// scripts/crypto-keys.sh içindeki listeye ekleyin.
+ExpenseService.Security.EncColumn[] encryptedColumns =
+[
+    new("expense_travel_requests", "PassportCipher", ExpenseService.Security.EncKind.Prefixed),
+];
+builder.Services.AddHostedService(sp => new ExpenseService.Security.KeyRotationJob("EXPENSE_DB_CONNECTION", encryptedColumns,
+    sp.GetRequiredService<ILogger<ExpenseService.Security.KeyRotationJob>>()));
 builder.Services.AddHostedService<OutboxPublisher>();
 builder.Services.AddHostedService<WorkflowEventConsumer>();
 builder.Services.AddHttpClient<ExpenseService.Services.FxService>();

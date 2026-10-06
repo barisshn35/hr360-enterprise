@@ -37,6 +37,8 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 # shellcheck source=scripts/lib/net.sh
 . scripts/lib/net.sh
+# shellcheck source=scripts/lib/secrets.sh
+. scripts/lib/secrets.sh
 
 BOLD=$(tput bold 2>/dev/null || echo "")
 RESET=$(tput sgr0 2>/dev/null || echo "")
@@ -486,6 +488,11 @@ if [ -f .env ]; then
   else
     info "Mevcut .env korunuyor (guncelleme): once veritabani goclerini uyguluyorum."
     set -a; . ./.env; set +a
+    # scripts/secrets-migrate.sh ile secrets/*.txt'ye tasinmis sirlar (.env'de bos): denetimler ve
+    # "eksikse uret" adimlari dosyadaki degeri gorsun, yenisini uretip .env'e yazmasin.
+    for _k in TENANT_SECRET_KEY INTERNAL_SERVICE_TOKEN KEYCLOAK_TENANT_ADMIN_CLIENT_SECRET; do
+      if [ -z "${!_k:-}" ] && secret_in_file "$_k"; then printf -v "$_k" '%s' "$(secret_get "$_k")"; fi
+    done
     if ! is_aes_key "${TENANT_SECRET_KEY:-}"; then
       warn "TENANT_SECRET_KEY gecerli bir AES-256 anahtari degil (base64, 32 byte olmali)."
       warn "Kiracilarin SMTP parolalari bu anahtarla sifrelendigi icin otomatik degistirilmiyor;"

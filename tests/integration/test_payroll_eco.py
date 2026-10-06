@@ -261,7 +261,7 @@ code, tr = api("ayse", "POST", f"{E}/travel", {"destination": "TEST Berlin", "ab
                                                 "purpose": "Fuar", "transport": "Plane", "needsAccommodation": True, "advanceRequested": 5000, "passportNumber": "u1234567"})
 check("Yurt dışı seyahat: harcırah 3 gün × 100 EUR, onay akışında", code == 200 and tr["perDiemTotal"] == 300 and tr["perDiemCurrency"] == "EUR" and tr["workflowRequestId"], (code, tr))
 cipher = psql(f"""SELECT "PassportCipher" FROM expense_travel_requests WHERE "Id" = '{tr['id']}'""")
-check("Pasaport no şifreli", cipher.startswith("enc1:") and "U1234567" not in cipher, cipher[:20])
+check("Pasaport no şifreli", cipher.startswith(("enc1:", "enc2:")) and "U1234567" not in cipher, cipher[:20])
 code, pp = api("ayse", "GET", f"{E}/travel/{tr['id']}/passport")
 check("Sahibi pasaport noyu görür", code == 200 and pp["passportNumber"] == "U1234567", (code, pp))
 code, _ = api("mehmet", "GET", f"{E}/travel/{tr['id']}/passport")

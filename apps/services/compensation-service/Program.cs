@@ -8,6 +8,8 @@ using Microsoft.IdentityModel.Tokens;
 using CompensationService.Data;
 using CompensationService.Tenancy;
 
+// Sırlar dosyadan da okunabilir (X_FILE, Docker secrets); X tanımlıysa davranış aynı.
+CompensationService.Security.SecretEnv.Load();
 var builder = WebApplication.CreateBuilder(args);
 // G25: OpenTelemetry izleme (yalnizca OTEL_EXPORTER_OTLP_ENDPOINT tanimliysa) + KVKK maskeleme.
 CompensationService.Observability.Telemetry.AddHrTelemetry(builder.Services, "compensation-service");
@@ -18,6 +20,15 @@ var connectionString = Environment.GetEnvironmentVariable("COMPENSATION_DB_CONNE
 builder.Services.AddScoped<TenantContext>();
 builder.Services.AddScoped<ITenantContext>(sp => sp.GetRequiredService<TenantContext>());
 
+// Anahtar yenileme: etkin olmayan anahtarla şifreli değerleri yeniden yazar (scripts/crypto-keys.sh).
+// Bu servisin sahibi olduğu tüm şifreli sütunlar burada listelenir; yenisini eklerken buraya ve
+// scripts/crypto-keys.sh içindeki listeye ekleyin.
+CompensationService.Security.EncColumn[] encryptedColumns =
+[
+    new("compensation_payroll_exports", "Cipher", CompensationService.Security.EncKind.Bytes),
+];
+builder.Services.AddHostedService(sp => new CompensationService.Security.KeyRotationJob("COMPENSATION_DB_CONNECTION", encryptedColumns,
+    sp.GetRequiredService<ILogger<CompensationService.Security.KeyRotationJob>>()));
 builder.Services.AddHostedService<CompensationService.Controllers.ExportPurgeWorker>();
 // ML dalgası 2: bordro denetimi ve ücret adaleti analizi (ml-inference).
 builder.Services.AddHttpClient();

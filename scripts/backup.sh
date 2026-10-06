@@ -3,7 +3,7 @@
 # (logolar, belgeler, ML modelleri) ve istege bagli .env.
 #
 # Kullanim:
-#   scripts/backup.sh [--out DIZIN] [--keep N] [--no-minio] [--with-env] [--no-encrypt] [--no-s3]
+#   scripts/backup.sh [--out DIZIN] [--keep N] [--no-minio] [--with-env] [--no-encrypt] [--no-s3] [--to-minio]
 #   scripts/backup.sh schedule [--at SS:DD] [--keep N] [--verify-weekly]   Her gece otomatik yedek (cron)
 #   scripts/backup.sh unschedule                                         Zamanlanmis yedegi kaldir
 #   scripts/backup.sh verify [ARSIV]                                     Geri yukleme testi (gecici veritabaninda)
@@ -15,6 +15,12 @@
 #   --with-env    .env dosyasini da arsive koy. DIKKAT: .env tum sifreleri icerir.
 #   --no-encrypt  Sifrelemeyi kapat (BACKUP_ENCRYPTION_KEY tanimli olsa da)
 #   --no-s3       Dis depoya (S3) gondermeyi atla
+#   --to-minio    Arsivi ve imzali ozetini nesne kilitli (WORM) bir MinIO kovasina da kopyala:
+#                 surumleme + varsayilan saklama (BACKUP_MINIO_RETENTION_MODE GOVERNANCE|COMPLIANCE,
+#                 BACKUP_MINIO_RETENTION_DAYS, varsayilan GOVERNANCE 30 gun). Hedef BACKUP_MINIO_URL
+#                 (bos: kurulumun kendi MinIO'su, hr360-net), kova BACKUP_MINIO_BUCKET
+#                 (hr360-backups-locked), kimlik BACKUP_MINIO_ACCESS_KEY/SECRET_KEY (yoksa
+#                 MINIO_ROOT_USER/PASSWORD); hepsi _FILE ile dosyadan da verilebilir.
 #
 # KVKK (m.12 veri guvenligi, m.9 yurt disi aktarim):
 #   - .env'de BACKUP_ENCRYPTION_KEY varsa (kurulum uretir) arsiv AES-256 ile sifrelenir
@@ -26,16 +32,21 @@
 #   - Yedekten geri yukleme yapilirsa imha edilmis kayitlar yeniden silinir (bkz. restore.sh).
 #
 # Cikti: <DIZIN>/hr360-YYYYmmdd-HHMMSS.tar.gz[.enc] (izinler 600). Icinde her DB icin
-# pg_dump -Fc dosyasi, minio.tar.gz, MANIFEST (surumler) ve SHA256SUMS bulunur.
+# pg_dump -Fc dosyasi, minio.tar.gz, MANIFEST (surumler) ve SHA256SUMS bulunur. Yaninda
+# <arsiv>.manifest: arsivin SHA-256'si, BACKUP_MANIFEST_KEY (yoksa BACKUP_ENCRYPTION_KEY'den
+# turetilen anahtar) ile HMAC-SHA256 imzali (restore.sh ve restore-drill.sh denetler).
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-OUT=backups; KEEP=14; MINIO=1; WITH_ENV=0; ENCRYPT=auto; S3=auto
+# shellcheck source=lib/backup-common.sh
+. scripts/lib/backup-common.sh
+OUT=backups; KEEP=14; MINIO=1; WITH_ENV=0; ENCRYPT=auto; S3=auto; TO_MINIO=0
 DATABASES=(hr360_operational keycloak hr360_mlflow)
 CRON_MARK="# hr360-backup"
 
 die() { echo "HATA: $*" >&2; exit 1; }
 envval() { [ -f .env ] && grep -E "^$1=" .env | tail -1 | cut -d= -f2- || true; }
+# Sirlar: .env ya da secrets/ (scripts/secrets-migrate.sh); bkz. lib/backup-common.sh envfile_val.
 
 CMD=backup
 case "${1:-}" in schedule|unschedule|verify|status) CMD="$1"; shift ;; esac
@@ -49,9 +60,10 @@ while [ $# -gt 0 ]; do
     --with-env) WITH_ENV=1; shift ;;
     --no-encrypt) ENCRYPT=0; shift ;;
     --no-s3) S3=0; shift ;;
+    --to-minio) TO_MINIO=1; shift ;;
     --at) AT="$2"; shift 2 ;;
     --verify-weekly) VERIFY_WEEKLY=1; shift ;;
-    -h|--help) sed -n '2,32p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,37p' "$0"; exit 0 ;;
     -*) die "bilinmeyen secenek: $1" ;;
     *) [ "$CMD" = verify ] && [ -z "$ARCHIVE" ] || die "beklenmeyen arguman: $1"; ARCHIVE="$1"; shift ;;
   esac
@@ -86,7 +98,7 @@ if [ "$CMD" = schedule ] || [ "$CMD" = unschedule ]; then
 $m $(( (h + 1) % 24 )) * * 0 cd $dir && scripts/backup.sh verify >> $OUT/verify.log 2>&1 $CRON_MARK"
   printf '%s\n%s\n' "$current" "$lines" | sed '/^$/d' | crontab -
   echo "Her gece $AT yedek alinacak (son $KEEP yedek tutulur)$([ "$VERIFY_WEEKLY" = 1 ] && echo '; Pazar gunleri geri yukleme testi yapilacak')."
-  [ -n "$(envval BACKUP_ENCRYPTION_KEY)" ] || echo "UYARI: BACKUP_ENCRYPTION_KEY yok; yedekler sifrelenmeyecek." >&2
+  [ -n "$(secret_env BACKUP_ENCRYPTION_KEY)" ] || echo "UYARI: BACKUP_ENCRYPTION_KEY yok; yedekler sifrelenmeyecek." >&2
   exit 0
 fi
 
@@ -99,14 +111,15 @@ if [ "$CMD" = status ]; then
   else
     echo "Zamanlama: yok (scripts/backup.sh schedule)"
   fi
-  echo "Sifreleme: $([ -n "$(envval BACKUP_ENCRYPTION_KEY)" ] && echo acik || echo kapali)"
+  echo "Sifreleme: $([ -n "$(secret_env BACKUP_ENCRYPTION_KEY)" ] && echo acik || echo kapali)"
   echo "Dis depo: $([ -n "$(envval BACKUP_S3_BUCKET)" ] && echo "$(envval BACKUP_S3_ENDPOINT)/$(envval BACKUP_S3_BUCKET)" || echo yok)"
+  echo "Imzali ozet: $(case "$(manifest_keyid)" in manifest) echo 'BACKUP_MANIFEST_KEY';; derived) echo 'BACKUP_ENCRYPTION_KEY turevi';; *) echo 'imzasiz';; esac)"
   [ -f "$OUT/verify.log" ] && echo "Son dogrulama: $(grep -E '^(DOGRULANDI|DOGRULANAMADI)' "$OUT/verify.log" | tail -1)"
   exit 0
 fi
 
 [ -f .env ] || die ".env bulunamadi; once install.sh calistirin."
-KEY="$(envval BACKUP_ENCRYPTION_KEY)"
+KEY="$(secret_env BACKUP_ENCRYPTION_KEY)"
 
 # ---------------------------------------------------------------- dogrulama (geri yukleme testi)
 if [ "$CMD" = verify ]; then
@@ -116,6 +129,9 @@ if [ "$CMD" = verify ]; then
   cleanup() { [ -n "$CID" ] && docker rm -f "$CID" >/dev/null 2>&1; rm -rf "$WORK"; }
   trap cleanup EXIT
   fail() { echo "DOGRULANAMADI $(date -u +%FT%TZ) $(basename "$ARCHIVE"): $*"; exit 1; }
+  mrc=0; manifest_verify "$ARCHIVE" || mrc=$?
+  [ "$mrc" = 1 ] && fail "$MANIFEST_MSG"
+  echo "  - ozet: $MANIFEST_MSG"
   src="$ARCHIVE"
   if [[ "$ARCHIVE" == *.enc ]]; then
     [ -n "$KEY" ] || fail "arsiv sifreli ama BACKUP_ENCRYPTION_KEY yok"
@@ -158,6 +174,20 @@ docker compose ps --status running --services 2>/dev/null | grep -qx postgres ||
 [ "$ENCRYPT" = 1 ] && [ -z "$KEY" ] && die "sifreleme icin .env'de BACKUP_ENCRYPTION_KEY gerekli"
 S3_BUCKET="$(envval BACKUP_S3_BUCKET)"
 [ "$S3" = auto ] && { [ -n "$S3_BUCKET" ] && S3=1 || S3=0; }
+LOCK_BUCKET="$(lock_bucket)"; LOCK_URL="$(lock_external_url)"
+
+# Yurt disi bilinen bir saglayici mi (KVKK m.9)?
+abroad_check() {
+  local host="$1"
+  if printf '%s' "$host" | grep -Eqi '(amazonaws\.com|googleapis\.com|windows\.net|backblazeb2\.com|wasabisys\.com|digitaloceanspaces\.com|r2\.cloudflarestorage\.com|linodeobjects\.com)$' \
+     && [ "$(envval BACKUP_S3_ABROAD_OK)" != 1 ]; then
+    die "dis depo ($host) yurt disinda; KVKK m.9 dayanagi (ornek standart sozlesme) olmadan gonderilmez. Dayanak varsa .env'e BACKUP_S3_ABROAD_OK=1 ekleyin."
+  fi
+}
+if [ "$TO_MINIO" = 1 ] && [ -n "$LOCK_URL" ]; then
+  [ "$ENCRYPT" = 1 ] || die "kurulum disindaki MinIO'ya yalnizca sifreli yedek gonderilir (BACKUP_ENCRYPTION_KEY tanimlayin)"
+  abroad_check "$(printf '%s' "$LOCK_URL" | sed -E 's#^[a-z]+://##; s#[/:].*##')"
+fi
 
 umask 077
 mkdir -p "$OUT"
@@ -181,14 +211,21 @@ done
 if [ "$MINIO" = 1 ]; then
   printf '  - minio ... '
   docker pull -q alpine:3.20 >/dev/null
-  docker run --rm -v "${PROJECT}_minio-data:/data:ro" -v "$D:/backup" alpine:3.20 \
-    sh -c 'cd /data && tar czf /backup/minio.tar.gz . && chmod 600 /backup/minio.tar.gz' >/dev/null
+  # Degismez yedek kovasi (--to-minio, kurulumun kendi MinIO'su) yedege girmez: her yedek bir
+  # oncekileri de icerip katlanarak buyurdu.
+  docker run --rm -v "${PROJECT}_minio-data:/data:ro" -v "$D:/backup" -e LB="$LOCK_BUCKET" alpine:3.20 \
+    sh -c 'cd /data && tar czf /backup/minio.tar.gz --exclude="./$LB" --exclude="./.minio.sys/buckets/$LB" . && chmod 600 /backup/minio.tar.gz' >/dev/null
   echo "$(du -h "$D/minio.tar.gz" | cut -f1)"
 fi
 
 if [ "$WITH_ENV" = 1 ]; then
   cp .env "$D/env"
   echo "  - .env (gizli bilgiler iceriyor)"
+  # .env'den tasinmis sirlar (scripts/secrets-migrate.sh) .env ile birlikte gerekir.
+  if [ -d secrets ]; then
+    cp -rp secrets "$D/secrets" || die "secrets/ dizini okunamadi (dosya izinlerine bakin)"
+    echo "  - secrets/ (gizli bilgiler iceriyor)"
+  fi
 fi
 
 {
@@ -202,7 +239,11 @@ fi
   echo "env=$WITH_ENV"
   echo "encrypted=$ENCRYPT"
 } > "$D/MANIFEST"
-(cd "$D" && sha256sum -- * > SHA256SUMS)
+if [ -d "$D/secrets" ]; then
+  (cd "$D" && find . -type f ! -name SHA256SUMS -printf '%P\n' | sort | xargs -d '\n' sha256sum -- > SHA256SUMS)
+else
+  (cd "$D" && sha256sum -- * > SHA256SUMS)
+fi
 
 FILE="$OUT/$NAME.tar.gz"
 tar czf "$FILE" -C "$WORK" "$NAME"
@@ -211,27 +252,65 @@ if [ "$ENCRYPT" = 1 ]; then
   rm -f "$FILE"; FILE="$FILE.enc"
 fi
 chmod 600 "$FILE"
+manifest_write "$FILE"
 echo "Tamam: $FILE ($(du -h "$FILE" | cut -f1))$([ "$ENCRYPT" = 1 ] && echo ' — sifreli')"
 
 if [ "$S3" = 1 ]; then
-  EP="$(envval BACKUP_S3_ENDPOINT)"; AK="$(envval BACKUP_S3_ACCESS_KEY)"; SK="$(envval BACKUP_S3_SECRET_KEY)"; PFX="$(envval BACKUP_S3_PREFIX)"
+  EP="$(envval BACKUP_S3_ENDPOINT)"; AK="$(secret_env BACKUP_S3_ACCESS_KEY)"; SK="$(secret_env BACKUP_S3_SECRET_KEY)"; PFX="$(envval BACKUP_S3_PREFIX)"
   [ -n "$S3_BUCKET" ] && [ -n "$EP" ] && [ -n "$AK" ] && [ -n "$SK" ] || die "dis depo icin BACKUP_S3_ENDPOINT/BUCKET/ACCESS_KEY/SECRET_KEY gerekli"
   [ "$ENCRYPT" = 1 ] || die "dis depoya yalnizca sifreli yedek gonderilir (BACKUP_ENCRYPTION_KEY tanimlayin)"
   host="$(printf '%s' "$EP" | sed -E 's#^[a-z]+://##; s#[/:].*##')"
-  if printf '%s' "$host" | grep -Eqi '(amazonaws\.com|googleapis\.com|windows\.net|backblazeb2\.com|wasabisys\.com|digitaloceanspaces\.com|r2\.cloudflarestorage\.com|linodeobjects\.com)$' \
-     && [ "$(envval BACKUP_S3_ABROAD_OK)" != 1 ]; then
-    die "dis depo ($host) yurt disinda; KVKK m.9 dayanagi (ornek standart sozlesme) olmadan gonderilmez. Dayanak varsa .env'e BACKUP_S3_ABROAD_OK=1 ekleyin."
-  fi
+  abroad_check "$host"
   scheme="${EP%%://*}"; [ "$scheme" = "$EP" ] && scheme=https
   printf '  - dis depo (%s/%s) ... ' "$host" "$S3_BUCKET"
-  docker run --rm --network host -e "MC_HOST_dst=${scheme}://${AK}:${SK}@${EP#*://}" -v "$(cd "$OUT" && pwd):/b:ro" minio/mc:latest \
-    cp --quiet "/b/$(basename "$FILE")" "dst/${S3_BUCKET}/${PFX:+$PFX/}$(basename "$FILE")" >/dev/null
+  # Kimlik bilgisi docker komut satirinda (ps) gorunmesin diye 600 izinli gecici dosyadan aktarilir
+  # (--env-file; sudo ortam degiskenlerini aktarmadigi icin -e AD yerine).
+  printf 'MC_HOST_dst=%s\n' "${scheme}://${AK}:${SK}@${EP#*://}" > "$WORK/s3.env"
+  for f in "$(basename "$FILE")" "$(basename "$FILE").manifest"; do
+    docker run --rm --network host --env-file "$WORK/s3.env" -v "$(cd "$OUT" && pwd):/b:ro" minio/mc:latest \
+      cp --quiet "/b/$f" "dst/${S3_BUCKET}/${PFX:+$PFX/}$f" >/dev/null
+  done
+  echo tamam
+fi
+
+if [ "$TO_MINIO" = 1 ]; then
+  # Nesne kilitli (WORM) kova: surumleme acik, her nesne varsayilan saklama suresi boyunca
+  # silinemez/uzerine yazilamaz. Kilit yalnizca kova OLUSTURULURKEN acilabilir.
+  MC_IMAGE="$(envval BACKUP_MC_IMAGE)"
+  MC_IMAGE="${MC_IMAGE:-bitnamilegacy/minio-client@sha256:00dcc4e58ada0df45bb7d9ee435af98295f96c27c3c68292ce78ec700a87b511}"
+  MODE="$(envval BACKUP_MINIO_RETENTION_MODE)"; MODE="${MODE:-GOVERNANCE}"
+  DAYS="$(envval BACKUP_MINIO_RETENTION_DAYS)"; DAYS="${DAYS:-30}"
+  case "$MODE" in GOVERNANCE|COMPLIANCE) ;; *) die "BACKUP_MINIO_RETENTION_MODE GOVERNANCE ya da COMPLIANCE olmali" ;; esac
+  [[ "$DAYS" =~ ^[1-9][0-9]*$ ]] || die "BACKUP_MINIO_RETENTION_DAYS pozitif tam sayi olmali"
+  LAK="$(secret_env BACKUP_MINIO_ACCESS_KEY)"; LSK="$(secret_env BACKUP_MINIO_SECRET_KEY)"
+  if [ -n "$LOCK_URL" ]; then
+    LNET="$(envval BACKUP_MINIO_NETWORK)"; LNET="${LNET:-host}"; LEP="$LOCK_URL"
+  else
+    LNET="$(envval BACKUP_MINIO_NETWORK)"; LNET="${LNET:-hr360-net}"; LEP="http://minio:9000"
+    [ -n "$LAK" ] || LAK="$(secret_env MINIO_ROOT_USER)"
+    [ -n "$LSK" ] || LSK="$(secret_env MINIO_ROOT_PASSWORD)"
+  fi
+  [ -n "$LAK" ] && [ -n "$LSK" ] || die "--to-minio icin BACKUP_MINIO_ACCESS_KEY/SECRET_KEY (ya da MINIO_ROOT_USER/PASSWORD) gerekli"
+  lscheme="${LEP%%://*}"; [ "$lscheme" = "$LEP" ] && lscheme=https
+  LPFX="$(envval BACKUP_MINIO_PREFIX)"
+  printf '  - degismez kopya (%s/%s, %s %s gun) ... ' "$(printf '%s' "$LEP" | sed -E 's#^[a-z]+://##; s#/.*##')" "$LOCK_BUCKET" "$MODE" "$DAYS"
+  printf 'MC_HOST_dst=%s\n' "${lscheme}://${LAK}:${LSK}@${LEP#*://}" > "$WORK/lock.env"
+  mcrun() { docker run --rm --network "$LNET" --env-file "$WORK/lock.env" -v "$(cd "$OUT" && pwd):/b:ro" --entrypoint mc "$MC_IMAGE" --config-dir /tmp/mc --quiet "$@"; }
+  mcrun mb --ignore-existing --with-lock "dst/$LOCK_BUCKET" >/dev/null || die "kova olusturulamadi: $LOCK_BUCKET"
+  if ! mcrun retention info --default "dst/$LOCK_BUCKET" >/dev/null 2>&1; then
+    die "'$LOCK_BUCKET' kovasi nesne kilidi olmadan olusturulmus (kilit yalnizca olusturulurken acilabilir). BACKUP_MINIO_BUCKET ile yeni bir kova adi verin."
+  fi
+  mcrun retention set --default "$MODE" "${DAYS}d" "dst/$LOCK_BUCKET" >/dev/null || die "varsayilan saklama ayarlanamadi"
+  for f in "$(basename "$FILE")" "$(basename "$FILE").manifest"; do
+    mcrun cp "/b/$f" "dst/$LOCK_BUCKET/${LPFX:+$LPFX/}$f" >/dev/null || die "kopyalanamadi: $f"
+  done
+  rm -f "$WORK/lock.env"
   echo tamam
 fi
 
 if [ "$KEEP" -gt 0 ]; then
   # shellcheck disable=SC2012
   { ls -1t "$OUT"/hr360-*.tar.gz "$OUT"/hr360-*.tar.gz.enc 2>/dev/null || true; } | tail -n +"$((KEEP + 1))" | while read -r old; do
-    rm -f -- "$old" && echo "Eski yedek silindi: $old"
+    rm -f -- "$old" "$old.manifest" && echo "Eski yedek silindi: $old"
   done
 fi

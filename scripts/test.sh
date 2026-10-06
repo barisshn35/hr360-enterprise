@@ -29,6 +29,11 @@ cleanup_data() {
   fi
 }
 
+# Test katmani; sirlar dosyaya tasindiysa (scripts/secrets-migrate.sh) uretilen compose eki de verilir,
+# yoksa -f kullanildigi icin .env'deki COMPOSE_FILE yok sayilir ve servisler sirsiz acilir.
+TEST_COMPOSE=(-f docker-compose.yml -f deploy/testing/chat-mock.yml)
+if [ -f secrets/compose.secrets.yml ]; then TEST_COMPOSE+=(-f secrets/compose.secrets.yml); fi
+
 if ! declare -F docker >/dev/null && ! docker info >/dev/null 2>&1 && sudo docker info >/dev/null 2>&1; then
   docker() { command sudo docker "$@"; }
 fi
@@ -54,7 +59,7 @@ integration() {
   docker run -d --name chatmock --network hr360-net -v "$ROOT/tests/integration:/t:ro" python:3.11-slim \
     sh -c "pip install -q cryptography pyjwt 2>/dev/null && python -u /t/chatmock.py" >/dev/null
   # Test katmani (sahte saglayicilar, kisa is araliklari) tum ilgili servislere ve OpenLDAP test sunucusuna uygulanir.
-  docker compose -f docker-compose.yml -f deploy/testing/chat-mock.yml --profile ldaptest up -d >/dev/null
+  docker compose "${TEST_COMPOSE[@]}" --profile ldaptest up -d >/dev/null
   for _ in $(seq 1 60); do docker logs chatmock 2>&1 | grep -q "chatmock :8000" && break; sleep 2; done
   # Yeniden olusturulan servisler ve gateway'in yeni adresleri cozmesi (resolver valid=10s) beklenir:
   # sabit bekleme yetmeyince ilk testler eski IP'ye giden istekte 404 aliyordu. Governance'a ozgu
@@ -75,7 +80,7 @@ integration() {
   done
   step "Temizlik: servisler normal ayarlarla"
   docker compose up -d >/dev/null
-  docker compose -f docker-compose.yml -f deploy/testing/chat-mock.yml --profile ldaptest rm -sf openldap >/dev/null 2>&1 || true
+  docker compose "${TEST_COMPOSE[@]}" --profile ldaptest rm -sf openldap >/dev/null 2>&1 || true
   docker rm -f chatmock >/dev/null 2>&1 || true
   cleanup_data
 }

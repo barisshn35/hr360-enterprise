@@ -8,6 +8,8 @@ using Microsoft.IdentityModel.Tokens;
 using EngagementService.Data;
 using EngagementService.Tenancy;
 
+// Sırlar dosyadan da okunabilir (X_FILE, Docker secrets); X tanımlıysa davranış aynı.
+EngagementService.Security.SecretEnv.Load();
 var builder = WebApplication.CreateBuilder(args);
 // G25: OpenTelemetry izleme (yalnizca OTEL_EXPORTER_OTLP_ENDPOINT tanimliysa) + KVKK maskeleme.
 EngagementService.Observability.Telemetry.AddHrTelemetry(builder.Services, "engagement-service");
@@ -31,6 +33,16 @@ builder.Services.AddSingleton<EngagementService.Infrastructure.Sql>();
 builder.Services.AddSingleton<EngagementService.Infrastructure.AppCache>();
 builder.Services.AddSingleton<EngagementService.Infrastructure.PeopleDirectory>();
 builder.Services.AddSingleton<EngagementService.Infrastructure.Notifier>();
+// Anahtar yenileme: etkin olmayan anahtarla şifreli değerleri yeniden yazar (scripts/crypto-keys.sh).
+// Bu servisin sahibi olduğu tüm şifreli sütunlar burada listelenir; yenisini eklerken buraya ve
+// scripts/crypto-keys.sh içindeki listeye ekleyin.
+EngagementService.Security.EncColumn[] encryptedColumns =
+[
+    new("engagement_profiles", "Iban", EngagementService.Security.EncKind.Prefixed),
+    new("engagement_profiles", "NationalId", EngagementService.Security.EncKind.Prefixed),
+];
+builder.Services.AddHostedService(sp => new EngagementService.Security.KeyRotationJob("ENGAGEMENT_DB_CONNECTION", encryptedColumns,
+    sp.GetRequiredService<ILogger<EngagementService.Security.KeyRotationJob>>()));
 builder.Services.AddHostedService<EngagementService.Infrastructure.PiiBackfill>();
 builder.Services.AddHttpClient();
 

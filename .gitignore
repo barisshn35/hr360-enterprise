@@ -41,6 +41,7 @@ deploy/nginx/acme/*
 !deploy/nginx/acme/README.md
 backups/
 .env.before-restore-*
+secrets.before-restore-*
 tests/credentials.json
 .pytest_cache/
 tests/load/results/
@@ -48,3 +49,7 @@ tests/load/results/
 
 # Dagitik izleme acik/kapali (scripts/monitoring.sh tracing)
 deploy/monitoring/tracing.env
+
+# scripts/security-scan.sh zap raporlari
+security-reports/
+secrets/

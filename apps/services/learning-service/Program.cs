@@ -8,6 +8,8 @@ using Microsoft.IdentityModel.Tokens;
 using LearningService.Data;
 using LearningService.Tenancy;
 
+// Sırlar dosyadan da okunabilir (X_FILE, Docker secrets); X tanımlıysa davranış aynı.
+LearningService.Security.SecretEnv.Load();
 var builder = WebApplication.CreateBuilder(args);
 // G25: OpenTelemetry izleme (yalnizca OTEL_EXPORTER_OTLP_ENDPOINT tanimliysa) + KVKK maskeleme.
 LearningService.Observability.Telemetry.AddHrTelemetry(builder.Services, "learning-service");

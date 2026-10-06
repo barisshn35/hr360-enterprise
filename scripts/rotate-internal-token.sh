@@ -59,6 +59,16 @@ WAIT_SECONDS="${WAIT_SECONDS:-180}"
 
 get_env() { grep "^$1=" "$ENV_FILE" | tail -1 | cut -d= -f2- || true; }
 
+# shellcheck source=lib/secrets.sh
+. scripts/lib/secrets.sh
+# Anahtar secrets/*.txt'ye tasindiysa (scripts/secrets-migrate.sh) bu betik konteyner ortamindaki
+# degeri denetleyemez ve dosya degisince compose konteyneri yeniden olusturmaz: once geri alinmali.
+if secret_in_file INTERNAL_SERVICE_TOKEN || secret_in_file INTERNAL_SERVICE_TOKEN_PREVIOUS; then
+  case "${1:-}" in -h|--help|""|status) ;; *)
+    die "INTERNAL_SERVICE_TOKEN secrets/ altinda (dosya modu). Once: scripts/secrets-migrate.sh restore INTERNAL_SERVICE_TOKEN INTERNAL_SERVICE_TOKEN_PREVIOUS && docker compose up -d --force-recreate; degisimden sonra yeniden tasiyabilirsiniz." ;;
+  esac
+fi
+
 # set_env KEY VALUE: deger komut satirina (ps) ya da ekrana dusmesin diye awk'a ortamdan verilir;
 # dosya yerinde yeniden yazilir (sahiplik ve izinler korunur).
 set_env() {

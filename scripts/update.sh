@@ -86,6 +86,12 @@ apply_migrations() {
     docker compose exec -T postgres psql -U hr360admin -d hr360_operational -v ON_ERROR_STOP=1 -q -f - < "$f" >/dev/null \
       || { echo "Goc betigi basarisiz: $f" >&2; return 1; }
   done
+  # Servis basina veritabani rolleri kullaniliyorsa (scripts/db-roles.sh enable) yeni tablolarin yetkileri
+  # deploy/postgres/roles.sql'den esitlenir; aksi halde kendi rolundeki servis yeni tabloya erisemez.
+  if [ -f deploy/postgres/roles.sql ] && grep -qE '^HR360_DB_USER_[A-Z]+=.' .env 2>/dev/null; then
+    docker compose exec -T postgres psql -X -U hr360admin -d hr360_operational -v ON_ERROR_STOP=1 -q -f - \
+      < deploy/postgres/roles.sql >/dev/null || { echo "Rol yetkileri esitlenemedi (deploy/postgres/roles.sql)" >&2; return 1; }
+  fi
 }
 
 deploy() {

@@ -1,3 +1,7 @@
+# Sirlar dosyadan da okunabilir (X_FILE, Docker secrets); diger modullerden once.
+import secret_env
+secret_env.load()
+
 from fastapi import FastAPI, Depends, HTTPException, Header
 from pydantic import BaseModel, Field
 from prometheus_fastapi_instrumentator import Instrumentator

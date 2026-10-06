@@ -75,37 +75,20 @@ public sealed class FxService
     }
 }
 
-/// <summary>Pasaport numarası için AES-256-GCM (TENANT_SECRET_KEY).</summary>
+/// <summary>Pasaport numarası için AES-256-GCM ("enc1:" / "enc2:&lt;kimlik&gt;:", bkz. <see cref="ExpenseService.Security.KeyRing"/>).</summary>
 public static class SecretBox
 {
-    private static readonly byte[]? Key = Load();
-    private static byte[]? Load()
-    {
-        var b64 = Environment.GetEnvironmentVariable("TENANT_SECRET_KEY");
-        if (string.IsNullOrWhiteSpace(b64)) return null;
-        try { var k = Convert.FromBase64String(b64); return k.Length == 32 ? k : null; } catch (FormatException) { return null; }
-    }
-    public static bool Enabled => Key is not null;
+    public static bool Enabled => ExpenseService.Security.KeyRing.Enabled;
 
     public static string Protect(string plain)
     {
-        if (Key is null) throw new InvalidOperationException("TENANT_SECRET_KEY tanımlı değil");
-        var nonce = RandomNumberGenerator.GetBytes(12);
-        var bytes = Encoding.UTF8.GetBytes(plain);
-        var cipher = new byte[bytes.Length];
-        var tag = new byte[16];
-        using var aes = new AesGcm(Key, 16);
-        aes.Encrypt(nonce, bytes, cipher, tag);
-        return "enc1:" + Convert.ToBase64String([.. nonce, .. tag, .. cipher]);
+        if (!Enabled) throw new InvalidOperationException("TENANT_SECRET_KEY tanımlı değil");
+        return ExpenseService.Security.KeyRing.Seal(plain, ExpenseService.Security.KeyRing.V1);
     }
 
     public static string? Unprotect(string? stored)
     {
-        if (stored is null || Key is null || !stored.StartsWith("enc1:")) return null;
-        var data = Convert.FromBase64String(stored[5..]);
-        var plain = new byte[data.Length - 28];
-        using var aes = new AesGcm(Key, 16);
-        aes.Decrypt(data.AsSpan(0, 12), data.AsSpan(28), data.AsSpan(12, 16), plain);
-        return Encoding.UTF8.GetString(plain);
+        if (stored is null || !Enabled || !ExpenseService.Security.KeyRing.IsSealed(stored)) return null;
+        return ExpenseService.Security.KeyRing.Open(stored);
     }
 }

@@ -8,6 +8,8 @@ using Microsoft.IdentityModel.Tokens;
 using TenantService.Data;
 using TenantService.Services;
 
+// Sırlar dosyadan da okunabilir (X_FILE, Docker secrets); X tanımlıysa davranış aynı.
+TenantService.Security.SecretEnv.Load();
 var builder = WebApplication.CreateBuilder(args);
 // G25: OpenTelemetry izleme (yalnizca OTEL_EXPORTER_OTLP_ENDPOINT tanimliysa) + KVKK maskeleme.
 TenantService.Observability.Telemetry.AddHrTelemetry(builder.Services, "tenant-service");
@@ -25,6 +27,16 @@ builder.Services.AddHttpClient<EmployeeDirectoryClient>();
 builder.Services.AddScoped<TenantProvisioningService>();
 builder.Services.AddSingleton<TenantService.Security.SmtpCredentialProtector>();
 builder.Services.AddSingleton<TenantService.Services.LogoStorageService>();
+// Anahtar yenileme: etkin olmayan anahtarla şifreli değerleri yeniden yazar (scripts/crypto-keys.sh).
+// Bu servisin sahibi olduğu tüm şifreli sütunlar burada listelenir; yenisini eklerken buraya ve
+// scripts/crypto-keys.sh içindeki listeye ekleyin.
+TenantService.Security.EncColumn[] encryptedColumns =
+[
+    new("platform_tenants", "SmtpPasswordEncrypted", TenantService.Security.EncKind.Text),
+    new("tenant_directory_settings", "LdapBindPasswordEncrypted", TenantService.Security.EncKind.Text),
+];
+builder.Services.AddHostedService(sp => new TenantService.Security.KeyRotationJob("TENANT_DB_CONNECTION", encryptedColumns,
+    sp.GetRequiredService<ILogger<TenantService.Security.KeyRotationJob>>()));
 // NOT: install.sh'nin urettigi "demo.admin" Keycloak kullanicisinin gercekten
 // calisir bir demo tenant'i olmasini saglar - bkz. dosyanin basindaki aciklama.
 builder.Services.AddHostedService<DemoTenantSeederHostedService>();
