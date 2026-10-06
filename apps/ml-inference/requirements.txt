@@ -6,7 +6,7 @@ pydantic==2.9.2
 prometheus-fastapi-instrumentator==8.1.0
 mlflow==3.16.1
 scikit-learn==1.5.2
-numpy==1.26.4
+numpy==2.5.3
 boto3==1.35.36
 shap==0.46.0
 # Vardiya planı optimizasyonu (dalga 9, madde 44): CP-SAT çözücüsü (~27 MB tekerlek). 9.15 numpy 2 ister
