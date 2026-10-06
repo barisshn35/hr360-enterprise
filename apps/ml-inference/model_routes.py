@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import asyncio
 import csv
+import hashlib
 import hmac
 import io
 import logging
@@ -470,8 +471,17 @@ def actor_of(info: dict) -> dict:
 
 
 def _internal_ok(given: str | None) -> bool:
+    """Servisler arasi anahtar: INTERNAL_SERVICE_TOKEN ya da anahtar degistirme penceresinde
+    INTERNAL_SERVICE_TOKEN_PREVIOUS (bos degilse; scripts/rotate-internal-token.sh). Gecerli anahtar
+    yoksa kapali. SHA-256 ozetleri sabit zamanli karsilastirilir; iki aday da her zaman denenir."""
     expected = os.getenv("INTERNAL_SERVICE_TOKEN", "")
-    return bool(expected) and bool(given) and hmac.compare_digest(expected.encode(), given.encode())
+    previous = os.getenv("INTERNAL_SERVICE_TOKEN_PREVIOUS", "")
+    if not expected or not given:
+        return False
+    g = hashlib.sha256(given.encode()).digest()
+    ok_current = hmac.compare_digest(g, hashlib.sha256(expected.encode()).digest())
+    ok_previous = hmac.compare_digest(g, hashlib.sha256(previous.encode()).digest()) and bool(previous)
+    return ok_current | ok_previous
 
 
 def build_router(verify_token, service: ModelService) -> APIRouter:

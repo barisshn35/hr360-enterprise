@@ -11,7 +11,9 @@ using Xunit;
 
 namespace Governance.Tests;
 
+// INTERNAL_SERVICE_TOKEN süreç genelinde değiştirildiği için anahtar testleriyle paralel koşmaz.
 /// <summary>Y28 tek imza motoru: ortak kurallar (saf), kanıt bütünlüğü ve iç uçların anahtar/tür denetimi.</summary>
+[Collection("InternalServiceToken")]
 public class SignatureEngineTests
 {
     [Fact]

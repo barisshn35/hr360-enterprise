@@ -76,13 +76,8 @@ public partial class InternalChatController : ControllerBase
 /// <summary>Servisler arası anahtar denetimi (PreferencesController.Effective ile aynı kural).</summary>
 public static class InternalToken
 {
-    public static bool Valid(HttpRequest request)
-    {
-        var expected = Environment.GetEnvironmentVariable("INTERNAL_SERVICE_TOKEN");
-        var given = request.Headers["X-Internal-Token"].FirstOrDefault() ?? "";
-        return !string.IsNullOrEmpty(expected) && System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
-            System.Text.Encoding.UTF8.GetBytes(expected), System.Text.Encoding.UTF8.GetBytes(given));
-    }
+    public static bool Valid(HttpRequest request) =>
+        Security.InternalServiceToken.Matches(request.Headers[Security.InternalServiceToken.Header].FirstOrDefault());
 }
 
 public record InternalChatNotifyRequest(string TenantSlug, Guid RecipientEmployeeId, string? Subject, string? Body,

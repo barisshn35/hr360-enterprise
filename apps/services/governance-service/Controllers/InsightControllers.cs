@@ -66,37 +66,24 @@ public class AuditController : AppController
     [HttpGet("verify")]
     public async Task<IActionResult> Verify(CancellationToken ct)
     {
-        var rows = await Db.QueryAsync("""
-            WITH c AS (
-                SELECT "ChainSeq", "Hash", "PrevHash",
-                       audit_row_hash("PrevHash", "ChainSeq", "TenantSlug", "Service", "EntityType", "EntityId", "Action", "Changes",
-                                      "UserId", "UserName", "CorrelationId", "IpAddress", "OccurredAt") AS calc,
-                       lag("Hash") OVER (ORDER BY "ChainSeq") AS prev_hash,
-                       lag("ChainSeq") OVER (ORDER BY "ChainSeq") AS prev_seq
-                FROM audit_log WHERE coalesce("TenantSlug", '') = $1 AND "ChainSeq" IS NOT NULL)
-            SELECT count(*),
-                   count(*) FILTER (WHERE calc <> "Hash"),
-                   count(*) FILTER (WHERE prev_hash IS NOT NULL AND "PrevHash" <> prev_hash),
-                   count(*) FILTER (WHERE prev_seq IS NOT NULL AND "ChainSeq" <> prev_seq + 1),
-                   min("ChainSeq") FILTER (WHERE calc <> "Hash" OR (prev_hash IS NOT NULL AND "PrevHash" <> prev_hash) OR (prev_seq IS NOT NULL AND "ChainSeq" <> prev_seq + 1)),
-                   min("ChainSeq"), max("ChainSeq"),
-                   (SELECT "Hash" FROM c ORDER BY "ChainSeq" DESC LIMIT 1)
-            FROM c
-            """, r => new
-        {
-            rows = r.GetInt64(0), tampered = r.GetInt64(1), broken = r.GetInt64(2), gaps = r.GetInt64(3),
-            firstProblemSeq = r.IsDBNull(4) ? (long?)null : r.GetInt64(4),
-            fromSeq = r.IsDBNull(5) ? (long?)null : r.GetInt64(5), toSeq = r.IsDBNull(6) ? (long?)null : r.GetInt64(6),
-            head = r.Str(7),
-        }, ct, Tenant);
-        var x = rows[0];
-        var unchained = Convert.ToInt64(await Db.ScalarAsync("SELECT count(*) FROM audit_log WHERE coalesce(\"TenantSlug\", '') = $1 AND \"ChainSeq\" IS NULL", ct, Tenant));
-        var ok = x.tampered == 0 && x.broken == 0 && x.gaps == 0 && unchained == 0;
+        var x = await AuditChainGuard.VerifyAsync(Db, Tenant, ct);
+        var anchorProblem = await AuditChainGuard.CheckAnchorAsync(Db, Tenant, x, ct);
+        var ok = x.Ok && anchorProblem is null;
         await Db.ExecuteAsync("""
             INSERT INTO audit_log ("TenantSlug","Service","EntityType","EntityId","Action","Changes","UserId","UserName","OccurredAt")
             VALUES ($1,'governance-service','AuditChain',NULL,'Verified',$2::jsonb,$3,$4,now())
-            """, ct, Tenant, JsonSerializer.Serialize(new { ok, x.rows }), Me.UserId, Me.Name);
-        return Ok(new { ok, x.rows, x.tampered, x.broken, x.gaps, unchained, x.firstProblemSeq, x.fromSeq, x.toSeq, x.head, checkedAt = DateTime.UtcNow });
+            """, ct, Tenant, JsonSerializer.Serialize(new { ok, x.Rows }), Me.UserId, Me.Name);
+        // Gecelik otomatik kontrolün son sonucu (AuditChainGuard).
+        var nightly = (await Db.QueryAsync("""
+            SELECT "CheckedAt", "Ok", "ToSeq", "Problem" FROM governance_audit_anchors
+             WHERE "TenantSlug" = $1 ORDER BY "CheckedAt" DESC LIMIT 1
+            """, r => new { checkedAt = r.GetFieldValue<DateTime>(0), ok = r.GetBoolean(1), toSeq = r.IsDBNull(2) ? (long?)null : r.GetInt64(2), problem = r.Str(3) }, ct, Tenant)).FirstOrDefault();
+        return Ok(new
+        {
+            ok, rows = x.Rows, tampered = x.Tampered, broken = x.Broken, gaps = x.Gaps, unchained = x.Unchained,
+            firstProblemSeq = x.FirstProblemSeq, fromSeq = x.FromSeq, toSeq = x.ToSeq, head = x.Head,
+            anchorProblem, nightly, checkedAt = DateTime.UtcNow,
+        });
     }
 
     /// <summary>SIEM aktarımının durumu (yapılandırma ve son gönderim).</summary>

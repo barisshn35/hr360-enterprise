@@ -107,7 +107,66 @@ Taramanın son durumu: Trivy (depo ve imajlar) HIGH/CRITICAL bulgu yok, `npm aud
 0 açık, 15 .NET servisinde bilinen açıklı NuGet paketi yok. ZAP temel taraması:
 0 FAIL. Kalan uyarılar aşağıda.
 
+## Dosya yükleme: gerçek tür denetimi
+
+Sunucuya dosya içeriği ulaşan her uçta tür, istemcinin bildirdiği Content-Type'a değil
+dosyanın ilk baytlarına (magic bytes) göre belirlenir; bildirilen tür ya da uzantı içerikle
+uyuşmazsa 400 döner ("Dosyanın içeriği, bildirilen dosya türü ya da uzantısıyla uyuşmuyor").
+.NET tarafında her servisin kendi `FileSniffer` kopyası vardır (learning, tenant, expense,
+governance); ML servisinde `ocr.py` / `ai_tools.py` aynı denetimi yapar.
+
+| Uç | Gelen içerik | İzinli | Boyut |
+|---|---|---|---|
+| `POST /api/learning/scorm/packages` | multipart, `.zip` | zip (PK imzası) | 50 MB (açılmış 250 MB, 5000 dosya) |
+| `POST /api/tenant/my-tenant/logo` | multipart | PNG, JPEG, WebP (SVG yok) | 2 MB |
+| `POST /api/expense/expense-claims/ocr` | multipart | PNG, JPEG, WebP | 5 MB, saklanmaz |
+| Sohbet botu fiş fotoğrafı (Slack/Teams dosya adresi) | sağlayıcıdan indirme | PNG, JPEG, WebP | 5 MB, saklanmaz |
+| `POST /ml/ocr/receipt` | multipart | PNG, JPEG, WebP | 5 MB, saklanmaz |
+| `POST /ml/ai/cv/parse` | multipart | PDF, DOCX (zip), UTF-8 metin | 5 MB, saklanmaz |
+
+Belge/fiş/aday özgeçmişi kayıtlarındaki `StorageKey` alanları yalnızca metadata'dır; sunucuya
+dosya yükleyen (ön imzalı MinIO dahil) bir uç yoktur. Böyle bir uç eklenirse doğrulama
+sonlandırma (confirm) adımında depodan ilk baytlar okunarak yapılmalıdır.
+
+Virüs taraması (ör. ClamAV `clamd` INSTREAM) eklenmedi: geliştirme VM'inin belleği sınırlı.
+Gerekirse kancanın yeri, çağrı yerinde `FileSniffer.Check` sonrasıdır ve dosya saklanmadan önce.
+
+## Güvenlik dalgası 1 (Ekim 2026)
+
+- **Denetim kaydı gecelik çapası:** governance `AuditChainGuard` her 24 saatte bir (servis açılışından
+  2 dk sonra da) tüm kiracıların zincirini doğrular ve zincir başını (son sıra no + özet)
+  `governance_audit_anchors` tablosuna ve servis günlüğüne ("Denetim zinciri çapası", Loki/SIEM'de
+  veritabanı dışı kopya) yazar. Sonraki turda önceki çapanın satırı aynı özetle yerinde mi ve zincir
+  geriye gitmiş mi diye bakılır; böylece zincirin baştan yeniden hesaplanması ya da sondan satır
+  silinmesi de görünür. Sorun olursa `hr360_audit_chain_problems > 0` → `DenetimZinciriBozuk` alarmı.
+  Son sonuç Gizlilik › denetim zinciri panelinde.
+- **Keycloak yönetim girişi (master realm):** giriş ve yönetim olayları 90 gün saklanır
+  (`scripts/keycloak-admin-access.sh` her çalıştığında uygular). Kaba kuvvet koruması master'da
+  açılmadı: tenant-service yönetim API'sine aynı yönetici hesabıyla sık ve eşzamanlı parola girişi
+  yaptığından koruma hesabı kilitliyor (denendi, güvenlik ekranı 500 verdi). Kalıcı çözüm tenant-service'in
+  ayrı bir servis hesabına (client credentials) geçmesi; o zamana kadar paneli IP'ye kısıtlayın:
+  `scripts/keycloak-admin-access.sh ip <adres>/32`.
+- **Konteyner sertleştirme:** .NET servisleri ve arayüz salt okunur kök dosya sistemiyle (yalnızca
+  bellek içi `/tmp` yazılabilir), tüm Linux yetkileri düşürülmüş ve `no-new-privileges` ile çalışır;
+  ML servisi ve gateway'de `no-new-privileges` (ML kök dosya sistemi model indirmesi için yazılabilir).
+- **İç servis anahtarı değişimi:** servisler `INTERNAL_SERVICE_TOKEN` yanında geçiş süresince
+  `INTERNAL_SERVICE_TOKEN_PREVIOUS`'u da kabul eder. `scripts/rotate-internal-token.sh auto`
+  (ya da `start` … `finish`) çağrı reddi olmadan anahtarı değiştirir. `SIEM_PSEUDONYM_KEY`
+  tanımlı değilse SIEM takma adları da değişir; tanımlamanız önerilir.
+- **Parola yenileme:** `scripts/rotate-passwords.py [anahtar...] [--keycloak-admin]` demo
+  kullanıcılarının ve isteğe bağlı Keycloak yöneticisinin parolasını yeniler; yeni parolalar
+  ekrana basılmaz, `tests/credentials.json` ve `.env`'e yazılır.
+- **Tedarik zinciri:** CI 17 imajın tamamını Trivy ile tarar ve her imaj için CycloneDX SBOM'u
+  (90 gün) saklar; `.github/dependabot.yml` haftalık toplu bağımlılık PR'ları açar. İmaj imzalama
+  imajlar bir kayıt deposuna gönderilmediği için yapılmadı.
+- **Kurulum:** `install.sh` güncelleme yolunda `--domain/--tls` ve `--keycloak-admin` artık uygulanır.
+
 ## Bilinen ve kabul edilen riskler
+
+- **SCORM içeriği aynı kökenden sunulur**: SCORM 1.2 paketinin HTML/JS'i (ve içindeki SVG'ler)
+  `window.parent.API`'ye erişebilmek için uygulamayla aynı kökende iframe içinde çalışır.
+  Paket yüklemek yalnızca İK yetkisindedir; paket içi dosyalar uzantıya göre türlenir ve
+  `nosniff` ile sunulur. Güvenilmeyen kaynaktan paket yüklemeyin.
 
 - **`style-src 'unsafe-inline'`** (ZAP uyarısı 10055): React bileşenleri ve
   animasyon kütüphanesi `style` özniteliği kullanır. Betik çalıştırmaya izin

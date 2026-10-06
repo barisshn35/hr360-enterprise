@@ -32,14 +32,8 @@ public class InternalController : ControllerBase
     }
 
     /// <summary>X-Internal-Token (INTERNAL_SERVICE_TOKEN) sabit zamanli karsilastirma; tanimsizsa uc kapali.</summary>
-    private bool InternalTokenValid()
-    {
-        var expected = Environment.GetEnvironmentVariable("INTERNAL_SERVICE_TOKEN");
-        var given = Request.Headers["X-Internal-Token"].FirstOrDefault() ?? "";
-        return !string.IsNullOrEmpty(expected)
-            && System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
-                System.Text.Encoding.UTF8.GetBytes(expected), System.Text.Encoding.UTF8.GetBytes(given));
-    }
+    private bool InternalTokenValid() =>
+        Security.InternalServiceToken.Matches(Request.Headers[Security.InternalServiceToken.Header].FirstOrDefault());
 
     public record DisableUserRequest(string TenantSlug, string KeycloakUserId, string? Reason);
 

@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -126,12 +124,7 @@ public class InternalSignaturesController : ControllerBase
     private bool En => Request.Headers["X-HR360-Lang"].ToString().StartsWith("en", StringComparison.OrdinalIgnoreCase);
     private string L(string tr, string en) => En ? en : tr;
 
-    public static bool TokenOk(string? given)
-    {
-        var expected = Environment.GetEnvironmentVariable("INTERNAL_SERVICE_TOKEN");
-        return !string.IsNullOrEmpty(expected)
-               && CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(expected), Encoding.UTF8.GetBytes(given ?? ""));
-    }
+    public static bool TokenOk(string? given) => Security.InternalServiceToken.Matches(given);
 
     /// <summary>Anahtar + kiracı + belge türü denetimi; geçerse TenantContext gövdedeki kiracıya ayarlanır.</summary>
     private IActionResult? Guard(string? tenantSlug, string? documentType)

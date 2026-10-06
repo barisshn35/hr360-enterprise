@@ -39,6 +39,7 @@ def h(who, **extra):
 @pytest.fixture()
 def env(monkeypatch):
     monkeypatch.delenv("INTERNAL_SERVICE_TOKEN", raising=False)
+    monkeypatch.delenv("INTERNAL_SERVICE_TOKEN_PREVIOUS", raising=False)
     store = LocalModelStore()
     service = ModelService(store, "hr360-attrition-risk", explainer_factory=None, bootstrap=True, bootstrap_rows=2000)
     asyncio.run(service.load(attempts=1, delay=0))
@@ -190,6 +191,12 @@ def test_retrain_permissions(env, monkeypatch):
     assert client.post("/model/retrain", json=rbody, headers=h("hr", **{"X-Internal-Token": "wrong"})).status_code == 403
     assert client.post("/model/retrain", json=rbody, headers=h("hr", **{"X-Internal-Token": "s3cret"})).status_code == 200
     assert client.post("/model/retrain", json=body, headers={"X-Internal-Token": "s3cret"}).status_code == 401
+    # Anahtar degistirme penceresi: onceki anahtar (INTERNAL_SERVICE_TOKEN_PREVIOUS) da kabul edilir.
+    monkeypatch.setenv("INTERNAL_SERVICE_TOKEN_PREVIOUS", "eski")
+    assert client.post("/model/retrain", json=rbody, headers=h("hr", **{"X-Internal-Token": "eski"})).status_code == 200
+    monkeypatch.setenv("INTERNAL_SERVICE_TOKEN_PREVIOUS", "")
+    assert client.post("/model/retrain", json=rbody, headers=h("hr", **{"X-Internal-Token": "eski"})).status_code == 403
+    assert client.post("/model/retrain", json=rbody, headers=h("hr", **{"X-Internal-Token": ""})).status_code == 403
 
 
 def test_retrain_returns_audit_payload(env):

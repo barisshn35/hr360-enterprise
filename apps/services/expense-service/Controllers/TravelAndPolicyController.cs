@@ -100,12 +100,23 @@ public class TravelAndPolicyController : ControllerBase
     {
         if (file is null || file.Length == 0) return BadRequest(new { message = "Görüntü gerekli" });
         if (file.Length > 5_000_000) return BadRequest(new { message = "Görüntü en fazla 5 MB olabilir" });
-        if (file.ContentType is not ("image/jpeg" or "image/png" or "image/webp")) return BadRequest(new { message = "JPEG, PNG ya da WEBP yükleyin" });
+        // Tür, istemcinin bildirdiğine değil dosyanın ilk baytlarına göre belirlenir (en fazla 5 MB bellekte).
+        byte[] bytes;
+        await using (var stream = file.OpenReadStream())
+        {
+            using var ms = new MemoryStream((int)file.Length);
+            await stream.CopyToAsync(ms, ct);
+            bytes = ms.ToArray();
+        }
+        switch (FileSniffer.Check(bytes, file.ContentType, file.FileName, [FileSniffer.Jpeg, FileSniffer.Png, FileSniffer.Webp], out var detected))
+        {
+            case FileSniffer.Verdict.NotAllowed: return BadRequest(new { message = "JPEG, PNG ya da WEBP yükleyin" });
+            case FileSniffer.Verdict.Mismatch: return BadRequest(new { message = FileSniffer.MismatchMessage });
+        }
         var url = (Environment.GetEnvironmentVariable("ML_INFERENCE_URL") ?? "http://ml-inference:8000").TrimEnd('/') + "/ocr/receipt";
         using var content = new MultipartFormDataContent();
-        await using var stream = file.OpenReadStream();
-        var sc = new StreamContent(stream);
-        sc.Headers.ContentType = new MediaTypeHeaderValue(file.ContentType);
+        var sc = new ByteArrayContent(bytes);
+        sc.Headers.ContentType = new MediaTypeHeaderValue(detected!);
         content.Add(sc, "file", "receipt");
         try
         {

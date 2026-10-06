@@ -1,6 +1,5 @@
 using System.Security.Claims;
 using System.Security.Cryptography;
-using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -33,13 +32,12 @@ public class InternalChatController : AppController
 
     /// <summary>Sabit zamanlı anahtar karşılaştırması; beklenen anahtar boşsa her zaman false.</summary>
     public static bool TokenMatches(string? expected, string? given) =>
-        !string.IsNullOrEmpty(expected)
-        && CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(expected), Encoding.UTF8.GetBytes(given ?? ""));
+        Security.InternalServiceToken.Matches(given, expected, null);
 
     /// <summary>Anahtar ve kiracıyı denetler; hata varsa döndürülecek yanıtı verir.</summary>
     private IActionResult? Enter(string? tenantSlug)
     {
-        if (!TokenMatches(Environment.GetEnvironmentVariable("INTERNAL_SERVICE_TOKEN"), Request.Headers["X-Internal-Token"].FirstOrDefault()))
+        if (!Security.InternalServiceToken.Matches(Request.Headers[Security.InternalServiceToken.Header].FirstOrDefault()))
             return NotFound();
         if (string.IsNullOrWhiteSpace(tenantSlug)) return BadRequest(new { message = "Kiracı belirtilmedi", code = "tenant" });
         _tenant.TenantSlug = tenantSlug.Trim();

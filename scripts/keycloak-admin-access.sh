@@ -117,7 +117,12 @@ set_master_frontend() {
         --user "$KEYCLOAK_ADMIN" --password "$KEYCLOAK_ADMIN_PASSWORD" >/dev/null 2>&1 && break
       sleep 3
     done
-    $K update realms/master --config $C -s "attributes.frontendUrl=$URL" -s "sslRequired=$SSL" && rm -f $C
+    # Yonetim/giris olaylarinin 90 gun kaydi (kim neyi degistirdi; master realm yalnizca yoneticiler).
+    # NOT: master realm'de kaba kuvvet korumasi ACILMAZ: tenant-service yonetim API'sine ayni
+    # yonetici hesabiyla sik ve eszamanli parola girisi yapar; koruma bunu saldiri sayip hesabi
+    # kilitliyor (guvenlik ekrani 500 veriyordu). Panel erisimi IP listesiyle kisitlanmalidir.
+    $K update realms/master --config $C -s "attributes.frontendUrl=$URL" -s "sslRequired=$SSL" \
+      -s eventsEnabled=true -s eventsExpiration=7776000 -s adminEventsEnabled=true -s adminEventsDetailsEnabled=false && rm -f $C
   ' || die "master realm adresi guncellenemedi"
 }
 

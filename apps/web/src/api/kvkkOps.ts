@@ -109,6 +109,8 @@ export interface AuditVerify {
   fromSeq: number | null
   toSeq: number | null
   head: string | null
+  anchorProblem: string | null
+  nightly: { checkedAt: string; ok: boolean; toSeq: number | null; problem: string | null } | null
   checkedAt: string
 }
 export interface SiemStatus {

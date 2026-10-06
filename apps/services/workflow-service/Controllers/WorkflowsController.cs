@@ -51,11 +51,8 @@ public class WorkflowsController : ControllerBase
     {
         get
         {
-            var expected = Environment.GetEnvironmentVariable("INTERNAL_SERVICE_TOKEN");
-            var given = Request.Headers["X-Internal-Token"].FirstOrDefault();
-            if (!string.IsNullOrEmpty(expected) && !string.IsNullOrEmpty(given)
-                && System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
-                    System.Text.Encoding.UTF8.GetBytes(expected), System.Text.Encoding.UTF8.GetBytes(given)))
+            var given = Request.Headers[Security.InternalServiceToken.Header].FirstOrDefault();
+            if (!string.IsNullOrEmpty(given) && Security.InternalServiceToken.Matches(given))
                 return true;
             return !Request.Headers.ContainsKey("X-Real-IP") && !Request.Headers.ContainsKey("X-Forwarded-For");
         }
@@ -265,11 +262,7 @@ public class WorkflowsController : ControllerBase
     public async Task<IActionResult> CreateInternal([FromBody] InternalCreateWorkflowRequest request,
         [FromServices] Tenancy.TenantContext tenant, CancellationToken ct)
     {
-        var expected = Environment.GetEnvironmentVariable("INTERNAL_SERVICE_TOKEN");
-        var given = Request.Headers["X-Internal-Token"].FirstOrDefault() ?? "";
-        if (string.IsNullOrEmpty(expected)
-            || !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
-                System.Text.Encoding.UTF8.GetBytes(expected), System.Text.Encoding.UTF8.GetBytes(given)))
+        if (!Security.InternalServiceToken.Matches(Request.Headers[Security.InternalServiceToken.Header].FirstOrDefault()))
             return NotFound();
         if (string.IsNullOrWhiteSpace(request.TenantSlug)) return BadRequest(new { message = "Kiracı belirtilmedi" });
         tenant.TenantSlug = request.TenantSlug;
@@ -425,11 +418,7 @@ public class WorkflowsController : ControllerBase
     public async Task<IActionResult> DecideInternal(Guid id, Guid stepId, [FromBody] InternalDecideRequest request,
         [FromServices] Tenancy.TenantContext tenant, CancellationToken ct)
     {
-        var expected = Environment.GetEnvironmentVariable("INTERNAL_SERVICE_TOKEN");
-        var given = Request.Headers["X-Internal-Token"].FirstOrDefault() ?? "";
-        if (string.IsNullOrEmpty(expected)
-            || !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
-                System.Text.Encoding.UTF8.GetBytes(expected), System.Text.Encoding.UTF8.GetBytes(given)))
+        if (!Security.InternalServiceToken.Matches(Request.Headers[Security.InternalServiceToken.Header].FirstOrDefault()))
             return NotFound();
         if (string.IsNullOrWhiteSpace(request.TenantSlug)) return BadRequest(new { message = "Kiracı belirtilmedi" });
         if (request.Decision is not (StepDecision.Approved or StepDecision.Rejected))
@@ -643,11 +632,7 @@ public class WorkflowsController : ControllerBase
     public async Task<IActionResult> CancelInternal(Guid id, [FromBody] InternalCancelWorkflowRequest request,
         [FromServices] Tenancy.TenantContext tenant, CancellationToken ct)
     {
-        var expected = Environment.GetEnvironmentVariable("INTERNAL_SERVICE_TOKEN");
-        var given = Request.Headers["X-Internal-Token"].FirstOrDefault() ?? "";
-        if (string.IsNullOrEmpty(expected)
-            || !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
-                System.Text.Encoding.UTF8.GetBytes(expected), System.Text.Encoding.UTF8.GetBytes(given)))
+        if (!Security.InternalServiceToken.Matches(Request.Headers[Security.InternalServiceToken.Header].FirstOrDefault()))
             return NotFound();
         if (string.IsNullOrWhiteSpace(request.TenantSlug)) return BadRequest(new { message = "Kiracı belirtilmedi" });
         tenant.TenantSlug = request.TenantSlug;

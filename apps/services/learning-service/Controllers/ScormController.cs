@@ -67,6 +67,12 @@ public class ScormController : ControllerBase
         {
             using var ms = new MemoryStream();
             await s.CopyToAsync(ms, ct);
+            // Gerçek tür denetimi: içerik zip (PK imzası) olmalı; bildirilen tür ve uzantı da zip'i göstermeli.
+            switch (FileSniffer.Check(ms.GetBuffer().AsSpan(0, (int)ms.Length), file.ContentType, file.FileName, [FileSniffer.Zip], out _))
+            {
+                case FileSniffer.Verdict.NotAllowed: return BadRequest(new { message = "Dosya geçerli bir zip arşivi değil" });
+                case FileSniffer.Verdict.Mismatch: return BadRequest(new { message = FileSniffer.MismatchMessage });
+            }
             ms.Position = 0;
             parsed = ScormPackageReader.Read(ms);
         }

@@ -1,6 +1,4 @@
 using System.Security.Claims;
-using System.Security.Cryptography;
-using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using TimeShiftService.Data;
@@ -36,8 +34,7 @@ public class InternalChatController : ControllerBase
     public record SwapDecideBody(string? TenantSlug, Guid EmployeeId, Guid SwapId, bool Approve, string? Reason, string? Platform);
 
     internal static bool TokenOk(string? expected, string? given) =>
-        !string.IsNullOrEmpty(expected)
-        && CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(expected), Encoding.UTF8.GetBytes(given ?? ""));
+        Security.InternalServiceToken.Matches(given, expected, null);
 
     private static string PlatformOf(string? p) =>
         string.IsNullOrWhiteSpace(p) ? "chat" : new string(p.Trim().Where(char.IsLetterOrDigit).Take(20).ToArray()) is { Length: > 0 } s ? s : "chat";
@@ -45,7 +42,7 @@ public class InternalChatController : ControllerBase
     /// <summary>Anahtar + kiracı + çalışan denetimi; kiracı bağlamını ve denetim kimliğini (çalışan, sohbet) ayarlar.</summary>
     private IActionResult? Gate(string? tenantSlug, Guid employeeId, string? platform)
     {
-        if (!TokenOk(Environment.GetEnvironmentVariable("INTERNAL_SERVICE_TOKEN"), Request.Headers["X-Internal-Token"].FirstOrDefault()))
+        if (!Security.InternalServiceToken.Matches(Request.Headers[Security.InternalServiceToken.Header].FirstOrDefault()))
             return NotFound();
         if (string.IsNullOrWhiteSpace(tenantSlug)) return BadRequest(new { message = "Kiracı belirtilmedi" });
         if (employeeId == Guid.Empty) return BadRequest(new { message = "Çalışan belirtilmedi" });

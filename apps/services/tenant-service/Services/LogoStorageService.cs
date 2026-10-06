@@ -24,7 +24,8 @@ public class LogoStorageService
     /// SVG, baglantiyi acan herkesin (baska kiracilarin kullanicilari, platform
     /// yoneticisi) oturumunda ayni kaynakta calisip Keycloak oturumundan jeton
     /// alabiliyordu. Ayrica tur, istemcinin gonderdigi ContentType'a degil dosyanin
-    /// ilk baytlarina (magic bytes) bakilarak belirlenir.
+    /// ilk baytlarina (magic bytes) bakilarak belirlenir (FileSniffer); bildirilen tur ya da
+    /// uzanti icerikle uyusmazsa yukleme reddedilir.
     /// </summary>
     private static readonly Dictionary<string, string> AllowedContentTypes = new()
     {
@@ -35,16 +36,6 @@ public class LogoStorageService
 
     /// <summary>Eski yuklemelerin temizligi icin (onceden svg kabul ediliyordu).</summary>
     private static readonly string[] AllKnownExtensions = { "png", "jpg", "webp", "svg" };
-
-    private static string? DetectImageType(ReadOnlySpan<byte> h)
-    {
-        if (h.Length >= 8 && h[0] == 0x89 && h[1] == 0x50 && h[2] == 0x4E && h[3] == 0x47
-            && h[4] == 0x0D && h[5] == 0x0A && h[6] == 0x1A && h[7] == 0x0A) return "image/png";
-        if (h.Length >= 3 && h[0] == 0xFF && h[1] == 0xD8 && h[2] == 0xFF) return "image/jpeg";
-        if (h.Length >= 12 && h[0] == 'R' && h[1] == 'I' && h[2] == 'F' && h[3] == 'F'
-            && h[8] == 'W' && h[9] == 'E' && h[10] == 'B' && h[11] == 'P') return "image/webp";
-        return null;
-    }
 
     private readonly AmazonS3Client _client;
     private readonly string _publicBaseUrl;
@@ -89,7 +80,7 @@ public class LogoStorageService
     }
 
     public async Task<UploadResult> UploadAsync(
-        Guid tenantId, string contentType, Stream fileStream, long fileSizeBytes, CancellationToken ct)
+        Guid tenantId, string? contentType, string? fileName, Stream fileStream, long fileSizeBytes, CancellationToken ct)
     {
         if (fileSizeBytes > MaxFileSizeBytes)
             return new UploadResult(false, null, "Dosya en fazla 2 MB olabilir");
@@ -99,8 +90,11 @@ public class LogoStorageService
         await fileStream.CopyToAsync(buffer, ct);
         if (buffer.Length > MaxFileSizeBytes)
             return new UploadResult(false, null, "Dosya en fazla 2 MB olabilir");
-        var detected = DetectImageType(buffer.GetBuffer().AsSpan(0, (int)Math.Min(buffer.Length, 16)));
-        if (detected is null || !AllowedContentTypes.TryGetValue(detected, out var extension))
+        var verdict = FileSniffer.Check(buffer.GetBuffer().AsSpan(0, (int)buffer.Length), contentType, fileName,
+            AllowedContentTypes.Keys, out var detected);
+        if (verdict == FileSniffer.Verdict.Mismatch)
+            return new UploadResult(false, null, FileSniffer.MismatchMessage);
+        if (verdict != FileSniffer.Verdict.Ok || !AllowedContentTypes.TryGetValue(detected!, out var extension))
             return new UploadResult(false, null, "Sadece PNG, JPEG veya WebP kabul edilir");
         contentType = detected;
         buffer.Position = 0;

@@ -25,10 +25,7 @@ public class InternalRetentionController : ControllerBase
     [HttpPost("run")]
     public async Task<IActionResult> Run(CancellationToken ct)
     {
-        var expected = Environment.GetEnvironmentVariable("INTERNAL_SERVICE_TOKEN");
-        var given = Request.Headers["X-Internal-Token"].FirstOrDefault() ?? "";
-        if (string.IsNullOrEmpty(expected) || !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
-                System.Text.Encoding.UTF8.GetBytes(expected), System.Text.Encoding.UTF8.GetBytes(given)))
+        if (!Security.InternalServiceToken.Matches(Request.Headers[Security.InternalServiceToken.Header].FirstOrDefault()))
             return NotFound();
         _tenant.IsPlatformAdmin = true;
         var policies = await _db.RetentionPolicies.IgnoreQueryFilters().Where(p => p.IsEnabled).ToListAsync(ct);

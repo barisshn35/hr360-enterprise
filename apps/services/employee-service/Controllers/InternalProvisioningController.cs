@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -38,13 +36,8 @@ public class InternalProvisioningController : ControllerBase
         string TenantSlug, string KeycloakUserId, string Email, string FirstName, string LastName,
         string? PositionTitle, Guid? DepartmentId);
 
-    private bool Authorized()
-    {
-        var expected = Environment.GetEnvironmentVariable("INTERNAL_SERVICE_TOKEN");
-        var given = Request.Headers["X-Internal-Token"].FirstOrDefault() ?? "";
-        return !string.IsNullOrEmpty(expected)
-            && CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(expected), Encoding.UTF8.GetBytes(given));
-    }
+    private bool Authorized() =>
+        Security.InternalServiceToken.Matches(Request.Headers[Security.InternalServiceToken.Header].FirstOrDefault());
 
     private static string? Clean(string? s, int max) =>
         string.IsNullOrWhiteSpace(s) ? null : (s.Trim().Length > max ? s.Trim()[..max] : s.Trim());

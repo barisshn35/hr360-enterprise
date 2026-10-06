@@ -114,9 +114,18 @@ def find_skills(text: str, include_languages: bool = True) -> list[str]:
 
 # ===================================================================== CV ayrıştırma
 
+MISMATCH = "Dosyanın içeriği, bildirilen dosya türü ya da uzantısıyla uyuşmuyor"
+
+
 def extract_text(filename: str, data: bytes) -> str:
+    """Tür, uzantıya ek olarak içeriğin ilk baytlarından (magic bytes) doğrulanır:
+    PDF "%PDF-", DOCX zip ("PK" 03 04), metin NUL içermeyen geçerli UTF-8. Uyuşmazsa 415."""
     name = (filename or "").lower()
-    if name.endswith(".pdf") or data[:4] == b"%PDF":
+    is_pdf = data[:5] == b"%PDF-"
+    is_zip = data[:4] == b"PK\x03\x04"
+    if name.endswith(".pdf") or (is_pdf and not name.endswith((".docx", ".txt", ".md", ".text"))):
+        if not is_pdf:
+            raise HTTPException(415, MISMATCH)
         try:
             from pypdf import PdfReader
         except ImportError as exc:  # pragma: no cover
@@ -127,17 +136,25 @@ def extract_text(filename: str, data: bytes) -> str:
         except Exception as exc:  # pypdf bozuk/sifreli dosyada farkli hatalar atar
             raise HTTPException(400, "PDF okunamadı (bozuk ya da şifreli olabilir)") from exc
     if name.endswith(".docx"):
+        if not is_zip:
+            raise HTTPException(415, MISMATCH)
         try:
             with zipfile.ZipFile(io.BytesIO(data)) as z:
-                xml = z.read("word/document.xml").decode("utf-8", "ignore")
+                info = z.getinfo("word/document.xml")
+                if info.file_size > 20 * 1024 * 1024:  # zip bombasına karşı açılmış boyut sınırı
+                    raise HTTPException(413, "Belgenin açılmış boyutu çok büyük")
+                xml = z.read(info).decode("utf-8", "ignore")
         except (zipfile.BadZipFile, KeyError) as exc:
             raise HTTPException(400, "Geçerli bir .docx dosyası değil") from exc
         xml = re.sub(r"</w:p>", "\n", xml)
         return re.sub(r"<[^>]+>", "", xml)
     if name.endswith((".txt", ".md", ".text")) or not name:
-        if b"\x00" in data[:4096]:
+        if is_pdf or is_zip or b"\x00" in data:
             raise HTTPException(415, "Metin dosyası ikili veri içeriyor")
-        return data.decode("utf-8", "ignore")
+        try:
+            return data.decode("utf-8-sig")
+        except UnicodeDecodeError as exc:
+            raise HTTPException(415, "Metin dosyası UTF-8 olarak kaydedilmeli") from exc
     raise HTTPException(415, "Desteklenen biçimler: PDF, DOCX, TXT")
 
 
@@ -239,7 +256,7 @@ def parse_cv_text(text: str) -> CvResult:
 
 @router.post("/cv/parse", response_model=CvResult)
 async def cv_parse(file: UploadFile = File(...)) -> CvResult:
-    data = await file.read()
+    data = await file.read(5 * 1024 * 1024 + 1)
     if len(data) > 5 * 1024 * 1024:
         raise HTTPException(413, "Dosya 5 MB'tan büyük olamaz")
     text = extract_text(file.filename or "", data)

@@ -44,6 +44,7 @@ services:
       EMAIL_POLL_SECONDS: "2"
       DIGEST_CHECK_SECONDS: "3"
       INTERNAL_SERVICE_TOKEN: "${INTERNAL_SERVICE_TOKEN:-}"
+      INTERNAL_SERVICE_TOKEN_PREVIOUS: "${INTERNAL_SERVICE_TOKEN_PREVIOUS:-}"
   workflow-service:
     environment:
       # Vekalet ve sure asimi isleri 5 sn'de bir (uretimde 5 dk).
@@ -90,6 +91,7 @@ services:
       # G5: kiracı verisiyle (satır/CSV) model eğitimini servisler arası çağrıya açar
       # (X-Internal-Token). Sentetik yeniden eğitim İK rolleriyle, bu anahtar olmadan da çalışır.
       INTERNAL_SERVICE_TOKEN: "${INTERNAL_SERVICE_TOKEN:-}"
+      INTERNAL_SERVICE_TOKEN_PREVIOUS: "${INTERNAL_SERVICE_TOKEN_PREVIOUS:-}"
   tenant-service:
     environment:
       # Dalga 5d: DNS TXT saptirma dosyasi (yalnizca TENANT_TEST_MODE=true iken okunur),

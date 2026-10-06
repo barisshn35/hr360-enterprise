@@ -1,6 +1,4 @@
 using System.Security.Claims;
-using System.Security.Cryptography;
-using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using OnboardingService.Data;
@@ -50,13 +48,8 @@ public class InternalChatController : ControllerBase
     }
 
     /// <summary>X-Internal-Token sabit zamanlı karşılaştırılır; anahtar tanımlı değilse her istek reddedilir.</summary>
-    public static bool TokenOk(HttpRequest request)
-    {
-        var expected = Environment.GetEnvironmentVariable("INTERNAL_SERVICE_TOKEN");
-        var given = request.Headers["X-Internal-Token"].FirstOrDefault() ?? "";
-        return !string.IsNullOrEmpty(expected)
-            && CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(expected), Encoding.UTF8.GetBytes(given));
-    }
+    public static bool TokenOk(HttpRequest request) =>
+        Security.InternalServiceToken.Matches(request.Headers[Security.InternalServiceToken.Header].FirstOrDefault());
 
     public static ClaimsPrincipal ChatActor(Guid employeeId, string? platform)
     {

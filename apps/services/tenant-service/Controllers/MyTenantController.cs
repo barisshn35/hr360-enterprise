@@ -275,7 +275,7 @@ public class MyTenantController : ControllerBase
             return BadRequest(new { message = "Dosya bulunamadı" });
 
         await using var stream = file.OpenReadStream();
-        var result = await _logos.UploadAsync(tenant.Id, file.ContentType, stream, file.Length, ct);
+        var result = await _logos.UploadAsync(tenant.Id, file.ContentType, file.FileName, stream, file.Length, ct);
         if (!result.Success)
             return BadRequest(new { message = result.Error });
 

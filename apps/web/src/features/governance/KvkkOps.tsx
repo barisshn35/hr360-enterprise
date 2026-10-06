@@ -381,7 +381,17 @@ export function AuditIntegrityPanel() {
               : tx('Bütünlük sorunu: {0} değiştirilmiş, {1} kopuk bağ, {2} eksik sıra. İlk sorun #{3}.', [r.tampered, r.broken, r.gaps, r.firstProblemSeq ?? '—'])}
           </p>
         )}
+        {r?.anchorProblem && (
+          <p className="flex items-center gap-2 text-destructive"><AlertTriangle className="size-4" />{tx('Gecelik çapa tutmuyor: {0}', [txServer(r.anchorProblem)])}</p>
+        )}
         {r?.head && <p className="break-all text-[11.5px] text-muted-foreground">{tx('Son özet')}: {r.head}</p>}
+        {r && (
+          <p className="text-muted-foreground">
+            {r.nightly
+              ? tx('Gecelik otomatik kontrol: {0} · {1}', [formatDateTime(r.nightly.checkedAt), r.nightly.ok ? tx('sorun yok') : txServer(r.nightly.problem ?? '')])
+              : tx('Gecelik otomatik kontrol henüz çalışmadı.')}
+          </p>
+        )}
         <p className="text-muted-foreground">
           {siem.data?.configured
             ? tx('SIEM aktarımı açık ({0}) · {1} kayıt gönderildi{2}', [siem.data.endpoint ?? '', siem.data.state?.sent ?? 0, siem.data.state?.lastError ? ` · ${tx('son hata')}: ${siem.data.state.lastError}` : ''])

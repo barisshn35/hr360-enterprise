@@ -55,3 +55,16 @@ groups:
         labels: { severity: warning }
         annotations:
           summary: "PostgreSQL acik baglanti sayisi yuksek"
+
+      - alert: DenetimZinciriBozuk
+        expr: max(hr360_audit_chain_problems) > 0
+        labels: { severity: critical }
+        annotations:
+          summary: "Denetim kaydi zinciri {{ $value }} kiracida bozuk ya da gecelik capa tutmuyor (governance-service gunlugu: 'Denetim zinciri SORUNU')"
+
+      - alert: DenetimZinciriKontrolEdilmiyor
+        expr: time() - max(hr360_audit_chain_last_check_timestamp_seconds) > 30 * 3600
+        for: 30m
+        labels: { severity: warning }
+        annotations:
+          summary: "Denetim kaydi zincirinin gecelik kontrolu 30 saattir calismadi"

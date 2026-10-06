@@ -459,9 +459,14 @@ public sealed partial class ChatFeatures
             await ErrorAsync(app, "expense", "Fiş indirilemedi: " + ex.Message);
             return ChatReply.Of(L("Fiş görüntüsü alınamadı; yeniden gönderin ya da *masraf <tutar> <tarih>* yazın.", "The receipt image could not be fetched; send it again or type *expense <amount> <date>*."), en);
         }
-        if (type is not ("image/jpeg" or "image/png" or "image/webp" or "image/jpg"))
+        // Gerçek tür denetimi: sağlayıcının bildirdiği tür içerikle (magic bytes) uyuşmalı.
+        var verdict = FileSniffer.Check(bytes, type, null, [FileSniffer.Jpeg, FileSniffer.Png, FileSniffer.Webp], out var detected);
+        if (verdict != FileSniffer.Verdict.Ok || type is not ("image/jpeg" or "image/png" or "image/webp" or "image/jpg"))
+        {
+            Array.Clear(bytes);
             return ChatReply.Of(L("Fiş için JPEG, PNG ya da WEBP fotoğraf gönderin.", "Send a JPEG, PNG or WEBP photo of the receipt."), en);
-        var text = await OcrAsync(bytes, type == "image/jpg" ? "image/jpeg" : type, ct);
+        }
+        var text = await OcrAsync(bytes, detected!, ct);
         Array.Clear(bytes); // görüntü bellekte bile tutulmaz
         var (amount, date, _) = text is null ? (null, null, null) : ReceiptParser.Parse(text);
         var category = text is null ? "Other" : ReceiptParser.GuessCategory(text);

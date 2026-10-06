@@ -2323,6 +2323,9 @@
  "Gece çalışması (20:00–06:00) 7,5 saati aşıyor ({0}).": "Night work (20:00–06:00) exceeds 7.5 hours ({0}).",
  "Gece yarısını geçebilir (ör. 08:00)": "Can go past midnight (e.g. 08:00)",
  "Gece yarısını geçen pencere, başladığı günün seçimine göre uygulanır.": "A window that crosses midnight applies based on the day it starts.",
+ "Gecelik çapa tutmuyor: {0}": "Nightly anchor mismatch: {0}",
+ "Gecelik otomatik kontrol henüz çalışmadı.": "The nightly automatic check has not run yet.",
+ "Gecelik otomatik kontrol: {0} · {1}": "Nightly automatic check: {0} · {1}",
  "Gecikti": "Overdue",
  "geç": "late",
  "Geç": "Late",
@@ -4908,6 +4911,7 @@
  "Sorular kaydedildi": "Questions saved",
  "Sorumlu": "Owner",
  "Sorumluluk alma": "Ownership",
+ "sorun yok": "no issues",
  "Soruyu sil": "Delete question",
  "Soyad": "Last name",
  "Soyad en az 2 karakter olmalı.": "Last name must be at least 2 characters.",
@@ -8487,5 +8491,14 @@
  "@server:Yalnızca sonuçlanmamış mülakat iptal edilebilir": "Only an interview without a result can be cancelled",
  "@server:Yalnızca sonuçlanmamış mülakat yeniden planlanabilir": "Only an interview without a result can be rescheduled",
  "@server:İptal edilen mülakata sonuç girilemez; iptal için iptal işlemini kullanın": "A result cannot be recorded for a cancelled interview; use the cancel action to cancel",
- "@server:İptal edilen mülakat için puan kartı doldurulamaz": "A scorecard cannot be filled in for a cancelled interview"
+ "@server:İptal edilen mülakat için puan kartı doldurulamaz": "A scorecard cannot be filled in for a cancelled interview",
+ "@server:Dosyanın içeriği, bildirilen dosya türü ya da uzantısıyla uyuşmuyor": "The file's content does not match its declared type or extension",
+ "@server:Sadece PNG, JPEG veya WebP kabul edilir": "Only PNG, JPEG or WebP is accepted",
+ "@server:Dosya en fazla 2 MB olabilir": "The file can be at most 2 MB",
+ "@server:Metin dosyası UTF-8 olarak kaydedilmeli": "The text file must be saved as UTF-8",
+ "@server:Metin dosyası ikili veri içeriyor": "The text file contains binary data",
+ "@server:Belgenin açılmış boyutu çok büyük": "The document is too large when unpacked",
+ "@server:Geçerli bir .docx dosyası değil": "Not a valid .docx file",
+ "@server:PDF okunamadı (bozuk ya da şifreli olabilir)": "The PDF could not be read (it may be corrupt or encrypted)",
+ "@server:Görüntü boş ya da 5 MB'tan büyük": "The image is empty or larger than 5 MB"
 }

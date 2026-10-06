@@ -516,9 +516,8 @@ if [ -f .env ]; then
       printf 'HR360_ADMIN_EMAIL=%s\nALERT_EMAIL_TO=%s\n' "$OPT_EMAIL" "$OPT_EMAIL" >> .env
       info "ALERT_EMAIL_TO=${OPT_EMAIL} .env'e eklendi."
     fi
-    if [ -n "$OPT_SMTP_FROM" ] || [ -n "$OPT_DOMAIN" ]; then
-      warn "Guncellemede adres/e-posta degistirilmez. E-posta: scripts/smtp.sh set --from ...,"
-      warn "alan adi/HTTPS: scripts/tls.sh auto --host ... ile ayarlayin."
+    if [ -n "$OPT_SMTP_FROM" ]; then
+      warn "Guncellemede e-posta ayari degistirilmez: scripts/smtp.sh set --from ... ile ayarlayin."
     fi
 
     # Redis (Valkey) onbellek parolasi; eski .env'lerde yok.
@@ -567,6 +566,29 @@ if [ -f .env ]; then
     fi
 
     docker compose up -d --build
+
+    # Guncellemede verilen --domain/--tls ve --keycloak-admin de uygulanir (onceden yalnizca
+    # uyari veriliyordu; alan adina gecis elle scripts/tls.sh ile yapilmak zorundaydi).
+    if [ -n "$OPT_DOMAIN" ]; then
+      email_args=(); [ -n "$OPT_EMAIL" ] && email_args=(--email "$OPT_EMAIL")
+      info "Alan adi uygulaniyor: ${OPT_DOMAIN} (TLS: ${OPT_TLS:-auto})"
+      case "$OPT_TLS" in
+        letsencrypt) scripts/tls.sh enable --letsencrypt --host "$OPT_DOMAIN" "${email_args[@]}" ;;
+        self-signed) scripts/tls.sh enable --self-signed --host "$OPT_DOMAIN" ;;
+        cert) scripts/tls.sh enable --cert "$OPT_CERT" --key "$OPT_KEY" --host "$OPT_DOMAIN" ;;
+        none) warn "--tls none ile alan adina gecis yapilmaz (HTTPS'siz alan adi onerilmez). TLS'i onundeki"
+              warn "dengeleyici sonlandiriyorsa: scripts/tls.sh external --host ${OPT_DOMAIN}" ;;
+        *) scripts/tls.sh auto --host "$OPT_DOMAIN" "${email_args[@]}" ;;
+      esac || warn "Alan adi/HTTPS ayarlanamadi; scripts/tls.sh check --host ${OPT_DOMAIN} ile on kosullari denetleyin."
+    fi
+    if [ -n "$OPT_KC_ADMIN" ]; then
+      case "$OPT_KC_ADMIN" in
+        open|port) scripts/keycloak-admin-access.sh "$OPT_KC_ADMIN" ;;
+        ip:*) scripts/keycloak-admin-access.sh ip "${OPT_KC_ADMIN#ip:}" ;;
+        port:*) scripts/keycloak-admin-access.sh port "${OPT_KC_ADMIN#port:}" ;;
+        *) warn "Gecersiz --keycloak-admin: $OPT_KC_ADMIN (open | ip:CIDR,... | port)" ;;
+      esac || warn "Keycloak paneli erisimi ayarlanamadi; scripts/keycloak-admin-access.sh ile deneyin."
+    fi
     info "Guncelleme tamamlandi: $(grep '^PUBLIC_ORIGIN=' .env | tail -1 | cut -d= -f2-)"
     info "HTTPS: $(scripts/tls.sh status | head -1 | sed 's/^HTTPS: //')"
     exit 0

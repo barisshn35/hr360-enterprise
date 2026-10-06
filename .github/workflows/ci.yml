@@ -213,9 +213,21 @@ jobs:
         include:
           - { name: web, context: apps/web }
           - { name: ml-inference, context: apps/ml-inference }
+          - { name: compensation-service, context: apps/services/compensation-service }
           - { name: employee-service, context: apps/services/employee-service }
           - { name: engagement-service, context: apps/services/engagement-service }
+          - { name: expense-service, context: apps/services/expense-service }
           - { name: governance-service, context: apps/services/governance-service }
+          - { name: learning-service, context: apps/services/learning-service }
+          - { name: leave-service, context: apps/services/leave-service }
+          - { name: notification-service, context: apps/services/notification-service }
+          - { name: onboarding-service, context: apps/services/onboarding-service }
+          - { name: organization-service, context: apps/services/organization-service }
+          - { name: performance-service, context: apps/services/performance-service }
+          - { name: recruitment-service, context: apps/services/recruitment-service }
+          - { name: tenant-service, context: apps/services/tenant-service }
+          - { name: timeshift-service, context: apps/services/timeshift-service }
+          - { name: workflow-service, context: apps/services/workflow-service }
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
@@ -232,3 +244,17 @@ jobs:
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
             aquasec/trivy:0.57.1@sha256:5c59e08f980b5d4d503329773480fcea2c9bdad7e381d846fbf9f2ecb8050f6b \
             image --scanners vuln --severity CRITICAL --ignore-unfixed --exit-code 1 hr360-${{ matrix.name }}:ci
+      # Guvenlik dalgasi 1: her imajin yazilim bilesen listesi (SBOM, CycloneDX). Yeni bir acik
+      # duyuruldugunda hangi imajin etkilendigi bu listeden bulunur; 90 gun saklanir.
+      - name: SBOM (CycloneDX)
+        run: |
+          mkdir -p sbom
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD/sbom:/out" \
+            aquasec/trivy:0.57.1@sha256:5c59e08f980b5d4d503329773480fcea2c9bdad7e381d846fbf9f2ecb8050f6b \
+            image --format cyclonedx --output /out/hr360-${{ matrix.name }}.cdx.json hr360-${{ matrix.name }}:ci
+          test -s sbom/hr360-${{ matrix.name }}.cdx.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ matrix.name }}
+          path: sbom/hr360-${{ matrix.name }}.cdx.json
+          retention-days: 90

@@ -206,6 +206,19 @@ out="$(run_in smtpset "$d" FAKE_MX=aspmx.l.google.com scripts/smtp.sh set --from
 check "ayar uygulandi" [ "$rc" = 0 ]
 check "Google Workspace sunucusu ve kullanici adi" eval '[ "$(envv "$d" SMTP_HOST)" = "'\''smtp.gmail.com'\''" ] && [ "$(envv "$d" SMTP_USER)" = "'\''ik@firma.com'\''" ]'
 
+echo "8) Guncelleme yolu: mevcut .env korunur, --domain ve --keycloak-admin uygulanir"
+d="$(new_copy upd)"
+cp "$WORK/repo-smtpfail/.env" "$d/.env"
+secret_before="$(envv "$d" TENANT_SECRET_KEY)"
+out="$(run_in upd "$d" FAKE_DNS_A=203.0.113.10 FAKE_LE=ok ./install.sh --domain hr.example.com --email admin@example.com \
+        --tls letsencrypt --keycloak-admin ip:198.51.100.0/24 --yes 2>&1)"; rc=$?
+check "guncelleme basarili" [ "$rc" = 0 ]
+check "guncelleme yolu secildi, sirlar korundu" eval 'grep -q "Mevcut .env korunuyor" <<< "$out" && [ "$(envv "$d" TENANT_SECRET_KEY)" = "$secret_before" ]'
+check "adres https://hr.example.com oldu" [ "$(envv "$d" PUBLIC_ORIGIN)" = https://hr.example.com ]
+check "Let's Encrypt yonetici e-postasiyla istendi" grep -q "certonly.*-d hr.example.com.*--email admin@example.com" "$WORK/log-upd"
+check "Keycloak paneli IP listesine kisitlandi" eval '[ "$(envv "$d" KEYCLOAK_ADMIN_MODE)" = ip ] && [ "$(envv "$d" KEYCLOAK_ADMIN_ALLOWED_IPS)" = 198.51.100.0/24 ]'
+check "ufw'ye dokunulmadi" eval '! grep -Eq "ufw (allow|enable|deny|reject|delete|reset|disable)" "$WORK/log-upd"'
+
 echo ""
 if [ "$FAILS" = 0 ]; then echo "Tum kurulum testleri gecti."; else echo "$FAILS test basarisiz."; fi
 [ "$FAILS" = 0 ]

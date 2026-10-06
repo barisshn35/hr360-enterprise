@@ -138,6 +138,23 @@ def test_cv_parse_txt_upload():
     assert r.json()["email"] == "ayse.kaya@example.com"
 
 
+def test_cv_parse_rejects_content_extension_mismatch():
+    # .pdf adlı HTML, .docx adlı PDF, .txt adlı ikili/UTF-8 olmayan içerik reddedilir
+    assert client.post("/ai/cv/parse", files={"file": ("cv.pdf", b"<html><script>x</script>", "application/pdf")}).status_code == 415
+    assert client.post("/ai/cv/parse", files={"file": ("cv.docx", b"%PDF-1.4 x", "application/octet-stream")}).status_code == 415
+    assert client.post("/ai/cv/parse", files={"file": ("cv.txt", b"PK\x03\x04abc", "text/plain")}).status_code == 415
+    assert client.post("/ai/cv/parse", files={"file": ("cv.txt", "Ayşe".encode("cp1254"), "text/plain")}).status_code == 415
+
+
+def test_ocr_sniff_image():
+    from ocr import sniff_image
+    assert sniff_image(b"\x89PNG\r\n\x1a\n....") == "image/png"
+    assert sniff_image(b"\xff\xd8\xff\xe0....") == "image/jpeg"
+    assert sniff_image(b"RIFF\x00\x00\x00\x00WEBPVP8 ") == "image/webp"
+    assert sniff_image(b"<svg onload=alert(1)>") is None
+    assert sniff_image(b"%PDF-1.7") is None
+
+
 def _high(text: str) -> list[dict]:
     r = client.post("/ai/jobs/bias-check", json={"text": text})
     assert r.status_code == 200, r.text

@@ -204,11 +204,7 @@ public class LeaveRequestsController : ControllerBase
     public async Task<IActionResult> CreateInternal([FromBody] InternalCreateLeaveRequest request,
         [FromServices] Tenancy.TenantContext tenant, CancellationToken ct)
     {
-        var expected = Environment.GetEnvironmentVariable("INTERNAL_SERVICE_TOKEN");
-        var given = Request.Headers["X-Internal-Token"].FirstOrDefault() ?? "";
-        if (string.IsNullOrEmpty(expected)
-            || !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
-                System.Text.Encoding.UTF8.GetBytes(expected), System.Text.Encoding.UTF8.GetBytes(given)))
+        if (!InternalTokenValid())
             return NotFound();
         if (string.IsNullOrWhiteSpace(request.TenantSlug)) return BadRequest(new { message = "Kiracı belirtilmedi" });
         tenant.TenantSlug = request.TenantSlug;
@@ -489,14 +485,8 @@ public class LeaveRequestsController : ControllerBase
         });
     }
 
-    private bool InternalTokenValid()
-    {
-        var expected = Environment.GetEnvironmentVariable("INTERNAL_SERVICE_TOKEN");
-        var given = Request.Headers["X-Internal-Token"].FirstOrDefault() ?? "";
-        return !string.IsNullOrEmpty(expected)
-            && System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
-                System.Text.Encoding.UTF8.GetBytes(expected), System.Text.Encoding.UTF8.GetBytes(given));
-    }
+    private bool InternalTokenValid() =>
+        Security.InternalServiceToken.Matches(Request.Headers[Security.InternalServiceToken.Header].FirstOrDefault());
 
     /// <summary>Denetim kaydındaki kanal adı: bilinen sohbet sağlayıcısı, yoksa "chat".</summary>
     internal static string ChatChannel(string? channel) =>
