@@ -36,6 +36,8 @@ iletişim **Türkçe**. Ürün belgeleri: `README.md`, `docs/` (mimari, güvenli
    `docker exec -i hr360-postgres-1 psql -v ON_ERROR_STOP=1 -q -U hr360admin -d hr360_operational < dosya`
 2. Aynı içeriği `data/migrations/sql-all-schemas.sql` sonuna `-- ===== YYYY-MM-DD_<konu>` başlığıyla ekle.
 3. Boş veritabanında doğrula (postgres:18-alpine geçici konteynerde tüm dosyayı ON_ERROR_STOP ile uygula).
+4. Yeni tablo ya da başka servisin tablosunu okuma/yazma eklendiyse `scripts/db-roles.sh generate` (yalnızca
+   `deploy/postgres/roles*.{sql,md}` yazar; CI üretilen dosyanın koda uygunluğunu denetler).
 
 ## Derleme, dağıtım, test
 - Servis derle/dağıt: `docker compose build -q <svc> && docker image prune -f && docker compose -f docker-compose.yml -f deploy/testing/chat-mock.yml --profile ldaptest up -d <svc>`

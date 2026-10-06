@@ -36,9 +36,9 @@ taramanın kesin karar veremediği ya da bilinçli bir tercih gerektiren noktala
 | timeshift-service | `hr360_timeshift` | 23 | 15 | 5 | 1 |
 | performance-service | `hr360_performance` | 17 | 11 | 5 | 0 |
 | learning-service | `hr360_learning` | 22 | 15 | 5 | 1 |
-| engagement-service | `hr360_engagement` | 34 | 14 | 18 | 1 |
+| engagement-service | `hr360_engagement` | 35 | 14 | 19 | 1 |
 | governance-service | `hr360_governance` | 118 | 66 | 44 | 7 |
-| compensation-service | `hr360_compensation` | 24 | 13 | 9 | 1 |
+| compensation-service | `hr360_compensation` | 32 | 18 | 12 | 1 |
 | expense-service | `hr360_expense` | 20 | 9 | 5 | 3 |
 | notification-service | `hr360_notification` | 10 | 6 | 2 | 0 |
 | tenant-service | `hr360_tenant` | 13 | 9 | 2 | 1 |
@@ -64,8 +64,8 @@ taramanın kesin karar veremediği ya da bilinçli bir tercih gerektiren noktala
 ## engagement-service (`hr360_engagement`)
 
 - Başka servisin tablosuna yazma: `notification_messages` (INSERT) — apps/services/engagement-service/Infrastructure/Platform.cs:157
-- apps/services/engagement-service/Security/KeyRotationJob.cs:107: tablo adı çalışma anında birleştiriliyor (`UPDATE {c.Table} SET {col} = @new WHERE {id} = @id AND {col} = @old`)
-- apps/services/engagement-service/Security/KeyRotationJob.cs:92: tablo adı çalışma anında birleştiriliyor (`SELECT {id}, {col} FROM {c.Table} WHERE {col} IS NOT NULL{filter}{(last is null ? "" : $" `)
+- apps/services/engagement-service/Security/KeyRotationJob.cs:112: tablo adı çalışma anında birleştiriliyor (`UPDATE {c.Table} SET {col} = @new WHERE {id} = @id AND {col} = @old`)
+- apps/services/engagement-service/Security/KeyRotationJob.cs:97: tablo adı çalışma anında birleştiriliyor (`SELECT {id}, {col} FROM {c.Table} WHERE {col} IS NOT NULL{filter}{(last is null ? "" : $" `)
 
 ## governance-service (`hr360_governance`)
 
@@ -85,38 +85,38 @@ taramanın kesin karar veremediği ya da bilinçli bir tercih gerektiren noktala
 - apps/services/governance-service/Infrastructure/NlReport.cs:531: tablo adı çalışma anında birleştiriliyor (`SELECT e.\"FirstName\" || ' ' || e.\"LastName\", round(avg(s.\"Score\"), 1), 1 FROM {lates`)
 - apps/services/governance-service/Infrastructure/NlReport.cs:533: tablo adı çalışma anında birleştiriliyor (`SELECT coalesce(d.\"Name\", '{unassigned}'), round(avg(s.\"Score\"), 1), count(*) FROM {la`)
 - apps/services/governance-service/Infrastructure/NlReport.cs:534: tablo adı çalışma anında birleştiriliyor (`SELECT '{L("Ortalama puan", "Average score")}', round(avg(s.\"Score\"), 1), count(*) FROM `)
-- apps/services/governance-service/Security/KeyRotationJob.cs:107: tablo adı çalışma anında birleştiriliyor (`UPDATE {c.Table} SET {col} = @new WHERE {id} = @id AND {col} = @old`)
-- apps/services/governance-service/Security/KeyRotationJob.cs:92: tablo adı çalışma anında birleştiriliyor (`SELECT {id}, {col} FROM {c.Table} WHERE {col} IS NOT NULL{filter}{(last is null ? "" : $" `)
+- apps/services/governance-service/Security/KeyRotationJob.cs:112: tablo adı çalışma anında birleştiriliyor (`UPDATE {c.Table} SET {col} = @new WHERE {id} = @id AND {col} = @old`)
+- apps/services/governance-service/Security/KeyRotationJob.cs:97: tablo adı çalışma anında birleştiriliyor (`SELECT {id}, {col} FROM {c.Table} WHERE {col} IS NOT NULL{filter}{(last is null ? "" : $" `)
 - Not: audit_log: DELETE VERİLMEDİ (değiştirilemez denetim kaydı; silme hr360_retention'da)
 - Not: governance_document_requests üzerindeki DELETE tetikleyicisi governance_signature_otps için DELETE istiyor
 - Not: governance_document_requests üzerindeki DELETE tetikleyicisi governance_signatures için DELETE istiyor
 
 ## compensation-service (`hr360_compensation`)
 
-- Başka servisin tablosuna yazma: `notification_messages` (INSERT) — apps/services/compensation-service/Controllers/PayrollEcosystemController.cs:65
-- apps/services/compensation-service/Security/KeyRotationJob.cs:107: tablo adı çalışma anında birleştiriliyor (`UPDATE {c.Table} SET {col} = @new WHERE {id} = @id AND {col} = @old`)
-- apps/services/compensation-service/Security/KeyRotationJob.cs:92: tablo adı çalışma anında birleştiriliyor (`SELECT {id}, {col} FROM {c.Table} WHERE {col} IS NOT NULL{filter}{(last is null ? "" : $" `)
+- Başka servisin tablosuna yazma: `notification_messages` (INSERT) — apps/services/compensation-service/Controllers/PayrollEcosystemController.cs:65; apps/services/compensation-service/Controllers/PayrollTrController.cs:474
+- apps/services/compensation-service/Security/KeyRotationJob.cs:112: tablo adı çalışma anında birleştiriliyor (`UPDATE {c.Table} SET {col} = @new WHERE {id} = @id AND {col} = @old`)
+- apps/services/compensation-service/Security/KeyRotationJob.cs:97: tablo adı çalışma anında birleştiriliyor (`SELECT {id}, {col} FROM {c.Table} WHERE {col} IS NOT NULL{filter}{(last is null ? "" : $" `)
 
 ## expense-service (`hr360_expense`)
 
 - Başka servisin tablosuna yazma: `governance_signature_otps` (DELETE) — tetikleyici: expense_documents DELETE
 - Başka servisin tablosuna yazma: `governance_signatures` (DELETE) — tetikleyici: expense_documents DELETE
 - Başka servisin tablosuna yazma: `notification_messages` (INSERT) — apps/services/expense-service/Controllers/DocumentSignaturesController.cs:88
-- apps/services/expense-service/Security/KeyRotationJob.cs:107: tablo adı çalışma anında birleştiriliyor (`UPDATE {c.Table} SET {col} = @new WHERE {id} = @id AND {col} = @old`)
-- apps/services/expense-service/Security/KeyRotationJob.cs:92: tablo adı çalışma anında birleştiriliyor (`SELECT {id}, {col} FROM {c.Table} WHERE {col} IS NOT NULL{filter}{(last is null ? "" : $" `)
+- apps/services/expense-service/Security/KeyRotationJob.cs:112: tablo adı çalışma anında birleştiriliyor (`UPDATE {c.Table} SET {col} = @new WHERE {id} = @id AND {col} = @old`)
+- apps/services/expense-service/Security/KeyRotationJob.cs:97: tablo adı çalışma anında birleştiriliyor (`SELECT {id}, {col} FROM {c.Table} WHERE {col} IS NOT NULL{filter}{(last is null ? "" : $" `)
 - Not: expense_documents üzerindeki DELETE tetikleyicisi governance_signature_otps için DELETE, SELECT istiyor
 - Not: expense_documents üzerindeki DELETE tetikleyicisi governance_signatures için DELETE, SELECT istiyor
 
 ## notification-service (`hr360_notification`)
 
-- apps/services/notification-service/Security/KeyRotationJob.cs:107: tablo adı çalışma anında birleştiriliyor (`UPDATE {c.Table} SET {col} = @new WHERE {id} = @id AND {col} = @old`)
-- apps/services/notification-service/Security/KeyRotationJob.cs:92: tablo adı çalışma anında birleştiriliyor (`SELECT {id}, {col} FROM {c.Table} WHERE {col} IS NOT NULL{filter}{(last is null ? "" : $" `)
+- apps/services/notification-service/Security/KeyRotationJob.cs:112: tablo adı çalışma anında birleştiriliyor (`UPDATE {c.Table} SET {col} = @new WHERE {id} = @id AND {col} = @old`)
+- apps/services/notification-service/Security/KeyRotationJob.cs:97: tablo adı çalışma anında birleştiriliyor (`SELECT {id}, {col} FROM {c.Table} WHERE {col} IS NOT NULL{filter}{(last is null ? "" : $" `)
 
 ## tenant-service (`hr360_tenant`)
 
 - Başka servisin tablosuna yazma: `organization_companies` (DELETE, INSERT) — apps/services/tenant-service/Services/TenantProvisioningService.cs:154
-- apps/services/tenant-service/Security/KeyRotationJob.cs:107: tablo adı çalışma anında birleştiriliyor (`UPDATE {c.Table} SET {col} = @new WHERE {id} = @id AND {col} = @old`)
-- apps/services/tenant-service/Security/KeyRotationJob.cs:92: tablo adı çalışma anında birleştiriliyor (`SELECT {id}, {col} FROM {c.Table} WHERE {col} IS NOT NULL{filter}{(last is null ? "" : $" `)
+- apps/services/tenant-service/Security/KeyRotationJob.cs:112: tablo adı çalışma anında birleştiriliyor (`UPDATE {c.Table} SET {col} = @new WHERE {id} = @id AND {col} = @old`)
+- apps/services/tenant-service/Security/KeyRotationJob.cs:97: tablo adı çalışma anında birleştiriliyor (`SELECT {id}, {col} FROM {c.Table} WHERE {col} IS NOT NULL{filter}{(last is null ? "" : $" `)
 
 ## Hiçbir servisin kodunda geçmeyen tablolar
 
