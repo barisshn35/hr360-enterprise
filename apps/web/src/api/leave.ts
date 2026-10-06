@@ -130,6 +130,14 @@ export const leaveApi = {
   listRequests: (filters: LeaveRequestFilters = {}, signal?: AbortSignal) =>
     apiFetch<LeaveRequest[]>(`${BASE}/leave-requests${qs(filters)}`, { signal }),
 
+  /**
+   * Verilen gün onaylı izinde olanların talepleri (organizasyon şemasında "bugün izinde" renklendirmesi).
+   * Kapsam sunucuda: İK tümünü, yönetici yalnızca ekibini (başı olduğu departmanlar) ve kendisini görür.
+   * Arayüz yalnızca kimin izinde olduğunu kullanır; izin türü/gerekçe gösterilmez (sağlık verisi olabilir).
+   */
+  approvedOnDay: (day: string, signal?: AbortSignal) =>
+    apiFetch<LeaveRequest[]>(`${BASE}/leave-requests${qs({ status: 'Approved', from: day, to: day })}`, { signal }),
+
   pageRequests: (params: LeaveRequestPageParams, signal?: AbortSignal) =>
     apiFetch<Paged<LeaveRequest>>(`${BASE}/leave-requests${qs(params)}`, { signal }),
 

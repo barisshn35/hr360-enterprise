@@ -10,6 +10,25 @@ export interface Department {
   headEmployeeId?: string | null
 }
 
+/** Matris organizasyon: From departmanı To departmanına noktalı çizgiyle (ikincil) raporlar. */
+export type DepartmentLinkKind = 'Functional' | 'Project'
+
+export interface DepartmentLink {
+  id: string
+  fromDepartmentId: string
+  toDepartmentId: string
+  kind: DepartmentLinkKind
+  note: string | null
+  createdAt: string
+}
+
+export interface CreateDepartmentLinkInput {
+  fromDepartmentId: string
+  toDepartmentId: string
+  kind: DepartmentLinkKind
+  note?: string
+}
+
 export interface Company {
   id: string
   name: string

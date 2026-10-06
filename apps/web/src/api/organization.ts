@@ -1,5 +1,12 @@
 import { apiFetch } from './client'
-import type { Company, CreateCompanyInput, CreateDepartmentInput, Department } from './types'
+import type {
+  Company,
+  CreateCompanyInput,
+  CreateDepartmentInput,
+  CreateDepartmentLinkInput,
+  Department,
+  DepartmentLink,
+} from './types'
 
 const BASE = '/api/organization'
 
@@ -35,4 +42,17 @@ export const organizationApi = {
    */
   deleteDepartment: (id: string) =>
     apiFetch<void>(`${BASE}/departments/${id}`, { method: 'DELETE' }),
+
+  /** Matris bağları (noktalı çizgi raporlama); `companyId` ile en az bir ucu o şirkette olanlar. */
+  listDepartmentLinks: (companyId?: string, signal?: AbortSignal) =>
+    apiFetch<DepartmentLink[]>(
+      companyId ? `${BASE}/department-links?companyId=${encodeURIComponent(companyId)}` : `${BASE}/department-links`,
+      { signal },
+    ),
+
+  /** Yalnızca İK/kiracı yöneticisi. Aynı bağ varsa 409, geçersizse 400 (Türkçe ileti). */
+  createDepartmentLink: (input: CreateDepartmentLinkInput) =>
+    apiFetch<DepartmentLink>(`${BASE}/department-links`, { method: 'POST', body: input }),
+
+  deleteDepartmentLink: (id: string) => apiFetch<void>(`${BASE}/department-links/${id}`, { method: 'DELETE' }),
 }

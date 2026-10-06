@@ -9,7 +9,7 @@
 
 import { http, HttpResponse } from 'msw'
 import { getDb, save, type MemberRow, type TeamRow } from '../db'
-import { COMPANIES, isFormer } from '../data/people'
+import { COMPANIES, DEPARTMENTS, DEPT, isFormer } from '../data/people'
 import { readScenario } from '../scenario'
 import { readMockRole } from '../session'
 import { bad, forbidden, latency, newId, notFound, ok, readJson, serverError, today } from '../util'
@@ -65,6 +65,11 @@ function ensureMember(team: TeamRow, employeeId: string) {
   return row
 }
 
+const mockLinks: Array<{ id: string; fromDepartmentId: string; toDepartmentId: string; kind: string; note: string | null; createdAt: string }> = [
+  { id: 'mock-link-1', fromDepartmentId: DEPT.mobil, toDepartmentId: DEPT.urun, kind: 'Functional', note: 'Mobil ürün yol haritası', createdAt: '2026-01-10T09:00:00Z' },
+  { id: 'mock-link-2', fromDepartmentId: DEPT.satis, toDepartmentId: DEPT.yazilim, kind: 'Project', note: 'CRM projesi', createdAt: '2026-02-01T09:00:00Z' },
+]
+
 export const organizationHandlers = [
   http.get(`${O}/companies`, async () => {
     await latency()
@@ -75,6 +80,42 @@ export const organizationHandlers = [
     await latency()
     const c = COMPANIES.find((x) => x.id === params.id)
     return c ? ok(c) : notFound('Şirket bulunamadı.')
+  }),
+
+  // Departman listesi (organizasyon şeması) ve matris bağları (dalga 2). Bağlar oturum belleğinde.
+  http.get(`${O}/departments`, async ({ request }) => {
+    await latency()
+    const companyId = new URL(request.url).searchParams.get('companyId')
+    return ok(DEPARTMENTS.filter((d) => !companyId || d.companyId === companyId))
+  }),
+
+  http.get(`${O}/department-links`, async () => {
+    await latency()
+    return ok(mockLinks)
+  }),
+
+  http.post(`${O}/department-links`, async ({ request }) => {
+    await latency()
+    if (readMockRole() !== 'hr-admin') return forbidden()
+    const body = await readJson(request)
+    const from = str(body.fromDepartmentId)
+    const to = str(body.toDepartmentId)
+    if (!from || !to) return bad('Her iki departman da seçilmeli.')
+    if (from === to) return bad('Bir departman kendisine bağlanamaz.')
+    const kind = body.kind === 'Project' ? 'Project' : 'Functional'
+    if (mockLinks.some((l) => l.fromDepartmentId === from && l.toDepartmentId === to && l.kind === kind)) return bad('Bu bağ zaten var.')
+    const row = { id: newId(), fromDepartmentId: from, toDepartmentId: to, kind, note: str(body.note) || null, createdAt: new Date().toISOString() }
+    mockLinks.push(row)
+    return ok(row)
+  }),
+
+  http.delete(`${O}/department-links/:id`, async ({ params }) => {
+    await latency()
+    if (readMockRole() !== 'hr-admin') return forbidden()
+    const i = mockLinks.findIndex((l) => l.id === params.id)
+    if (i < 0) return notFound('Bağ bulunamadı.')
+    mockLinks.splice(i, 1)
+    return new HttpResponse(null, { status: 204 })
   }),
 
   http.get(`${O}/teams`, async ({ request }) => {

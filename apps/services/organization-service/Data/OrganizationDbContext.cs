@@ -24,6 +24,7 @@ public class OrganizationDbContext : DbContext, ITenantAwareContext
     public DbSet<Department> Departments => Set<Department>();
     public DbSet<Team> Teams => Set<Team>();
     public DbSet<TeamMember> TeamMembers => Set<TeamMember>();
+    public DbSet<DepartmentLink> DepartmentLinks => Set<DepartmentLink>();
 
     /// <summary>
     /// Türkçe harf katlamalı küçük harf (SQL: public.hr360_fold, scripts/sql/2026-10-09_paging_indexes.sql).
@@ -66,6 +67,11 @@ public class OrganizationDbContext : DbContext, ITenantAwareContext
 
         modelBuilder.Entity<Team>().HasIndex(t => t.DepartmentId);
         modelBuilder.Entity<TeamMember>().HasIndex(m => m.EmployeeId);
+
+        // --- Matris bağları (scripts/sql/2026-10-15_department_links.sql) ---
+        modelBuilder.Entity<DepartmentLink>().ConfigureTenantColumn();
+        modelBuilder.Entity<DepartmentLink>().ToTable("organization_department_links");
+        modelBuilder.Entity<DepartmentLink>().Property(l => l.Kind).HasMaxLength(32);
 
         modelBuilder.ApplyTenantFilters(this);
     }

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { ArrowLeft, Plus } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Plus, Waypoints } from 'lucide-react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Panel, PanelBody, PanelHead } from '@/components/ui/Panel'
@@ -18,6 +18,7 @@ import { formatDate, formatNumber, fullName } from '@/lib/format'
 import { DepartmentTree } from './DepartmentTree'
 import { NewDepartmentModal } from './NewDepartmentModal'
 import { OrgChart } from './OrgChart'
+import { DepartmentLinksModal, linkKindLabel, useDepartmentLinks } from './DepartmentLinksModal'
 import { tx } from '@/lib/i18n'
 
 type View = 'liste' | 'sema'
@@ -30,12 +31,15 @@ export function CompanyDetailPage() {
 
   const [selected, setSelected] = useState<Department | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
+  const [linksOpen, setLinksOpen] = useState(false)
   const [view, setView] = useTabParam<View>('gorunum', 'liste')
   const queryClient = useQueryClient()
 
   const departments = company.data?.departments ?? []
   const canManage = can('organization:manage')
   const canCreate = canManage
+  // Matris bağları liste görünümünde yalnızca yönetene gösterilir (okuma herkese açık; şemada da görünür).
+  const links = useDepartmentLinks(companyId ?? '', canManage && view === 'liste' && Boolean(selected))
 
   const renameMutation = useMutation({
     // Backend PUT, departman basini da istekten alir; ad degistirirken mevcut bas
@@ -242,6 +246,46 @@ export function CompanyDetailPage() {
                 </div>
               )}
 
+              {canManage && (
+                <div>
+                  <p className="mb-2 flex items-center justify-between gap-2 border-b border-border pb-2 text-[12px] text-muted-foreground">
+                    <span className="flex items-center gap-1.5">
+                      <Waypoints className="size-3.5" aria-hidden />
+                      {tx('Matris bağları (noktalı çizgi)')}
+                    </span>
+                    <Button size="xs" variant="ghost" className="cursor-pointer" onClick={() => setLinksOpen(true)}>
+                      {tx('Yönet')}
+                    </Button>
+                  </p>
+                  {links.isPending ? (
+                    <p className="text-[13px] text-muted-foreground">{tx('Yükleniyor')}</p>
+                  ) : links.isError ? (
+                    <p className="text-[13px] text-muted-foreground">{tx('Matris bağları okunamadı.')}</p>
+                  ) : (
+                    (() => {
+                      const mine = (links.data ?? []).filter(
+                        (l) => l.fromDepartmentId === selected.id || l.toDepartmentId === selected.id,
+                      )
+                      const name = (id: string) => departments.find((d) => d.id === id)?.name ?? tx('Başka şirkette')
+                      return mine.length === 0 ? (
+                        <p className="text-[13px] text-muted-foreground">{tx('Bu departmanın matris bağı yok.')}</p>
+                      ) : (
+                        <ul className="space-y-1.5 text-[13px]">
+                          {mine.map((l) => (
+                            <li key={l.id} className="flex flex-wrap items-center gap-1">
+                              <span className="font-medium">{name(l.fromDepartmentId)}</span>
+                              <ArrowRight className="size-3.5 text-muted-foreground" aria-label={tx('raporlar')} />
+                              <span className="font-medium">{name(l.toDepartmentId)}</span>
+                              <span className="text-[12px] text-muted-foreground">· {linkKindLabel(l.kind)}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )
+                    })()
+                  )}
+                </div>
+              )}
+
               <div className="border-t border-border pt-3">
                 <p className="text-[11px] text-muted-foreground">{tx('Departman kimliği')}</p>
                 <p className="mt-1 font-mono text-[11px] break-all text-muted-foreground">
@@ -263,6 +307,16 @@ export function CompanyDetailPage() {
           )}
         </Panel>
       </div>
+      )}
+
+      {companyId && canManage && (
+        <DepartmentLinksModal
+          open={linksOpen}
+          onClose={() => setLinksOpen(false)}
+          companyId={companyId}
+          departments={departments}
+          fromId={selected?.id ?? null}
+        />
       )}
 
       {companyId && (

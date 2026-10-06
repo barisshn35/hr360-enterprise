@@ -19,6 +19,8 @@ export interface ChartPerson {
   since: string | null
   /** Atama ileri tarihli (henüz başlamadı). */
   future: boolean
+  /** İşe giriş tarihi (kıdem renklendirmesi için; yalnızca tam çalışan listesini görebilene gelir). */
+  hireDate: string | null
 }
 
 export interface ChartDept {
@@ -72,6 +74,7 @@ export function buildChart(departments: Department[], employees: Employee[], tod
       title: a?.positionTitle ?? null,
       since: a?.effectiveFrom ?? null,
       future: Boolean(a && a.effectiveFrom.slice(0, 10) > today),
+      hireDate: e.hireDate ?? null,
     }
     if (!a) unassigned.push(person)
     else if (ids.has(a.departmentId)) {

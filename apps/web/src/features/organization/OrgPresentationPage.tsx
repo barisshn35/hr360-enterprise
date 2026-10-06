@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { AnimatePresence, motion } from 'motion/react'
 import { ChevronLeft, ChevronRight, Crown, Maximize2, Pause, Play, X } from 'lucide-react'
@@ -32,6 +32,14 @@ interface Slide {
 export function OrgPresentationPage() {
   const navigate = useNavigate()
   const { tenant } = useAuth()
+  // Şemadan açıldıysa: `odak` yalnızca o birimin alt ağacını sunar, `donus` kapatınca şemaya döner.
+  const [params] = useSearchParams()
+  const focusId = params.get('odak')
+  const backTo = params.get('donus')
+  const close = useCallback(
+    () => navigate(backTo && backTo.startsWith('/panel/') ? backTo : '/panel/organizasyon/ekipler'),
+    [navigate, backTo],
+  )
   const depts = useQuery({ queryKey: ['organization', 'departments', 'present'], queryFn: ({ signal }) => organizationApi.listDepartments(undefined, signal) })
   const people = useQuery({ queryKey: ['directory-skills', ''], queryFn: ({ signal }) => engagementApi.directory('', signal) })
   const [i, setI] = useState(0)
@@ -45,10 +53,12 @@ export function OrgPresentationPage() {
     const ordered: Array<{ d: (typeof depts.data)[number]; depth: number }> = []
     const walk = (parent: string | null, depth: number) =>
       depts.data!.filter((d) => (d.parentDepartmentId ?? null) === parent).sort((a, b) => a.name.localeCompare(b.name, 'tr-TR')).forEach((d) => { ordered.push({ d, depth }); walk(d.id, depth + 1) })
-    walk(null, 0)
+    const focus = focusId ? depts.data.find((d) => d.id === focusId) : undefined
+    if (focus) { ordered.push({ d: focus, depth: 0 }); walk(focus.id, 1) } else walk(null, 0)
+    const scoped = focus ? all.filter((p) => ordered.some(({ d }) => d.name === (p.department ?? '—'))) : all
     const cover: Slide = {
-      kind: 'cover', title: tenant?.name ?? tx('Organizasyon'), subtitle: tx('{0} kişi · {1} departman', [all.length, depts.data.length]),
-      people: all.slice(0, 40).map((p) => ({ id: p.employeeId, name: p.name, position: p.position, skills: p.skills })),
+      kind: 'cover', title: focus ? focus.name : (tenant?.name ?? tx('Organizasyon')), subtitle: tx('{0} kişi · {1} departman', [scoped.length, focus ? ordered.length : depts.data.length]),
+      people: scoped.slice(0, 40).map((p) => ({ id: p.employeeId, name: p.name, position: p.position, skills: p.skills })),
     }
     return [cover, ...ordered.map(({ d, depth }) => ({
       kind: 'dept' as const, title: d.name, depth,
@@ -56,18 +66,18 @@ export function OrgPresentationPage() {
       children: depts.data!.filter((c) => c.parentDepartmentId === d.id).map((c) => c.name),
       people: (byName.get(d.name) ?? []).map((p) => ({ id: p.employeeId, name: p.name, position: p.position, skills: p.skills })),
     }))]
-  }, [depts.data, people.data, tenant?.name])
+  }, [depts.data, people.data, tenant?.name, focusId])
 
   const go = useCallback((delta: number) => setI((x) => Math.max(0, Math.min(slides.length - 1, x + delta))), [slides.length])
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); go(1) }
       else if (e.key === 'ArrowLeft') go(-1)
-      else if (e.key === 'Escape') navigate('/panel/organizasyon/ekipler')
+      else if (e.key === 'Escape') close()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [go, navigate])
+  }, [go, close])
   useEffect(() => {
     if (!auto || slides.length < 2) return
     const t = setTimeout(() => setI((x) => (x + 1) % slides.length), 7000)
@@ -83,7 +93,7 @@ export function OrgPresentationPage() {
       <div className="absolute top-4 right-4 z-10 flex gap-2">
         <Button size="icon" variant="ghost" aria-label={tx('Tam ekran')} onClick={() => void document.documentElement.requestFullscreen?.()}><Maximize2 className="size-4" /></Button>
         <Button size="icon" variant="ghost" aria-label={auto ? tx('Durdur') : tx('Oynat')} onClick={() => setAuto((a) => !a)}>{auto ? <Pause className="size-4" /> : <Play className="size-4" />}</Button>
-        <Button size="icon" variant="ghost" aria-label={tx('Kapat')} onClick={() => navigate('/panel/organizasyon/ekipler')}><X className="size-4" /></Button>
+        <Button size="icon" variant="ghost" aria-label={tx('Kapat')} onClick={close}><X className="size-4" /></Button>
       </div>
       <div className="relative z-[1] flex h-full flex-col items-center justify-center px-8 pb-20">
         <AnimatePresence mode="wait">
