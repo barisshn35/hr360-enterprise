@@ -92,7 +92,7 @@ function ConfigEditor({ info, onClose }: { info: ProvisioningProviderInfo; onClo
         </div>
         {google ? (
           <TextAreaField label={tx('Servis hesabı anahtarı (JSON)')} rows={5} autoComplete="off" spellCheck={false} className="font-mono text-[11px]"
-            placeholder={info.hasCredentials ? tx('•••• kayıtlı ({0}) — değiştirmek için yeni anahtarı yapıştırın', [info.clientId ?? '']) : '{ "type": "service_account", … }'}
+            placeholder={info.hasCredentials ? tx('•••• kayıtlı ({0}) — değiştirmek için yeni anahtarı yapıştırın', [info.clientId ?? '']) : tx('Google Cloud hizmet hesabının JSON anahtar dosyasının içeriğini yapıştırın')}
             value={f.credentials} onChange={(e) => setF({ ...f, credentials: e.target.value })} />
         ) : (
           <TextField label={tx('Client secret')} type="password" autoComplete="off" placeholder={info.hasCredentials ? tx('•••• (değiştirmek için girin)') : ''}
