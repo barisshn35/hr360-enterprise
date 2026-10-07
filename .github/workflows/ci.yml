@@ -24,8 +24,8 @@ jobs:
       run:
         working-directory: apps/web
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -72,11 +72,11 @@ jobs:
           - timeshift-service
           - workflow-service
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 9.0.x
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.nuget/packages
           key: nuget-${{ matrix.service }}-${{ hashFiles(format('apps/services/{0}/*.csproj', matrix.service)) }}
@@ -89,11 +89,11 @@ jobs:
     name: .NET birim testleri
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 9.0.x
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.nuget/packages
           key: nuget-tests-${{ hashFiles('tests/dotnet/**/*.csproj', 'apps/services/governance-service/*.csproj', 'apps/services/engagement-service/*.csproj') }}
@@ -109,8 +109,8 @@ jobs:
       run:
         working-directory: apps/ml-inference
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
           cache: pip
@@ -131,7 +131,7 @@ jobs:
     name: Dagitim dosyalari
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Ornek .env
         # .env.example'dan; orada olmayan degiskenler (sir/parola) sahte degerle eklenir.
         run: |
@@ -189,18 +189,18 @@ jobs:
     env:
       TRIVY_IMAGE: aquasec/trivy:0.57.1@sha256:5c59e08f980b5d4d503329773480fcea2c9bdad7e381d846fbf9f2ecb8050f6b
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Trivy — bagimliliklar, gizli anahtarlar, Dockerfile/compose
         run: |
           docker run --rm -v "$PWD:/src:ro" "$TRIVY_IMAGE" fs --scanners vuln,secret,misconfig --file-patterns 'pip:requirements-.*\.txt' \
             --severity HIGH,CRITICAL --exit-code 1 --skip-dirs /src/apps/web/node_modules /src
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - name: npm audit (uretim bagimliliklari)
         working-directory: apps/web
         run: npm audit --omit=dev --audit-level=high
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 9.0.x
       - name: NuGet — bilinen acigi olan paketler
@@ -239,9 +239,9 @@ jobs:
           - { name: timeshift-service, context: apps/services/timeshift-service }
           - { name: workflow-service, context: apps/services/workflow-service }
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/build-push-action@v6
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
         with:
           context: ${{ matrix.context }}
           push: false
@@ -263,7 +263,7 @@ jobs:
             aquasec/trivy:0.57.1@sha256:5c59e08f980b5d4d503329773480fcea2c9bdad7e381d846fbf9f2ecb8050f6b \
             image --format cyclonedx --output /out/hr360-${{ matrix.name }}.cdx.json hr360-${{ matrix.name }}:ci
           test -s sbom/hr360-${{ matrix.name }}.cdx.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: sbom-${{ matrix.name }}
           path: sbom/hr360-${{ matrix.name }}.cdx.json

@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Arayuz imaji
         run: docker build -q -t hr360-web:zap apps/web
@@ -56,7 +56,7 @@ jobs:
 
       - name: Rapor
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: zap-report
           path: security-reports/

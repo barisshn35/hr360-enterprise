@@ -40,7 +40,7 @@ jobs:
     env:
       HR360_BASE_URL: http://localhost
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Disk alani ac (kullanilmayan SDK'lar)
         run: |
@@ -70,7 +70,7 @@ jobs:
             | awk '($2 == "exited" && $3 != 0) || $2 == "restarting" || $2 == "dead" || $4 == "unhealthy"')
           [ -z "$bad" ] || { echo "Sagliksiz konteyner:"; echo "$bad"; exit 1; }
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
