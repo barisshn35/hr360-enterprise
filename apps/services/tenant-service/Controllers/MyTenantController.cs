@@ -226,6 +226,42 @@ public class MyTenantController : ControllerBase
         });
     }
 
+    /// <summary>
+    /// Dalga 12 (madde 91): kiracının özel SMTP sunucusuna bağlantı testi — bağlanır, TLS anlaşması ve
+    /// (kullanıcı adı varsa) kimlik doğrulama yapar, e-posta GÖNDERMEZ. Ayar kaydedilirken uygulanan SSRF
+    /// denetimi burada da yinelenir (DNS sonradan değişmiş olabilir). Parola yanıtta ve günlükte yer almaz.
+    /// scripts/integration-check.sh kullanır. Özel SMTP yoksa {configured:false} (platform varsayılanı kullanılır).
+    /// </summary>
+    [HttpPost("smtp-test")]
+    [Authorize(Policy = "RequireTenantAdmin")]
+    public async Task<IActionResult> SmtpTest(CancellationToken ct)
+    {
+        var slug = TenantService.Security.OrganizationClaimParser.ParseSlug(User.FindFirst("organization")?.Value);
+        if (string.IsNullOrWhiteSpace(slug))
+            return NotFound(new { message = "Kullanıcı bir şirkete bağlı değil" });
+        var tenant = await _db.Tenants.AsNoTracking().FirstOrDefaultAsync(t => t.Slug == slug, ct);
+        if (tenant is null) return NotFound(new { message = "Şirket bulunamadı" });
+        if (string.IsNullOrEmpty(tenant.SmtpHost)) return Ok(new { configured = false, ok = (bool?)null, message = "Özel SMTP sunucusu yok; platform varsayılanı kullanılır." });
+        var port = tenant.SmtpPort ?? 587;
+        if (await ValidateSmtpTargetAsync(tenant.SmtpHost, port) is { } targetError)
+            return Ok(new { configured = true, ok = false, message = targetError });
+        string? error = null;
+        try
+        {
+            using var client = new MailKit.Net.Smtp.SmtpClient { Timeout = 15000 };
+            await client.ConnectAsync(tenant.SmtpHost, port, MailKit.Security.SecureSocketOptions.Auto, ct);
+            if (!string.IsNullOrEmpty(tenant.SmtpUser) && !string.IsNullOrEmpty(tenant.SmtpPasswordEncrypted))
+                await client.AuthenticateAsync(tenant.SmtpUser, _protector.Decrypt(tenant.SmtpPasswordEncrypted), ct);
+            await client.DisconnectAsync(true, ct);
+        }
+        catch (MailKit.Security.AuthenticationException) { error = "SMTP kimlik doğrulaması başarısız (kullanıcı adı ya da parola)."; }
+        catch (Exception ex) when (ex is MailKit.ProtocolException or MailKit.Net.Smtp.SmtpCommandException or System.Net.Sockets.SocketException
+                                       or IOException or TimeoutException or System.Security.Authentication.AuthenticationException)
+        { error = "SMTP sunucusuna bağlanılamadı: " + ex.Message; }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested) { error = "SMTP sunucusu zamanında yanıt vermedi."; }
+        return Ok(new { configured = true, ok = error is null, message = error ?? "SMTP bağlantısı ve kimlik doğrulama başarılı." });
+    }
+
     public record RenameRequest(string Name);
 
     [HttpPut("name")]

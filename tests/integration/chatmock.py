@@ -18,6 +18,16 @@ Dalga 5e:
     GET  /teamsfiles/<ad>   Teams satır içi görüntü (bot jetonu ister) -> fixtures/receipt.png
     /mm/api/v4/...          Mattermost REST API v4 (bot jetonu "mm-bot-token"); kullanıcı kimliği "mm_<e-posta yerel kısmı>"
     /rc/api/v1/...          Rocket.Chat REST API (X-Auth-Token "rc-token", X-User-Id "rcbot"); kullanıcı kimliği "rc_<yerel kısım>"
+
+Dalga 12 (hesap açma/kapatma):
+    POST /google/token (grant jwt-bearer)  servis hesabı JWT'si (RS256, iss/sub/scope/aud denetlenir) -> "gadmin-<sub yerel kısmı>";
+                                            sub "denied@..." ise 401 unauthorized_client
+    /googleadmin/admin/directory/v1/users   Google Admin SDK Directory: GET liste, POST aç (var olan / "exists." önekli -> 409),
+                                            PUT /users/<e-posta> askıya al, POST /users/<e-posta>/signOut
+    /ms/<kiracı>/oauth2/v2.0/token (client_credentials, scope graph .default) -> "msgraph-app-token" (client_secret "wrong" -> 401)
+    /graph/v1.0/users                       Microsoft Graph: GET liste, POST aç (var olan -> 400 "already exists"),
+                                            PATCH /users/<upn>, POST /users/<upn>/revokeSignInSessions
+    GET  /_directory                        açılan/askıya alınan sahte hesaplar (test doğrulaması)
 """
 
 import base64
@@ -41,6 +51,7 @@ LOCK = threading.Lock()
 EMAILS = {}  # slack user id -> email
 SEQ = [0]
 EVENTS = {}  # takvim etkinlikleri: id -> gövde
+DIRECTORY = {}  # hesap sağlama: e-posta -> {"provider", "id", "suspended", "signedOut"}
 SHORT = {"ayse": "ayse.yilmaz", "mehmet": "mehmet.demir", "zeynep": "zeynep.kaya"}
 
 
@@ -217,6 +228,12 @@ class H(BaseHTTPRequestHandler):
             key = OTHER_KEY if q.get("wrongkey") == "1" else KEY
             tok = jwt.encode(claims, key, algorithm="RS256", headers={"kid": KID})
             return self._send(200, {"token": tok})
+        if u.path == "/_directory":
+            with LOCK:
+                return self._send(200, DIRECTORY)
+        if u.path.startswith("/googleadmin/") or u.path.startswith("/graph/v1.0/users"):
+            self._record("")
+            return self._directory("GET", u, "")
         if u.path == "/googleapis/oauth2/v3/userinfo":
             self._record("")
             return self._send(200, {"email": user_of_token(self.headers.get("Authorization"))})
@@ -272,6 +289,10 @@ class H(BaseHTTPRequestHandler):
             google = u.path == "/google/token"
             pre = "g" if google else "ms"
             grant = f.get("grant_type")
+            if google and grant == "urn:ietf:params:oauth:grant-type:jwt-bearer":
+                return self._google_assertion(f.get("assertion", ""))
+            if grant == "client_credentials" and "graph.microsoft.com" in f.get("scope", ""):
+                return self._send(200, {"token_type": "Bearer", "expires_in": 3599, "access_token": "msgraph-app-token"})
             if grant == "client_credentials":
                 return self._send(200, {"token_type": "Bearer", "expires_in": 3599, "access_token": "teams-bot-token"})
             if grant == "authorization_code":
@@ -285,6 +306,8 @@ class H(BaseHTTPRequestHandler):
                 who = f["refresh_token"].split("-", 1)[-1]
                 return self._send(200, {"access_token": f"{pre}tok-{who}", "expires_in": 3600})
             return self._send(400, {"error": "unsupported_grant_type"})
+        if u.path.startswith("/googleadmin/") or u.path.startswith("/graph/v1.0/users"):
+            return self._directory("POST", u, body)
         if u.path == "/anthropic/v1/messages":
             q = json.loads(body)
             if self.headers.get("x-api-key") != "test" or not self.headers.get("anthropic-version"):
@@ -391,7 +414,79 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {"id": self.path.rsplit("/", 1)[1]})
         if self.path.startswith("/mm/api/v4/posts/") and self.path.endswith("/patch"):
             return self._send(200, {"id": self.path.split("/")[5]})
+        if self.path.startswith("/googleadmin/"):
+            return self._directory("PUT", urlparse(self.path), body)
         self._send(404, {})
+
+    def do_PATCH(self):
+        body = self._body()
+        self._record(body)
+        if self.path.startswith("/graph/v1.0/users/"):
+            return self._directory("PATCH", urlparse(self.path), body)
+        self._send(404, {})
+
+    # ------------------------------------------------------------------ hesap sağlama (dalga 12)
+    def _google_assertion(self, assertion):
+        try:
+            header = jwt.get_unverified_header(assertion)
+            claims = jwt.decode(assertion, options={"verify_signature": False})
+        except jwt.PyJWTError:
+            return self._send(400, {"error": "invalid_grant", "error_description": "Invalid JWT"})
+        ok = (header.get("alg") == "RS256" and claims.get("iss", "").endswith(".iam.gserviceaccount.com")
+              and claims.get("aud") == "https://oauth2.googleapis.com/token"
+              and "admin.directory.user" in claims.get("scope", "") and claims.get("exp", 0) > time.time())
+        if not ok:
+            return self._send(400, {"error": "invalid_grant", "error_description": "Invalid JWT claims"})
+        sub = claims.get("sub", "")
+        if sub.startswith("denied@"):
+            return self._send(401, {"error": "unauthorized_client", "error_description": "Client is unauthorized to retrieve access tokens using this method."})
+        return self._send(200, {"access_token": "gadmin-" + sub.split("@")[0], "expires_in": 3600, "token_type": "Bearer"})
+
+    def _directory(self, method, u, body):
+        auth = self.headers.get("Authorization", "")
+        google = u.path.startswith("/googleadmin/")
+        if google and not auth.startswith("Bearer gadmin-"):
+            return self._send(401, {"error": {"code": 401, "message": "Login Required."}})
+        if not google and auth != "Bearer msgraph-app-token":
+            return self._send(401, {"error": {"code": "InvalidAuthenticationToken", "message": "Access token is empty."}})
+        base = "/googleadmin/admin/directory/v1/users" if google else "/graph/v1.0/users"
+        rest = unquote(u.path[len(base):]).strip("/")
+        provider = "Google" if google else "Microsoft"
+        if method == "GET" and rest == "":
+            return self._send(200, {"users": []} if google else {"value": []})
+        if method == "POST" and rest == "":
+            q = json.loads(body or "{}")
+            email = (q.get("primaryEmail") or q.get("userPrincipalName") or "").lower()
+            with LOCK:
+                exists = email in DIRECTORY or email.startswith("exists.")
+                if not exists:
+                    DIRECTORY[email] = {"provider": provider, "id": next_id("gu" if google else "msu"), "suspended": False, "signedOut": False}
+            if exists:
+                if google:
+                    return self._send(409, {"error": {"code": 409, "message": "Entity already exists."}})
+                return self._send(400, {"error": {"code": "Request_BadRequest",
+                                                  "message": "Another object with the same value for property userPrincipalName already exists."}})
+            return self._send(201, {"id": DIRECTORY[email]["id"], "primaryEmail": email} if google else {"id": DIRECTORY[email]["id"], "userPrincipalName": email})
+        parts = rest.split("/")
+        email = parts[0].lower()
+        with LOCK:
+            acct = DIRECTORY.get(email)
+            if acct is None and not email.startswith("missing"):
+                # Ürünün açmadığı (önceden var olan) hesap: askıya alma için kabul edilir.
+                acct = DIRECTORY[email] = {"provider": provider, "id": next_id("pre"), "suspended": False, "signedOut": False}
+        if acct is None:
+            return self._send(404, {"error": {"code": 404, "message": "Resource Not Found: userKey"}})
+        if (method == "PUT" and google) or (method == "PATCH" and not google):
+            q = json.loads(body or "{}")
+            with LOCK:
+                if q.get("suspended") is True or q.get("accountEnabled") is False:
+                    acct["suspended"] = True
+            return self._send(200, {"primaryEmail": email, "suspended": acct["suspended"]}) if google else self._send(204)
+        if method == "POST" and len(parts) == 2 and parts[1] in ("signOut", "revokeSignInSessions"):
+            with LOCK:
+                acct["signedOut"] = True
+            return self._send(204) if google else self._send(200, {"value": True})
+        return self._send(404, {"error": "not_found"})
 
     def _slack(self, method, f):
         auth = self.headers.get("Authorization", "")

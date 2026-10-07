@@ -237,6 +237,7 @@ export function EmployeeListPage() {
         onRowClick={(e) => navigate(`/panel/calisanlar/${e.id}`)}
         searchPlaceholder={tx('Ad, soyad, e-posta veya departman')}
         exportFileName="calisanlar"
+        viewKey="employees"
         pageSize={PAGE_SIZE}
         server={{
           total: employees.data?.total ?? 0,

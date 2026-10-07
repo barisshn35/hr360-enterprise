@@ -43,14 +43,14 @@ iletişim **Türkçe**. Ürün belgeleri: `README.md`, `docs/` (mimari, güvenli
 - Servis derle/dağıt: `docker compose build -q <svc> && docker image prune -f && docker compose -f docker-compose.yml -f deploy/testing/chat-mock.yml --profile ldaptest up -d <svc>`
 - Testler: `scripts/test.sh unit | integration | e2e | all`
   - unit: .NET xUnit (`tests/dotnet/*`), Vitest (`apps/web`), ML pytest.
-  - integration: 30 Python betiği (`tests/integration/test_*.py`), chatmock ve OpenLDAP'ı kendisi başlatır.
+  - integration: 33 Python betiği (`tests/integration/test_*.py`), chatmock ve OpenLDAP'ı kendisi başlatır.
     Her betik `FAILS: n` yazar. Kullanıcılar `tests/credentials.json` (ayse=çalışan, mehmet=yönetici,
     admin=İK+şirket yöneticisi, platform=platform yöneticisi, ik=Elif Şahin: çalışan kaydı olan İK yöneticisi ve
     üst onaycısı olmayan taleplerin İK onaycısı). Testler sabit demo verisine dayanır
     (Ayşe `0e879b9e-d72b-489f-aa5b-8291e0bcbefb`, Mühendislik departmanı; temiz kurulumda `tests/support/seed_demo.py`) — bkz. "Demo verisi".
   - Platform yöneticisi kiracı verisine yalnızca süreli erişim izniyle (`/api/tenant/platform-access/grants`)
     ulaşır; bordro dönemini hesaplayan kişi kapatamaz (testlerde dönemi `ik` kapatır).
-  - e2e: Playwright (`tests/e2e`), `pip install pytest playwright && playwright install --with-deps chromium`.
+  - e2e: Playwright (`tests/e2e`), `pip install pytest pytest-xdist playwright && playwright install --with-deps chromium` (4 işçiyle paralel).
   - Test kalıntıları: integration ve e2e sonunda (başarısız olsalar da) `tests/support/cleanup_test_data.py`
     çalışır; test işaretli kayıtları (izin/akış/bildirim vb.) tek transaction'da siler, izin bakiyelerini
     yeniden hesaplar. Elle: `python3 tests/support/cleanup_test_data.py [--dry-run]`. Yeni test kayıt

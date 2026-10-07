@@ -83,6 +83,9 @@ check "arsiv izni 600" test "$(stat -c %a "$f" 2>/dev/null)" = 600
 check "sifreli arsiv anahtarsiz acilamaz" eval '! tar tzf "$f" >/dev/null 2>&1'
 HR360_BK="$KEY" openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in "$f" -out "$WORK/plain.tgz" -pass env:HR360_BK 2>/dev/null
 check "anahtarla cozulur, MANIFEST encrypted=1" eval 'tar xzf "$WORK/plain.tgz" -O --wildcards "*/MANIFEST" | grep -q "^encrypted=1"'
+M=deploy/monitoring/textfile
+check "izleme metrigi: son yedek zamani ve sifreli bayragi (644)" eval 'grep -q "^hr360_backup_last_success_timestamp_seconds [0-9]" $M/hr360_backup.prom && grep -q "^hr360_backup_last_encrypted 1" $M/hr360_backup.prom && grep -q "^hr360_backup_last_offsite 0" $M/hr360_backup.prom && [ "$(stat -c %a $M/hr360_backup.prom)" = 644 ]'
+check "  metrikte dosya adi/anahtar yok" eval '! grep -Eq "hr360-[0-9]{8}|$KEY" $M/hr360_backup.prom'
 
 out="$(scripts/backup.sh verify 2>&1)"; rc=$?
 check "geri yukleme testi: gecici veritabaninda dogrulandi" eval '[ $rc = 0 ] && grep -q "^DOGRULANDI" <<< "$out"'
@@ -90,6 +93,7 @@ check "  uretim veritabanina dokunmadi (ag kapali gecici konteyner)" grep -q "ru
 check "  gecici konteyner silindi" grep -q "rm -f cid123" "$HR360_TEST_LOG"
 out="$(FAKE_RESTORE_FAIL=1 scripts/backup.sh verify 2>&1)"; rc=$?
 check "bozuk dokumde dogrulama basarisiz" eval '[ $rc != 0 ] && grep -q "^DOGRULANAMADI" <<< "$out"'
+check "  izleme metrigi: verify basarisiz, onceki basarili zaman korunur" eval 'grep -q "^hr360_restore_test_success{tool=\"verify\"} 0" $M/hr360_restore_test_verify.prom && grep -q "^hr360_restore_test_last_success_timestamp_seconds{tool=\"verify\"} [0-9]" $M/hr360_restore_test_verify.prom'
 cp .env .env.ok; sed -i "s/^BACKUP_ENCRYPTION_KEY=.*/BACKUP_ENCRYPTION_KEY=yanlis/" .env
 out="$(scripts/backup.sh verify 2>&1)"; rc=$?
 check "yanlis anahtarla dogrulama basarisiz" eval '[ $rc != 0 ] && grep -Eq "sifre cozulemedi|anahtar .*farkli" <<< "$out"'
@@ -194,6 +198,7 @@ check "tatbikat: son yedek basarili" eval '[ $rc = 0 ] && grep -q "^TATBIKAT BAS
 check "  ozet, zincir, capa, sifre cozme denetlendi" eval 'grep -q "imzali ozet: SHA-256 ve imza dogrulandi" <<< "$out" && grep -q "zincir saglam: 10 satir" <<< "$out" && grep -q "capalar tutuyor" <<< "$out" && grep -q "engagement_profiles.Iban: 3 acildi, 1 eski duz metin" <<< "$out"'
 check "  gecici konteyner agsiz, etiketli ve birimiyle silindi" eval 'grep -q "run -d --name hr360-restore-drill-.* --label hr360.restore-drill=1 --network none" "$HR360_TEST_LOG" && grep -q "rm -f -v hr360-restore-drill-" "$HR360_TEST_LOG"'
 check "  canli postgres'e dokunulmadi" eval '! grep -Eq "compose (exec|up|stop|down)" "$HR360_TEST_LOG"'
+check "  izleme metrigi: tatbikat basarili" eval 'grep -q "^hr360_restore_test_success{tool=\"drill\"} 1" $M/hr360_restore_test_drill.prom'
 tkey="$(sed -n "s/^TENANT_SECRET_KEY=//p" .env)"
 check "  anahtarlar komut satirinda yok" eval '! grep -qF "$tkey" "$HR360_TEST_LOG" && grep -q "TENANT_SECRET_KEY=$tkey" "$HR360_TEST_LOG.env" && grep -q -- "--env-file .*keys.env" "$HR360_TEST_LOG"'
 : > "$HR360_TEST_LOG"

@@ -146,6 +146,8 @@ jobs:
       - name: Prometheus kurallari
         run: |
           docker run --rm --entrypoint promtool -v "$PWD/deploy/monitoring:/m:ro" prom/prometheus:v2.55.1 check rules /m/alerts.yml
+          # Esik birim testleri (outbox, yedek, sertifika, 5xx)
+          docker run --rm --entrypoint promtool -v "$PWD/deploy/monitoring:/m:ro" -w /m prom/prometheus:v2.55.1 test rules /m/alerts.test.yml
           # prometheus.yml rule_files yolunu konteyner icinden cozer
           docker run --rm --entrypoint sh -v "$PWD/deploy/monitoring:/etc/prometheus:ro" prom/prometheus:v2.55.1 -c 'promtool check config /etc/prometheus/prometheus.yml'
       - name: Alertmanager yapilandirmasi (tum kanallar acik)
@@ -156,8 +158,12 @@ jobs:
             -e SMTP_USER=u -e "SMTP_PASSWORD=p'q" \
             -v "$PWD/deploy/monitoring/alertmanager-entrypoint.sh:/e.sh:ro" -v "$PWD/deploy/monitoring/alertmanager.tmpl:/etc/alertmanager/templates/hr360.tmpl:ro" \
             prom/alertmanager:v0.28.1 /e.sh check
-      - name: Grafana panosu JSON
-        run: python3 -m json.tool deploy/monitoring/grafana/dashboards/hr360-overview.json > /dev/null
+      - name: Grafana panoları JSON
+        run: for f in deploy/monitoring/grafana/dashboards/*.json; do python3 -m json.tool "$f" > /dev/null || exit 1; done
+      - name: blackbox-exporter ve postgres-exporter yapılandırması
+        run: |
+          docker run --rm -v "$PWD/deploy/monitoring/blackbox.yml:/b.yml:ro" prom/blackbox-exporter:v0.25.0 --config.file=/b.yml --config.check
+          python3 -c "import yaml,sys; q=yaml.safe_load(open('deploy/monitoring/postgres-exporter-queries.yml')); assert all('query' in v and 'metrics' in v for v in q.values())"
       - name: Kabuk betikleri (bash -n + shellcheck)
         run: |
           for f in install.sh scripts/*.sh scripts/lib/*.sh tests/install/*.sh; do bash -n "$f"; done

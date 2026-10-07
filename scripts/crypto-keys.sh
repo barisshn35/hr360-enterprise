@@ -60,6 +60,7 @@ governance_chat_apps|IncomingTokenEnc|text
 governance_calendar_connections|AccessTokenEnc|text
 governance_calendar_connections|RefreshTokenEnc|text
 governance_provider_configs|ClientSecretEnc|text
+governance_provisioning_configs|CredentialsEnc|text
 governance_chat_context|TextEnc|text
 governance_chat_exit_progress|AnswersEnc|text
 governance_chat_pending|PayloadEnc|text

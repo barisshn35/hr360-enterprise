@@ -415,7 +415,12 @@ export function OmniCommandPalette({
     node?.scrollIntoView({ block: "nearest" });
   }
 
-  function execute(item: OmniItem) {
+  function execute(picked: OmniItem) {
+    // "Son kullanılanlar" kaydı işlev taşımaz (localStorage'a yalnızca kimlik/etiket yazılır):
+    // aynı kimlikli canlı öğe (eylem, sayfa) sonuçlarda varsa onunkini çalıştır.
+    const item = picked.onAction || picked.href
+      ? picked
+      : flatItems.find(i => i.id === picked.id && (i.onAction || i.href)) ?? picked;
     // store in recents
     try {
       const entry: RecentEntry = {

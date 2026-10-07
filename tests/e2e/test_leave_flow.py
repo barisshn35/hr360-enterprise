@@ -37,7 +37,7 @@ def test_izin_talebi_onay_akisi(session, browser):
     page.fill("#leave-reason", tag)
     page.get_by_role("button", name="Talebi gönder").click()
     page.get_by_text("Yeni izin talebi").first.wait_for(state="visible")
-    page.wait_for_timeout(1500)
+    watched.settle()  # gönderim sonrası istekler (liste yenileme) bitsin, hataları toplansın
     assert not [e for e in watched.take() if "HTTP 5" in e or "PAGEERROR" in e]
 
     mine = api("ayse", "/api/leave/leave-requests")
@@ -53,15 +53,19 @@ def test_izin_talebi_onay_akisi(session, browser):
     dialog = mpage.get_by_role("dialog")
     dialog.get_by_label("Gerekçe").fill("E2E onayı")
     dialog.get_by_role("button", name="Onayla").click()
-    mpage.wait_for_timeout(2500)
+    try:  # karar kaydedilince iletişim kutusu kapanır; hata olursa açık kalır ve aşağıdaki kontrol yakalar
+        dialog.wait_for(state="hidden", timeout=15000)
+    except Exception:  # noqa: BLE001
+        pass
+    mwatched.settle()
     assert not [e for e in mwatched.take() if "HTTP" in e or "PAGEERROR" in e]
 
     # --- Kafka üzerinden leave-service kaydı kapatır
-    for _ in range(20):
+    for _ in range(40):
         status = next(r for r in api("ayse", "/api/leave/leave-requests") if r["id"] == req["id"])["status"]
         if status == "Approved":
             break
-        page.wait_for_timeout(1000)
+        page.wait_for_timeout(500)
     assert status == "Approved"
 
     # --- Ayşe arayüzde onaylı görür

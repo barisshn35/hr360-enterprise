@@ -273,6 +273,8 @@ public class CustomFieldTests
     }
 }
 
+// İmza kodu özeti TENANT_SECRET_KEY'den türetilir; bu anahtarı değiştiren testlerle paralel koşmamalı.
+[Collection("TenantSecretKey")]
 public class SignatureAndHookTests
 {
     [Theory]

@@ -461,6 +461,8 @@ services:
       # Acik kaynak varsayilani: plan kisiti ve faturalandirma kapali.
       PLAN_ENFORCEMENT: "${PLAN_ENFORCEMENT:-false}"
       BILLING_ENABLED: "${BILLING_ENABLED:-false}"
+      # Dalga 12: Google Workspace / Microsoft 365 hesap acma/kapatma (IK onayli; varsayilan kapali).
+      ACCOUNT_PROVISIONING_ENABLED: "${ACCOUNT_PROVISIONING_ENABLED:-false}"
       ASPNETCORE_ENVIRONMENT: "Production"
     depends_on:
       postgres:
@@ -684,7 +686,10 @@ services:
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
+      # Saklama: hangisi once dolarsa (sure ya da boyut) en eski bloklar silinir.
+      # Ayrinti: docs/runbooks/izleme-saklama.md
       - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-15d}
+      - --storage.tsdb.retention.size=${PROMETHEUS_RETENTION_SIZE:-5GB}
       - --web.enable-lifecycle
     volumes:
       - ./deploy/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
@@ -731,6 +736,10 @@ services:
       DATA_SOURCE_URI: postgres:5432/hr360_operational?sslmode=disable
       DATA_SOURCE_USER: hr360admin
       DATA_SOURCE_PASS: ${HR360_DB_PASSWORD}
+      # Dalga 12: uygulamaya ozgu sorgular (Kafka outbox birikimi; yalnizca sayi/sure, kisisel veri yok).
+      PG_EXPORTER_EXTEND_QUERY_PATH: /etc/postgres-exporter/queries.yml
+    volumes:
+      - ./deploy/monitoring/postgres-exporter-queries.yml:/etc/postgres-exporter/queries.yml:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -745,17 +754,35 @@ services:
       - --path.sysfs=/host/sys
       - --path.rootfs=/rootfs
       - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run|var/lib/docker/.+)($$|/)
+      # Dalga 12: scripts/backup.sh ve restore-drill.sh'in yazdigi yedek/geri yukleme metrikleri.
+      - --collector.textfile.directory=/textfile
     volumes:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
       - /:/rootfs:ro
+      - ./deploy/monitoring/textfile:/textfile:ro
     mem_limit: "64m"
+
+  # Dalga 12: TLS sertifikasi bitis tarihi (gateway:443; HTTPS kapaliyken yoklama basarisiz olur,
+  # alarm yalnizca sertifika okunabildiginde calisir). Disariya port acmaz.
+  blackbox-exporter:
+    image: prom/blackbox-exporter:v0.25.0
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    command: ["--config.file=/etc/blackbox/blackbox.yml"]
+    volumes:
+      - ./deploy/monitoring/blackbox.yml:/etc/blackbox/blackbox.yml:ro
+    mem_limit: "32m"
 
   loki:
     image: grafana/loki:3.3.2
     profiles: ["monitoring"]
     restart: unless-stopped
-    command: ["-config.file=/etc/loki/loki.yml"]
+    # Saklama LOKI_RETENTION (varsayilan 168h = 7 gun); bkz. docs/runbooks/izleme-saklama.md
+    command: ["-config.file=/etc/loki/loki.yml", "-config.expand-env=true"]
+    environment:
+      LOKI_RETENTION: ${LOKI_RETENTION:-168h}
+      LOKI_INGESTION_RATE_MB: ${LOKI_INGESTION_RATE_MB:-4}
     volumes:
       - ./deploy/monitoring/loki.yml:/etc/loki/loki.yml:ro
       - loki-data:/loki

@@ -30,6 +30,7 @@ import {
   UserCog,
   UserRound,
   Download,
+  Megaphone,
   Eye,
   EyeOff,
   X,
@@ -62,6 +63,7 @@ import { usePrivacyScreen } from '@/lib/privacy-screen'
 import { usePlan } from '@/lib/plan'
 import { tx } from '@/lib/i18n'
 import { LanguageToggle } from '@/components/layout/LanguageToggle'
+import { OPEN_WHATS_NEW_EVENT, WhatsNewButton } from '@/features/whats-new/WhatsNewPanel'
 
 const SPRING = { type: 'spring' as const, mass: 0.5, damping: 14, stiffness: 120, restDelta: 0.001 }
 
@@ -385,6 +387,10 @@ function AccountMenu() {
             {tx('Uygulama olarak yükle')}
           </DropdownMenuItem>
         )}
+        <DropdownMenuItem onSelect={() => window.dispatchEvent(new CustomEvent(OPEN_WHATS_NEW_EVENT))}>
+          <Megaphone className="size-4" strokeWidth={1.5} />
+          {tx('Yenilikler')}
+        </DropdownMenuItem>
         {accountUrl !== '#' && (
           <DropdownMenuItem asChild>
             <a href={accountUrl} target="_blank" rel="noreferrer">
@@ -544,6 +550,7 @@ export function TopNav({ onOpenCommandPalette }: { onOpenCommandPalette: () => v
               <Search className="size-[18px]" strokeWidth={1.75} />
             </button>
             <NotificationBell />
+            <WhatsNewButton className="hidden sm:flex" />
             <LanguageToggle className="hidden sm:flex" />
             <ThemeToggle />
             <AccountMenu />

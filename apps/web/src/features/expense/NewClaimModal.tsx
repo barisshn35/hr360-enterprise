@@ -16,6 +16,7 @@ import type { ExpenseClaim } from '@/api/expense'
 import { formatMoney, parseDecimal } from '@/lib/format'
 import { localISODate } from '@/lib/dates'
 import { tx } from '@/lib/i18n'
+import { isQueuedOffline } from '@/lib/push'
 import { einvoiceToDraft, type EInvoice } from '@/lib/expenseAudit'
 import { EInvoiceQr } from './EInvoiceQr'
 import { PiiHint } from '@/components/PiiHint'
@@ -323,7 +324,16 @@ export function NewClaimModal({ open, onClose, claim }: {
       onClose()
       reset()
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : editing ? tx('Taslak kaydedilemedi.') : tx('Talep oluşturulamadı.')),
+    onError: (e: unknown) => {
+      // Çevrimdışı: masraf bu cihazda taslak olarak saklandı; bağlantı gelince taslak olarak oluşturulur.
+      if (isQueuedOffline(e)) {
+        toast.ok(e.message)
+        onClose()
+        reset()
+        return
+      }
+      toast.stop(e instanceof Error ? e.message : editing ? tx('Taslak kaydedilemedi.') : tx('Talep oluşturulamadı.'))
+    },
   })
 
   function submit(e: React.FormEvent) {

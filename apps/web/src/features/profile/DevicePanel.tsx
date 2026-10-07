@@ -4,10 +4,15 @@ import { Panel, PanelBody, PanelHead } from '@/components/ui/Panel'
 import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { useToast } from '@/components/ui/Toast'
-import { currentPushSubscription, disablePush, enablePush, flushOfflineQueue, offlineQueue, pushSupported, sendTestPush } from '@/lib/push'
+import { currentPushSubscription, disablePush, enablePush, flushOfflineQueue, loadOfflineQueue, offlineQueue, pushSupported, queuedKind, queuedSummary, removeQueued, sendTestPush } from '@/lib/push'
 import { errMsg } from '@/features/shared/kit'
 import { formatDateTime } from '@/lib/format'
 import { tx } from '@/lib/i18n'
+
+const kindLabel = (path: string) => {
+  const k = queuedKind(path)
+  return k === 'leave' ? tx('İzin talebi') : k === 'expense' ? tx('Masraf talebi') : tx('Fazla mesai talebi')
+}
 
 /** Profilim › Güvenlik: bu cihazda anlık bildirim ve çevrimdışı kuyruk. */
 export function DevicePanel() {
@@ -50,7 +55,12 @@ export function DevicePanel() {
         </div>
         {queue.length > 0 && (
           <ul className="space-y-1 text-[12.5px] text-muted-foreground">
-            {queue.map((q) => <li key={q.id}>{q.path.includes('leave') ? tx('İzin talebi') : tx('Fazla mesai talebi')} · {formatDateTime(q.at)}</li>)}
+            {queue.map((q) => (
+              <li key={q.id} className="flex items-center gap-2">
+                <span className="flex-1 truncate">{kindLabel(q.path)} · {queuedSummary(q)} · {formatDateTime(q.at)}</span>
+                <Button size="sm" variant="ghost" onClick={() => void removeQueued(q.id)}>{tx('Sil')}</Button>
+              </li>
+            ))}
           </ul>
         )}
       </PanelBody>
@@ -69,7 +79,8 @@ export function OfflineQueueWatcher() {
         for (const f of failed) toast.stop(tx('Sıradaki talep reddedildi: {0}', [f]))
       })
     }
-    flush()
+    // Kalıcı kuyruk (IndexedDB) yüklenince bağlantı varsa hemen gönderilir.
+    void loadOfflineQueue().then(flush)
     window.addEventListener('online', flush)
     return () => window.removeEventListener('online', flush)
   }, [toast])

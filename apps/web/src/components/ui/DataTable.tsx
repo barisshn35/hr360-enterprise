@@ -43,6 +43,8 @@ import { normalizeSearch } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { tx } from '@/lib/i18n'
 import { requestTrace, withCsvWatermark } from '@/lib/watermark'
+import type { TableViewState } from '@/lib/savedViews'
+import { SavedViews } from '@/components/ui/SavedViews'
 
 export type Column<T> = {
   id: string
@@ -136,6 +138,12 @@ export interface DataTableProps<T> {
 
   /** Sunucu tarafı sayfalama; bkz. {@link ServerPaging}. */
   server?: ServerPaging<T>
+
+  /**
+   * Dalga 12: verilirse araç çubuğunda "Görünümler" menüsü çıkar — arama/sıralama/filtre kişiye özel
+   * kaydedilir ve bağlantıyla paylaşılır (adres parametreleri v_q, v_s, v_f.<filtre>). Ekran başına tekil ad.
+   */
+  viewKey?: string
 }
 
 const HEAD_CLASS = 'h-11 px-4 py-0 text-[11px] font-medium tracking-[0.08em] text-muted-foreground uppercase'
@@ -216,6 +224,7 @@ export function DataTable<T>({
   initialSort,
   notice,
   server,
+  viewKey,
 }: DataTableProps<T>) {
   const reduced = useReducedMotion()
   const searchId = useId()
@@ -270,6 +279,29 @@ export function DataTable<T>({
     } finally {
       setExporting(false)
     }
+  }
+
+  // Dalga 12: kayıtlı görünüm / paylaşılan bağlantı uygulanır (yalnızca tanınan filtre değerleri).
+  const applyView = (v: Partial<TableViewState>) => {
+    if (v.q !== undefined) {
+      setQuery(v.q)
+      server?.onQueryChange(v.q)
+    }
+    if (v.sort) {
+      if (server) server.onSortChange(v.sort)
+      else setLocalSort(v.sort)
+    } else if (v.sort === undefined && !server && v.q !== undefined) {
+      setLocalSort(initialSort ?? null)
+    }
+    for (const f of filters ?? []) {
+      const val = v.filters?.[f.id]
+      if (val !== undefined && val !== f.value && f.options.some((o) => o.value === val)) f.onChange(val)
+    }
+  }
+  const viewState: TableViewState = {
+    q: query,
+    sort,
+    filters: Object.fromEntries((filters ?? []).map((f) => [f.id, f.value])),
   }
 
   // Arama/filtre değişince ilk sayfaya dön — yoksa boş sayfada kalınıyor.
@@ -332,6 +364,8 @@ export function DataTable<T>({
                   </SelectContent>
                 </Select>
               ))}
+
+              {viewKey && <SavedViews viewKey={viewKey} state={viewState} apply={applyView} />}
 
               {exportFileName && (
                 <Button

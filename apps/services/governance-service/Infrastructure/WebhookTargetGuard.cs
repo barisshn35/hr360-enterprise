@@ -90,7 +90,7 @@ public static class WebhookTargetGuard
         "organization-service", "employee-service", "workflow-service", "leave-service", "recruitment-service",
         "onboarding-service", "timeshift-service", "performance-service", "learning-service", "engagement-service",
         "governance-service", "compensation-service", "expense-service", "notification-service", "tenant-service",
-        "mlflow", "ml-inference", "web", "prometheus", "alertmanager", "postgres-exporter", "node-exporter", "loki",
+        "mlflow", "ml-inference", "web", "prometheus", "alertmanager", "postgres-exporter", "node-exporter", "blackbox-exporter", "loki",
         "promtail", "grafana", "otel-collector", "tempo", "certbot", "gateway", "openldap",
     };
 

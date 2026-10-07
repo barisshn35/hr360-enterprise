@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'motion/react'
-import { Copy, KeyRound, MessageSquare, Plus, RefreshCw, Send, Trash2, Webhook as WebhookIcon } from 'lucide-react'
+import { BarChart3, Copy, KeyRound, MessageSquare, Plus, RefreshCw, Send, Trash2, Webhook as WebhookIcon } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Panel, PanelBody, PanelHead } from '@/components/ui/Panel'
 import { Button } from '@/components/ui/button'
@@ -13,11 +13,14 @@ import { EmptyState, InfoNote, RowsSkeleton } from '@/components/ui/States'
 import { Tabs, useTabParam } from '@/components/ui/Tabs'
 import { useToast } from '@/components/ui/Toast'
 import { useConfirm } from '@/components/ui/Confirm'
-import { governanceApi, type Webhook } from '@/api/governance'
-import { formatDateTime, formatRelativeToNow } from '@/lib/format'
+import { governanceApi, type ApiKeyRow, type Webhook } from '@/api/governance'
+import { formatDate, formatDateTime, formatNumber, formatRelativeToNow } from '@/lib/format'
 import { PlanGate, useAction } from '@/features/shared/kit'
 import { ChatAppsPanel } from './ChatAppsPanel'
 import { CalendarProvidersPanel } from './CalendarProvidersPanel'
+import { AccountProvisioningPanel } from './AccountProvisioningPanel'
+import { WebhookDeliveriesPanel } from './WebhookDeliveriesPanel'
+import { retryStateView, scopeLabel, simplifyScopes } from './integrationsHelpers'
 import { tx } from '@/lib/i18n'
 
 const EVENTS = ['*', 'employee.hired', 'employee.assigned', 'employee.status-changed', 'workflow.submitted', 'workflow.approved', 'workflow.rejected', 'leave.approved']
@@ -75,7 +78,7 @@ function Webhooks() {
   const dQ = useQuery({ queryKey: ['webhook-deliveries', deliveries?.id], enabled: !!deliveries, queryFn: ({ signal }) => governanceApi.webhookDeliveries(deliveries!.id, signal) })
   return (
     <div className="space-y-5">
-      <InfoNote>{tx('Her teslimat')}{' '}<code className="font-mono text-[12px]">{tx('X-HR360-Signature: sha256=…')}</code>{' '}{tx('başlığıyla HMAC-SHA256 imzalanır (gövde + gizli anahtar). Alıcı imzayı doğrulamalıdır. 20 ardışık hatada webhook otomatik kapanır.')}</InfoNote>
+      <InfoNote>{tx('Her teslimat')}{' '}<code className="font-mono text-[12px]">{tx('X-HR360-Signature: sha256=…')}</code>{' '}{tx('başlığıyla HMAC-SHA256 imzalanır (gövde + gizli anahtar). Alıcı imzayı doğrulamalıdır. Geçici hatalar üstel geri çekilmeyle otomatik yeniden denenir (ayrıntı: “Teslimat hataları” sekmesi). 20 ardışık hatada webhook otomatik kapanır.')}</InfoNote>
       <div className="flex gap-2"><Button onClick={() => setForm({ name: '', url: 'https://', events: ['*'] })}><Plus className="size-4" />{' '}{tx('Webhook')}</Button><Button variant="outline" onClick={() => test.mutate(undefined)}><WebhookIcon className="size-4" />{' '}{tx('Test alıcısı oluştur')}</Button></div>
       {list.isPending ? <RowsSkeleton /> : (list.data ?? []).length === 0 ? <EmptyState icon={WebhookIcon} title={tx('Webhook yok')} detail={tx('Bir sistem HR360 olaylarını anında almak istiyorsa buraya adresini ekleyin.')} /> : (
         <div className="grid gap-4 lg:grid-cols-2">
@@ -120,7 +123,7 @@ function Webhooks() {
       {deliveries && (
         <Modal open onClose={() => setDeliveries(null)} size="lg" title={tx('Teslimatlar — {0}', [deliveries.name])}>
           <ul className="divide-y divide-border text-[12.5px]">
-            {dQ.data?.map((d) => <li key={d.id} className="flex items-center gap-3 py-2"><span className="tabular w-36 text-muted-foreground">{formatDateTime(d.occurredAt)}</span><span className="font-mono">{d.eventType}</span><StatusBadge tone={d.statusCode && d.statusCode < 300 ? 'success' : 'danger'}>{d.statusCode ?? 'hata'}</StatusBadge><span className="text-muted-foreground">{tx('{0} ms', [d.durationMs])}</span>{d.error && <span className="truncate text-destructive">{d.error}</span>}</li>)}
+            {dQ.data?.map((d) => <li key={d.id} className="flex items-center gap-3 py-2"><span className="tabular w-36 text-muted-foreground">{formatDateTime(d.occurredAt)}</span><span className="font-mono">{d.eventType}</span><StatusBadge tone={d.statusCode && d.statusCode < 300 ? 'success' : 'danger'}>{d.statusCode ?? 'hata'}</StatusBadge><span className="text-muted-foreground">{tx('{0} ms', [d.durationMs])}</span>{(d.attempt ?? 1) > 1 && <span className="text-muted-foreground">{tx('deneme {0}', [d.attempt])}</span>}{retryStateView(d.retryState) && <StatusBadge tone={retryStateView(d.retryState)!.tone}>{retryStateView(d.retryState)!.label}</StatusBadge>}{d.error && <span className="truncate text-destructive">{d.error}</span>}</li>)}
           </ul>
         </Modal>
       )}
@@ -128,12 +131,62 @@ function Webhooks() {
   )
 }
 
+const EXPIRY_OPTIONS = [
+  { value: '0', label: tx('Süresiz') },
+  { value: '30', label: tx('30 gün') },
+  { value: '90', label: tx('90 gün') },
+  { value: '180', label: tx('180 gün') },
+  { value: '365', label: tx('1 yıl') },
+]
+
+function ApiKeyUsageModal({ k, onClose }: { k: ApiKeyRow; onClose: () => void }) {
+  const q = useQuery({ queryKey: ['api-key-usage', k.id], queryFn: ({ signal }) => governanceApi.apiKeyUsage(k.id, 30, signal) })
+  const max = Math.max(1, ...(q.data?.byDay ?? []).map((d) => d.count + d.denied))
+  return (
+    <Modal open onClose={onClose} size="lg" title={tx('Kullanım — {0}', [k.name])} note={tx('Son 30 gün · istek ve ret (yetki dışı / hız sınırı) sayıları. IP adresi ve istek içeriği tutulmaz.')}>
+      {q.isPending ? <RowsSkeleton /> : (
+        <div className="space-y-4 text-[12.5px]">
+          <div className="flex flex-wrap gap-4">
+            <span>{tx('Toplam istek: {0}', [formatNumber(q.data?.total ?? 0)])}</span>
+            <span className={q.data?.denied ? 'text-destructive' : ''}>{tx('Reddedilen: {0}', [formatNumber(q.data?.denied ?? 0)])}</span>
+            <span className="text-muted-foreground">{q.data?.lastUsedAt ? tx('Son kullanım {0} ({1})', [formatRelativeToNow(q.data.lastUsedAt), q.data.lastUsedScope ?? '—']) : tx('hiç kullanılmadı')}</span>
+          </div>
+          {(q.data?.byDay ?? []).length === 0 ? <p className="text-muted-foreground">{tx('Bu dönemde kullanım yok.')}</p> : (
+            <>
+              <div className="flex h-24 items-end gap-0.5" role="img" aria-label={tx('Günlük istek sayısı')}>
+                {q.data!.byDay.map((d) => (
+                  <div key={d.day} className="flex flex-1 flex-col justify-end" title={tx('{0}: {1} istek, {2} ret', [formatDate(d.day), d.count, d.denied])}>
+                    {d.denied > 0 && <div className="bg-destructive/70" style={{ height: `${(d.denied / max) * 96}px` }} />}
+                    <div className="rounded-t bg-primary/70" style={{ height: `${(d.count / max) * 96}px` }} />
+                  </div>
+                ))}
+              </div>
+              <ul className="divide-y divide-border">
+                {q.data!.byScope.map((s) => <li key={s.scope} className="flex items-center gap-3 py-1.5"><span className="w-40 font-mono">{s.scope}</span><span className="tabular">{formatNumber(s.count)}</span>{s.denied > 0 && <span className="tabular text-destructive">{tx('{0} ret', [s.denied])}</span>}</li>)}
+              </ul>
+            </>
+          )}
+        </div>
+      )}
+    </Modal>
+  )
+}
+
 function ApiKeys() {
   const list = useQuery({ queryKey: ['api-keys'], queryFn: ({ signal }) => governanceApi.apiKeys(signal) })
   const scopes = useQuery({ queryKey: ['api-scopes'], queryFn: ({ signal }) => governanceApi.apiScopes(signal), staleTime: Infinity })
-  const [form, setForm] = useState<{ name: string; scopes: string[] } | null>(null)
-  const [created, setCreated] = useState<string | null>(null)
-  const create = useAction(() => governanceApi.createApiKey(form!.name, form!.scopes), { invalidate: [['api-keys']], onDone: (r) => { setForm(null); setCreated(r.key) } })
+  const [form, setForm] = useState<{ name: string; scopes: string[]; expires: string } | null>(null)
+  const [created, setCreated] = useState<{ key: string; note?: string } | null>(null)
+  const [usage, setUsage] = useState<ApiKeyRow | null>(null)
+  const [rotating, setRotating] = useState<{ key: ApiKeyRow; grace: string } | null>(null)
+  const create = useAction(() => governanceApi.createApiKey(form!.name, simplifyScopes(form!.scopes), Number(form!.expires) || null), { invalidate: [['api-keys']], onDone: (r) => { setForm(null); setCreated({ key: r.key }) } })
+  const rotate = useAction(() => governanceApi.rotateApiKey(rotating!.key.id, Number(rotating!.grace)), {
+    invalidate: [['api-keys']],
+    onDone: (r) => {
+      setRotating(null)
+      setCreated({ key: r.key, note: r.oldKeyValidUntil ? tx('Eski anahtar {0} tarihine kadar çalışmaya devam eder.', [formatDateTime(r.oldKeyValidUntil)]) : undefined })
+    },
+  })
   const revoke = useAction((id: string) => governanceApi.revokeApiKey(id), { success: tx('Anahtar iptal edildi'), invalidate: [['api-keys']] })
   const confirm = useConfirm()
   const askRevoke = async (k: { id: string; name: string }) => {
@@ -144,18 +197,37 @@ function ApiKeys() {
     })) revoke.mutate(k.id)
   }
   const base = `${window.location.origin}/api/governance/public/v1`
+  const statusBadge = (k: ApiKeyRow) => {
+    const st = k.status ?? (k.active ? 'active' : 'revoked')
+    if (st === 'revoked') return <StatusBadge>{tx('İptal')}</StatusBadge>
+    if (st === 'expired') return <StatusBadge tone="danger">{tx('Süresi doldu')}</StatusBadge>
+    if (k.expiresSoon) return <StatusBadge tone="warning">{tx('Süresi yaklaşıyor')}</StatusBadge>
+    return <StatusBadge tone="success">{tx('Etkin')}</StatusBadge>
+  }
   return (
     <div className="space-y-5">
-      <div className="flex gap-2"><Button onClick={() => setForm({ name: '', scopes: ['employees:read'] })}><KeyRound className="size-4" />{' '}{tx('Yeni anahtar')}</Button></div>
+      <div className="flex gap-2"><Button onClick={() => setForm({ name: '', scopes: ['read-only'], expires: '90' })}><KeyRound className="size-4" />{' '}{tx('Yeni anahtar')}</Button></div>
       <Panel>
         <PanelBody className="p-0">
           {list.isPending ? <div className="p-5"><RowsSkeleton /></div> : (list.data ?? []).length === 0 ? <p className="p-5 text-[13px] text-muted-foreground">{tx('Anahtar yok.')}</p> : (
-            <ul className="divide-y divide-border">{list.data!.map((k) => (
+            <ul className="divide-y divide-border" data-testid="api-key-list">{list.data!.map((k) => (
               <li key={k.id} className="flex flex-wrap items-center gap-3 px-5 py-3 text-[13px]">
                 <KeyRound className="size-4 text-muted-foreground" />
-                <div className="min-w-0 flex-1"><p className="font-medium">{k.name}</p><p className="font-mono text-[11.5px] text-muted-foreground">{tx('hr360_{0}_•••• · {1}', [k.prefix, k.scopes.join(', ')])}</p></div>
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium">{k.name}</p>
+                  <p className="font-mono text-[11.5px] text-muted-foreground">{tx('hr360_{0}_•••• · {1}', [k.prefix, k.scopes.join(', ')])}</p>
+                  <p className="text-[11.5px] text-muted-foreground">
+                    {k.expiresAt ? tx('son kullanma {0}', [formatDate(k.expiresAt)]) : tx('süresiz')}
+                    {' · '}{tx('30 günde {0} istek', [formatNumber(k.last30 ?? 0)])}
+                    {k.denied30 ? tx(' · {0} ret', [k.denied30]) : ''}
+                    {k.rotatedFromId ? tx(' · döndürülmüş anahtar') : ''}
+                  </p>
+                </div>
                 <span className="text-[12px] text-muted-foreground">{k.lastUsedAt ? tx('son kullanım {0}', [formatRelativeToNow(k.lastUsedAt)]) : tx('hiç kullanılmadı')}</span>
-                {k.active ? <Button size="sm" variant="outline" onClick={() => askRevoke(k)}>{tx('İptal et')}</Button> : <StatusBadge>{tx('İptal')}</StatusBadge>}
+                {statusBadge(k)}
+                <Button size="sm" variant="ghost" onClick={() => setUsage(k)} aria-label={tx('Kullanım')} title={tx('Kullanım')}><BarChart3 className="size-4" /></Button>
+                {k.active && <Button size="sm" variant="outline" onClick={() => setRotating({ key: k, grace: '24' })}><RefreshCw className="size-4" />{' '}{tx('Döndür')}</Button>}
+                {k.active && <Button size="sm" variant="outline" onClick={() => askRevoke(k)}>{tx('İptal et')}</Button>}
               </li>
             ))}</ul>
           )}
@@ -169,16 +241,43 @@ function ApiKeys() {
         </PanelBody>
       </Panel>
       {form && (
-        <Modal open onClose={() => setForm(null)} title={tx('Yeni API anahtarı')} footer={<><Button variant="outline" onClick={() => setForm(null)}>{tx('Vazgeç')}</Button><Button disabled={!form.name || !form.scopes.length} onClick={() => create.mutate(undefined)}>{tx('Oluştur')}</Button></>}>
+        <Modal open onClose={() => setForm(null)} title={tx('Yeni API anahtarı')} footer={<><Button variant="outline" onClick={() => setForm(null)}>{tx('Vazgeç')}</Button><Button disabled={!form.name || !form.scopes.length || create.isPending} onClick={() => create.mutate(undefined)}>{tx('Oluştur')}</Button></>}>
           <div className="space-y-4"><TextField label={tx('Ad')} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder={tx('Örn. Power BI')} />
-            <div className="space-y-2">{scopes.data?.map((s) => <label key={s} className="flex items-center gap-2 font-mono text-[12.5px]"><Checkbox checked={form.scopes.includes(s)} onCheckedChange={(v) => setForm({ ...form, scopes: v === true ? [...form.scopes, s] : form.scopes.filter((x) => x !== s) })} /> {s}</label>)}</div></div>
+            <div className="space-y-2">
+              <p className="text-[13px] font-medium">{tx('Yetkiler')}</p>
+              {scopes.data?.map((s) => {
+                const covered = s !== 'read-only' && s.endsWith(':read') && form.scopes.includes('read-only')
+                return (
+                  <label key={s} className={`flex items-start gap-2 text-[12.5px] ${covered ? 'opacity-50' : ''}`}>
+                    <Checkbox checked={covered || form.scopes.includes(s)} disabled={covered} onCheckedChange={(v) => setForm({ ...form, scopes: v === true ? [...form.scopes, s] : form.scopes.filter((x) => x !== s) })} />
+                    <span><span className="font-mono">{s}</span><span className="block text-[11.5px] text-muted-foreground">{scopeLabel(s)}</span></span>
+                  </label>
+                )
+              })}
+              <p className="text-[11.5px] text-muted-foreground">{tx('En az yetki ilkesi: anahtara yalnızca entegrasyonun ihtiyaç duyduğu yetkileri verin.')}</p>
+            </div>
+            <SelectField label={tx('Son kullanma')} value={form.expires} onChange={(v) => setForm({ ...form, expires: v })} options={EXPIRY_OPTIONS} />
+          </div>
+        </Modal>
+      )}
+      {rotating && (
+        <Modal open onClose={() => setRotating(null)} title={tx('“{0}” anahtarını döndür', [rotating.key.name])} note={tx('Aynı ad ve yetkilerle yeni bir anahtar üretilir. Eski anahtar geçiş süresi sonunda kendiliğinden geçersiz olur; REST hook abonelikleri yeni anahtara taşınır.')}
+          footer={<><Button variant="outline" onClick={() => setRotating(null)}>{tx('Vazgeç')}</Button><Button disabled={rotate.isPending} onClick={() => rotate.mutate(undefined)}>{tx('Döndür')}</Button></>}>
+          <SelectField label={tx('Eski anahtar için geçiş süresi')} value={rotating.grace} onChange={(v) => setRotating({ ...rotating, grace: v })} options={[
+            { value: '0', label: tx('Hemen iptal et') },
+            { value: '1', label: tx('1 saat') },
+            { value: '24', label: tx('24 saat') },
+            { value: '72', label: tx('72 saat') },
+          ]} />
         </Modal>
       )}
       {created && (
         <Modal open onClose={() => setCreated(null)} title={tx('Anahtarınız hazır')} note={tx('Bu anahtar yalnızca şimdi gösterilir; güvenli bir yere kaydedin. Kaybederseniz iptal edip yenisini oluşturun.')}>
-          <Copyable text={created} />
+          <Copyable text={created.key} />
+          {created.note && <p className="mt-3 text-[12.5px] text-muted-foreground">{created.note}</p>}
         </Modal>
       )}
+      {usage && <ApiKeyUsageModal k={usage} onClose={() => setUsage(null)} />}
     </div>
   )
 }
@@ -228,7 +327,7 @@ function ChatIntegrations() {
   )
 }
 
-const INTEGRATION_TABS = ['webhook', 'api', 'uygulama', 'sohbet', 'takvim'] as const
+const INTEGRATION_TABS = ['webhook', 'teslimat', 'api', 'uygulama', 'sohbet', 'takvim', 'hesap'] as const
 type IntegrationTab = (typeof INTEGRATION_TABS)[number]
 
 export function IntegrationsPage() {
@@ -238,11 +337,13 @@ export function IntegrationsPage() {
   return (
     <PlanGate feature="webhooks">
       <PageHeader title={tx('Entegrasyonlar')} description={tx('Slack ve Microsoft Teams\'ten onay, Google ve Microsoft 365 takvimleri, Zoom/Teams/Meet toplantıları, kanal bildirimleri, webhook\'lar ve açık API.')} />
-      <div className="mb-5"><Tabs label={tx('Entegrasyon')} value={tab} onChange={setTab} tabs={[{ key: 'uygulama', label: tx('Sohbet uygulamaları') }, { key: 'takvim', label: tx('Takvim ve toplantı') }, { key: 'sohbet', label: tx('Kanal bildirimleri') }, { key: 'webhook', label: tx('Webhook') }, { key: 'api', label: tx('API anahtarları') }]} /></div>
+      <div className="mb-5"><Tabs label={tx('Entegrasyon')} value={tab} onChange={setTab} tabs={[{ key: 'uygulama', label: tx('Sohbet uygulamaları') }, { key: 'takvim', label: tx('Takvim ve toplantı') }, { key: 'hesap', label: tx('Hesap açma/kapatma') }, { key: 'sohbet', label: tx('Kanal bildirimleri') }, { key: 'webhook', label: tx('Webhook') }, { key: 'teslimat', label: tx('Teslimat hataları') }, { key: 'api', label: tx('API anahtarları') }]} /></div>
       {tab === 'webhook' && <Webhooks />}
+      {tab === 'teslimat' && <WebhookDeliveriesPanel />}
       {tab === 'api' && <ApiKeys />}
       {tab === 'uygulama' && <ChatAppsPanel />}
       {tab === 'takvim' && <CalendarProvidersPanel />}
+      {tab === 'hesap' && <AccountProvisioningPanel />}
       {tab === 'sohbet' && <ChatIntegrations />}
     </PlanGate>
   )

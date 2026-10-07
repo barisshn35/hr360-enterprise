@@ -32,6 +32,8 @@ import { HolidaysModal } from './HolidaysModal'
 import { StatutoryModal } from './StatutoryModal'
 import { LeaveSettingsModal } from './LeaveSettingsModal'
 import { NewLeaveRequestModal } from './NewLeaveRequestModal'
+import { OfflineDrafts } from '@/components/OfflineDrafts'
+import { useNewParam } from '@/lib/useNewParam'
 import { tx, appLocale } from '@/lib/i18n'
 
 /** Dar ekranda (tarih sütunu gizliyken) tür hücresinin altında gösterilen kısa aralık: "05.10–07.10". */
@@ -131,6 +133,7 @@ export function LeavePage() {
   const [employeeId, setEmployeeId] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [balanceOpen, setBalanceOpen] = useState(false)
+  useNewParam(can('leave:create'), () => setModalOpen(true))
   const [holidaysOpen, setHolidaysOpen] = useState(false)
   const [statutoryOpen, setStatutoryOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -300,6 +303,8 @@ export function LeavePage() {
         }
       />
 
+      <OfflineDrafts kind="leave" />
+
       <div className="max-w-sm">
         <EmployeePicker
           value={employeeId}
@@ -353,6 +358,7 @@ export function LeavePage() {
         onRetry={() => void requests.refetch()}
         searchPlaceholder={tx('İzin türü veya gerekçe ara')}
         exportFileName="izin-talepleri"
+        viewKey="leave-requests"
         pageSize={PAGE_SIZE}
         server={{
           total: requests.data?.total ?? 0,

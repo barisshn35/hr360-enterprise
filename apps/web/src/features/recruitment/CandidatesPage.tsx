@@ -319,6 +319,7 @@ export function CandidatesPage() {
         onRetry={() => void candidates.refetch()}
         searchPlaceholder={tx('Ad, soyad, e-posta veya kaynak')}
         exportFileName="adaylar"
+        viewKey="candidates"
         pageSize={12}
         initialSort={{ columnId: 'createdAt', dir: 'desc' }}
         emptyTitle={tx('Aday kaydı yok')}

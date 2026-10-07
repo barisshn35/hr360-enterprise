@@ -7,7 +7,7 @@
  * "Animated List" deseni (sıradaki talepler). Tüm sayılar gerçek veriden.
  */
 
-import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
+import { Fragment, Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ArrowUpRight,
@@ -16,6 +16,8 @@ import {
   ChevronRight,
   Clock,
   Inbox,
+  LayoutDashboard,
+  SlidersHorizontal,
   TriangleAlert,
   UserPlus,
   Users,
@@ -41,6 +43,10 @@ import { useNavGroups } from '@/components/layout/use-nav'
 import { useAuth } from '@/auth/useAuth'
 import { PinnedReportsWidget } from '@/features/insights/SavedReports'
 import { PlatformDashboard } from './PlatformDashboard'
+import { DashboardCustomizer } from './DashboardCustomizer'
+import { WIDGET_IDS, defaultLayout, resolveLayout, type DashboardPref, type DashboardRole, type WidgetId } from './dashboardLayout'
+import { useUiPref } from '@/lib/uiPrefs'
+import { useNewParamFlag } from '@/lib/useNewParam'
 import {
   useCompanies,
   useEmployees,
@@ -262,343 +268,424 @@ function TenantDashboard() {
   const healthTone = health.isError ? 'danger' : health.data ? 'success' : 'neutral'
   const orbit = modules.slice(0, 8)
 
-  return (
-    <div className="grid grid-flow-dense grid-cols-1 gap-4 md:grid-cols-6 xl:grid-cols-12">
-      {/* ------------------------------ Karşılama ------------------------------ */}
-      <Tile i={0} className="md:col-span-6 xl:col-span-8 xl:row-span-2">
-        <Card className="h-full gap-0 overflow-hidden py-0">
-          <BorderBeam size={260} duration={14} />
-          <Spotlight size={420} />
-          <div className="relative grid h-full gap-6 p-6 sm:p-8 lg:grid-cols-[1fr_auto]">
-            <div className="flex min-w-0 flex-col">
-              <div className="flex flex-wrap items-center gap-2.5 text-[12.5px] text-muted-foreground">
-                <span className="first-letter:uppercase">
-                  {new Date().toLocaleDateString(appLocale, { weekday: 'long', day: 'numeric', month: 'long' })}
-                </span>
-                <span className="text-border">•</span>
-                <LiveClock />
-                <StatusBadge tone={healthTone}>
-                  {health.isError ? tx('Servis yanıt vermiyor') : health.data ? tx('Sistem çalışıyor') : tx('Kontrol ediliyor')}
-                </StatusBadge>
-              </div>
+  const dashboardRole: DashboardRole = can('employee:viewAll') ? 'hr' : canDecide ? 'manager' : 'employee'
+  const roleDefaults = defaultLayout(dashboardRole)
+  const dashPref = useUiPref<DashboardPref | null>('dashboard', null)
+  const availableWidgets = WIDGET_IDS.filter((id) => ({
+    welcome: true,
+    pending: canWorkflow,
+    overdue: canDecide,
+    kpis: statsLoading || kpis.length > 0,
+    chart: canWorkflow,
+    queue: canWorkflow,
+    organization: can('organization:view'),
+    modules: true,
+    pinned: can('performance:manage'),
+  })[id])
+  const layout = resolveLayout(availableWidgets, dashPref.value, roleDefaults)
+  const visibleWidgets = layout.order.filter((id) => !layout.hidden.has(id))
+  const orgVisible = visibleWidgets.includes('organization')
+  const [editing, setEditing] = useState(false)
+  useNewParamFlag('duzenle', () => setEditing(true))
 
-              <h2 className="mt-5 text-[34px] leading-[1.05] font-semibold tracking-[-0.04em] sm:text-[46px]">
-                <TextReveal text={`${greeting()},`} />
-                <br />
-                <GradientText>{firstName || tx('hoş geldiniz')}</GradientText>
-              </h2>
+  // Dalga 12 (madde 89): kişiye özel kart sırası/gizleme; kayıt yoksa role göre varsayılan.
+  const widgets: Record<WidgetId, React.ReactNode> = {
+    welcome: (
+      <>
+        {/* ------------------------------ Karşılama ------------------------------ */}
+        <Tile i={0} className="md:col-span-6 xl:col-span-8 xl:row-span-2">
+          <Card className="h-full gap-0 overflow-hidden py-0">
+            <BorderBeam size={260} duration={14} />
+            <Spotlight size={420} />
+            <div className="relative grid h-full gap-6 p-6 sm:p-8 lg:grid-cols-[1fr_auto]">
+              <div className="flex min-w-0 flex-col">
+                <div className="flex flex-wrap items-center gap-2.5 text-[12.5px] text-muted-foreground">
+                  <span className="first-letter:uppercase">
+                    {new Date().toLocaleDateString(appLocale, { weekday: 'long', day: 'numeric', month: 'long' })}
+                  </span>
+                  <span className="text-border">•</span>
+                  <LiveClock />
+                  <StatusBadge tone={healthTone}>
+                    {health.isError ? tx('Servis yanıt vermiyor') : health.data ? tx('Sistem çalışıyor') : tx('Kontrol ediliyor')}
+                  </StatusBadge>
+                </div>
 
-              <p className="mt-4 max-w-lg text-[14.5px] leading-relaxed text-muted-foreground">
-                {overdueCount > 0 ? (
-                  <>
-                    <span className="font-medium text-[hsl(var(--warning))]">
-                      {tx('{0} talebin süresi geçti.', [formatNumber(overdueCount)])}</span>{' '}{tx('Onay kutusunda sıradaki adımlar sizi bekliyor.', [])}</>
-                ) : decideCount > 0 || mineCount > 0 ? (
-                  [
-                    decideCount > 0 && tx('{0} talep kararınızı bekliyor; hepsi süresinde.', [formatNumber(decideCount)]),
-                    mineCount > 0 && tx('Onay bekleyen {0} talebiniz var.', [formatNumber(mineCount)]),
-                  ]
-                    .filter(Boolean)
-                    .join(' ')
-                ) : pendingCount > 0 && canDecide ? (
-                  tx('Şirkette onay sürecinde {0} talep var.', [formatNumber(pendingCount)])
-                ) : (
-                  tx('Bugün bekleyen bir işiniz yok. Şirketin nabzı aşağıda.')
+                <h2 className="mt-5 text-[34px] leading-[1.05] font-semibold tracking-[-0.04em] sm:text-[46px]">
+                  <TextReveal text={`${greeting()},`} />
+                  <br />
+                  <GradientText>{firstName || tx('hoş geldiniz')}</GradientText>
+                </h2>
+
+                <p className="mt-4 max-w-lg text-[14.5px] leading-relaxed text-muted-foreground">
+                  {overdueCount > 0 ? (
+                    <>
+                      <span className="font-medium text-[hsl(var(--warning))]">
+                        {tx('{0} talebin süresi geçti.', [formatNumber(overdueCount)])}</span>{' '}{tx('Onay kutusunda sıradaki adımlar sizi bekliyor.', [])}</>
+                  ) : decideCount > 0 || mineCount > 0 ? (
+                    [
+                      decideCount > 0 && tx('{0} talep kararınızı bekliyor; hepsi süresinde.', [formatNumber(decideCount)]),
+                      mineCount > 0 && tx('Onay bekleyen {0} talebiniz var.', [formatNumber(mineCount)]),
+                    ]
+                      .filter(Boolean)
+                      .join(' ')
+                  ) : pendingCount > 0 && canDecide ? (
+                    tx('Şirkette onay sürecinde {0} talep var.', [formatNumber(pendingCount)])
+                  ) : (
+                    tx('Bugün bekleyen bir işiniz yok. Şirketin nabzı aşağıda.')
+                  )}
+                </p>
+
+                {quickActions.length > 0 && (
+                  <div className="mt-auto flex flex-wrap gap-2 pt-7">
+                    {quickActions.map(({ to, label, icon: Icon }, i) => (
+                      <motion.div
+                        key={to}
+                        initial={reduced ? false : { opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.4 + i * 0.08 }}
+                        whileHover={reduced ? undefined : { y: -2 }}
+                      >
+                        <Button asChild variant={i === 0 ? 'default' : 'outline'} className="h-10 px-4">
+                          <Link to={to}>
+                            <Icon className="size-4" strokeWidth={1.75} />
+                            {label}
+                          </Link>
+                        </Button>
+                      </motion.div>
+                    ))}
+                  </div>
                 )}
-              </p>
-
-              {quickActions.length > 0 && (
-                <div className="mt-auto flex flex-wrap gap-2 pt-7">
-                  {quickActions.map(({ to, label, icon: Icon }, i) => (
-                    <motion.div
-                      key={to}
-                      initial={reduced ? false : { opacity: 0, y: 8 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: 0.4 + i * 0.08 }}
-                      whileHover={reduced ? undefined : { y: -2 }}
-                    >
-                      <Button asChild variant={i === 0 ? 'default' : 'outline'} className="h-10 px-4">
-                        <Link to={to}>
-                          <Icon className="size-4" strokeWidth={1.75} />
-                          {label}
-                        </Link>
-                      </Button>
-                    </motion.div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Modül yörüngesi */}
-            <div aria-hidden="true" className="relative hidden size-[300px] items-center justify-center self-center lg:flex">
-              <span className="absolute size-28 rounded-full bg-primary/15 blur-3xl" />
-              <span className="animate-float relative flex size-20 items-center justify-center rounded-3xl bg-gradient-to-br from-primary to-[hsl(170_80%_30%)] shadow-[0_0_50px_-6px_hsl(var(--primary))]">
-                <img src="/icon-white.svg" alt="" className="size-11" />
-              </span>
-              {orbit.slice(0, 3).map((m, i) => (
-                <OrbitingCircles key={m.id} radius={88} duration={22} angle={i * 120} path={i === 0} className="size-10 rounded-xl border border-border bg-card text-foreground/75 shadow-lg">
-                  <m.icon className="size-[18px]" strokeWidth={1.6} />
-                </OrbitingCircles>
-              ))}
-              {orbit.slice(3, 8).map((m, i) => (
-                <OrbitingCircles key={m.id} radius={140} duration={34} reverse angle={i * 72} path={i === 0} className="size-9 rounded-xl border border-border bg-card/90 text-muted-foreground shadow-lg">
-                  <m.icon className="size-4" strokeWidth={1.6} />
-                </OrbitingCircles>
-              ))}
-            </div>
-          </div>
-        </Card>
-      </Tile>
-
-      {/* ---------------------------- Bekleyen onay ---------------------------- */}
-      {canWorkflow && (
-        <Tile i={1} className="md:col-span-3 xl:col-span-4">
-          <Link to="/panel/onaylar" className="group block h-full rounded-2xl focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:outline-none">
-            <Card className="h-full gap-0 overflow-hidden p-6">
-              <Spotlight />
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="text-[13px] font-medium text-muted-foreground">{canDecide ? tx('Bekleyen onay') : tx('Bekleyen talepleriniz')}</p>
-                  <p className="tabular mt-2 text-[44px] leading-none font-semibold tracking-[-0.05em]">
-                    <CountUp to={pendingCount} format={(v) => formatNumber(Math.round(v))} />
-                  </p>
-                </div>
-                <span className="flex size-11 items-center justify-center rounded-2xl bg-muted text-primary ring-1 ring-border transition-transform duration-500 group-hover:rotate-12">
-                  <Inbox className="size-5" strokeWidth={1.7} />
-                </span>
               </div>
-              {last14.some((p) => p.value > 0) ? (
-                <Sparkline
-                  data={last14.map((p) => p.value)}
-                  labels={last14.map((p) => formatDate(p.date))}
-                  height={56}
-                  className="mt-5"
-                  aria-label={tx('Son 14 günde açılan talepler')}
-                />
-              ) : (
-                <div className="mt-5 h-14" />
-              )}
-              <p className="mt-3 flex items-center gap-1 text-[12.5px] text-muted-foreground">
-                {tx('Son 14 günde açılan talepler')}
-                <ArrowUpRight className="ml-auto size-4 text-primary opacity-0 transition-opacity group-hover:opacity-100" />
-              </p>
-            </Card>
-          </Link>
-        </Tile>
-      )}
 
-      {/* ---------------------------- Süresi geçen ---------------------------- */}
-      {canDecide && (
-        <Tile i={2} className="md:col-span-3 xl:col-span-4">
-          <Link
-            to="/panel/onaylar?durum=gecikmis"
-            className="block h-full rounded-2xl focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:outline-none"
-          >
-            <StatCard
-              label={tx('Süresi geçen')}
-              count={overdueCount}
-              format={formatNumber}
-              icon={overdueCount > 0 ? TriangleAlert : Clock}
-              trend={overdueCount > 0 ? tx('Öncelikli') : tx('Tümü süresinde')}
-              trendDirection={overdueCount > 0 ? 'up' : 'flat'}
-              trendSense="negative"
-              attention={overdueCount > 0}
-              className="h-full"
-            />
-          </Link>
+              {/* Modül yörüngesi */}
+              <div aria-hidden="true" className="relative hidden size-[300px] items-center justify-center self-center lg:flex">
+                <span className="absolute size-28 rounded-full bg-primary/15 blur-3xl" />
+                <span className="animate-float relative flex size-20 items-center justify-center rounded-3xl bg-gradient-to-br from-primary to-[hsl(170_80%_30%)] shadow-[0_0_50px_-6px_hsl(var(--primary))]">
+                  <img src="/icon-white.svg" alt="" className="size-11" />
+                </span>
+                {orbit.slice(0, 3).map((m, i) => (
+                  <OrbitingCircles key={m.id} radius={88} duration={22} angle={i * 120} path={i === 0} className="size-10 rounded-xl border border-border bg-card text-foreground/75 shadow-lg">
+                    <m.icon className="size-[18px]" strokeWidth={1.6} />
+                  </OrbitingCircles>
+                ))}
+                {orbit.slice(3, 8).map((m, i) => (
+                  <OrbitingCircles key={m.id} radius={140} duration={34} reverse angle={i * 72} path={i === 0} className="size-9 rounded-xl border border-border bg-card/90 text-muted-foreground shadow-lg">
+                    <m.icon className="size-4" strokeWidth={1.6} />
+                  </OrbitingCircles>
+                ))}
+              </div>
+            </div>
+          </Card>
         </Tile>
-      )}
 
-      {/* --------------------------------- KPI --------------------------------- */}
-      {statsLoading ? (
-        <div className="md:col-span-6 xl:col-span-12">
-          <StatCardsSkeleton count={4} />
-        </div>
-      ) : (
-        kpis.map(({ key, to, ...card }, i) => (
-          <Tile key={key} i={3 + i} className="md:col-span-3 xl:col-span-3">
-            <Link to={to} className="block h-full rounded-2xl focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:outline-none">
-              <StatCard {...card} format={formatNumber} className="h-full" />
+      </>
+    ),
+    pending: (
+      <>
+        {/* ---------------------------- Bekleyen onay ---------------------------- */}
+        {canWorkflow && (
+          <Tile i={1} className="md:col-span-3 xl:col-span-4">
+            <Link to="/panel/onaylar" className="group block h-full rounded-2xl focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:outline-none">
+              <Card className="h-full gap-0 overflow-hidden p-6">
+                <Spotlight />
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-[13px] font-medium text-muted-foreground">{canDecide ? tx('Bekleyen onay') : tx('Bekleyen talepleriniz')}</p>
+                    <p className="tabular mt-2 text-[44px] leading-none font-semibold tracking-[-0.05em]">
+                      <CountUp to={pendingCount} format={(v) => formatNumber(Math.round(v))} />
+                    </p>
+                  </div>
+                  <span className="flex size-11 items-center justify-center rounded-2xl bg-muted text-primary ring-1 ring-border transition-transform duration-500 group-hover:rotate-12">
+                    <Inbox className="size-5" strokeWidth={1.7} />
+                  </span>
+                </div>
+                {last14.some((p) => p.value > 0) ? (
+                  <Sparkline
+                    data={last14.map((p) => p.value)}
+                    labels={last14.map((p) => formatDate(p.date))}
+                    height={56}
+                    className="mt-5"
+                    aria-label={tx('Son 14 günde açılan talepler')}
+                  />
+                ) : (
+                  <div className="mt-5 h-14" />
+                )}
+                <p className="mt-3 flex items-center gap-1 text-[12.5px] text-muted-foreground">
+                  {tx('Son 14 günde açılan talepler')}
+                  <ArrowUpRight className="ml-auto size-4 text-primary opacity-0 transition-opacity group-hover:opacity-100" />
+                </p>
+              </Card>
             </Link>
           </Tile>
-        ))
-      )}
+        )}
 
-      {/* ------------------------------- Grafik ------------------------------- */}
-      {canWorkflow && (
-        <Tile i={7} className="md:col-span-6 xl:col-span-8">
-          <Suspense fallback={<div className="surface h-[260px] animate-pulse rounded-2xl" />}>
-            <ProgressMetricCard
-              title={tx('Açılan talepler')}
-              size="sm"
-              accent="violet"
-              deltaLabel={tx('düne göre')}
-              unit="talep"
-              loading={allWorkflows.isPending}
-              data={requestSeries}
-              dateFormatter={(d) => formatDate(d)}
-              periodOptions={[
-                { label: tx('Son 7 gün'), points: 7 },
-                { label: tx('Son 14 gün'), points: 14 },
-                { label: tx('Son 30 gün') },
-              ]}
-              period={tx('Son 14 gün')}
-              className="h-full"
-            />
-          </Suspense>
-        </Tile>
-      )}
-
-      {/* --------------------------- Sıradaki talepler --------------------------- */}
-      {canWorkflow && (
-        <Tile i={8} className="md:col-span-6 xl:col-span-4 xl:row-span-2">
-          <Card className="h-full gap-0 overflow-hidden py-0">
-            <div className="flex items-center justify-between border-b border-border px-5 py-4">
-              <div>
-                <p className="flex items-center gap-2 text-[14.5px] font-semibold tracking-tight">
-                  <Zap className="size-4 text-primary" />
-                  {tx('Sıradaki talepler')}
-                </p>
-                <p className="mt-0.5 text-[12.5px] text-muted-foreground">{tx('Süresi geçenler en üstte')}</p>
-              </div>
-              <Link to="/panel/onaylar" className="group inline-flex items-center gap-1 text-[12.5px] font-medium text-primary">
-                {tx('Tümü')}
-                <ArrowUpRight className="size-3.5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
-              </Link>
-            </div>
-            {pending.isPending ? (
-              <RowsSkeleton rows={5} columns={2} />
-            ) : pending.isError ? (
-              <ErrorState
-                message={pending.error instanceof Error ? pending.error.message : undefined}
-                onRetry={() => void pending.refetch()}
+      </>
+    ),
+    overdue: (
+      <>
+        {/* ---------------------------- Süresi geçen ---------------------------- */}
+        {canDecide && (
+          <Tile i={2} className="md:col-span-3 xl:col-span-4">
+            <Link
+              to="/panel/onaylar?durum=gecikmis"
+              className="block h-full rounded-2xl focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:outline-none"
+            >
+              <StatCard
+                label={tx('Süresi geçen')}
+                count={overdueCount}
+                format={formatNumber}
+                icon={overdueCount > 0 ? TriangleAlert : Clock}
+                trend={overdueCount > 0 ? tx('Öncelikli') : tx('Tümü süresinde')}
+                trendDirection={overdueCount > 0 ? 'up' : 'flat'}
+                trendSense="negative"
+                attention={overdueCount > 0}
+                className="h-full"
               />
-            ) : queue.length === 0 ? (
-              <EmptyState title={tx('Kuyruk boş')} detail={tx('Karar bekleyen talep yok.')} />
-            ) : (
-              <ul className="space-y-2 p-3">
-                <AnimatePresence initial>
-                  {queue.map((w, i) => {
-                    const late = w.slaDueAt ? new Date(w.slaDueAt).getTime() < Date.now() : false
-                    return (
-                      <motion.li
-                        key={w.id}
-                        layout
-                        initial={reduced ? false : { opacity: 0, scale: 0.9, y: 24 }}
-                        animate={{ opacity: 1, scale: 1, y: 0 }}
-                        transition={{ type: 'spring', stiffness: 350, damping: 40, delay: 0.5 + i * 0.12 }}
-                      >
-                        <Link
-                          to={`/panel/onaylar/${w.id}`}
-                          className="group flex items-center gap-3 rounded-xl border border-border/70 bg-card/50 p-3 transition-all hover:-translate-y-0.5 hover:border-foreground/20 hover:bg-accent"
-                        >
-                          <span
-                            className={cn(
-                              'flex size-9 shrink-0 items-center justify-center rounded-xl',
-                              late ? 'bg-destructive/15 text-destructive' : 'bg-muted text-foreground/70',
-                            )}
-                          >
-                            {late ? <TriangleAlert className="size-4" /> : <Inbox className="size-4" />}
-                          </span>
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-[13px] font-medium">
-                              {w.subject || workflowTypeLabels[w.type]}
-                            </span>
-                            <span className="mt-0.5 block truncate text-[11.5px] text-muted-foreground">
-                              {workflowTypeLabels[w.type]} · {formatRelativeToNow(w.createdAt)}
-                            </span>
-                          </span>
-                          {w.slaDueAt ? (
-                            <StatusBadge tone={late ? 'danger' : 'neutral'}>
-                              {late ? tx('Gecikti') : formatRelativeToNow(w.slaDueAt)}
-                            </StatusBadge>
-                          ) : (
-                            <WorkflowStatusBadge status={w.status} />
-                          )}
-                        </Link>
-                      </motion.li>
-                    )
-                  })}
-                </AnimatePresence>
-              </ul>
-            )}
-          </Card>
-        </Tile>
-      )}
+            </Link>
+          </Tile>
+        )}
 
-      {/* ----------------------------- Organizasyon ----------------------------- */}
-      {can('organization:view') && (
-        <Tile i={9} className="md:col-span-6 xl:col-span-4">
+      </>
+    ),
+    kpis: (
+      <>
+        {/* --------------------------------- KPI --------------------------------- */}
+        {statsLoading ? (
+          <div className="md:col-span-6 xl:col-span-12">
+            <StatCardsSkeleton count={4} />
+          </div>
+        ) : (
+          kpis.map(({ key, to, ...card }, i) => (
+            <Tile key={key} i={3 + i} className="md:col-span-3 xl:col-span-3">
+              <Link to={to} className="block h-full rounded-2xl focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:outline-none">
+                <StatCard {...card} format={formatNumber} className="h-full" />
+              </Link>
+            </Tile>
+          ))
+        )}
+
+      </>
+    ),
+    chart: (
+      <>
+        {/* ------------------------------- Grafik ------------------------------- */}
+        {canWorkflow && (
+          <Tile i={7} className="md:col-span-6 xl:col-span-8">
+            <Suspense fallback={<div className="surface h-[260px] animate-pulse rounded-2xl" />}>
+              <ProgressMetricCard
+                title={tx('Açılan talepler')}
+                size="sm"
+                accent="violet"
+                deltaLabel={tx('düne göre')}
+                unit="talep"
+                loading={allWorkflows.isPending}
+                data={requestSeries}
+                dateFormatter={(d) => formatDate(d)}
+                periodOptions={[
+                  { label: tx('Son 7 gün'), points: 7 },
+                  { label: tx('Son 14 gün'), points: 14 },
+                  { label: tx('Son 30 gün') },
+                ]}
+                period={tx('Son 14 gün')}
+                className="h-full"
+              />
+            </Suspense>
+          </Tile>
+        )}
+
+      </>
+    ),
+    queue: (
+      <>
+        {/* --------------------------- Sıradaki talepler --------------------------- */}
+        {canWorkflow && (
+          <Tile i={8} className="md:col-span-6 xl:col-span-4 xl:row-span-2">
+            <Card className="h-full gap-0 overflow-hidden py-0">
+              <div className="flex items-center justify-between border-b border-border px-5 py-4">
+                <div>
+                  <p className="flex items-center gap-2 text-[14.5px] font-semibold tracking-tight">
+                    <Zap className="size-4 text-primary" />
+                    {tx('Sıradaki talepler')}
+                  </p>
+                  <p className="mt-0.5 text-[12.5px] text-muted-foreground">{tx('Süresi geçenler en üstte')}</p>
+                </div>
+                <Link to="/panel/onaylar" className="group inline-flex items-center gap-1 text-[12.5px] font-medium text-primary">
+                  {tx('Tümü')}
+                  <ArrowUpRight className="size-3.5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+                </Link>
+              </div>
+              {pending.isPending ? (
+                <RowsSkeleton rows={5} columns={2} />
+              ) : pending.isError ? (
+                <ErrorState
+                  message={pending.error instanceof Error ? pending.error.message : undefined}
+                  onRetry={() => void pending.refetch()}
+                />
+              ) : queue.length === 0 ? (
+                <EmptyState title={tx('Kuyruk boş')} detail={tx('Karar bekleyen talep yok.')} />
+              ) : (
+                <ul className="space-y-2 p-3">
+                  <AnimatePresence initial>
+                    {queue.map((w, i) => {
+                      const late = w.slaDueAt ? new Date(w.slaDueAt).getTime() < Date.now() : false
+                      return (
+                        <motion.li
+                          key={w.id}
+                          layout
+                          initial={reduced ? false : { opacity: 0, scale: 0.9, y: 24 }}
+                          animate={{ opacity: 1, scale: 1, y: 0 }}
+                          transition={{ type: 'spring', stiffness: 350, damping: 40, delay: 0.5 + i * 0.12 }}
+                        >
+                          <Link
+                            to={`/panel/onaylar/${w.id}`}
+                            className="group flex items-center gap-3 rounded-xl border border-border/70 bg-card/50 p-3 transition-all hover:-translate-y-0.5 hover:border-foreground/20 hover:bg-accent"
+                          >
+                            <span
+                              className={cn(
+                                'flex size-9 shrink-0 items-center justify-center rounded-xl',
+                                late ? 'bg-destructive/15 text-destructive' : 'bg-muted text-foreground/70',
+                              )}
+                            >
+                              {late ? <TriangleAlert className="size-4" /> : <Inbox className="size-4" />}
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-[13px] font-medium">
+                                {w.subject || workflowTypeLabels[w.type]}
+                              </span>
+                              <span className="mt-0.5 block truncate text-[11.5px] text-muted-foreground">
+                                {workflowTypeLabels[w.type]} · {formatRelativeToNow(w.createdAt)}
+                              </span>
+                            </span>
+                            {w.slaDueAt ? (
+                              <StatusBadge tone={late ? 'danger' : 'neutral'}>
+                                {late ? tx('Gecikti') : formatRelativeToNow(w.slaDueAt)}
+                              </StatusBadge>
+                            ) : (
+                              <WorkflowStatusBadge status={w.status} />
+                            )}
+                          </Link>
+                        </motion.li>
+                      )
+                    })}
+                  </AnimatePresence>
+                </ul>
+              )}
+            </Card>
+          </Tile>
+        )}
+
+      </>
+    ),
+    organization: (
+      <>
+        {/* ----------------------------- Organizasyon ----------------------------- */}
+        {can('organization:view') && (
+          <Tile i={9} className="md:col-span-6 xl:col-span-4">
+            <Card className="h-full gap-0 overflow-hidden py-0">
+              <div className="border-b border-border px-5 py-4">
+                <p className="text-[14.5px] font-semibold tracking-tight">{tx('Organizasyon')}</p>
+                <p className="mt-0.5 text-[12.5px] text-muted-foreground">{tx('Şirketler ve departmanlar')}</p>
+              </div>
+              {companies.isPending ? (
+                <RowsSkeleton rows={3} columns={2} />
+              ) : companies.isError ? (
+                <ErrorState
+                  message={companies.error instanceof Error ? companies.error.message : undefined}
+                  onRetry={() => void companies.refetch()}
+                />
+              ) : (companies.data?.length ?? 0) === 0 ? (
+                <EmptyState icon={Building2} title={tx('Şirket kaydı yok')} detail={tx('Organizasyon sayfasından ilk şirketi ekleyin.')} />
+              ) : (
+                <ul className="p-2">
+                  {companies.data!.slice(0, 5).map((c) => (
+                    <li key={c.id}>
+                      <Link
+                        to={`/panel/organizasyon/${c.id}`}
+                        className="group flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors hover:bg-accent"
+                      >
+                        <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted text-[13px] font-semibold text-foreground ring-1 ring-border transition-transform group-hover:scale-110">
+                          {c.name.charAt(0).toUpperCase()}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium">{c.name}</span>
+                        <span className="tabular rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+                          {tx('{0} dept.', [formatNumber(c.departments?.length ?? 0)])}</span>
+                        <ChevronRight className="size-4 text-muted-foreground/40 transition-transform group-hover:translate-x-0.5" />
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+          </Tile>
+        )}
+
+      </>
+    ),
+    modules: (
+      <>
+        {/* ---------------------------- Modül fırlatıcı ---------------------------- */}
+        <Tile i={10} className={cn('md:col-span-6', orgVisible ? 'xl:col-span-4' : 'xl:col-span-8')}>
           <Card className="h-full gap-0 overflow-hidden py-0">
             <div className="border-b border-border px-5 py-4">
-              <p className="text-[14.5px] font-semibold tracking-tight">{tx('Organizasyon')}</p>
-              <p className="mt-0.5 text-[12.5px] text-muted-foreground">{tx('Şirketler ve departmanlar')}</p>
+              <p className="text-[14.5px] font-semibold tracking-tight">{tx('Modülleriniz')}</p>
+              <p className="mt-0.5 text-[12.5px] text-muted-foreground">{tx('Yetkinize göre açık olan alanlar')}</p>
             </div>
-            {companies.isPending ? (
-              <RowsSkeleton rows={3} columns={2} />
-            ) : companies.isError ? (
-              <ErrorState
-                message={companies.error instanceof Error ? companies.error.message : undefined}
-                onRetry={() => void companies.refetch()}
-              />
-            ) : (companies.data?.length ?? 0) === 0 ? (
-              <EmptyState icon={Building2} title={tx('Şirket kaydı yok')} detail={tx('Organizasyon sayfasından ilk şirketi ekleyin.')} />
-            ) : (
-              <ul className="p-2">
-                {companies.data!.slice(0, 5).map((c) => (
-                  <li key={c.id}>
-                    <Link
-                      to={`/panel/organizasyon/${c.id}`}
-                      className="group flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors hover:bg-accent"
-                    >
-                      <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted text-[13px] font-semibold text-foreground ring-1 ring-border transition-transform group-hover:scale-110">
-                        {c.name.charAt(0).toUpperCase()}
-                      </span>
-                      <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium">{c.name}</span>
-                      <span className="tabular rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
-                        {tx('{0} dept.', [formatNumber(c.departments?.length ?? 0)])}</span>
-                      <ChevronRight className="size-4 text-muted-foreground/40 transition-transform group-hover:translate-x-0.5" />
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
+            <ul className="grid grid-cols-3 gap-1.5 p-3 sm:grid-cols-4">
+              {modules.slice(0, 12).map((m, i) => (
+                <motion.li
+                  key={m.id}
+                  initial={reduced ? false : { opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ delay: 0.6 + i * 0.03, type: 'spring', stiffness: 400, damping: 25 }}
+                >
+                  <Link
+                    to={m.path!}
+                    className="group flex flex-col items-center gap-1.5 rounded-xl px-1 py-3 text-center transition-colors hover:bg-accent"
+                  >
+                    <span className="flex size-10 items-center justify-center rounded-xl border border-border bg-card text-foreground/70 transition-all duration-300 group-hover:-translate-y-1 group-hover:border-primary/40 group-hover:text-primary">
+                      <m.icon className="size-[18px]" strokeWidth={1.6} />
+                    </span>
+                    <span className="line-clamp-1 text-[11.5px] text-muted-foreground group-hover:text-foreground">{m.title}</span>
+                  </Link>
+                </motion.li>
+              ))}
+            </ul>
           </Card>
         </Tile>
+
+      </>
+    ),
+    pinned: (
+      <>
+        {/* ------------------- Sabitlenmiş raporlar (G4; boşsa görünmez) ------------------- */}
+        {can('performance:manage') && <PinnedReportsWidget className="md:col-span-6 xl:col-span-12" />}
+      </>
+    ),
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex justify-end">
+        <Button size="sm" variant="ghost" className="cursor-pointer text-muted-foreground" onClick={() => setEditing(true)}>
+          <SlidersHorizontal className="size-4" />
+          {tx('Paneli düzenle')}
+        </Button>
+      </div>
+      {visibleWidgets.length === 0 ? (
+        <EmptyState icon={LayoutDashboard} title={tx('Tüm kartlar gizli')} detail={tx('Paneli düzenle düğmesiyle göstermek istediğiniz kartları seçin.')} />
+      ) : (
+        <div className="grid grid-flow-dense grid-cols-1 gap-4 md:grid-cols-6 xl:grid-cols-12">
+          {visibleWidgets.map((id) => <Fragment key={id}>{widgets[id]}</Fragment>)}
+        </div>
       )}
-
-      {/* ---------------------------- Modül fırlatıcı ---------------------------- */}
-      <Tile i={10} className={cn('md:col-span-6', can('organization:view') ? 'xl:col-span-4' : 'xl:col-span-8')}>
-        <Card className="h-full gap-0 overflow-hidden py-0">
-          <div className="border-b border-border px-5 py-4">
-            <p className="text-[14.5px] font-semibold tracking-tight">{tx('Modülleriniz')}</p>
-            <p className="mt-0.5 text-[12.5px] text-muted-foreground">{tx('Yetkinize göre açık olan alanlar')}</p>
-          </div>
-          <ul className="grid grid-cols-3 gap-1.5 p-3 sm:grid-cols-4">
-            {modules.slice(0, 12).map((m, i) => (
-              <motion.li
-                key={m.id}
-                initial={reduced ? false : { opacity: 0, scale: 0.8 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: 0.6 + i * 0.03, type: 'spring', stiffness: 400, damping: 25 }}
-              >
-                <Link
-                  to={m.path!}
-                  className="group flex flex-col items-center gap-1.5 rounded-xl px-1 py-3 text-center transition-colors hover:bg-accent"
-                >
-                  <span className="flex size-10 items-center justify-center rounded-xl border border-border bg-card text-foreground/70 transition-all duration-300 group-hover:-translate-y-1 group-hover:border-primary/40 group-hover:text-primary">
-                    <m.icon className="size-[18px]" strokeWidth={1.6} />
-                  </span>
-                  <span className="line-clamp-1 text-[11.5px] text-muted-foreground group-hover:text-foreground">{m.title}</span>
-                </Link>
-              </motion.li>
-            ))}
-          </ul>
-        </Card>
-      </Tile>
-
-      {/* ------------------- Sabitlenmiş raporlar (G4; boşsa görünmez) ------------------- */}
-      {can('performance:manage') && <PinnedReportsWidget className="md:col-span-6 xl:col-span-12" />}
+      <DashboardCustomizer
+        open={editing}
+        onClose={() => setEditing(false)}
+        available={availableWidgets}
+        layout={layout}
+        defaults={roleDefaults}
+        onSave={(next) => void dashPref.set(next)}
+      />
     </div>
   )
 }

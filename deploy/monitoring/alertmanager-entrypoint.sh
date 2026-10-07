@@ -47,12 +47,27 @@ route:
     - matchers: [severity="critical"]
       receiver: hr360
       repeat_interval: 1h
+    # Bilgi duzeyi (ornek: yedek sunucu disinda degil): haftada bir hatirlatma yeter.
+    - matchers: [severity="info"]
+      receiver: hr360
+      repeat_interval: 168h
 
 inhibit_rules:
   # Servis tamamen kapaliyken ayni servisin yavaslik/hata alarmlari susturulur.
   - source_matchers: [alertname="ServisErisilemiyor"]
     target_matchers: [severity="warning"]
     equal: [service]
+  # Kritik esik asildiginda ayni olcumun uyari duzeyindeki alarmi tekrar iletilmez.
+  - source_matchers: [alertname="Yuksek5xxOraniKritik"]
+    target_matchers: [alertname="Yuksek5xxOrani"]
+    equal: [service]
+  - source_matchers: [alertname="YavasYanitKritik"]
+    target_matchers: [alertname="YavasYanit"]
+    equal: [service]
+  - source_matchers: [alertname="SertifikaBitiyorKritik"]
+    target_matchers: [alertname="SertifikaBitiyor"]
+  - source_matchers: [alertname="YedekCokEski"]
+    target_matchers: [alertname="YedekEski"]
 
 receivers:
   - name: hr360

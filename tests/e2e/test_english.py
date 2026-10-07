@@ -7,6 +7,8 @@ import json
 import os
 import re
 
+import pytest
+
 from conftest import BASE_URL
 from test_smoke import ROUTES
 
@@ -34,10 +36,8 @@ def test_ingilizce_arayuz(session):
     problems, turkish = {}, {}
     for route in ROUTES:
         page.goto(BASE_URL + route, wait_until="domcontentloaded")
-        try:
-            page.wait_for_load_state("networkidle", timeout=10000)
-        except Exception:  # noqa: BLE001 — SSE akışı ağı boşta bırakmaz
-            page.wait_for_timeout(1500)
+        # networkidle karşılığı; SSE akışı yok sayılır (bkz. conftest.Watched.settle).
+        watched.settle()
         errs = [e for e in watched.take() if "events/stream" not in e]
         if errs:
             problems[route] = errs
@@ -52,8 +52,12 @@ def test_ingilizce_arayuz(session):
     assert page.evaluate("document.documentElement.lang") == "tr"
 
 
+# Ayşe'nin sunucudaki dil tercihini kısa süreliğine İngilizce yapar: aynı anda açılan başka bir Ayşe
+# oturumu (boş localStorage) ya da o arada üretilen bildirim İngilizce olur. Paralel aşamada çalışmaz.
+@pytest.mark.serial
 def test_dil_tercihi_sunucuda_saklanir(browser):
-    """Düğmeyle seçilen dil sunucuya yazılır; başka bir tarayıcıda (boş localStorage) aynı dil açılır."""
+    """Düğmeyle seçilen dil sunucuya yazılır; başka bir tarayıcıda (boş localStorage) aynı dil açılır.
+    Bilerek saklanan oturum durumu (storage_state) KULLANILMAZ: her bağlam giriş ekranından açılır."""
     import time
 
     import hr360_login

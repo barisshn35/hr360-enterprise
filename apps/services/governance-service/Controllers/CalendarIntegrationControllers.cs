@@ -79,6 +79,49 @@ public class ProviderConfigsController : AppController
         return Ok(new { c.Provider, c.IsEnabled });
     }
 
+    /// <summary>
+    /// Dalga 12 (madde 91): bağlantı testi (scripts/integration-check.sh de kullanır). Zoom: hesap jetonu alınır.
+    /// Google/Microsoft (kullanıcı adına OAuth): gerçek bir yetki kodu olmadan jeton alınamaz; geçersiz bir kodla
+    /// jeton ucu çağrılır — "invalid_grant" yanıtı istemci kimliği/gizli anahtarın doğru olduğunu, "invalid_client"
+    /// ya da 401 yanlış olduğunu gösterir. Sır yanıtta ve günlükte yer almaz.
+    /// </summary>
+    [HttpPost("{provider}/test")]
+    public async Task<IActionResult> Test(string provider, [FromServices] IHttpClientFactory http, CancellationToken ct)
+    {
+        provider = Known.FirstOrDefault(k => k.Equals(provider, StringComparison.OrdinalIgnoreCase)) ?? "";
+        if (provider == "") return NotFound();
+        var c = await _db.ProviderConfigs.FirstOrDefaultAsync(x => x.Provider == provider, ct);
+        if (c is null) return NotFound(new { message = "Sağlayıcı yapılandırılmamış." });
+        string? error = null;
+        try
+        {
+            if (provider == "Zoom") await _zoom.TokenAsync(c, ct);
+            else
+            {
+                var secret = SecretBox.Unprotect(c.ClientSecretEnc) ?? "";
+                var url = provider == "Google"
+                    ? EnvVar.Or("GOOGLE_OAUTH_BASE", "https://oauth2.googleapis.com").TrimEnd('/') + "/token"
+                    : $"{EnvVar.Or("MS_LOGIN_BASE", "https://login.microsoftonline.com").TrimEnd('/')}/{Uri.EscapeDataString(string.IsNullOrWhiteSpace(c.MsTenant) ? "organizations" : c.MsTenant)}/oauth2/v2.0/token";
+                var client = http.CreateClient();
+                client.Timeout = TimeSpan.FromSeconds(15);
+                using var res = await client.PostAsync(url, new FormUrlEncodedContent(new Dictionary<string, string>
+                {
+                    ["client_id"] = c.ClientId, ["client_secret"] = secret, ["grant_type"] = "authorization_code",
+                    ["code"] = "hr360-connection-test", ["code_verifier"] = new string('x', 43), ["redirect_uri"] = CalendarService.RedirectUri(provider),
+                }), ct);
+                var text = await res.Content.ReadAsStringAsync(ct);
+                if ((int)res.StatusCode == 401 || text.Contains("invalid_client", StringComparison.Ordinal) || text.Contains("unauthorized_client", StringComparison.Ordinal))
+                    error = "İstemci kimliği ya da gizli anahtar sağlayıcı tarafından reddedildi.";
+            }
+        }
+        catch (ProviderApiException ex) { error = ex.Message; }
+        catch (HttpRequestException ex) { error = "Sağlayıcıya ulaşılamadı: " + ex.Message; }
+        catch (TaskCanceledException) when (!ct.IsCancellationRequested) { error = "Sağlayıcı zamanında yanıt vermedi."; }
+        c.LastError = error is null ? null : error.Length > 500 ? error[..500] : error;
+        await _db.SaveChangesAsync(ct);
+        return Ok(new { ok = error is null, message = error ?? "Bağlantı başarılı.", enabled = c.IsEnabled });
+    }
+
     [HttpDelete("{provider}")]
     public async Task<IActionResult> Delete(string provider, CancellationToken ct)
     {

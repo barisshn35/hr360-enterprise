@@ -60,6 +60,43 @@ scrape_configs:
       - targets: [node-exporter:9100]
         labels: { service: host }
 
+  # Dalga 12: TLS sertifikasi bitis tarihi ve gateway erisilebilirligi (blackbox-exporter).
+  # HTTPS kapaliysa tls-cert yoklamasi basarisiz olur (probe_success 0); alarm yalnizca
+  # sertifika okunabildiginde (probe_ssl_earliest_cert_expiry varsa) calisir.
+  - job_name: tls-cert
+    metrics_path: /probe
+    params: { module: [tls_cert] }
+    scrape_interval: 5m
+    static_configs:
+      - targets: [gateway:443]
+        labels: { service: gateway }
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  - job_name: gateway-http
+    metrics_path: /probe
+    params: { module: [http_gateway] }
+    static_configs:
+      - targets: [http://gateway/]
+        labels: { service: gateway }
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  - job_name: blackbox
+    static_configs:
+      - targets: [blackbox-exporter:9115]
+        labels: { service: blackbox-exporter }
+
   - job_name: alertmanager
     static_configs:
       - targets: [alertmanager:9093]

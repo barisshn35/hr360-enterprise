@@ -78,8 +78,9 @@ ok()  { echo "  ok    $*"; }
 bad() { echo "  HATA  $*"; PROBLEMS+=("$*"); }
 finish() {
   if [ "${#PROBLEMS[@]}" -eq 0 ]; then
-    echo "TATBIKAT BASARILI $(date -u +%FT%TZ) $NAME"; exit 0
+    metrics_restore_test drill 1; echo "TATBIKAT BASARILI $(date -u +%FT%TZ) $NAME"; exit 0
   fi
+  metrics_restore_test drill 0
   echo "TATBIKAT BASARISIZ $(date -u +%FT%TZ) $NAME: ${#PROBLEMS[@]} sorun (${PROBLEMS[0]}$([ "${#PROBLEMS[@]}" -gt 1 ] && echo ', ...'))"
   exit 1
 }
@@ -209,6 +210,7 @@ governance_chat_apps IncomingTokenEnc raw
 governance_calendar_connections AccessTokenEnc raw
 governance_calendar_connections RefreshTokenEnc raw
 governance_provider_configs ClientSecretEnc raw
+governance_provisioning_configs CredentialsEnc raw
 governance_ethics_reports ContactEnc raw
 governance_osh_exams NotesEnc raw
 governance_document_requests DocumentEnc raw

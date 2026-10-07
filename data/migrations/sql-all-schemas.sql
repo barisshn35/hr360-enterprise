@@ -4657,3 +4657,213 @@ CREATE UNIQUE INDEX IF NOT EXISTS "UX_learning_career_step_requirements" ON lear
 DO $$ BEGIN
     IF to_regprocedure('hr360_rls_apply_policies()') IS NOT NULL THEN PERFORM hr360_rls_apply_policies(); END IF;
 END $$;
+
+-- ===== 2026-10-25_account_provisioning
+-- Dalga 12 (madde 92): Google Workspace / Microsoft 365 hesap açma (işe giriş) ve askıya alma (ayrılış).
+-- Kurulum düzeyinde ACCOUNT_PROVISIONING_ENABLED=true ile açılır; her istek İK onayından sonra gönderilir,
+-- her adım audit_log'a yazılır. Sağlayıcı sırları (servis hesabı anahtarı / client secret) şifreli (SecretBox).
+-- İdempotent; mevcut veriyi değiştirmez.
+-- Canlıya: docker exec -i hr360-postgres-1 psql -v ON_ERROR_STOP=1 -q -U hr360admin -d hr360_operational < bu_dosya
+
+-- Kiracı başına sağlayıcı ayarı (Provider: Google | Microsoft).
+--   Google   : CredentialsEnc = servis hesabı JSON anahtarı (alan genelinde yetki), AdminSubject = adına işlem yapılan yönetici
+--   Microsoft: ClientId + CredentialsEnc (client secret) + MsTenant (dizin kimliği), uygulama izni User.ReadWrite.All
+CREATE TABLE IF NOT EXISTS governance_provisioning_configs (
+    "Id"             uuid PRIMARY KEY,
+    "TenantSlug"     character varying(64) NOT NULL,
+    "Provider"       character varying(16) NOT NULL,
+    "IsEnabled"      boolean NOT NULL DEFAULT false,
+    "Domain"         character varying(253) NOT NULL,
+    "AutoCreate"     boolean NOT NULL DEFAULT true,
+    "AutoSuspend"    boolean NOT NULL DEFAULT true,
+    "ClientId"       character varying(256) NULL,
+    "CredentialsEnc" text NULL,
+    "AdminSubject"   character varying(320) NULL,
+    "OrgUnit"        character varying(256) NULL,
+    "MsTenant"       character varying(64) NULL,
+    "UsageLocation"  character varying(2) NULL,
+    "LastTestAt"     timestamptz NULL,
+    "LastError"      character varying(500) NULL,
+    "CreatedAt"      timestamptz NOT NULL DEFAULT now(),
+    "UpdatedAt"      timestamptz NOT NULL DEFAULT now(),
+    "UpdatedBy"      character varying(128) NULL
+);
+CREATE INDEX IF NOT EXISTS "IX_governance_provisioning_configs_TenantSlug" ON governance_provisioning_configs ("TenantSlug");
+CREATE UNIQUE INDEX IF NOT EXISTS "UX_governance_provisioning_configs" ON governance_provisioning_configs ("TenantSlug", "Provider");
+
+-- İstek: Action Create | Suspend; Status Pending | Processing | Done | Failed | Rejected; Source Auto | Manual.
+-- Kişisel veri en aza: ad/soyad tutulmaz (çalışan kaydından okunur), yalnızca iş hesabı adresi.
+CREATE TABLE IF NOT EXISTS governance_provisioning_requests (
+    "Id"              uuid PRIMARY KEY,
+    "TenantSlug"      character varying(64) NOT NULL,
+    "EmployeeId"      uuid NOT NULL,
+    "Provider"        character varying(16) NOT NULL,
+    "Action"          character varying(16) NOT NULL,
+    "Status"          character varying(16) NOT NULL DEFAULT 'Pending',
+    "Source"          character varying(16) NOT NULL DEFAULT 'Auto',
+    "AccountEmail"    character varying(320) NOT NULL,
+    "ExternalId"      character varying(128) NULL,
+    "Note"            character varying(500) NULL,
+    "Error"           character varying(500) NULL,
+    "RequestedBy"     character varying(128) NULL,
+    "RequestedByName" character varying(200) NULL,
+    "DecidedBy"       character varying(128) NULL,
+    "DecidedByName"   character varying(200) NULL,
+    "DecidedAt"       timestamptz NULL,
+    "Attempts"        integer NOT NULL DEFAULT 0,
+    "CreatedAt"       timestamptz NOT NULL DEFAULT now(),
+    "CompletedAt"     timestamptz NULL
+);
+CREATE INDEX IF NOT EXISTS "IX_governance_provisioning_requests_TenantSlug" ON governance_provisioning_requests ("TenantSlug", "Status");
+-- Aynı çalışan/sağlayıcı/işlem için tek açık ya da tamamlanmış istek (otomatik tarama idempotent kalır).
+CREATE UNIQUE INDEX IF NOT EXISTS "UX_governance_provisioning_requests_open" ON governance_provisioning_requests
+    ("TenantSlug", "EmployeeId", "Provider", "Action") WHERE "Status" IN ('Pending', 'Processing', 'Done');
+
+-- ===== 2026-10-25_ui_prefs
+-- Dalga 12 (madde 87, 89, 90): kullanıcı başına arayüz tercihleri.
+--  87) liste ekranlarında kayıtlı filtre/görünümler   (anahtar: views:<tablo>)
+--  89) kişiselleştirilebilir ana panel (widget sırası/gizli)  (anahtar: dashboard)
+--  90) "Yenilikler" paneli: en son görülen sürüm notu        (anahtar: whatsnew)
+-- Sahibi notification-service (kişi tercihlerinin sahibi). Kişi, Keycloak kimliğiyle ("UserSub")
+-- tutulur: çalışan kaydı olmayan hesaplar (ör. İK yöneticisi) de tercih saklayabilir.
+-- KVKK: yalnızca kişinin kendi arayüz ayarı; başkasına ait kişisel veri yazılmaz (değer 16 KB ile sınırlı).
+-- İdempotent; mevcut veriyi değiştirmez.
+-- Canlıya: docker exec -i hr360-postgres-1 psql -v ON_ERROR_STOP=1 -q -U hr360admin -d hr360_operational < bu_dosya
+
+CREATE TABLE IF NOT EXISTS notification_ui_prefs (
+    "Id"         uuid PRIMARY KEY,
+    "TenantSlug" character varying(64) NOT NULL,
+    "UserSub"    character varying(64) NOT NULL,
+    "Key"        character varying(100) NOT NULL,
+    "Value"      jsonb NOT NULL,
+    "UpdatedAt"  timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "UX_notification_ui_prefs_Owner_Key" ON notification_ui_prefs ("TenantSlug", "UserSub", "Key");
+
+-- Yeni tablolara kiracı yalıtım politikası (RLS isteğe bağlı; açık değilse davranış değişmez).
+DO $$ BEGIN
+    IF to_regprocedure('hr360_rls_apply_policies()') IS NOT NULL THEN PERFORM hr360_rls_apply_policies(); END IF;
+END $$;
+
+-- ===== 2026-10-25_webhook_retry_api_key_scopes
+-- ===================================================================
+-- Dalga 12 (madde 93-94): webhook teslimat yeniden denemesi ve kapsamlı API anahtarları
+--  * governance_webhook_deliveries: olay kimliği, deneme sırası, sonraki deneme zamanı
+--    (üstel geri çekilme), yeniden deneme durumu ve elle yeniden gönderim izi.
+--    Yük (payload) teslimat tablosunda TUTULMAZ: yeniden gönderimde governance_events
+--    (30 gün saklanır, kişisel alanları ayıklanmış kopya) kullanılır — veri en aza indirme.
+--  * governance_api_keys: son kullanma, döndürme (rotate) zinciri, toplam kullanım,
+--    son kullanılan yetki.
+--  * governance_api_key_usage: anahtar × gün × yetki başına istek/ret sayacı
+--    (IP veya istek içeriği tutulmaz). 180 günden eskiler bakım işinde silinir.
+-- İdempotent.
+-- ===================================================================
+
+ALTER TABLE governance_webhook_deliveries ADD COLUMN IF NOT EXISTS "EventId" uuid;
+ALTER TABLE governance_webhook_deliveries ADD COLUMN IF NOT EXISTS "Attempt" integer NOT NULL DEFAULT 1;
+ALTER TABLE governance_webhook_deliveries ADD COLUMN IF NOT EXISTS "NextRetryAt" timestamptz;
+-- null: başarılı/yeniden denenmeyecek · pending: sırada · retrying: işleniyor · retried: yeni deneme yapıldı
+-- gave_up: deneme hakkı bitti/uç kapalı · resent: elle yeniden gönderildi
+ALTER TABLE governance_webhook_deliveries ADD COLUMN IF NOT EXISTS "RetryState" character varying(16);
+ALTER TABLE governance_webhook_deliveries ADD COLUMN IF NOT EXISTS "Manual" boolean NOT NULL DEFAULT false;
+ALTER TABLE governance_webhook_deliveries ADD COLUMN IF NOT EXISTS "ParentDeliveryId" uuid;
+ALTER TABLE governance_webhook_deliveries ADD COLUMN IF NOT EXISTS "TriggeredByName" text;
+
+CREATE INDEX IF NOT EXISTS "IX_governance_webhook_deliveries_Retry"
+    ON governance_webhook_deliveries ("NextRetryAt") WHERE "RetryState" = 'pending';
+CREATE INDEX IF NOT EXISTS "IX_governance_webhook_deliveries_Failed"
+    ON governance_webhook_deliveries ("TenantSlug", "OccurredAt" DESC) WHERE "Error" IS NOT NULL;
+
+ALTER TABLE governance_api_keys ADD COLUMN IF NOT EXISTS "ExpiresAt" timestamptz;
+ALTER TABLE governance_api_keys ADD COLUMN IF NOT EXISTS "RotatedFromId" uuid;
+ALTER TABLE governance_api_keys ADD COLUMN IF NOT EXISTS "UsageCount" bigint NOT NULL DEFAULT 0;
+ALTER TABLE governance_api_keys ADD COLUMN IF NOT EXISTS "LastUsedScope" character varying(64);
+
+CREATE TABLE IF NOT EXISTS governance_api_key_usage (
+    "Id" uuid PRIMARY KEY,
+    "TenantSlug" character varying(64) NOT NULL,
+    "KeyId" uuid NOT NULL,
+    "Day" date NOT NULL,
+    "Scope" character varying(64) NOT NULL,
+    "Count" integer NOT NULL DEFAULT 0,
+    "DeniedCount" integer NOT NULL DEFAULT 0,
+    "UpdatedAt" timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "UX_governance_api_key_usage" ON governance_api_key_usage ("KeyId", "Day", "Scope");
+CREATE INDEX IF NOT EXISTS "IX_governance_api_key_usage_Tenant" ON governance_api_key_usage ("TenantSlug", "Day");
+
+-- ===== 2026-10-25_indeksler
+-- Yavaş sorgu incelemesi (dalga 12, madde 97): EF sorguları ve ham SQL okunarak bulunan,
+-- sık çalışan filtrelerde eksik olan indeksler. Hepsi idempotent (IF NOT EXISTS).
+--
+-- Neden CONCURRENTLY değil: bu dosya sql-all-schemas.sql içinde (tek dosya, ON_ERROR_STOP) ve
+-- docker-entrypoint-initdb'de de çalışır; CREATE INDEX CONCURRENTLY hata durumunda INVALID indeks
+-- bırakır ve "IF NOT EXISTS" bunu bir dahaki sefere atlar. Tablolar bugün küçük (en büyüğü
+-- audit_log); düz CREATE INDEX kısa süreli yazma kilidi alır (okuma serbest). Büyük bir canlı
+-- kurulumda (audit_log milyonlarca satır) aynı ifadeler CONCURRENTLY ile elle, tek tek
+-- (transaction dışında) çalıştırılabilir — bkz. docs/runbooks/yavas-sorgu.md.
+
+-- ---- İş akışı: onay kutusu ve görünürlük filtresi
+-- WorkflowsController.VisibleTo: Steps.Any(ApproverEmployeeId = me OR DelegatedToEmployeeId = me);
+-- vekalet atama/geri alma: ApproverEmployeeId = X AND Decision = 'Pending'.
+CREATE INDEX IF NOT EXISTS "IX_workflow_approval_steps_Approver_Decision"
+    ON workflow_approval_steps ("ApproverEmployeeId", "Decision");
+CREATE INDEX IF NOT EXISTS "IX_workflow_approval_steps_DelegatedTo"
+    ON workflow_approval_steps ("DelegatedToEmployeeId") WHERE "DelegatedToEmployeeId" IS NOT NULL;
+-- Talep listesi: RequesterEmployeeId = me / Status = x, CreatedAt DESC sıralı.
+CREATE INDEX IF NOT EXISTS "IX_workflow_requests_Tenant_Requester_Created"
+    ON workflow_requests ("TenantSlug", "RequesterEmployeeId", "CreatedAt" DESC);
+CREATE INDEX IF NOT EXISTS "IX_workflow_requests_Tenant_Status_Created"
+    ON workflow_requests ("TenantSlug", "Status", "CreatedAt" DESC);
+-- SLA tırmandırma işi (WorkflowJobs, tüm kiracılar): Status = 'Pending' AND SlaDueAt < now.
+CREATE INDEX IF NOT EXISTS "IX_workflow_requests_pending_sla"
+    ON workflow_requests ("SlaDueAt") WHERE "Status" = 'Pending' AND "SlaDueAt" IS NOT NULL;
+-- Vekaletlerim: FromEmployeeId = me OR ToEmployeeId = me (From zaten indeksli).
+CREATE INDEX IF NOT EXISTS "IX_workflow_delegations_Tenant_To"
+    ON workflow_delegations ("TenantSlug", "ToEmployeeId");
+
+-- ---- İş akışı olay tüketicileri: karar gelince kaynağı WorkflowRequestId ile bulur
+CREATE INDEX IF NOT EXISTS "IX_leave_requests_WorkflowRequestId"
+    ON leave_requests ("WorkflowRequestId") WHERE "WorkflowRequestId" IS NOT NULL;
+CREATE INDEX IF NOT EXISTS "IX_expense_claims_WorkflowRequestId"
+    ON expense_claims ("WorkflowRequestId") WHERE "WorkflowRequestId" IS NOT NULL;
+CREATE INDEX IF NOT EXISTS "IX_expense_travel_requests_WorkflowRequestId"
+    ON expense_travel_requests ("WorkflowRequestId") WHERE "WorkflowRequestId" IS NOT NULL;
+
+-- Bildirim kutusu (RecipientEmployeeId = me ORDER BY CreatedAt DESC) için ayrı indeks EKLENMEDİ:
+-- mevcut ("RecipientEmployeeId","Status") kişi başına birkaç yüz satırı zaten daraltıyor
+-- (600 bin satırlık denemede 0,71 ms → 0,66 ms; yazma maliyetine değmez).
+
+-- ---- Denetim kaydı (en hızlı büyüyen tablo)
+-- Denetim araması userId filtresi; bordro kapanışındaki IBAN değişikliği kontrolü (UserId = x).
+CREATE INDEX IF NOT EXISTS "IX_audit_log_Tenant_User_Occurred"
+    ON audit_log ("TenantSlug", "UserId", "OccurredAt" DESC);
+-- KVKK veri paketi erişim dökümü ve hassas erişim raporu: TenantSlug + EntityId (EntityType'sız).
+-- Mevcut IX_audit_log_Entity EntityType ile başlıyor; PG18 skip scan az sayıda EntityType'ta
+-- onu kullanabiliyor ama canlıda ~190 farklı EntityType var.
+CREATE INDEX IF NOT EXISTS "IX_audit_log_Tenant_Entity_Occurred"
+    ON audit_log ("TenantSlug", "EntityId", "OccurredAt" DESC);
+
+-- ---- Yönetici ekip sorguları (izin/masraf): JOIN organization_departments ... "HeadEmployeeId" = me
+CREATE INDEX IF NOT EXISTS "IX_organization_departments_Tenant_Head"
+    ON organization_departments ("TenantSlug", "HeadEmployeeId") WHERE "HeadEmployeeId" IS NOT NULL;
+
+-- ---- Kişi bazlı listeler
+CREATE INDEX IF NOT EXISTS "IX_learning_enrollments_Tenant_Employee"
+    ON learning_enrollments ("TenantSlug", "EmployeeId");
+CREATE INDEX IF NOT EXISTS "IX_expense_hr_cases_Tenant_Employee"
+    ON expense_hr_cases ("TenantSlug", "EmployeeId");
+CREATE INDEX IF NOT EXISTS "IX_expense_hr_cases_Tenant_Assigned"
+    ON expense_hr_cases ("TenantSlug", "AssignedToEmployeeId") WHERE "AssignedToEmployeeId" IS NOT NULL;
+CREATE INDEX IF NOT EXISTS "IX_onboarding_tasks_Assignee"
+    ON onboarding_tasks ("AssigneeEmployeeId") WHERE "AssigneeEmployeeId" IS NOT NULL;
+CREATE INDEX IF NOT EXISTS "IX_engagement_kudos_Tenant_To_Created"
+    ON engagement_kudos ("TenantSlug", "ToEmployeeId", "CreatedAt" DESC);
+CREATE INDEX IF NOT EXISTS "IX_engagement_one_on_ones_Manager"
+    ON engagement_one_on_ones ("TenantSlug", "ManagerUserId");
+CREATE INDEX IF NOT EXISTS "IX_engagement_one_on_ones_EmployeeUser"
+    ON engagement_one_on_ones ("TenantSlug", "EmployeeUserId");
+-- Takas isteklerim: RequesterEmployeeId = me OR TargetEmployeeId = me (mevcut bileşik indeks
+-- Requester ile başladığı için Target tarafını karşılamıyor).
+CREATE INDEX IF NOT EXISTS "IX_timeshift_swap_requests_Target"
+    ON timeshift_swap_requests ("TargetEmployeeId");

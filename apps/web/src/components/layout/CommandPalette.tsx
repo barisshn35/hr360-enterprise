@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { BookOpenText, Building2, CornerDownLeft, Inbox, User } from 'lucide-react'
+import { BookOpenText, Building2, CalendarPlus, CornerDownLeft, Inbox, LayoutDashboard, Megaphone, ReceiptText, Send, User, UserSearch } from 'lucide-react'
 import {
   OmniCommandPalette,
   type OmniItem,
@@ -19,6 +19,8 @@ import { overviewItem, type NavItemData } from './nav-config'
 import { useNavGroups } from './use-nav'
 import { tx } from '@/lib/i18n'
 import { normalizeSearch } from '@/lib/format'
+import { directoryApi, directoryKey } from '@/api/directory'
+import { OPEN_WHATS_NEW_EVENT } from '@/features/whats-new/WhatsNewPanel'
 
 /**
  * ⌘K paleti — dört kaynağı tek arama kutusunda birleştirir:
@@ -63,6 +65,46 @@ export function CommandPalette({
         onAction: () => navigate(i.path!),
       }))
 
+    /* --- Dalga 12: eylemler (yetkiye göre). Sayfalar ?yeni=1 ile yeni kayıt penceresini açar. --- */
+    const actions: OmniItem[] = [
+      can('leave:create') && {
+        id: 'act:leave', label: tx('İzin talebi oluştur'), subtitle: tx('Yeni izin talebi penceresi'),
+        icon: <CalendarPlus className="size-4" strokeWidth={1.5} />, keywords: ['izin', 'tatil', 'leave'],
+        onAction: () => navigate('/panel/izin?yeni=1'),
+      },
+      can('expense:create') && {
+        id: 'act:expense', label: tx('Masraf ekle'), subtitle: tx('Yeni masraf talebi (taslak)'),
+        icon: <ReceiptText className="size-4" strokeWidth={1.5} />, keywords: ['masraf', 'fiş', 'harcama', 'expense'],
+        onAction: () => navigate('/panel/masraf?yeni=1'),
+      },
+      can('workflow:create') && {
+        id: 'act:workflow', label: tx('Onay talebi aç'), subtitle: tx('Pozisyon, satın alma ve diğer talepler'),
+        icon: <Send className="size-4" strokeWidth={1.5} />, keywords: ['talep', 'onay', 'request'],
+        onAction: () => navigate('/panel/onaylar?yeni=1'),
+      },
+      {
+        id: 'act:dashboard', label: tx('Ana paneli düzenle'), subtitle: tx('Kartları göster, gizle, sırala'),
+        icon: <LayoutDashboard className="size-4" strokeWidth={1.5} />, keywords: ['panel', 'widget', 'kart', 'dashboard'],
+        onAction: () => navigate('/panel?duzenle=1'),
+      },
+      {
+        id: 'act:whatsnew', label: tx('Yenilikler'), subtitle: tx('Son sürümlerde neler değişti'),
+        icon: <Megaphone className="size-4" strokeWidth={1.5} />, keywords: ['yeni', 'sürüm', 'changelog'],
+        onAction: () => window.dispatchEvent(new CustomEvent(OPEN_WHATS_NEW_EVENT)),
+      },
+    ].filter(Boolean).map((a) => ({ ...(a as OmniItem), groupId: 'actions' }))
+    list.push({
+      id: 'actions',
+      label: tx('Eylemler'),
+      fetch: (q) => {
+        const needle = normalizeSearch(q)
+        return needle
+          ? actions.filter((a) => normalizeSearch(`${a.label} ${(a.keywords ?? []).join(' ')}`).includes(needle))
+          : actions
+      },
+      emptyHint: tx('Eşleşen eylem yok.'),
+    })
+
     list.push({
       id: 'go',
       label: tx('Git'),
@@ -102,6 +144,35 @@ export function CommandPalette({
               subtitle: e.email,
               icon: <User className="size-4" strokeWidth={1.5} />,
               onAction: () => navigate(`/panel/calisanlar/${e.id}`),
+            }))
+        },
+      })
+    }
+
+    /* ---- Kişi ara (çalışan listesi yetkisi olmayanlar): dizinden ad, yetenek dizininde açılır ---- */
+    if (!can('employee:viewAll') && goItems.some((i) => i.id === 'go:directory')) {
+      list.push({
+        id: 'people',
+        label: tx('Kişiler'),
+        minQuery: 2,
+        emptyHint: tx('Eşleşen kişi yok.'),
+        fetch: async (q) => {
+          const people = await qc.fetchQuery({
+            queryKey: directoryKey,
+            queryFn: ({ signal }) => directoryApi.list(signal),
+            staleTime: 10 * 60_000,
+          })
+          const needle = normalizeSearch(q)
+          return people
+            .filter((p) => normalizeSearch(p.fullName).includes(needle))
+            .slice(0, 8)
+            .map<OmniItem>((p) => ({
+              id: `person:${p.id}`,
+              label: p.fullName,
+              groupId: 'people',
+              subtitle: tx('Yetenek dizininde göster'),
+              icon: <UserSearch className="size-4" strokeWidth={1.5} />,
+              onAction: () => navigate(`/panel/yetenek-dizini?ara=${encodeURIComponent(p.fullName)}`),
             }))
         },
       })
@@ -199,7 +270,7 @@ export function CommandPalette({
       onOpenChange={onOpenChange}
       sources={sources}
       storageKey="hr360.omni.recents"
-      placeholder={tx('Çalışan, şirket, talep, politika ara veya bir modüle git…')}
+      placeholder={tx('Eylem, kişi, talep, politika ara veya bir sayfaya git…')}
       renderFooter={(active) => (
         <div className="flex items-center justify-between px-3 py-2 text-[11px] text-muted-foreground">
           <span>{tx('↑ ↓ gezin · Esc kapat')}</span>

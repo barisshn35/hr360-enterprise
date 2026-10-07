@@ -316,6 +316,7 @@ export function CasesPage() {
         onRowClick={(c) => navigate(`/panel/ik-vakalari/${c.id}`)}
         searchPlaceholder={tx('Konu, kategori veya kişi ara')}
         exportFileName="ik-vakalari"
+        viewKey="hr-cases"
         pageSize={12}
         emptyTitle={tx('Vaka yok')}
         emptyDetail={tx('Bu filtreye uyan vaka bulunmuyor.')}

@@ -236,8 +236,31 @@ export interface Webhook {
   failureCount: number
   createdAt: string
 }
-export interface WebhookDelivery { id: string; eventType: string; statusCode: number | null; error: string | null; durationMs: number; occurredAt: string }
-export interface ApiKeyRow { id: string; name: string; prefix: string; scopes: string[]; createdByName: string | null; createdAt: string; lastUsedAt: string | null; revokedAt: string | null; active: boolean }
+export type WebhookRetryState = 'pending' | 'retrying' | 'retried' | 'gave_up' | 'resent' | null
+export interface WebhookDelivery {
+  id: string; eventType: string; statusCode: number | null; error: string | null; durationMs: number; occurredAt: string
+  eventId?: string | null; attempt?: number; nextRetryAt?: string | null; retryState?: WebhookRetryState; manual?: boolean; triggeredByName?: string | null
+}
+/** Dalga 12: kiracının tüm teslimatları (hata ekranı). */
+export interface WebhookDeliveryRow extends WebhookDelivery {
+  webhookId: string; webhookName: string | null; webhookUrl: string | null; webhookEnabled: boolean; canResend: boolean
+}
+export interface WebhookDeliveryList {
+  items: WebhookDeliveryRow[]
+  summary: { total24h: number; failed24h: number; pendingRetries: number; gaveUp7d: number }
+  retry: { maxAttempts: number; scheduleSeconds: number[] }
+}
+export interface ApiKeyRow {
+  id: string; name: string; prefix: string; scopes: string[]; createdByName: string | null; createdAt: string; lastUsedAt: string | null; revokedAt: string | null; active: boolean
+  expiresAt?: string | null; rotatedFromId?: string | null; usageCount?: number; lastUsedScope?: string | null; last30?: number; denied30?: number
+  status?: 'active' | 'revoked' | 'expired'; expiresSoon?: boolean
+}
+export interface ApiKeyUsage {
+  id: string; days: number; total: number; denied: number
+  byDay: Array<{ day: string; count: number; denied: number }>
+  byScope: Array<{ scope: string; count: number; denied: number }>
+  lastUsedAt: string | null; lastUsedScope: string | null; usageCount: number
+}
 export interface Integration {
   id: string
   kind: 'Slack' | 'Teams'
@@ -701,6 +724,13 @@ export const governanceApi = {
   pingWebhook: (id: string) => apiFetch<{ lastStatus: number | null; ok: boolean }>(`${BASE}/webhooks/${id}/ping`, { method: 'POST' }),
   rotateWebhookSecret: (id: string) => apiFetch<{ secret: string }>(`${BASE}/webhooks/${id}/rotate-secret`, { method: 'POST' }),
   webhookDeliveries: (id: string, signal?: AbortSignal) => apiFetch<WebhookDelivery[]>(`${BASE}/webhooks/${id}/deliveries`, { signal }),
+  allWebhookDeliveries: (params: { state?: string; webhookId?: string; eventType?: string }, signal?: AbortSignal) => {
+    const q = new URLSearchParams(Object.entries(params).filter(([, v]) => !!v) as [string, string][]).toString()
+    return apiFetch<WebhookDeliveryList>(`${BASE}/webhooks/deliveries${q ? `?${q}` : ''}`, { signal })
+  },
+  resendWebhookDelivery: (id: string) =>
+    apiFetch<{ id: string; statusCode: number | null; error: string | null; attempt: number; retryState: WebhookRetryState; nextRetryAt: string | null; ok: boolean }>(`${BASE}/webhooks/deliveries/${id}/resend`, { method: 'POST' }),
+  cancelWebhookRetry: (id: string) => apiFetch<{ id: string; retryState: string }>(`${BASE}/webhooks/deliveries/${id}/cancel-retry`, { method: 'POST' }),
   createTestReceiver: () => apiFetch<{ id: string; token: string }>(`${BASE}/webhooks/test-receiver`, { method: 'POST' }),
   webhookInbox: (token: string, signal?: AbortSignal) =>
     apiFetch<Array<{ receivedAt: string; event: string | null; signatureValid: boolean | null; body: string }>>(`${BASE}/webhooks/inbox/${token}`, { signal }),
@@ -708,8 +738,11 @@ export const governanceApi = {
   /* API anahtarı */
   apiKeys: (signal?: AbortSignal) => apiFetch<ApiKeyRow[]>(`${BASE}/api-keys`, { signal }),
   apiScopes: (signal?: AbortSignal) => apiFetch<string[]>(`${BASE}/api-keys/scopes`, { signal }),
-  createApiKey: (name: string, scopes: string[]) =>
-    apiFetch<{ id: string; name: string; prefix: string; scopes: string[]; key: string }>(`${BASE}/api-keys`, { method: 'POST', body: { name, scopes } }),
+  createApiKey: (name: string, scopes: string[], expiresInDays?: number | null) =>
+    apiFetch<{ id: string; name: string; prefix: string; scopes: string[]; expiresAt: string | null; key: string }>(`${BASE}/api-keys`, { method: 'POST', body: { name, scopes, expiresInDays: expiresInDays ?? null } }),
+  rotateApiKey: (id: string, graceHours: number) =>
+    apiFetch<{ id: string; name: string; prefix: string; scopes: string[]; expiresAt: string | null; key: string; oldKeyValidUntil: string | null }>(`${BASE}/api-keys/${id}/rotate`, { method: 'POST', body: { graceHours } }),
+  apiKeyUsage: (id: string, days = 30, signal?: AbortSignal) => apiFetch<ApiKeyUsage>(`${BASE}/api-keys/${id}/usage?days=${days}`, { signal }),
   revokeApiKey: (id: string) => apiFetch<void>(`${BASE}/api-keys/${id}`, { method: 'DELETE' }),
 
   /* Slack / Teams */

@@ -45,6 +45,9 @@ builder.Services.AddSingleton<GovernanceService.Infrastructure.Calendar.GoogleCa
 builder.Services.AddSingleton<GovernanceService.Infrastructure.Calendar.MicrosoftCalendar>();
 builder.Services.AddSingleton<GovernanceService.Infrastructure.Calendar.ZoomApi>();
 builder.Services.AddSingleton<GovernanceService.Infrastructure.Calendar.CalendarService>();
+// Dalga 12 (madde 92): Google Workspace / Microsoft 365 hesap açma/kapatma (ACCOUNT_PROVISIONING_ENABLED).
+builder.Services.AddSingleton<GovernanceService.Infrastructure.Provisioning.GoogleDirectoryProvisioner>();
+builder.Services.AddSingleton<GovernanceService.Infrastructure.Provisioning.MicrosoftDirectoryProvisioner>();
 builder.Services.AddSingleton<GovernanceService.Infrastructure.Ai.LlmClient>();
 builder.Services.AddScoped<GovernanceService.Infrastructure.Ai.AiGateway>();
 builder.Services.AddScoped<GovernanceService.Infrastructure.HrAssistant>();
@@ -61,6 +64,7 @@ GovernanceService.Security.EncColumn[] encryptedColumns =
     new("governance_calendar_connections", "AccessTokenEnc", GovernanceService.Security.EncKind.Text),
     new("governance_calendar_connections", "RefreshTokenEnc", GovernanceService.Security.EncKind.Text),
     new("governance_provider_configs", "ClientSecretEnc", GovernanceService.Security.EncKind.Text),
+    new("governance_provisioning_configs", "CredentialsEnc", GovernanceService.Security.EncKind.Text),
     new("governance_chat_context", "TextEnc", GovernanceService.Security.EncKind.Text),
     new("governance_chat_exit_progress", "AnswersEnc", GovernanceService.Security.EncKind.Text),
     new("governance_chat_pending", "PayloadEnc", GovernanceService.Security.EncKind.Text),
@@ -73,8 +77,10 @@ builder.Services.AddHostedService(sp => new GovernanceService.Security.KeyRotati
     sp.GetRequiredService<ILogger<GovernanceService.Security.KeyRotationJob>>()));
 builder.Services.AddHostedService<GovernanceService.Infrastructure.EventConsumer>();
 builder.Services.AddHostedService<GovernanceService.Infrastructure.Housekeeping>();
+builder.Services.AddHostedService<GovernanceService.Infrastructure.WebhookRetryWorker>();
 builder.Services.AddHostedService<GovernanceService.Infrastructure.SiemExporter>();
 builder.Services.AddHostedService<GovernanceService.Infrastructure.AuditChainGuard>();
+builder.Services.AddHostedService<GovernanceService.Infrastructure.Provisioning.ProvisioningScanner>();
 builder.Services.AddHostedService<GovernanceService.Infrastructure.Chat.ChatOutboxWorker>();
 builder.Services.AddHostedService<GovernanceService.Infrastructure.Chat.ChatDigestWorker>();
 builder.Services.AddHostedService<GovernanceService.Controllers.SavedReportWorker>();

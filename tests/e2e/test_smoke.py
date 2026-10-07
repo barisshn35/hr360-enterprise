@@ -4,6 +4,8 @@ import pytest
 
 from conftest import BASE_URL, users
 
+# Rol başına açılan ekranlar (test_english.py de aynı listeyi İngilizce arayüzde gezer).
+# Yeni bir ekran eklerken adresi (sorgu parametresi dahil) bu listeye eklemek yeterlidir.
 ROUTES = [
     "/panel", "/panel/bordro", "/panel/bordrolarim", "/panel/giris-cikis", "/panel/giris-cikis/yonetim", "/panel/belge-talebi", "/panel/seyahat", "/panel/yan-haklar", "/panel/zam-donemi", "/panel/kvkk?sekme=ihlal", "/panel/kvkk?sekme=alan", "/panel/duyurular", "/panel/belgeler-kutuphanesi", "/panel/etik", "/panel/isg", "/panel/disiplin", "/panel/mulakatlarim", "/panel/yetkinlikler", "/panel/performans/dokuz-kutu", "/panel/vardiya-takasi", "/panel/zimmet/tara", "/panel/ayarlar/ozel-alanlar", "/panel/model-karti", "/panel/imzalarim", "/panel/profil?sekme=bildirimler",
     "/panel/onay-akislari", "/panel/profil?sekme=guvenlik", "/panel/bildirimler", "/panel/calisanlar", "/panel/dokumanlar", "/panel/egitim", "/panel/ik-vakalari",
@@ -15,7 +17,7 @@ ROUTES = [
     "/panel/mentorluk", "/panel/ic-ilanlar", "/panel/birebir", "/panel/ekip-sagligi", "/panel/offboarding",
     "/panel/ardil-planlama", "/panel/org-senaryolari", "/panel/analitik", "/panel/rapor-asistani", "/panel/zaman-makinesi",
     "/panel/olay-radari", "/panel/ai-araclari", "/panel/denetim", "/panel/kvkk", "/panel/belge-sablonlari",
-    "/panel/kural-motoru", "/panel/entegrasyonlar", "/panel/entegrasyonlar?sekme=takvim", "/panel/guvenlik",
+    "/panel/kural-motoru", "/panel/entegrasyonlar", "/panel/entegrasyonlar?sekme=takvim", "/panel/entegrasyonlar?sekme=teslimat", "/panel/entegrasyonlar?sekme=hesap", "/panel/guvenlik",
     "/panel/ice-disa-aktarim", "/panel/abonelik", "/panel/organizasyon/sunum", "/panel/api-belgeleri",
     "/panel/veri-koruma", "/panel/veri-koruma?sekme=uyarilar", "/panel/veri-koruma?sekme=iz-kodu", "/panel/veri-koruma?sekme=ayarlar", "/panel/erisim-gozden-gecirme",
     "/panel/aday-oner", "/panel/ise-alim/oneriler", "/panel/ise-alim/analiz", "/panel/performans/kalibrasyon", "/panel/performans/okr",
@@ -29,10 +31,8 @@ def test_tum_ekranlar_hatasiz(session, who):
     problems = {}
     for route in ROUTES:
         page.goto(BASE_URL + route, wait_until="domcontentloaded")
-        try:
-            page.wait_for_load_state("networkidle", timeout=10000)
-        except Exception:  # noqa: BLE001 — SSE akışı (olay radarı) ağı boşta bırakmaz
-            page.wait_for_timeout(1500)
+        # networkidle karşılığı; SSE akışı (olay radarı) yok sayılır (bkz. conftest.Watched.settle).
+        watched.settle()
         errs = [e for e in watched.take() if "events/stream" not in e]
         if errs:
             problems[route] = errs

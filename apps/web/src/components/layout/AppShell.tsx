@@ -13,6 +13,7 @@ import { CommandPalette } from './CommandPalette'
 import { KeyboardShortcuts } from './KeyboardShortcuts'
 import { RouteAnnouncer } from './RouteAnnouncer'
 import { ConsentBanner } from './ConsentBanner'
+import { InstallPrompt } from './InstallPrompt'
 import { locate } from './nav-config'
 import { tx } from '@/lib/i18n'
 import { useServerLanguage } from '@/lib/languageSync'
@@ -94,6 +95,7 @@ export function AppShell() {
         )}
 
         <ConsentBanner />
+        <InstallPrompt />
 
         <main id="main-content" tabIndex={-1} className="mx-auto w-full outline-none max-w-[1480px] min-w-0 flex-1 px-4 pt-7 pb-32 sm:px-6 lg:px-8 lg:pt-9">
           {/* Yalnızca giriş animasyonu: çıkış animasyonu (AnimatePresence) çıkan sayfa yeni adresi okuyup

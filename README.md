@@ -181,14 +181,19 @@ ve sertifikalar (`deploy/letsencrypt/`, kendi sertifikanızı kullanıyorsanız
 
 `scripts/monitoring.sh enable` isteğe bağlı `monitoring` profilini açar:
 Prometheus (15 .NET servisi, ML servisi, PostgreSQL ve sunucu metrikleri),
-Loki + Promtail (tüm konteyner logları, 7 gün) ve Grafana. Grafana
+Loki + Promtail (tüm konteyner logları, 7 gün) ve Grafana. Saklama süreleri ve disk
+tavanları (`PROMETHEUS_RETENTION[_SIZE]`, `LOKI_RETENTION`): `docs/runbooks/izleme-saklama.md`;
+yavaş sorgu incelemesi (isteğe bağlı pg_stat_statements): `docs/runbooks/yavas-sorgu.md`. Grafana
 `<adres>/grafana/` altında açılır (kullanıcı `admin`, parola
 `scripts/monitoring.sh password`). "HR360 — Servis sağlığı" panosu hazır gelir:
 ayakta olan servisler, istek hızı, 5xx oranı, p95 süre, en yavaş uçlar,
-bellek/CPU, PostgreSQL bağlantı ve boyutu, hata logları ve log araması.
+bellek/CPU, PostgreSQL bağlantı ve boyutu, son yedek, geri yükleme testi, TLS sertifikası,
+Kafka outbox birikimi, etkin alarmlar, hata logları ve log araması.
 
 Alarm kuralları (`deploy/monitoring/alerts.yml`: servis erişilemiyor, 5xx oranı,
-yavaş yanıt, bellek, disk, PostgreSQL bağlantı sayısı) Alertmanager üzerinden
+yavaş yanıt, bellek, disk (doluluk, 24 saatlik tahmin, inode), PostgreSQL, Kafka outbox
+birikimi, TLS sertifikası bitişi, yedek yaşı ve geri yükleme testi, denetim zinciri; tam liste
+ve ne yapılacağı: `docs/runbooks/izleme-alarmlari.md`) Alertmanager üzerinden
 e-posta, Slack ve Microsoft Teams'e gider; düzelince "düzeldi" mesajı gelir:
 
 ```bash
@@ -666,7 +671,10 @@ docs/
   kurulum/                İşletim sistemlerine göre kurulum adımları
   runbooks/               HTTPS, Keycloak paneli erişimi, Keycloak veritabanı geçişi
 .github/workflows/ci.yml   CI: arayüz derlemesi, 15 .NET servisi, ML testleri, compose/nginx/Prometheus/
-                           shellcheck/SQL doğrulaması; main'de Docker imajı derlemesi
+                           shellcheck/SQL doğrulaması, alarm eşik testleri; main'de Docker imajı derlemesi
+.github/workflows/fresh-install.yml
+                           Haftalık/elle (ağır, 30-60 dk): install.sh --yes ile tam yığın, seed_demo.py iki kez
+                           (tekrar çalıştırılabilirlik), tests/support/fresh_install_check.py, günlük taraması
 docker-compose.yml         Tek-sunucu servis tanımı
 install.sh                 Kurulum script'i
 .env.example                Kullanılan ortam değişkenlerinin referans listesi

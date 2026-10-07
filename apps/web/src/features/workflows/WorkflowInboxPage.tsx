@@ -25,14 +25,19 @@ import {
 } from '@/api/types'
 import { formatDate, formatRelativeToNow } from '@/lib/format'
 import { NewWorkflowModal } from './NewWorkflowModal'
+import { useNewParam } from '@/lib/useNewParam'
 import { tx } from '@/lib/i18n'
 
 type TabKey = WorkflowStatus | 'all' | 'gecikmis'
+
+/** Toplu kararın kalem sonucu (sunucu iletileri apiFetch'te arayüz diline çevrilir). */
+interface BulkOutcome { workflowId: string; label: string; ok: boolean; error: string | null }
 
 export function WorkflowInboxPage() {
   const { can } = useAuth()
   const navigate = useNavigate()
   const [modalOpen, setModalOpen] = useState(false)
+  useNewParam(can('workflow:create'), () => setModalOpen(true))
   const [delegating, setDelegating] = useState(false)
   const me = useMyEmployeeId()
   const [tab, setTab] = useTabParam<TabKey>('durum', 'Pending')
@@ -72,12 +77,33 @@ export function WorkflowInboxPage() {
     return step && me.employeeId && w.requesterEmployeeId !== me.employeeId
       && (step.approverEmployeeId === me.employeeId || step.delegatedToEmployeeId === me.employeeId) ? step : undefined
   }
-  const bulk = useAction(({ ids, approve, comment }: { ids: string[]; approve: boolean; comment?: string }) => {
-    const items = rows.filter((w) => ids.includes(w.id)).flatMap((w) => { const st = myStep(w); return st ? [{ workflowId: w.id, stepId: st.id }] : [] })
-    return workflowApi.bulkDecide(items, approve ? 'Approved' : 'Rejected', comment)
+  const [bulkResult, setBulkResult] = useState<{ done: number; approve: boolean; results: BulkOutcome[] } | null>(null)
+  // Toplu karar (en fazla 50'lik parçalar): sırası bana gelmemiş seçimler istemcide atlanır; sunucu her
+  // kalemi tekil karar ucuyla AYNI kurallarla (kendi talebi, onaycı/vekil, sıralı onay) yeniden denetler.
+  const bulk = useAction(async ({ ids, approve, comment }: { ids: string[]; approve: boolean; comment?: string }) => {
+    const chosen = rows.filter((w) => ids.includes(w.id))
+    const label = (w: Workflow) => w.subject || workflowTypeLabels[w.type]
+    const results: BulkOutcome[] = []
+    const items: Array<{ workflowId: string; stepId: string }> = []
+    for (const w of chosen) {
+      const st = myStep(w)
+      if (st) items.push({ workflowId: w.id, stepId: st.id })
+      else results.push({ workflowId: w.id, label: label(w), ok: false, error: tx('Sırası size gelmemiş ya da onaycısı değilsiniz') })
+    }
+    let done = 0
+    for (let i = 0; i < items.length; i += 50) {
+      const r = await workflowApi.bulkDecide(items.slice(i, i + 50), approve ? 'Approved' : 'Rejected', comment)
+      done += r.done
+      for (const it of r.results) {
+        const w = chosen.find((x) => x.id === it.workflowId)
+        results.push({ workflowId: it.workflowId, label: w ? label(w) : it.workflowId.slice(0, 8), ok: it.ok, error: it.error })
+      }
+    }
+    return { done, approve, results }
   }, {
     success: (r) => tx('{0} talep karara bağlandı', [r.done]) + (r.results.length > r.done ? ' · ' + tx('{0} talep atlandı', [r.results.length - r.done]) : ''),
     invalidate: [['workflows']],
+    onDone: (r) => setBulkResult(r),
   })
   // Toplu karar geri alınamaz: onayda kaç talep olduğu sorulur; rette (tekil retteki gibi)
   // talep sahiplerinin göreceği gerekçe zorunludur.
@@ -217,6 +243,7 @@ export function WorkflowInboxPage() {
         onRowClick={(w) => navigate(`/panel/onaylar/${w.id}`)}
         searchPlaceholder={tx('Talep veya tür ara')}
         exportFileName="onay-talepleri"
+        viewKey="workflow-inbox"
         pageSize={12}
         selectable={can('workflow:decide') && (tab === 'Pending' || isOverdueTab)}
         bulkActions={(ids) => {
@@ -269,6 +296,27 @@ export function WorkflowInboxPage() {
             error={rejectError}
           />
         </form>
+      </Modal>
+
+      {/* Dalga 12: toplu kararın kalem kalem sonucu. */}
+      <Modal
+        open={bulkResult !== null}
+        onClose={() => setBulkResult(null)}
+        title={bulkResult?.approve ? tx('Toplu onay sonucu') : tx('Toplu ret sonucu')}
+        note={tx('{0} talep karara bağlandı, {1} talep atlandı.', [bulkResult?.done ?? 0, (bulkResult?.results.length ?? 0) - (bulkResult?.done ?? 0)])}
+        footer={<Button onClick={() => setBulkResult(null)}>{tx('Tamam')}</Button>}
+      >
+        <ul className="max-h-[50vh] divide-y divide-border overflow-y-auto text-[13px]">
+          {bulkResult?.results.map((r) => (
+            <li key={r.workflowId} className="flex items-start gap-2 py-2">
+              {r.ok ? <Check className="mt-0.5 size-4 shrink-0 text-primary" /> : <X className="mt-0.5 size-4 shrink-0 text-destructive" />}
+              <span className="min-w-0 flex-1">
+                <button type="button" className="block max-w-full cursor-pointer truncate text-left font-medium hover:underline" onClick={() => navigate(`/panel/onaylar/${r.workflowId}`)}>{r.label}</button>
+                <span className="block text-[12px] text-muted-foreground">{r.ok ? (bulkResult.approve ? tx('Onaylandı') : tx('Reddedildi')) : r.error}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
       </Modal>
 
       <NewWorkflowModal open={modalOpen} onClose={() => setModalOpen(false)} />

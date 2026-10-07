@@ -120,6 +120,12 @@ public static class RetentionPlans
             "\"TenantSlug\" = $1 AND (\"SubjectEmployeeId\" = ANY($2) OR \"RecipientEmployeeId\" = ANY($2))"),
         Upd("UPDATE recruitment_referrals SET", "Çalışan önerisi (öneren notu, yakınlık; ödül kararı kalır)", "\"Note\" = NULL, \"Relationship\" = NULL, \"RewardNote\" = NULL",
             "\"TenantSlug\" = $1 AND \"ReferrerEmployeeId\" = ANY($2) AND (\"Note\" IS NOT NULL OR \"Relationship\" IS NOT NULL OR \"RewardNote\" IS NOT NULL)"),
+        // Dalga 12: Google/Microsoft hesap açma-kapama istekleri. İşlem kaydı (sağlayıcı, eylem, durum, karar) kanıt
+        // olarak kalır; hesap e-postası, harici kimlik, not ve hata metni silinir. Bekleyen istekler (hesap kapatma
+        // henüz yapılmadı) bozulmasın diye yalnızca sonuçlanmış istekler anonimleştirilir.
+        Upd("UPDATE governance_provisioning_requests SET", "Hesap açma/kapama isteği (hesap e-postası, harici kimlik, not)",
+            "\"AccountEmail\" = NULL, \"ExternalId\" = NULL, \"Note\" = NULL, \"Error\" = NULL",
+            "\"TenantSlug\" = $1 AND \"EmployeeId\" = ANY($2) AND \"Status\" NOT IN ('Pending', 'Processing') AND (\"AccountEmail\" IS NOT NULL OR \"ExternalId\" IS NOT NULL OR \"Note\" IS NOT NULL OR \"Error\" IS NOT NULL)"),
         Upd("UPDATE learning_certifications SET", "Sertifika kimlik numarası", "\"CredentialId\" = NULL",
             "\"TenantSlug\" = $1 AND \"EmployeeId\" = ANY($2) AND \"CredentialId\" IS NOT NULL"),
         Upd("UPDATE learning_scorm_runtime SET", "SCORM oturum verisi", "\"SuspendData\" = NULL, \"LessonLocation\" = NULL",

@@ -53,3 +53,7 @@ deploy/monitoring/tracing.env
 # scripts/security-scan.sh zap raporlari
 security-reports/
 secrets/
+
+# Izleme metrik dosyalari (scripts/backup.sh, restore-drill.sh; node-exporter textfile)
+deploy/monitoring/textfile/*
+!deploy/monitoring/textfile/README.md

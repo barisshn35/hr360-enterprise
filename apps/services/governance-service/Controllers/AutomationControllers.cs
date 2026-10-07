@@ -246,6 +246,82 @@ public class WebhooksController : AppController
     public async Task<IActionResult> Deliveries(Guid id, CancellationToken ct) =>
         Ok(await _db.WebhookDeliveries.AsNoTracking().Where(d => d.WebhookId == id).OrderByDescending(d => d.OccurredAt).Take(50).ToListAsync(ct));
 
+    /* ------------------------------------------------------------ Dalga 12 (madde 93): teslimat hataları ekranı */
+
+    /// <summary>
+    /// Kiracının tüm webhook teslimatları: state = failed (varsayılan) | pending (sıradaki denemeler) |
+    /// gave_up | all. Yük (payload) dönmez; yeniden gönderilebilirlik olay kaydının (30 gün) varlığına bağlıdır.
+    /// </summary>
+    [HttpGet("deliveries")]
+    public async Task<IActionResult> AllDeliveries([FromQuery] string? state, [FromQuery] Guid? webhookId, [FromQuery] string? eventType,
+        [FromQuery] int? take, CancellationToken ct)
+    {
+        var q = _db.WebhookDeliveries.AsNoTracking();
+        q = (state ?? "failed") switch
+        {
+            "pending" => q.Where(d => d.RetryState == "pending" || d.RetryState == "retrying"),
+            "gave_up" => q.Where(d => d.RetryState == "gave_up"),
+            "all" => q,
+            _ => q.Where(d => d.Error != null),
+        };
+        if (webhookId is { } wid) q = q.Where(d => d.WebhookId == wid);
+        if (!string.IsNullOrWhiteSpace(eventType)) q = q.Where(d => d.EventType == eventType);
+        var rows = await q.OrderByDescending(d => d.OccurredAt).Take(Math.Clamp(take ?? 100, 1, 200)).ToListAsync(ct);
+        var hookIds = rows.Select(r => r.WebhookId).Distinct().ToList();
+        var hooks = await _db.Webhooks.AsNoTracking().Where(w => hookIds.Contains(w.Id)).ToDictionaryAsync(w => w.Id, w => new { w.Name, w.Url, w.IsEnabled }, ct);
+        var eventIds = rows.Where(r => r.EventId != null).Select(r => r.EventId!.Value).Distinct().ToList();
+        var alive = (await _db.Events.AsNoTracking().Where(e => eventIds.Contains(e.Id) && e.TenantSlug == Tenant).Select(e => e.Id).ToListAsync(ct)).ToHashSet();
+
+        var since = DateTime.UtcNow.AddHours(-24);
+        var last24 = await _db.WebhookDeliveries.AsNoTracking().Where(d => d.OccurredAt >= since)
+            .GroupBy(_ => 1).Select(g => new { total = g.Count(), failed = g.Count(d => d.Error != null) }).FirstOrDefaultAsync(ct);
+        var pending = await _db.WebhookDeliveries.AsNoTracking().CountAsync(d => d.RetryState == "pending" || d.RetryState == "retrying", ct);
+        var gaveUp = await _db.WebhookDeliveries.AsNoTracking().CountAsync(d => d.RetryState == "gave_up" && d.OccurredAt >= since.AddDays(-6), ct);
+        return Ok(new
+        {
+            items = rows.Select(d => new
+            {
+                d.Id, d.WebhookId, webhookName = hooks.TryGetValue(d.WebhookId, out var h) ? h.Name : null,
+                webhookUrl = h?.Url, webhookEnabled = h?.IsEnabled ?? false,
+                d.EventId, d.EventType, d.StatusCode, d.Error, d.DurationMs, d.OccurredAt, d.Attempt, d.NextRetryAt, d.RetryState, d.Manual, d.TriggeredByName,
+                canResend = h is not null && (d.EventType == "ping" || (d.EventId is { } ev && alive.Contains(ev))) && d.Error != "transfer_basis_required",
+            }),
+            summary = new { total24h = last24?.total ?? 0, failed24h = last24?.failed ?? 0, pendingRetries = pending, gaveUp7d = gaveUp },
+            retry = new { maxAttempts = WebhookRetry.MaxAttempts, scheduleSeconds = WebhookRetry.ScheduleSeconds() },
+        });
+    }
+
+    /// <summary>Elle yeniden gönderim: aynı olay kimliğiyle (alıcı tekilleştirebilir) yeni deneme. Denetim kaydına yazılır.</summary>
+    [HttpPost("deliveries/{deliveryId:guid}/resend")]
+    public async Task<IActionResult> Resend(Guid deliveryId, CancellationToken ct)
+    {
+        var d = await _db.WebhookDeliveries.FirstOrDefaultAsync(x => x.Id == deliveryId, ct);
+        if (d is null) return NotFound();
+        if (d.Error == "transfer_basis_required")
+            return Conflict(new { message = L("Bu hedefe KVKK aktarım dayanağı olmadan gönderim yapılamaz.", "Transfer basis is required for this target."), code = "transfer_basis_required" });
+        var (sent, err) = await WebhookRetry.ResendAsync(_db, Db, _dispatcher, d, true, Me.Name, ct);
+        if (err == "hook_missing") return NotFound(new { message = L("Webhook silinmiş.", "Webhook was deleted."), code = err });
+        if (err == "event_expired")
+            return Conflict(new { message = L("Olay kaydı saklama süresi (30 gün) dolduğu için yeniden gönderilemez.", "The event record has expired (30 days) and cannot be resent."), code = err });
+        await _db.SaveChangesAsync(ct);
+        await ComplianceAudit.WriteAsync(Db, Tenant, "WebhookDelivery", deliveryId.ToString(), "Resent",
+            new { webhookId = d.WebhookId, d.EventType, newDeliveryId = sent!.Id, sent.StatusCode, attempt = sent.Attempt }, Me.UserId, Me.Name, ct);
+        return Ok(new { sent.Id, sent.StatusCode, sent.Error, sent.Attempt, sent.RetryState, sent.NextRetryAt, ok = sent.Error is null });
+    }
+
+    /// <summary>Sıradaki otomatik denemeyi durdurur (ör. alıcı bakımdayken).</summary>
+    [HttpPost("deliveries/{deliveryId:guid}/cancel-retry")]
+    public async Task<IActionResult> CancelRetry(Guid deliveryId, CancellationToken ct)
+    {
+        var d = await _db.WebhookDeliveries.FirstOrDefaultAsync(x => x.Id == deliveryId, ct);
+        if (d is null) return NotFound();
+        if (d.RetryState != "pending") return Conflict(new { message = L("Sırada bekleyen deneme yok.", "No pending retry."), code = "not_pending" });
+        d.RetryState = "gave_up";
+        d.NextRetryAt = null;
+        await _db.SaveChangesAsync(ct);
+        return Ok(new { d.Id, d.RetryState });
+    }
+
     /// <summary>Test alıcısı: imzayı doğrular ve son 50 teslimatı bellekte tutar.</summary>
     [HttpPost("inbox/{token}")]
     [AllowAnonymous]
@@ -279,36 +355,117 @@ public class WebhooksController : AppController
 [RequiresPlan("Enterprise")]
 public class ApiKeysController : AppController
 {
-    /// <summary>hooks:write — Zapier/n8n REST hook aboneliği (POST/DELETE /hooks).</summary>
-    public static readonly string[] AllScopes = { "employees:read", "departments:read", "leaves:read", "events:read", "hooks:write" };
+    /// <summary>
+    /// hooks:write — Zapier/n8n REST hook aboneliği (POST/DELETE /hooks). Dalga 12: "read-only"
+    /// tüm okuma yetkilerini kapsar (bkz. <see cref="ApiScopes"/>).
+    /// </summary>
+    public static readonly string[] AllScopes = ApiScopes.All;
     private readonly GovernanceDbContext _db;
     public ApiKeysController(GovernanceDbContext db) => _db = db;
 
     public static string Hash(string key) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key))).ToLowerInvariant();
 
+    private static (string Prefix, string Key) NewKey()
+    {
+        var prefix = Convert.ToHexString(RandomNumberGenerator.GetBytes(4)).ToLowerInvariant();
+        var secret = Convert.ToBase64String(RandomNumberGenerator.GetBytes(24)).Replace('+', 'x').Replace('/', 'y').TrimEnd('=');
+        return (prefix, $"hr360_{prefix}_{secret}");
+    }
+
+    private static object View(ApiKey k, DateTime now, long last30 = 0, long denied30 = 0) => new
+    {
+        k.Id, k.Name, k.Prefix, k.Scopes, k.CreatedByName, k.CreatedAt, k.LastUsedAt, k.RevokedAt, k.ExpiresAt, k.RotatedFromId,
+        k.UsageCount, k.LastUsedScope, last30, denied30,
+        status = ApiScopes.Inactive(k.RevokedAt, k.ExpiresAt, now) ?? "active",
+        active = ApiScopes.Inactive(k.RevokedAt, k.ExpiresAt, now) is null,
+        expiresSoon = k.RevokedAt is null && k.ExpiresAt is { } e && e > now && e <= now.AddDays(14),
+    };
+
     [HttpGet]
-    public async Task<IActionResult> List(CancellationToken ct) =>
-        Ok((await _db.ApiKeys.AsNoTracking().OrderByDescending(k => k.CreatedAt).ToListAsync(ct))
-            .Select(k => new { k.Id, k.Name, k.Prefix, k.Scopes, k.CreatedByName, k.CreatedAt, k.LastUsedAt, k.RevokedAt, active = k.RevokedAt == null }));
+    public async Task<IActionResult> List(CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        var keys = await _db.ApiKeys.AsNoTracking().OrderByDescending(k => k.CreatedAt).ToListAsync(ct);
+        // Son 30 günün toplamları tek sorguda (anahtar başına istek / ret).
+        var usage = (await Db.QueryAsync("""
+            SELECT "KeyId", sum("Count")::bigint, sum("DeniedCount")::bigint FROM governance_api_key_usage
+            WHERE "TenantSlug" = $1 AND "Day" >= current_date - 29 GROUP BY "KeyId"
+            """, r => (Id: r.GetGuid(0), Count: r.GetInt64(1), Denied: r.GetInt64(2)), ct, Tenant)).ToDictionary(x => x.Id);
+        return Ok(keys.Select(k => usage.TryGetValue(k.Id, out var u) ? View(k, now, u.Count, u.Denied) : View(k, now)));
+    }
 
     [HttpGet("scopes")]
     public IActionResult Scopes() => Ok(AllScopes);
 
-    public record KeyInput(string Name, List<string> Scopes);
+    public record KeyInput(string Name, List<string> Scopes, int? ExpiresInDays = null);
 
     [HttpPost]
     public async Task<IActionResult> Create(KeyInput body, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(body.Name)) return BadRequest(new { message = "Ad zorunlu." });
-        var scopes = body.Scopes.Where(AllScopes.Contains).Distinct().ToList();
+        var scopes = ApiScopes.Normalize(body.Scopes);
         if (scopes.Count == 0) return BadRequest(new { message = "En az bir yetki seçin." });
-        var prefix = Convert.ToHexString(RandomNumberGenerator.GetBytes(4)).ToLowerInvariant();
-        var secret = Convert.ToBase64String(RandomNumberGenerator.GetBytes(24)).Replace('+', 'x').Replace('/', 'y').TrimEnd('=');
-        var key = $"hr360_{prefix}_{secret}";
-        var k = new ApiKey { Name = body.Name.Trim(), Prefix = prefix, KeyHash = Hash(key), Scopes = scopes, CreatedByName = Me.Name };
+        var (prefix, key) = NewKey();
+        var k = new ApiKey
+        {
+            Name = body.Name.Trim(), Prefix = prefix, KeyHash = Hash(key), Scopes = scopes, CreatedByName = Me.Name,
+            ExpiresAt = ApiScopes.ExpiryFromDays(body.ExpiresInDays, DateTime.UtcNow),
+        };
         _db.ApiKeys.Add(k);
         await _db.SaveChangesAsync(ct);
-        return Ok(new { k.Id, k.Name, k.Prefix, k.Scopes, key });
+        return Ok(new { k.Id, k.Name, k.Prefix, k.Scopes, k.ExpiresAt, key });
+    }
+
+    public record RotateInput(int? GraceHours, int? ExpiresInDays);
+
+    /// <summary>
+    /// Döndürme: aynı ad ve yetkilerle yeni anahtar üretir (yalnızca bu yanıtta görünür). Eski anahtar
+    /// geçiş süresi (0-72 sa, varsayılan 24) sonunda kendiliğinden geçersizleşir; 0 ise hemen iptal edilir.
+    /// Eski anahtarla açılmış REST hook abonelikleri yeni anahtara taşınır.
+    /// </summary>
+    [HttpPost("{id:guid}/rotate")]
+    public async Task<IActionResult> Rotate(Guid id, [FromBody] RotateInput? body, CancellationToken ct)
+    {
+        var old = await _db.ApiKeys.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (old is null) return NotFound();
+        var now = DateTime.UtcNow;
+        if (ApiScopes.Inactive(old.RevokedAt, old.ExpiresAt, now) is { } st)
+            return Conflict(new { message = L("İptal edilmiş ya da süresi dolmuş anahtar döndürülemez.", "A revoked or expired key cannot be rotated."), code = "key_" + st });
+        var grace = Math.Clamp(body?.GraceHours ?? 24, 0, 72);
+        var (prefix, key) = NewKey();
+        // Yeni anahtarın süresi: istenen gün ya da eski anahtarın toplam ömrü kadar (süresizse süresiz).
+        var lifetime = old.ExpiresAt is { } e ? e - old.CreatedAt : (TimeSpan?)null;
+        var k = new ApiKey
+        {
+            Name = old.Name, Prefix = prefix, KeyHash = Hash(key), Scopes = ApiScopes.Normalize(old.Scopes), CreatedByName = Me.Name, RotatedFromId = old.Id,
+            ExpiresAt = body?.ExpiresInDays is not null ? ApiScopes.ExpiryFromDays(body.ExpiresInDays, now) : lifetime is { } l ? now.Add(l) : null,
+        };
+        _db.ApiKeys.Add(k);
+        if (grace == 0) old.RevokedAt = now;
+        else old.ExpiresAt = old.ExpiresAt is { } oe && oe < now.AddHours(grace) ? oe : now.AddHours(grace);
+        await _db.SaveChangesAsync(ct);
+        await Db.ExecuteAsync("UPDATE governance_webhooks SET \"ApiKeyId\" = $1 WHERE \"TenantSlug\" = $2 AND \"ApiKeyId\" = $3", ct, k.Id, Tenant, old.Id);
+        return Ok(new { k.Id, k.Name, k.Prefix, k.Scopes, k.ExpiresAt, key, oldKeyValidUntil = grace == 0 ? now : old.ExpiresAt });
+    }
+
+    /// <summary>Kullanım istatistiği: gün ve yetki bazında istek / ret sayıları (en çok 90 gün).</summary>
+    [HttpGet("{id:guid}/usage")]
+    public async Task<IActionResult> Usage(Guid id, [FromQuery] int? days, CancellationToken ct)
+    {
+        var k = await _db.ApiKeys.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (k is null) return NotFound();
+        var n = Math.Clamp(days ?? 30, 1, 90);
+        var rows = await Db.QueryAsync("""
+            SELECT "Day", "Scope", "Count", "DeniedCount" FROM governance_api_key_usage
+            WHERE "TenantSlug" = $1 AND "KeyId" = $2 AND "Day" >= current_date - $3::int ORDER BY "Day", "Scope"
+            """, r => new { day = r.GetFieldValue<DateOnly>(0), scope = r.GetString(1), count = r.GetInt32(2), denied = r.GetInt32(3) }, ct, Tenant, id, n - 1);
+        return Ok(new
+        {
+            id = k.Id, days = n, total = rows.Sum(r => (long)r.count), denied = rows.Sum(r => (long)r.denied),
+            byDay = rows.GroupBy(r => r.day).Select(g => new { day = g.Key, count = g.Sum(x => x.count), denied = g.Sum(x => x.denied) }),
+            byScope = rows.GroupBy(r => r.scope).Select(g => new { scope = g.Key, count = g.Sum(x => x.count), denied = g.Sum(x => x.denied) }).OrderByDescending(x => x.count),
+            k.LastUsedAt, k.LastUsedScope, k.UsageCount,
+        });
     }
 
     [HttpDelete("{id:guid}")]
@@ -345,14 +502,20 @@ public class PublicApiController : ControllerBase
         if (string.IsNullOrEmpty(key)) return (null, Unauthorized(new { message = "X-Api-Key başlığı gerekli." }));
         var hash = ApiKeysController.Hash(key);
         var row = (await _sql.QueryAsync("""
-            SELECT k."Id", k."TenantSlug", k."Scopes", t."Plan", t."Status" FROM governance_api_keys k
+            SELECT k."Id", k."TenantSlug", k."Scopes", t."Plan", t."Status", k."ExpiresAt" FROM governance_api_keys k
             JOIN platform_tenants t ON t."Slug" = k."TenantSlug"
             WHERE k."KeyHash" = $1 AND k."RevokedAt" IS NULL
-            """, r => (Id: r.GetGuid(0), Tenant: r.GetString(1), Scopes: r.GetFieldValue<string[]>(2), Plan: r.GetString(3), Status: r.GetString(4)), ct, hash)).FirstOrDefault();
+            """, r => (Id: r.GetGuid(0), Tenant: r.GetString(1), Scopes: r.GetFieldValue<string[]>(2), Plan: r.GetString(3), Status: r.GetString(4), ExpiresAt: r.Ts(5)), ct, hash)).FirstOrDefault();
         if (row.Tenant is null) return (null, Unauthorized(new { message = "Geçersiz veya iptal edilmiş anahtar." }));
+        if (ApiScopes.Inactive(null, row.ExpiresAt, DateTime.UtcNow) is not null)
+            return (null, Unauthorized(new { message = "Anahtarın süresi dolmuş.", code = "key_expired" }));
         if (row.Status != "Active") return (null, StatusCode(403, new { message = "Şirket hesabı aktif değil." }));
         if (FeatureFlags.PlanEnforcement && RequiresPlanAttribute.Rank(row.Plan) < 3) return (null, StatusCode(402, new { message = "Açık API Enterprise planında kullanılabilir." }));
-        if (!row.Scopes.Contains(scope)) return (null, StatusCode(403, new { message = $"Anahtarın '{scope}' yetkisi yok." }));
+        if (!ApiScopes.Allows(row.Scopes, scope))
+        {
+            await RecordUsageAsync(row.Id, row.Tenant, scope, false, ct);
+            return (null, StatusCode(403, new { message = $"Anahtarın '{scope}' yetkisi yok.", code = "scope_denied" }));
+        }
 
         // Dakikalık sınır: Redis varsa tüm servis kopyaları ortak sayar, yoksa bu kopyanın belleği.
         var now = DateTime.UtcNow;
@@ -360,10 +523,34 @@ public class PublicApiController : ControllerBase
             ?? Rate.AddOrUpdate(hash, _ => (1, now), (_, v) => now - v.Window > TimeSpan.FromMinutes(1) ? (1, now) : (v.Count + 1, v.Window)).Count;
         Response.Headers["X-RateLimit-Limit"] = "120";
         Response.Headers["X-RateLimit-Remaining"] = Math.Max(0, 120 - count).ToString();
-        if (count > 120) return (null, StatusCode(429, new { message = "Dakikalık istek sınırı aşıldı." }));
-        await _sql.ExecuteAsync("UPDATE governance_api_keys SET \"LastUsedAt\" = now() WHERE \"Id\" = $1", ct, row.Id);
+        if (count > 120)
+        {
+            await RecordUsageAsync(row.Id, row.Tenant, scope, false, ct);
+            return (null, StatusCode(429, new { message = "Dakikalık istek sınırı aşıldı." }));
+        }
+        await RecordUsageAsync(row.Id, row.Tenant, scope, true, ct);
         _keyId = row.Id;
         return (row.Tenant, null);
+    }
+
+    /// <summary>
+    /// Dalga 12: anahtar × gün × yetki sayacı ve son kullanım. Kullanım istatistiği yazılamazsa
+    /// (ör. tablo henüz yok) istek yine de yanıtlanır.
+    /// </summary>
+    private async Task RecordUsageAsync(Guid keyId, string tenant, string scope, bool allowed, CancellationToken ct)
+    {
+        try
+        {
+            if (allowed)
+                await _sql.ExecuteAsync("UPDATE governance_api_keys SET \"LastUsedAt\" = now(), \"UsageCount\" = \"UsageCount\" + 1, \"LastUsedScope\" = $2 WHERE \"Id\" = $1", ct, keyId, scope);
+            await _sql.ExecuteAsync("""
+                INSERT INTO governance_api_key_usage ("Id","TenantSlug","KeyId","Day","Scope","Count","DeniedCount","UpdatedAt")
+                VALUES ($1,$2,$3,current_date,$4,$5,$6,now())
+                ON CONFLICT ("KeyId","Day","Scope") DO UPDATE SET "Count" = governance_api_key_usage."Count" + EXCLUDED."Count",
+                    "DeniedCount" = governance_api_key_usage."DeniedCount" + EXCLUDED."DeniedCount", "UpdatedAt" = now()
+                """, ct, Guid.NewGuid(), tenant, keyId, scope, allowed ? 1 : 0, allowed ? 0 : 1);
+        }
+        catch (Npgsql.PostgresException) { /* istatistik en iyi çaba */ }
     }
 
     /* ------------------------------------------------------------------ G29 REST hook (Zapier / n8n) */
@@ -535,7 +722,7 @@ public class PublicApiController : ControllerBase
     public IActionResult Spec() => Ok(new
     {
         openapi = "3.0.3",
-        info = new { title = "HR360 Açık API", version = "1.0", description = "X-Api-Key başlığı ile kimlik doğrulama. Salt okunur." },
+        info = new { title = "HR360 Açık API", version = "1.0", description = "X-Api-Key başlığı ile kimlik doğrulama. Salt okunur. \"read-only\" yetkisi tüm okuma uçlarını kapsar (hooks:write hariç). Süresi dolmuş anahtar 401 (code: key_expired), yetkisiz uç 403 (code: scope_denied) döner." },
         servers = new[] { new { url = "/api/governance/public/v1" } },
         components = new { securitySchemes = new { apiKey = new { type = "apiKey", @in = "header", name = "X-Api-Key" } } },
         security = new[] { new Dictionary<string, string[]> { ["apiKey"] = Array.Empty<string>() } },

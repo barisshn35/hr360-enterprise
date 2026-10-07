@@ -11,14 +11,10 @@ bağlamı bypass_csp ile açılır ve axe page.add_script_tag(content=...) ile e
 import json
 import os
 import re
-import sys
 
 import pytest
 
-from conftest import BASE_URL
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "support"))
-import hr360_login  # noqa: E402
+from conftest import BASE_URL, logged_in_page
 
 AXE_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "apps", "web", "node_modules", "axe-core", "axe.min.js")
 AXE = open(AXE_PATH, encoding="utf-8").read() if os.path.exists(AXE_PATH) else None
@@ -65,6 +61,14 @@ def settle(page):
         pass
     # İskelet yükleyiciler gitsin, giriş animasyonları bitsin.
     page.wait_for_timeout(1200)
+    # Yük altında (paralel çalışma) 1,2 sn yetmeyebilir: biten (sonsuz olmayan) CSS/WAAPI animasyonu
+    # kalmayana kadar en çok 5 sn daha beklenir; yarım kalmış bir solma renk kontrastını bozar.
+    for _ in range(25):
+        running = page.evaluate("""() => (document.getAnimations ? document.getAnimations() : [])
+            .filter(a => a.playState === 'running' && a.effect && a.effect.getTiming().iterations !== Infinity).length""")
+        if not running:
+            break
+        page.wait_for_timeout(200)
 
 
 def axe_violations(page):
@@ -104,19 +108,16 @@ def fmt(problems):
 
 
 @pytest.fixture
-def a11y_session(browser):
+def a11y_session(browser, auth_state):
     """Oturum açmış sayfa; CSP atlanır (axe betiği enjekte edilebilsin), hareket azaltılmış."""
     contexts = []
 
     def make(who):
         if AXE is None:
             pytest.skip(f"axe-core yok: {AXE_PATH} (cd apps/web && npm install)")
-        ctx = browser.new_context(viewport={"width": 1440, "height": 900}, locale="tr-TR", bypass_csp=True,
-                                  reduced_motion="reduce")
+        # Saklanan oturumla açılır (conftest.logged_in_page); giriş ekranı her testte tekrarlanmaz.
+        ctx, page, _watched = logged_in_page(browser, auth_state, who, bypass_csp=True, reduced_motion="reduce")
         contexts.append(ctx)
-        page = ctx.new_page()
-        hr360_login.login_page(page, who)
-        page.wait_for_load_state("networkidle")
         return page
 
     yield make

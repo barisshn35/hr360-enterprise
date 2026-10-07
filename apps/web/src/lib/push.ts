@@ -3,11 +3,13 @@
  *
  * KVKK — cihazda en az veri:
  *  - Push içeriği kişisel veri taşımaz; ayrıntı uygulamada görülür.
- *  - Çevrimdışı kuyruğa yalnızca izin verilen talep türleri (izin, fazla mesai) yazılır,
+ *  - Çevrimdışı kuyruğa yalnızca izin verilen talep türleri (izin, fazla mesai, masraf taslağı) yazılır,
  *    bağlantı gelince gönderilip silinir; oturum kapanınca kuyruk ve abonelik silinir.
  */
 import { apiFetch } from '@/api/client'
 import { tx } from '@/lib/i18n'
+import { idbAll, idbReplace } from '@/lib/offlineStore'
+import { clearLocalUiPrefs } from '@/lib/uiPrefs'
 
 const NOTIF = '/api/notification/notifications/push'
 
@@ -53,60 +55,164 @@ export const sendTestPush = () => apiFetch(`${NOTIF}/test`, { method: 'POST' })
 
 /* ------------------------------------------------------------------ çevrimdışı kuyruk */
 
+/*
+ * Dalga 12 (madde 85): kuyruk IndexedDB'de tutulur (yoksa localStorage). Eski sürümün
+ * localStorage kuyruğu ilk yüklemede IndexedDB'ye taşınır. Kuyruktaki her kayıt bir "çevrimdışı
+ * taslaktır": izin talebi, fazla mesai ya da masraf (taslak) — bağlantı gelince sırayla gönderilir.
+ */
 const QUEUE_KEY = 'hr360-offline-queue'
-/** Çevrimdışıyken sıraya alınabilecek talepler (yalnızca oluşturma). */
-const QUEUEABLE = [/^\/api\/leave\/leave-requests$/, /^\/api\/timeshift\/overtime$/]
+/** Bu süreden eski taslaklar gönderilmez (iş kuralları, tarih ve bakiye değişmiş olabilir). */
+export const OFFLINE_MAX_AGE_DAYS = 14
+
+export type QueuedKind = 'leave' | 'overtime' | 'expense'
+/** Çevrimdışıyken sıraya alınabilecek talepler (yalnızca oluşturma; dosya yükleme sıraya alınmaz). */
+const QUEUEABLE: Array<[RegExp, QueuedKind]> = [
+  [/^\/api\/leave\/leave-requests$/, 'leave'],
+  [/^\/api\/timeshift\/overtime$/, 'overtime'],
+  [/^\/api\/expense\/expense-claims$/, 'expense'],
+]
 
 export interface QueuedRequest { id: string; path: string; method: 'POST'; body: unknown; at: string }
 
 export class QueuedOfflineError extends Error {
   constructor() {
-    super(tx('Çevrimdışısınız: talebiniz bu cihazda sıraya alındı, bağlantı gelince gönderilecek.'))
+    super(tx('Çevrimdışısınız: talebiniz bu cihazda taslak olarak saklandı, bağlantı gelince gönderilecek.'))
     this.name = 'QueuedOfflineError'
   }
 }
 
-function readQueue(): QueuedRequest[] {
+export const isQueuedOffline = (e: unknown): e is QueuedOfflineError => e instanceof QueuedOfflineError
+
+/** Yolun taslak türü (izin / fazla mesai / masraf); sıraya alınamıyorsa null. */
+export function queuedKind(path: string): QueuedKind | null {
+  return QUEUEABLE.find(([r]) => r.test(path))?.[1] ?? null
+}
+
+/** Taslağın kısa açıklaması (yalnızca bu cihazda gösterilir). */
+export function queuedSummary(r: QueuedRequest): string {
+  const b = (r.body ?? {}) as Record<string, unknown>
+  switch (queuedKind(r.path)) {
+    case 'leave': return b.startDate ? `${String(b.startDate)} – ${String(b.endDate ?? b.startDate)}` : tx('İzin talebi')
+    case 'expense': return typeof b.title === 'string' && b.title ? b.title : tx('Masraf talebi')
+    case 'overtime': return b.date ? String(b.date) : tx('Fazla mesai talebi')
+    default: return r.path
+  }
+}
+
+/** Kuyruk kararı: başarı → gönderildi; 4xx → iş kuralı reddi (kuyruktan çıkar); diğer → sonra yeniden dene. */
+export function queueOutcome(status: number | null): 'sent' | 'rejected' | 'retry' {
+  if (status === null) return 'sent'
+  return status >= 400 && status < 500 ? 'rejected' : 'retry'
+}
+
+/** Taslak çok mu eski? */
+export function isExpired(r: QueuedRequest, now = Date.now()): boolean {
+  const t = Date.parse(r.at)
+  return Number.isFinite(t) && now - t > OFFLINE_MAX_AGE_DAYS * 86_400_000
+}
+
+function readLegacy(): QueuedRequest[] {
   try { return JSON.parse(localStorage.getItem(QUEUE_KEY) ?? '[]') as QueuedRequest[] } catch { return [] }
 }
-function writeQueue(q: QueuedRequest[]) {
+function writeLegacy(q: QueuedRequest[]) {
   try { if (q.length) localStorage.setItem(QUEUE_KEY, JSON.stringify(q)); else localStorage.removeItem(QUEUE_KEY) } catch { /* depolama kapalı */ }
 }
 
-export const isQueueable = (path: string, method: string) => method === 'POST' && QUEUEABLE.some((r) => r.test(path))
-export const offlineQueue = () => readQueue()
+/** Bellekteki kopya (eşzamanlı okuma için); kalıcı kopya IndexedDB'de. */
+let cache: QueuedRequest[] = readLegacy()
+let loadPromise: Promise<void> | null = null
 
-export function enqueueOffline(path: string, body: unknown) {
-  const q = readQueue()
-  q.push({ id: crypto.randomUUID(), path, method: 'POST', body, at: new Date().toISOString() })
-  writeQueue(q)
-  window.dispatchEvent(new CustomEvent('hr360:offline-queue'))
+function changed() {
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('hr360:offline-queue'))
 }
 
+async function persist() {
+  const snapshot = [...cache]
+  if (await idbReplace(snapshot)) writeLegacy([])
+  else writeLegacy(snapshot)
+}
+
+/** Kalıcı kuyruğu yükler (uygulama açılışında bir kez); eski localStorage kuyruğunu taşır. */
+export function loadOfflineQueue(): Promise<void> {
+  if (!loadPromise) {
+    loadPromise = (async () => {
+      const stored = await idbAll<QueuedRequest>()
+      if (stored) {
+        const ids = new Set(stored.map((r) => r.id))
+        const merged = [...stored, ...cache.filter((r) => !ids.has(r.id))]
+        merged.sort((a, b) => a.at.localeCompare(b.at))
+        cache = merged
+        await persist()
+      }
+      changed()
+    })()
+  }
+  return loadPromise
+}
+
+export const isQueueable = (path: string, method: string) => method === 'POST' && queuedKind(path) !== null
+export const offlineQueue = () => cache
+
+export function enqueueOffline(path: string, body: unknown) {
+  cache = [...cache, { id: crypto.randomUUID(), path, method: 'POST', body, at: new Date().toISOString() }]
+  void persist()
+  changed()
+}
+
+/** Taslağı göndermeden siler (kullanıcı vazgeçti). */
+export async function removeQueued(id: string) {
+  cache = cache.filter((r) => r.id !== id)
+  await persist()
+  changed()
+}
+
+let flushing: Promise<{ sent: number; failed: string[] }> | null = null
+
 /** Bağlantı gelince sıradaki talepleri sırayla gönderir. Sonuç: (gönderilen, reddedilen iletileri). */
-export async function flushOfflineQueue(): Promise<{ sent: number; failed: string[] }> {
-  const q = readQueue()
+export function flushOfflineQueue(): Promise<{ sent: number; failed: string[] }> {
+  // Aynı anda iki boşaltma (ör. "online" olayı + düğme) aynı taslağı iki kez göndermesin.
+  flushing ??= doFlush().finally(() => { flushing = null })
+  return flushing
+}
+
+async function doFlush(): Promise<{ sent: number; failed: string[] }> {
+  await loadOfflineQueue()
+  const q = [...cache]
   if (!q.length || !navigator.onLine) return { sent: 0, failed: [] }
   let sent = 0
   const failed: string[] = []
-  const left: QueuedRequest[] = []
+  const done = new Set<string>()
   for (const r of q) {
+    if (isExpired(r)) {
+      failed.push(tx('{0} gün geçtiği için gönderilmedi: {1}', [OFFLINE_MAX_AGE_DAYS, queuedSummary(r)]))
+      done.add(r.id)
+      continue
+    }
     try {
       await apiFetch(r.path, { method: 'POST', body: r.body, noQueue: true })
       sent++
+      done.add(r.id)
     } catch (e) {
       const status = (e as { status?: number }).status ?? 0
-      if (status >= 400 && status < 500) failed.push(e instanceof Error ? e.message : String(e)) // iş kuralı hatası: kuyruktan çıkar
-      else left.push(r) // ağ ya da sunucu hatası: sonra yeniden dene
+      if (queueOutcome(status) === 'rejected') { // iş kuralı hatası: kuyruktan çıkar
+        failed.push(e instanceof Error ? e.message : String(e))
+        done.add(r.id)
+      } // ağ ya da sunucu hatası: sonra yeniden dene
     }
   }
-  writeQueue(left)
-  window.dispatchEvent(new CustomEvent('hr360:offline-queue'))
+  // Gönderim sırasında eklenen yeni taslaklar korunur.
+  cache = cache.filter((r) => !done.has(r.id))
+  await persist()
+  changed()
   return { sent, failed }
 }
 
-/** Oturum kapanırken: cihazdaki kuyruk ve bu cihazın anlık bildirim aboneliği silinir. */
+/** Oturum kapanırken: cihazdaki kuyruk, arayüz tercihleri ve bu cihazın anlık bildirim aboneliği silinir. */
 export async function clearDeviceData() {
-  writeQueue([])
+  cache = []
+  writeLegacy([])
+  await idbReplace([])
+  clearLocalUiPrefs()
+  changed()
   try { await disablePush() } catch { /* yoksay */ }
 }

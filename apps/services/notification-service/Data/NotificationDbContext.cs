@@ -28,6 +28,7 @@ public class NotificationDbContext : DbContext, ITenantAwareContext
     public DbSet<CategoryPreference> CategoryPreferences => Set<CategoryPreference>();
     public DbSet<PushSubscription> PushSubscriptions => Set<PushSubscription>();
     public DbSet<VapidKeyRow> VapidKeys => Set<VapidKeyRow>();
+    public DbSet<UiPreference> UiPreferences => Set<UiPreference>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -65,6 +66,12 @@ public class NotificationDbContext : DbContext, ITenantAwareContext
 
         modelBuilder.Entity<VapidKeyRow>().ToTable("notification_vapid_keys");
         modelBuilder.Entity<VapidKeyRow>().Property(v => v.Id).ValueGeneratedNever();
+
+        // Dalga 12: arayüz tercihleri (yazım ham SQL upsert ile; bkz. UiPrefsController).
+        modelBuilder.Entity<UiPreference>().ConfigureTenantColumn();
+        modelBuilder.Entity<UiPreference>().ToTable("notification_ui_prefs");
+        modelBuilder.Entity<UiPreference>().Property(p => p.Value).HasColumnType("jsonb");
+        modelBuilder.Entity<UiPreference>().HasIndex(p => new { p.TenantSlug, p.UserSub, p.Key }).IsUnique();
 
         modelBuilder.ApplyTenantFilters(this);
     }

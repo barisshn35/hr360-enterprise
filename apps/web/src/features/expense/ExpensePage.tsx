@@ -13,6 +13,8 @@ import { claimStatusLabels, type ClaimStatus, type ExpenseClaim } from '@/api/ty
 import { formatDate, formatMoney, formatNumber } from '@/lib/format'
 import { useEmployeeName } from '@/lib/useEmployeeName'
 import { NewClaimModal } from './NewClaimModal'
+import { OfflineDrafts } from '@/components/OfflineDrafts'
+import { useNewParam } from '@/lib/useNewParam'
 import { tx } from '@/lib/i18n'
 
 const ALL = '__all__'
@@ -23,6 +25,7 @@ export function ExpensePage() {
   const [employeeId, setEmployeeId] = useState('')
   const [status, setStatus] = useState<string>(ALL)
   const [modalOpen, setModalOpen] = useState(false)
+  useNewParam(can('expense:create'), () => setModalOpen(true))
   const nameOf = useEmployeeName()
 
   const claims = useExpenseClaims({
@@ -113,6 +116,8 @@ export function ExpensePage() {
         }
       />
 
+      <OfflineDrafts kind="expense" />
+
       <div className="max-w-sm">
         <EmployeePicker
           id="claim-filter-employee"
@@ -134,6 +139,7 @@ export function ExpensePage() {
         onRowClick={(c) => navigate(`/panel/masraf/${c.id}`)}
         searchPlaceholder={tx('Başlık veya çalışan ara')}
         exportFileName="masraf-talepleri"
+        viewKey="expense-claims"
         initialSort={{ columnId: 'createdAt', dir: 'desc' }}
         emptyTitle={tx('Masraf talebi yok')}
         emptyDetail={tx('Bu filtreye uyan talep bulunmuyor.')}

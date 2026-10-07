@@ -14,6 +14,7 @@ import { leaveTypeLabels, type LeaveType } from '@/api/types'
 import { formatNumber, parseDecimal } from '@/lib/format'
 import { holidayMap, hoursProblem, leaveDays, workingDays, type LeaveUnit } from '@/lib/leaveDays'
 import { useDebouncedValue } from '@/lib/useDebouncedValue'
+import { isQueuedOffline } from '@/lib/push'
 import { tx, appLocale } from '@/lib/i18n'
 
 interface Errors {
@@ -126,8 +127,9 @@ export function NewLeaveRequestModal({
    */
   const shortfall = balance ? days - balance.remainingDays : 0
   const onBehalf = isHr && Boolean(employeeId) && employeeId !== me.employeeId
+  // Çevrimdışıyken bakiye okunamaz: taslak sıraya alınır, bakiye kuralını gönderimde sunucu uygular.
   const blockedByBalance =
-    Boolean(employeeId) && !balances.isPending && ((balance && shortfall > 0) || (!balance && type === 'Annual'))
+    Boolean(employeeId) && !balances.isPending && !balances.isError && ((balance && shortfall > 0) || (!balance && type === 'Annual'))
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -145,7 +147,15 @@ export function NewLeaveRequestModal({
       toast.ok(tx('İzin talebi oluşturuldu, onay zincirine gönderildi'))
       onClose()
     },
-    onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Talep oluşturulamadı.')),
+    onError: (e: unknown) => {
+      // Çevrimdışı: talep bu cihazda taslak olarak saklandı (bağlantı gelince gönderilir).
+      if (isQueuedOffline(e)) {
+        toast.ok(e.message)
+        onClose()
+        return
+      }
+      toast.stop(e instanceof Error ? e.message : tx('Talep oluşturulamadı.'))
+    },
   })
 
   function validate(overrideEmployeeId?: string): Errors {

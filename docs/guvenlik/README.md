@@ -247,7 +247,7 @@ tenant, notification, expense, compensation).
   | compensation | `compensation_payroll_exports.Cipher` (bytea) |
   | notification | `notification_vapid_keys.PrivateKeyEnc` |
   | tenant | `platform_tenants.SmtpPasswordEncrypted`, `tenant_directory_settings.LdapBindPasswordEncrypted` |
-  | governance | `governance_chat_apps` (5 sütun), `governance_calendar_connections` (2), `governance_provider_configs.ClientSecretEnc`, `governance_chat_context.TextEnc`, `governance_chat_exit_progress.AnswersEnc`, `governance_chat_pending.PayloadEnc`, `governance_document_requests.DocumentEnc`, `governance_ethics_reports.ContactEnc`, `governance_osh_exams.NotesEnc`, `governance_custom_field_values.Value` |
+  | governance | `governance_chat_apps` (5 sütun), `governance_calendar_connections` (2), `governance_provider_configs.ClientSecretEnc`, `governance_provisioning_configs.CredentialsEnc`, `governance_chat_context.TextEnc`, `governance_chat_exit_progress.AnswersEnc`, `governance_chat_pending.PayloadEnc`, `governance_document_requests.DocumentEnc`, `governance_ethics_reports.ContactEnc`, `governance_osh_exams.NotesEnc`, `governance_custom_field_values.Value` |
 
   Okuyan diğer servisler de halkayı kullanır: compensation ve governance TCKN/IBAN'ı, notification
   SMTP parolasını okur.

@@ -1,4 +1,5 @@
 import { useDeferredValue, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'motion/react'
 import { Mail, Search, UserSearch } from 'lucide-react'
@@ -12,7 +13,9 @@ import { tx } from '@/lib/i18n'
 import { normalizeSearch } from '@/lib/format'
 
 export function DirectoryPage() {
-  const [q, setQ] = useState('')
+  // Komut paletinden "Kişi ara" ile ?ara=<metin> gelir (dalga 12).
+  const [params] = useSearchParams()
+  const [q, setQ] = useState(() => (params.get('ara') ?? '').slice(0, 100))
   const term = useDeferredValue(q)
   const res = useQuery({ queryKey: ['directory-skills', term], queryFn: ({ signal }) => engagementApi.directory(term, signal), placeholderData: (p) => p })
   // Sunucudaki katlamayla aynı: "AYSE" araması "Ayşe" becerisini/adını da vurgular.

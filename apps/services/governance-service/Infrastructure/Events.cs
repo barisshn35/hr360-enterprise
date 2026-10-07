@@ -379,7 +379,12 @@ public sealed class Dispatcher
         }
     }
 
-    public async Task DeliverWebhookAsync(GovernanceDbContext db, Webhook hook, Guid eventId, string type, JsonElement? payload, CancellationToken ct)
+    /// <summary>
+    /// Tek teslimat denemesi. Dalga 12: teslimat satırı olay kimliği ve deneme sırasıyla
+    /// yazılır; geçici hatada <see cref="WebhookRetry"/> sonraki deneme zamanını ayarlar.
+    /// </summary>
+    public async Task<WebhookDelivery> DeliverWebhookAsync(GovernanceDbContext db, Webhook hook, Guid eventId, string type, JsonElement? payload, CancellationToken ct,
+        int attempt = 1, Guid? parentId = null, bool manual = false, string? by = null)
     {
         var started = DateTime.UtcNow;
         // KVKK m.9: Zapier gibi yurt dışı hedefe dayanak kaydı (sonradan silinmiş olabilir) yoksa veri gönderilmez.
@@ -387,11 +392,13 @@ public sealed class Dispatcher
         {
             hook.LastStatus = null;
             hook.LastDeliveredAt = DateTime.UtcNow;
-            db.WebhookDeliveries.Add(new WebhookDelivery
+            var blocked = new WebhookDelivery
             {
                 TenantSlug = hook.TenantSlug, WebhookId = hook.Id, EventType = type, StatusCode = null, Error = "transfer_basis_required", DurationMs = 0,
-            });
-            return;
+                EventId = eventId, Attempt = attempt, ParentDeliveryId = parentId, Manual = manual, TriggeredByName = by,
+            };
+            db.WebhookDeliveries.Add(blocked);
+            return blocked;
         }
         var body = JsonSerializer.Serialize(new { id = eventId, type, tenant = hook.TenantSlug, occurredAt = started, data = payload }, Json);
         var signature = "sha256=" + Convert.ToHexString(HMACSHA256.HashData(Encoding.UTF8.GetBytes(hook.Secret), Encoding.UTF8.GetBytes(body))).ToLowerInvariant();
@@ -403,6 +410,7 @@ public sealed class Dispatcher
             req.Headers.Add("X-HR360-Event", type);
             req.Headers.Add("X-HR360-Delivery", eventId.ToString());
             req.Headers.Add("X-HR360-Signature", signature);
+            req.Headers.Add("X-HR360-Attempt", attempt.ToString(CultureInfo.InvariantCulture));
             // SSRF: İK ekranından açılan webhook'lar bağlantı anında iç ağ IP'sine gidemez (DNS rebinding dahil);
             // REST hook (kiracının kendi n8n'i) kiracının iç ağına gidebilir ama yerel/meta veri adreslerine ve
             // HR360 altyapı servislerine gidemez. Servisin kendi test alıcısı serbest.
@@ -425,11 +433,15 @@ public sealed class Dispatcher
         hook.LastDeliveredAt = DateTime.UtcNow;
         hook.FailureCount = error is null ? 0 : hook.FailureCount + 1;
         if (hook.FailureCount >= 20) hook.IsEnabled = false; // sürekli düşen uç otomatik kapanır
-        db.WebhookDeliveries.Add(new WebhookDelivery
+        var delivery = new WebhookDelivery
         {
             TenantSlug = hook.TenantSlug, WebhookId = hook.Id, EventType = type, StatusCode = status, Error = error,
             DurationMs = (int)(DateTime.UtcNow - started).TotalMilliseconds,
-        });
+            EventId = eventId, Attempt = attempt, ParentDeliveryId = parentId, Manual = manual, TriggeredByName = by,
+        };
+        WebhookRetry.Schedule(delivery, hook, type);
+        db.WebhookDeliveries.Add(delivery);
+        return delivery;
     }
 
     public async Task<int?> PostChatAsync(string kind, string url, string text, string type, CancellationToken ct)

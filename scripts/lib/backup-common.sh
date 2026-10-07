@@ -112,3 +112,40 @@ manifest_verify() {
 lock_bucket() { local b; b="$(secret_env BACKUP_MINIO_BUCKET)"; printf '%s' "${b:-hr360-backups-locked}"; }
 # Ici bos ise hedef kurulumun kendi MinIO'sudur (hr360-net agindaki http://minio:9000).
 lock_external_url() { secret_env BACKUP_MINIO_URL; }
+
+# Izleme (Prometheus, node-exporter "textfile" toplayicisi): yedek ve geri yukleme testi
+# sonuclari deploy/monitoring/textfile/<ad>.prom dosyasina yazilir; alarmlar (YedekEski,
+# GeriYuklemeTestiBasarisiz...) bunlara bakar. Dizin HR360_METRICS_DIR ile degistirilebilir.
+# Yalnizca zaman/boyut/0-1 bayraklari yazilir; dosya adi, anahtar ya da kisisel veri yok.
+# Yazilamazsa (izin vb.) yedek basarisiz sayilmaz, yalnizca uyari verilir.
+# metrics_write <ad> : icerigi stdin'den okur, gecici dosya + mv ile atomik yazar (644).
+metrics_write() {
+  local dir="${HR360_METRICS_DIR:-deploy/monitoring/textfile}" tmp
+  { mkdir -p "$dir" && chmod 755 "$dir"; } 2>/dev/null || true
+  tmp="$(mktemp "$dir/.$1.XXXXXX" 2>/dev/null)" || { echo "UYARI: izleme metrigi yazilamadi ($dir)" >&2; cat >/dev/null; return 0; }
+  cat > "$tmp" && chmod 644 "$tmp" && mv -f "$tmp" "$dir/$1.prom" \
+    || { rm -f "$tmp"; echo "UYARI: izleme metrigi yazilamadi ($dir/$1.prom)" >&2; }
+  return 0
+}
+
+# metrics_restore_test <arac: drill|verify> <basarili: 0|1>
+# Basarisiz calismada onceki basarili zaman korunur (alarm "son basarili test ne zaman" diye bakar).
+metrics_restore_test() {
+  local tool="$1" success="$2" now prev dir="${HR360_METRICS_DIR:-deploy/monitoring/textfile}"
+  now="$(date +%s)"
+  prev="$(sed -n "s/^hr360_restore_test_last_success_timestamp_seconds{tool=\"$tool\"} //p" "$dir/hr360_restore_test_$tool.prom" 2>/dev/null | head -1 || true)"
+  [ "$success" = 1 ] && prev="$now"
+  {
+    echo "# HELP hr360_restore_test_last_run_timestamp_seconds Son geri yukleme testinin zamani."
+    echo "# TYPE hr360_restore_test_last_run_timestamp_seconds gauge"
+    echo "hr360_restore_test_last_run_timestamp_seconds{tool=\"$tool\"} $now"
+    echo "# HELP hr360_restore_test_success Son geri yukleme testi basarili mi (1/0)."
+    echo "# TYPE hr360_restore_test_success gauge"
+    echo "hr360_restore_test_success{tool=\"$tool\"} $success"
+    if [ -n "$prev" ]; then
+      echo "# HELP hr360_restore_test_last_success_timestamp_seconds Son basarili geri yukleme testinin zamani."
+      echo "# TYPE hr360_restore_test_last_success_timestamp_seconds gauge"
+      echo "hr360_restore_test_last_success_timestamp_seconds{tool=\"$tool\"} $prev"
+    fi
+  } | metrics_write "hr360_restore_test_$tool"
+}

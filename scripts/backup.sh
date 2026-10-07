@@ -128,7 +128,7 @@ if [ "$CMD" = verify ]; then
   WORK="$(mktemp -d)"; CID=""
   cleanup() { [ -n "$CID" ] && docker rm -f "$CID" >/dev/null 2>&1; rm -rf "$WORK"; }
   trap cleanup EXIT
-  fail() { echo "DOGRULANAMADI $(date -u +%FT%TZ) $(basename "$ARCHIVE"): $*"; exit 1; }
+  fail() { echo "DOGRULANAMADI $(date -u +%FT%TZ) $(basename "$ARCHIVE"): $*"; metrics_restore_test verify 0; exit 1; }
   mrc=0; manifest_verify "$ARCHIVE" || mrc=$?
   [ "$mrc" = 1 ] && fail "$MANIFEST_MSG"
   echo "  - ozet: $MANIFEST_MSG"
@@ -163,6 +163,7 @@ if [ "$CMD" = verify ]; then
     echo "  - calisan kaydi: ${emp:-?}"
   fi
   echo "DOGRULANDI $(date -u +%FT%TZ) $(basename "$ARCHIVE")"
+  metrics_restore_test verify 1
   exit 0
 fi
 
@@ -314,3 +315,19 @@ if [ "$KEEP" -gt 0 ]; then
     rm -f -- "$old" "$old.manifest" && echo "Eski yedek silindi: $old"
   done
 fi
+
+# Izleme: son basarili yedek (alarmlar: YedekEski, YedekKaydiYok; bkz. deploy/monitoring/alerts.yml).
+{
+  echo "# HELP hr360_backup_last_success_timestamp_seconds Son basarili yedegin zamani (scripts/backup.sh)."
+  echo "# TYPE hr360_backup_last_success_timestamp_seconds gauge"
+  echo "hr360_backup_last_success_timestamp_seconds $(date +%s)"
+  echo "# HELP hr360_backup_last_size_bytes Son yedek arsivinin boyutu."
+  echo "# TYPE hr360_backup_last_size_bytes gauge"
+  echo "hr360_backup_last_size_bytes $(stat -c %s "$FILE" 2>/dev/null || echo 0)"
+  echo "# HELP hr360_backup_last_encrypted Son yedek sifreli mi (1/0)."
+  echo "# TYPE hr360_backup_last_encrypted gauge"
+  echo "hr360_backup_last_encrypted $ENCRYPT"
+  echo "# HELP hr360_backup_last_offsite Son yedek sunucu disina (S3 ya da degismez MinIO kovasi) kopyalandi mi (1/0)."
+  echo "# TYPE hr360_backup_last_offsite gauge"
+  echo "hr360_backup_last_offsite $([ "$S3" = 1 ] || [ "$TO_MINIO" = 1 ] && echo 1 || echo 0)"
+} | metrics_write hr360_backup

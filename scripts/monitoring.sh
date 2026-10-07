@@ -39,7 +39,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 unset COMPOSE_PROFILES GRAFANA_ADMIN_PASSWORD ALERT_EMAIL_TO ALERT_SLACK_WEBHOOK_URL ALERT_TEAMS_WEBHOOK_URL
 ENV_FILE=.env
-SERVICES=(prometheus alertmanager postgres-exporter node-exporter loki promtail tempo otel-collector grafana)
+SERVICES=(prometheus alertmanager postgres-exporter node-exporter blackbox-exporter loki promtail tempo otel-collector grafana)
 DOTNET_SERVICES=(organization-service employee-service workflow-service leave-service recruitment-service onboarding-service
   timeshift-service performance-service learning-service engagement-service governance-service compensation-service
   expense-service notification-service tenant-service)

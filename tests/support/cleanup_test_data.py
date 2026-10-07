@@ -272,6 +272,36 @@ WITH d AS (DELETE FROM governance_consents WHERE "TenantSlug" = 'demo' AND "Cons
 SELECT 'governance_consents', count(*) FROM d;
 WITH d AS (DELETE FROM governance_privacy_notices WHERE "TenantSlug" = 'demo' AND "Type" = 'GORSEL_KULLANIM' AND "Version" = 'test-2' RETURNING 1)
 SELECT 'governance_privacy_notices', count(*) FROM d;
+-- test_webhooks_apikeys.py (dalga 12): "TEST-w12" anahtarları ve kullanım sayaçları, "test-w12" kancaları, "test.w12" olayları
+-- Kullanım tablosu 2026-10-25_webhook_retry_api_key_scopes.sql ile gelir; uygulanmamış kurulumda atlanır.
+CREATE FUNCTION pg_temp.del_keyusage() RETURNS bigint LANGUAGE plpgsql AS $f$
+DECLARE n bigint := 0;
+BEGIN
+  IF to_regclass('governance_api_key_usage') IS NOT NULL THEN
+    EXECUTE $q$DELETE FROM governance_api_key_usage WHERE "TenantSlug" = 'demo'
+                 AND "KeyId" IN (SELECT "Id" FROM governance_api_keys WHERE "TenantSlug" = 'demo' AND "Name" LIKE 'TEST-w12%')$q$;
+    GET DIAGNOSTICS n = ROW_COUNT;
+  END IF;
+  RETURN n;
+END $f$;
+SELECT 'governance_api_key_usage', pg_temp.del_keyusage();
+WITH d AS (DELETE FROM governance_api_keys WHERE "TenantSlug" = 'demo' AND "Name" LIKE 'TEST-w12%' RETURNING 1)
+SELECT 'governance_api_keys', count(*) FROM d;
+WITH d AS (DELETE FROM governance_webhooks WHERE "TenantSlug" = 'demo' AND "Url" LIKE '%test-w12%' RETURNING 1)
+SELECT 'governance_webhooks', count(*) FROM d;
+WITH d AS (DELETE FROM governance_events WHERE "TenantSlug" = 'demo' AND "Topic" = 'test.w12' RETURNING 1)
+SELECT 'governance_events', count(*) FROM d;
+-- test_ui_prefs.py (dalga 12): "test-w12" önekli arayüz tercihleri (tablo 2026-10-25_ui_prefs.sql ile gelir)
+CREATE FUNCTION pg_temp.del_uiprefs() RETURNS bigint LANGUAGE plpgsql AS $f$
+DECLARE n bigint := 0;
+BEGIN
+  IF to_regclass('notification_ui_prefs') IS NOT NULL THEN
+    EXECUTE $q$DELETE FROM notification_ui_prefs WHERE "TenantSlug" = 'demo' AND "Key" LIKE 'test-w12%'$q$;
+    GET DIAGNOSTICS n = ROW_COUNT;
+  END IF;
+  RETURN n;
+END $f$;
+SELECT 'notification_ui_prefs', pg_temp.del_uiprefs();
 -- test_platform_reports.py: kancalar public API'den silinir, teslim kayıtları yetim kalır
 WITH d AS (DELETE FROM governance_webhook_deliveries x WHERE x."TenantSlug" = 'demo'
              AND NOT EXISTS (SELECT 1 FROM governance_webhooks h WHERE h."Id" = x."WebhookId") RETURNING 1)
@@ -443,6 +473,22 @@ BEGIN
   RETURN n;
 END $f$;
 SELECT 'dalga 11 (işe alım, imza, performans, eğitim)', pg_temp.del_w11();
+
+-- Dalga 12 test_account_provisioning.py: hesap sağlama ayarları ve istekleri alan adı "prov-test.hr360.example"
+-- (istek notu "TEST-PROV"). Tablolar 2026-10-25_account_provisioning.sql ile gelir; uygulanmamış kurulumda atlanır.
+CREATE FUNCTION pg_temp.del_w12_prov() RETURNS bigint LANGUAGE plpgsql AS $f$
+DECLARE n bigint := 0; k bigint;
+BEGIN
+  IF to_regclass('governance_provisioning_requests') IS NOT NULL THEN
+    EXECUTE $q$DELETE FROM governance_provisioning_requests WHERE "TenantSlug" = 'demo'
+               AND ("AccountEmail" LIKE '%@prov-test.hr360.example' OR "Note" LIKE 'TEST-PROV%')$q$;
+    GET DIAGNOSTICS k = ROW_COUNT; n := n + k;
+    EXECUTE $q$DELETE FROM governance_provisioning_configs WHERE "TenantSlug" = 'demo' AND "Domain" = 'prov-test.hr360.example'$q$;
+    GET DIAGNOSTICS k = ROW_COUNT; n := n + k;
+  END IF;
+  RETURN n;
+END $f$;
+SELECT 'dalga 12 (hesap sağlama)', pg_temp.del_w12_prov();
 
 -- ============================================================== İzin bakiyeleri yeniden hesap
 WITH calc AS (

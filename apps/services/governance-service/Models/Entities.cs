@@ -256,6 +256,18 @@ public class WebhookDelivery : ITenantOwned
     public string? Error { get; set; }
     public int DurationMs { get; set; }
     public DateTime OccurredAt { get; set; } = DateTime.UtcNow;
+    /// <summary>Dalga 12: teslim edilen olay (governance_events.Id; ping için rastgele).</summary>
+    public Guid? EventId { get; set; }
+    /// <summary>Aynı olayın bu uca kaçıncı deneme gönderimi (1 = ilk).</summary>
+    public int Attempt { get; set; } = 1;
+    /// <summary>Otomatik yeniden deneme zamanı (üstel geri çekilme); RetryState = pending iken dolu.</summary>
+    public DateTime? NextRetryAt { get; set; }
+    /// <summary>null | pending | retrying | retried | gave_up | resent</summary>
+    public string? RetryState { get; set; }
+    /// <summary>İK ekranından elle yeniden gönderildi.</summary>
+    public bool Manual { get; set; }
+    public Guid? ParentDeliveryId { get; set; }
+    public string? TriggeredByName { get; set; }
 }
 
 public class ApiKey : ITenantOwned
@@ -270,6 +282,12 @@ public class ApiKey : ITenantOwned
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? LastUsedAt { get; set; }
     public DateTime? RevokedAt { get; set; }
+    /// <summary>Dalga 12: son kullanma (null = süresiz).</summary>
+    public DateTime? ExpiresAt { get; set; }
+    /// <summary>Döndürme (rotate) ile yerini aldığı eski anahtar.</summary>
+    public Guid? RotatedFromId { get; set; }
+    public long UsageCount { get; set; }
+    public string? LastUsedScope { get; set; }
 }
 
 public class Integration : ITenantOwned

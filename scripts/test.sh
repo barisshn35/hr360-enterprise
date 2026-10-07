@@ -7,11 +7,13 @@
 #                                 governance-service normal ayarlarla yeniden baslatilir)
 #   scripts/test.sh e2e           Tarayici testleri (Playwright): tum ekranlar x tum roller, izin akisi
 #   scripts/test.sh all           Hepsi
+#   scripts/test.sh logs [ZAMAN]  Yalnizca servis gunluklerinde beklenmeyen hata taramasi (ZAMAN: UTC, ornek 2026-10-25T03:00:00Z)
 #
 # integration ve e2e sonunda test kalintilari temizlenir (tests/support/cleanup_test_data.py).
 # integration ve e2e calisan bir kurulum ister. Test kullanicilari: tests/credentials.json
 # (ornek: tests/credentials.example.json) ya da HR360_TEST_USERS. Adres: HR360_BASE_URL.
-# Gereken: docker; e2e/integration icin python3 + `pip install pytest playwright` + `playwright install chromium`.
+# Gereken: docker; e2e/integration icin python3 + `pip install pytest playwright pytest-xdist` + `playwright install chromium`
+# (pytest-xdist istege bagli: yoksa e2e sirali calisir; HR360_E2E_WORKERS ile islemci sayisi).
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -102,7 +104,7 @@ integration() {
   for t in test_chat test_calendar test_ai_llm test_cache test_report_lang test_email_lang test_kvkk \
            test_payroll_time test_push test_workflow_docs test_kvkk_ops test_payroll_eco test_hr_compliance test_recruitment_plus test_learning_perf test_ops_plus \
            test_platform_reports test_notify_prefs test_identity_sign test_paging test_model_card test_chat_plus test_telemetry test_identity_security \
-           test_time_leave test_kvkk_ml10 test_recruitment_w11 test_offer_esign test_performance_w11 test_learning_w11; do
+           test_time_leave test_kvkk_ml10 test_recruitment_w11 test_offer_esign test_performance_w11 test_learning_w11 test_webhooks_apikeys test_account_provisioning test_ui_prefs; do
     step "Entegrasyon: $t"
     run python3 "tests/integration/$t.py"
   done
@@ -115,10 +117,42 @@ integration() {
   cleanup_data
 }
 
+# Servisler yeniden olusturulduktan sonra (ornegin integration sonunda) hazir olana kadar beklenir:
+# paralel e2e cok hizli basladigi icin ilk istekler 404/502 aliyordu.
+wait_ready() {
+  local base="${HR360_BASE_URL:-http://localhost}" ok=0 p code all
+  for _ in $(seq 1 90); do
+    all=1
+    for p in /api/governance/ethics/public/demo /api/tenant/public/branding /gateway/health; do
+      code="$(curl -sk -o /dev/null -w '%{http_code}' "$base$p")"
+      case "$code" in 2*|401|403) ;; *) all=0 ;; esac
+    done
+    # Kimlik isteyen servisler 401 doner (yonlendirme hazir demektir); 404/502 hazir degil.
+    for p in /api/employee/employees /api/leave/leave-requests /api/notification/notifications/ui-prefs /api/workflow/workflows; do
+      code="$(curl -sk -o /dev/null -w '%{http_code}' "$base$p")"
+      [ "$code" = 401 ] || all=0
+    done
+    if [ "$all" = 1 ]; then ok=$((ok + 1)); [ "$ok" -ge 3 ] && return 0; else ok=0; fi
+    sleep 2
+  done
+  echo "UYARI: servisler 3 dakikada hazir olmadi" >&2
+}
+
 e2e() {
-  local t0; t0="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  local t0
+  wait_ready
+  t0="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   step "Tarayici testleri (Playwright)"
-  run python3 -m pytest -q -p no:cacheprovider tests/e2e
+  # pytest-xdist varsa iki asama: (1) paralel testler HR360_E2E_WORKERS (varsayilan 4) islemciyle,
+  # (2) kullanicinin sunucudaki ortak durumunu degistiren "serial" isaretliler tek basina.
+  # HR360_E2E_WORKERS=0 ya da xdist yoksa eski sirali calistirma. Ayrinti: tests/e2e/conftest.py
+  local workers="${HR360_E2E_WORKERS:-4}"
+  if [ "$workers" != 0 ] && python3 -c 'import xdist' >/dev/null 2>&1; then
+    run python3 -m pytest -q -p no:cacheprovider -n "$workers" --dist load -m "not serial" tests/e2e
+    run python3 -m pytest -q -p no:cacheprovider -m serial tests/e2e
+  else
+    run python3 -m pytest -q -p no:cacheprovider tests/e2e
+  fi
   log_scan "$t0"
   cleanup_data
 }
@@ -128,7 +162,9 @@ case "$what" in
   integration) integration ;;
   e2e) e2e ;;
   all) unit; integration; e2e ;;
-  *) echo "kullanim: scripts/test.sh unit|integration|e2e|all" >&2; exit 2 ;;
+  # Yalnizca servis gunluklerinde hata taramasi (CI temiz kurulum isi; varsayilan: son 1 saat).
+  logs) log_scan "${2:-$(date -u -d '-1 hour' +%Y-%m-%dT%H:%M:%SZ)}" ;;
+  *) echo "kullanim: scripts/test.sh unit|integration|e2e|all|logs [UTC-ZAMAN]" >&2; exit 2 ;;
 esac
 
 echo
