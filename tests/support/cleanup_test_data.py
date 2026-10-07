@@ -370,6 +370,80 @@ BEGIN
 END $f$;
 SELECT 'governance (dalga 10)', pg_temp.del_w10();
 
+-- Dalga 11 testleri: test_recruitment_w11.py ("TEST11r" ilan, "test11r-" aday e-postası), test_offer_esign.py ("TEST11e",
+-- "test11e-"), test_performance_w11.py ("TEST11P"), test_learning_w11.py ("TEST11L"). Aday silinince başvuru, aşama olayı,
+-- durum bağlantısı ve teklif CASCADE gider; teklif silinince imza kodu/kanıtı tetikleyiciyle silinir. Tablolar
+-- 2026-10-24_*.sql ile gelir; uygulanmamış kurulumda atlanır.
+CREATE FUNCTION pg_temp.del_w11() RETURNS bigint LANGUAGE plpgsql AS $f$
+DECLARE n bigint := 0; k bigint;
+BEGIN
+  IF to_regclass('recruitment_referrals') IS NOT NULL THEN
+    EXECUTE $q$DELETE FROM recruitment_candidates WHERE "TenantSlug" = 'demo' AND ("Email" LIKE 'test11r-%@example.com' OR "Email" LIKE 'test11e-%@example.com')$q$;
+    GET DIAGNOSTICS k = ROW_COUNT; n := n + k;
+    EXECUTE $q$DELETE FROM recruitment_job_postings WHERE "TenantSlug" = 'demo' AND ("Title" LIKE 'TEST11r%' OR "Title" LIKE 'TEST11e%')$q$;
+    GET DIAGNOSTICS k = ROW_COUNT; n := n + k;
+    EXECUTE $q$DELETE FROM notification_messages WHERE "TenantSlug" = 'demo'
+               AND ("RecipientEmail" LIKE 'test11r-%' OR "RecipientEmail" LIKE 'test11e-%'
+                    OR "Body" LIKE '%TEST11r%' OR "Subject" LIKE '%TEST11r%' OR "Body" LIKE '%TEST11e%' OR "Subject" LIKE '%TEST11e%')$q$;
+    GET DIAGNOSTICS k = ROW_COUNT; n := n + k;
+    -- Ödül bildirimi ilan adı taşımaz: Ayşe'nin onaylı/ödenmiş önerisi kalmadıysa test kalıntısıdır.
+    EXECUTE $q$DELETE FROM notification_messages m WHERE m."TenantSlug" = 'demo' AND m."TemplateCode" = 'recruitment.referral.reward'
+               AND m."RecipientEmployeeId" = '{AYSE}'
+               AND NOT EXISTS (SELECT 1 FROM recruitment_referrals r WHERE r."TenantSlug" = 'demo' AND r."ReferrerEmployeeId" = '{AYSE}'
+                                 AND r."RewardStatus" IN ('Approved','Paid'))$q$;
+    GET DIAGNOSTICS k = ROW_COUNT; n := n + k;
+  END IF;
+  IF to_regclass('performance_f360_requests') IS NOT NULL THEN
+    EXECUTE $q$DELETE FROM performance_f360_requests WHERE "TenantSlug" = 'demo' AND "Title" LIKE 'TEST11P%'$q$;
+    GET DIAGNOSTICS k = ROW_COUNT; n := n + k;
+    EXECUTE $q$DELETE FROM performance_goals WHERE "TenantSlug" = 'demo' AND "Title" LIKE 'TEST11P%'$q$;
+    GET DIAGNOSTICS k = ROW_COUNT; n := n + k;
+    EXECUTE $q$DELETE FROM performance_objectives WHERE "TenantSlug" = 'demo' AND "Title" LIKE 'TEST11P%'$q$;
+    GET DIAGNOSTICS k = ROW_COUNT; n := n + k;
+    EXECUTE $q$DELETE FROM performance_calibration_sessions WHERE "TenantSlug" = 'demo' AND "Name" LIKE 'TEST11P%'$q$;
+    GET DIAGNOSTICS k = ROW_COUNT; n := n + k;
+    EXECUTE $q$DELETE FROM performance_review_scores WHERE "ReviewId" IN (SELECT r."Id" FROM performance_reviews r
+               JOIN performance_cycles c ON c."Id" = r."CycleId" WHERE c."TenantSlug" = 'demo' AND c."Name" LIKE 'TEST11P%')$q$;
+    GET DIAGNOSTICS k = ROW_COUNT; n := n + k;
+    EXECUTE $q$DELETE FROM performance_reviews WHERE "CycleId" IN (SELECT "Id" FROM performance_cycles WHERE "TenantSlug" = 'demo' AND "Name" LIKE 'TEST11P%')$q$;
+    GET DIAGNOSTICS k = ROW_COUNT; n := n + k;
+    EXECUTE $q$DELETE FROM performance_snapshots WHERE "CycleId" IN (SELECT "Id" FROM performance_cycles WHERE "TenantSlug" = 'demo' AND "Name" LIKE 'TEST11P%')$q$;
+    GET DIAGNOSTICS k = ROW_COUNT; n := n + k;
+    EXECUTE $q$DELETE FROM performance_cycles WHERE "TenantSlug" = 'demo' AND "Name" LIKE 'TEST11P%'$q$;
+    GET DIAGNOSTICS k = ROW_COUNT; n := n + k;
+    -- test_performance_w11.py'nin geçici çalışanları (soyadı "TEST11P", e-posta "t11p<n>.x@demo.hr360").
+    EXECUTE $q$DELETE FROM performance_f360_participants WHERE "ReviewerEmployeeId" IN (SELECT "Id" FROM employee_employees
+               WHERE "TenantSlug" = 'demo' AND "LastName" = 'TEST11P' AND "Email" LIKE 't11p%.x@demo.hr360')$q$;
+    GET DIAGNOSTICS k = ROW_COUNT; n := n + k;
+    EXECUTE $q$DELETE FROM employee_assignments WHERE "EmployeeId" IN (SELECT "Id" FROM employee_employees
+               WHERE "TenantSlug" = 'demo' AND "LastName" = 'TEST11P' AND "Email" LIKE 't11p%.x@demo.hr360')$q$;
+    GET DIAGNOSTICS k = ROW_COUNT; n := n + k;
+    EXECUTE $q$DELETE FROM employee_employees WHERE "TenantSlug" = 'demo' AND "LastName" = 'TEST11P' AND "Email" LIKE 't11p%.x@demo.hr360'$q$;
+    GET DIAGNOSTICS k = ROW_COUNT; n := n + k;
+  END IF;
+  IF to_regclass('learning_due_reminders') IS NOT NULL THEN
+    EXECUTE $q$DELETE FROM learning_due_reminders WHERE "TenantSlug" = 'demo' AND "SourceId" IN (
+               SELECT e."Id" FROM learning_enrollments e JOIN learning_courses c ON c."Id" = e."CourseId" WHERE c."Title" LIKE 'TEST11L%'
+               UNION SELECT "Id" FROM governance_osh_trainings WHERE "Topic" LIKE 'TEST11L%')$q$;
+    GET DIAGNOSTICS k = ROW_COUNT; n := n + k;
+    EXECUTE $q$DELETE FROM learning_career_paths WHERE "TenantSlug" = 'demo' AND "Name" LIKE 'TEST11L%'$q$;
+    GET DIAGNOSTICS k = ROW_COUNT; n := n + k;
+    EXECUTE $q$DELETE FROM learning_courses WHERE "TenantSlug" = 'demo' AND "Title" LIKE 'TEST11L%'$q$;
+    GET DIAGNOSTICS k = ROW_COUNT; n := n + k;
+    EXECUTE $q$DELETE FROM learning_competency_assessments WHERE "CompetencyId" IN
+               (SELECT "Id" FROM learning_competencies WHERE "TenantSlug" = 'demo' AND "Name" LIKE 'TEST11L%')$q$;
+    GET DIAGNOSTICS k = ROW_COUNT; n := n + k;
+    EXECUTE $q$DELETE FROM learning_competencies WHERE "TenantSlug" = 'demo' AND "Name" LIKE 'TEST11L%'$q$;
+    GET DIAGNOSTICS k = ROW_COUNT; n := n + k;
+    EXECUTE $q$DELETE FROM governance_osh_trainings WHERE "TenantSlug" = 'demo' AND "Topic" LIKE 'TEST11L%'$q$;
+    GET DIAGNOSTICS k = ROW_COUNT; n := n + k;
+    EXECUTE $q$DELETE FROM notification_messages WHERE "TenantSlug" = 'demo' AND ("Body" LIKE '%TEST11L%' OR "Subject" LIKE '%TEST11L%')$q$;
+    GET DIAGNOSTICS k = ROW_COUNT; n := n + k;
+  END IF;
+  RETURN n;
+END $f$;
+SELECT 'dalga 11 (işe alım, imza, performans, eğitim)', pg_temp.del_w11();
+
 -- ============================================================== İzin bakiyeleri yeniden hesap
 WITH calc AS (
   SELECT b."Id",

@@ -14,7 +14,7 @@ import {
   MessagesSquare, HeartPulse, GitBranch, LogOut, ScrollText, ShieldCheck, FileStack,
   Workflow, PlugZap, Receipt, Radar, History, BarChart3, Bot, Calculator, FileSpreadsheet,
   Route, Telescope, Award, Search, Lock, BookOpenText, ScanLine, ReceiptText, Banknote, QrCode, FileCheck2,
-  Gift, Plane, TrendingUp, Library, HardHat, Gavel, Scale, Grid3x3, Layers,
+  Gift, Plane, TrendingUp, Library, HardHat, Gavel, Scale, Grid3x3, Layers, Network,
 } from 'lucide-react'
 import type { Permission, Role } from '@/auth/roles'
 import { hasStandardRole } from '@/auth/roles'
@@ -72,6 +72,7 @@ export const navGroups: NavGroupData[] = [
       { id: 'travel', title: tx('Seyahat'), description: tx('Seyahat talebi ve harcırah'), icon: Plane, path: '/panel/seyahat', permission: 'expense:view' },
       { id: 'benefits', title: tx('Yan haklar'), description: tx('Esnek yan hak seçimi'), icon: Gift, path: '/panel/yan-haklar' },
       { id: 'my-interviews', title: tx('Mülakatlarım'), description: tx('Görüşmeci olduğunuz mülakatlar'), icon: ClipboardCheck, path: '/panel/mulakatlarim' },
+      { id: 'refer', title: tx('Aday öner'), description: tx('Açık pozisyonlara aday önerin'), icon: UserPlus, path: '/panel/aday-oner' },
       { id: 'doc-request', title: tx('Belge talebi'), description: tx('Çalışma belgesi, maaş yazısı'), icon: FileCheck2, path: '/panel/belge-talebi' },
       { id: 'my-signatures', title: tx('İmzalarım'), description: tx('İmzanızı bekleyen belgeler'), icon: FileCheck2, path: '/panel/imzalarim' },
       { id: 'announcements', title: tx('Duyurular'), description: tx('Şirket duyuruları, okundu onayı'), icon: Megaphone, path: '/panel/duyurular' },
@@ -98,6 +99,8 @@ export const navGroups: NavGroupData[] = [
         children: [
           { id: 'postings', title: tx('İlanlar'), description: tx('Açık pozisyonlar'), icon: FileText, path: '/panel/ise-alim' },
           { id: 'candidates', title: tx('Adaylar'), description: tx('Aday havuzu'), icon: Users, path: '/panel/ise-alim/adaylar' },
+          { id: 'referrals', title: tx('Çalışan önerileri'), description: tx('Öneri programı ve ödüller'), icon: Gift, path: '/panel/ise-alim/oneriler', requireRoles: ['hr-admin', 'tenant-admin', 'platform-admin'] },
+          { id: 'recruitment-analytics', title: tx('İşe alım analizi'), description: tx('Huni, süreler, kaynaklar'), icon: BarChart3, path: '/panel/ise-alim/analiz', requireRoles: ['hr-admin', 'tenant-admin', 'platform-admin'] },
           { id: 'hire-saga', title: tx('Teklif → işe giriş'), description: tx('İşe alım sagası izleme'), icon: Route, path: '/panel/ise-alim/saga', feature: 'sagas', requireRoles: ['hr-admin', 'tenant-admin', 'platform-admin'] },
         ],
       },
@@ -125,12 +128,15 @@ export const navGroups: NavGroupData[] = [
         children: [
           { id: 'perf-me', title: tx('Benim performansım'), description: tx('Kişisel karne'), icon: UserRound, path: '/panel/performans/benim' },
           { id: 'perf-goals', title: tx('Hedefler'), description: tx('Dönem hedefleri'), icon: Crosshair, path: '/panel/performans/hedefler' },
+          { id: 'perf-okr', title: tx('OKR hizalama'), description: tx('Şirket → departman → kişi'), icon: Network, path: '/panel/performans/okr' },
           { id: 'perf-reviews', title: tx('Değerlendirmeler'), description: tx('Öz ve yönetici değerlendirmesi'), icon: ClipboardList, path: '/panel/performans/degerlendirme' },
           { id: 'perf-score', title: tx('Puan dökümü'), description: tx('Ağırlıklı puan hesabı'), icon: Gauge, path: '/panel/performans/puan' },
           { id: 'perf-feedback', title: tx('Geri bildirim'), description: tx('Sürekli geri bildirim'), icon: MessageSquareText, path: '/panel/performans/geri-bildirim' },
+          { id: 'perf-360', title: tx('360 geri bildirim'), description: tx('Anonim, yetkinlik bazlı'), icon: Users, path: '/panel/performans/360' },
           { id: 'perf-analytics', title: tx('Analiz'), description: tx('Ekip gidişatı'), icon: LineChart, path: '/panel/performans/analiz', permission: 'performance:manage' },
           { id: 'perf-recs', title: tx('Aksiyon önerileri'), description: tx('Model önerileri'), icon: Lightbulb, path: '/panel/performans/oneriler', permission: 'performance:manage' },
           { id: 'perf-ninebox', title: tx('9-kutu'), description: tx('Performans × potansiyel, kalibrasyon'), icon: Grid3x3, path: '/panel/performans/dokuz-kutu', permission: 'performance:manage' },
+          { id: 'perf-calibration', title: tx('Kalibrasyon oturumu'), description: tx('Sürükle-bırak 9-kutu, İK onayı'), icon: Scale, path: '/panel/performans/kalibrasyon', permission: 'performance:manage' },
         ],
       },
       {
@@ -143,6 +149,8 @@ export const navGroups: NavGroupData[] = [
       },
       { id: 'learning', title: tx('Eğitim'), description: tx('Katalog ve sertifikalar'), icon: GraduationCap, path: '/panel/egitim', permission: 'learning:view' },
       { id: 'competencies', title: tx('Yetkinlikler'), description: tx('Yetkinlik açığı ve eğitim önerisi'), icon: Layers, path: '/panel/yetkinlikler', permission: 'learning:view' },
+      { id: 'career-paths', title: tx('Kariyer yolları'), description: tx('Rol basamakları ve sonraki adım'), icon: Sprout, path: '/panel/kariyer-yollari', permission: 'learning:view' },
+      { id: 'due-training', title: tx('Zorunlu eğitim takibi'), description: tx('Son tarih, sertifika ve İSG eğitimi'), icon: CalendarClock, path: '/panel/egitim-takibi', permission: 'learning:view' },
       { id: 'mentorship', title: tx('Mentorluk'), description: tx('Beceri eşleştirmeli mentor bulma'), icon: Handshake, path: '/panel/mentorluk', feature: 'mentorship' },
       { id: 'mobility', title: tx('İç ilanlar'), description: tx('Şirket içi açık pozisyonlar'), icon: Megaphone, path: '/panel/ic-ilanlar', feature: 'mobility' },
       { id: 'one-on-ones', title: tx('1:1 görüşmeler'), description: tx('Ortak gündem, aksiyonlar, notlar'), icon: MessagesSquare, path: '/panel/birebir', feature: 'one-on-ones' },

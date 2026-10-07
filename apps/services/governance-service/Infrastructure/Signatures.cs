@@ -32,6 +32,32 @@ public static class Signatures
 
     public const string DocumentRequest = "DocumentRequest";
     public const string HrDocument = "HrDocument";
+    /// <summary>Dalga 11: aday iş teklifi mektubu (recruitment-service iç uçlarla; imzalayan çalışan değil adaydır).</summary>
+    public const string OfferLetter = "OfferLetter";
+
+    /// <summary>İmzalayan türü: Employee (varsayılan; kimlik employee_employees) | Candidate (kimlik recruitment_candidates).</summary>
+    public const string SignerEmployee = "Employee";
+    public const string SignerCandidate = "Candidate";
+
+    /// <summary>
+    /// Dış (çalışan olmayan) imzalayan kuralı: OfferLetter yalnızca aday imzalar ve kod çağıranın verdiği
+    /// e-postaya gider; diğer türler yalnızca çalışan imzalar. Uygunsa null, değilse hata kodu.
+    /// </summary>
+    public static string? SignerRule(string documentType, string? signerKind, string? signerEmail, bool requireEmail)
+    {
+        var kind = string.IsNullOrWhiteSpace(signerKind) ? SignerEmployee : signerKind.Trim();
+        if (documentType == OfferLetter)
+        {
+            if (kind != SignerCandidate) return "invalid_signer";
+            if (requireEmail && !ValidEmail(signerEmail)) return "no_email";
+            return null;
+        }
+        if (kind != SignerEmployee) return "invalid_signer";
+        return string.IsNullOrWhiteSpace(signerEmail) ? null : "invalid_signer";
+    }
+
+    public static bool ValidEmail(string? email) =>
+        email is { Length: > 5 and <= 200 } e && e.IndexOf('@') is > 0 and var at && at < e.Length - 3 && e.IndexOf('.', at) > at + 1 && !e.Any(char.IsWhiteSpace);
 
     public static string NewCode() => RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6");
 

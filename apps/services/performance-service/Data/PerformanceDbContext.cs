@@ -31,6 +31,13 @@ public class PerformanceDbContext : DbContext, ITenantAwareContext
     public DbSet<PotentialRating> PotentialRatings => Set<PotentialRating>();
     public DbSet<NineBoxOverride> NineBoxOverrides => Set<NineBoxOverride>();
     public DbSet<CycleTemplate> CycleTemplates => Set<CycleTemplate>();
+    public DbSet<CalibrationSession> CalibrationSessions => Set<CalibrationSession>();
+    public DbSet<CalibrationItem> CalibrationItems => Set<CalibrationItem>();
+    public DbSet<CalibrationChange> CalibrationChanges => Set<CalibrationChange>();
+    public DbSet<Objective> Objectives => Set<Objective>();
+    public DbSet<F360Request> F360Requests => Set<F360Request>();
+    public DbSet<F360Participant> F360Participants => Set<F360Participant>();
+    public DbSet<F360Response> F360Responses => Set<F360Response>();
 
     /// <summary>
     /// Türkçe harf katlamalı küçük harf (SQL: public.hr360_fold, scripts/sql/2026-10-09_paging_indexes.sql).
@@ -114,6 +121,33 @@ public class PerformanceDbContext : DbContext, ITenantAwareContext
         modelBuilder.Entity<CycleTemplate>().ToTable("performance_cycle_templates");
         modelBuilder.Entity<CycleTemplate>().Property(c => c.Period).HasConversion<string>();
         modelBuilder.Entity<CycleTemplate>().Property(c => c.ConfigJson).HasColumnType("jsonb");
+
+        // Dalga 11 — tablolar scripts/sql/2026-10-24_performance_w11.sql'den.
+        modelBuilder.Entity<CalibrationSession>().ConfigureTenantColumn();
+        modelBuilder.Entity<CalibrationSession>().ToTable("performance_calibration_sessions");
+        modelBuilder.Entity<CalibrationSession>().Property(s => s.Status).HasConversion<string>();
+        modelBuilder.Entity<CalibrationItem>().ConfigureTenantColumn();
+        modelBuilder.Entity<CalibrationItem>().ToTable("performance_calibration_items");
+        modelBuilder.Entity<CalibrationChange>().ConfigureTenantColumn();
+        modelBuilder.Entity<CalibrationChange>().ToTable("performance_calibration_changes");
+        modelBuilder.Entity<Objective>().ConfigureTenantColumn();
+        modelBuilder.Entity<Objective>().ToTable("performance_objectives");
+        modelBuilder.Entity<Objective>().Property(o => o.Level).HasConversion<string>();
+        modelBuilder.Entity<F360Request>().ConfigureTenantColumn();
+        modelBuilder.Entity<F360Request>().ToTable("performance_f360_requests");
+        modelBuilder.Entity<F360Request>().Property(r => r.CompetenciesJson).HasColumnType("jsonb");
+        modelBuilder.Entity<F360Participant>().ConfigureTenantColumn();
+        modelBuilder.Entity<F360Participant>().ToTable("performance_f360_participants");
+        modelBuilder.Entity<F360Response>().ConfigureTenantColumn();
+        modelBuilder.Entity<F360Response>().ToTable("performance_f360_responses");
+        modelBuilder.Entity<F360Response>().Property(r => r.RatingsJson).HasColumnType("jsonb");
+        // Yabancı anahtarlar modelde de tanımlı olmalı: oturum + satırları (talep + katılımcıları) tek SaveChanges'ta
+        // eklenirken EF ekleme sırasını bağımlılığa göre kurar (aksi hâlde satır önce eklenip FK 23503 verir).
+        modelBuilder.Entity<CalibrationItem>().HasOne<CalibrationSession>().WithMany().HasForeignKey(i => i.SessionId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<CalibrationChange>().HasOne<CalibrationSession>().WithMany().HasForeignKey(c => c.SessionId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<F360Participant>().HasOne<F360Request>().WithMany().HasForeignKey(p => p.RequestId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<F360Response>().HasOne<F360Request>().WithMany().HasForeignKey(r => r.RequestId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<Objective>().HasOne<Objective>().WithMany().HasForeignKey(o => o.ParentId).OnDelete(DeleteBehavior.ClientSetNull);
 
         modelBuilder.ApplyTenantFilters(this);
     }

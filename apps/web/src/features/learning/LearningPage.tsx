@@ -217,15 +217,17 @@ function EnrollModal({
   const toast = useToast()
   const queryClient = useQueryClient()
   const [employeeId, setEmployeeId] = useState('')
+  const [dueOn, setDueOn] = useState('')
   const [error, setError] = useState<string | undefined>()
 
   const mutation = useMutation({
-    mutationFn: () => learningApi.enroll(courseId!, employeeId),
+    mutationFn: () => learningApi.enroll(courseId!, employeeId, dueOn),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['learning'] })
       toast.ok(tx('Kayıt oluşturuldu'))
       onClose()
       setEmployeeId('')
+      setDueOn('')
     },
     onError: (e: unknown) => toast.stop(e instanceof Error ? e.message : tx('Kayıt oluşturulamadı.')),
   })
@@ -265,6 +267,10 @@ function EnrollModal({
         onChange={setEmployeeId}
         hint={error}
       />
+      <div className="mt-3">
+        <TextField label={tx('Son tarih (isteğe bağlı)')} type="date" value={dueOn} onChange={(e) => setDueOn(e.target.value)}
+          hint={tx('Zorunlu eğitimlerde son tarihten 30 ve 7 gün önce ve son günde çalışana ve yöneticisine hatırlatma gider.')} />
+      </div>
     </Modal>
   )
 }

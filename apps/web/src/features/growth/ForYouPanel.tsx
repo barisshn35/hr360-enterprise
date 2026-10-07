@@ -55,12 +55,12 @@ export function ForYouPanel() {
         </div>
       )}
       <div className="grid gap-4 xl:grid-cols-3">
-        <Column title={tx('İç ilanlar')} icon={Briefcase} items={d.postings} empty={tx('Becerilerinize uyan açık ilan yok.')} to="/ic-ilanlar" toLabel={tx('Tüm ilanlar')}
+        <Column title={tx('İç ilanlar')} icon={Briefcase} items={d.postings} empty={tx('Becerilerinize uyan açık ilan yok.')} to="/panel/ic-ilanlar" toLabel={tx('Tüm ilanlar')}
           render={(r) => <><p className="text-[13.5px] font-medium">{r.info.title}</p><p className="text-[12px] text-muted-foreground">{r.info.department ?? tx('Genel')}{r.info.applied ? ` · ${tx('Başvurdunuz')}` : ''}</p></>} />
-        <Column title={tx('Mentorlar')} icon={Users} items={d.mentors} empty={tx('Hedeflerinize uyan boş kapasiteli mentor yok.')} to="/mentorluk" toLabel={tx('Mentorluk')}
+        <Column title={tx('Mentorlar')} icon={Users} items={d.mentors} empty={tx('Hedeflerinize uyan boş kapasiteli mentor yok.')} to="/panel/mentorluk" toLabel={tx('Mentorluk')}
           render={(r) => <><p className="text-[13.5px] font-medium">{r.info.name}</p><p className="text-[12px] text-muted-foreground">{r.info.department ?? '—'}</p></>} />
-        <Column title={tx('Eğitimler')} icon={GraduationCap} items={d.courses} empty={tx('Gelişim alanlarınıza uyan eğitim yok.')} to="/egitim" toLabel={tx('Eğitim kataloğu')}
-          render={(r) => <><p className="text-[13.5px] font-medium">{r.info.title}</p><p className="text-[12px] text-muted-foreground">{r.info.category ?? ''}</p></>} />
+        <Column title={tx('Eğitimler')} icon={GraduationCap} items={d.courses} empty={tx('Gelişim alanlarınıza uyan eğitim yok.')} to="/panel/egitim" toLabel={tx('Eğitim kataloğu')}
+          render={(r) => <><Link to={`/panel/egitim/${r.id}`} className="text-[13.5px] font-medium hover:text-primary hover:underline">{r.info.title}</Link><p className="text-[12px] text-muted-foreground">{r.info.category ?? ''}</p></>} />
       </div>
     </div>
   )

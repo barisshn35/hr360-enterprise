@@ -24,6 +24,7 @@ import { tx } from '@/lib/i18n'
 import { useConfirm } from '@/components/ui/Confirm'
 import { isHr as isHrRole } from '@/auth/roles'
 import { SkillGraphPanel } from './SkillGraphPanel'
+import { learningW11Api } from '@/api/learningW11'
 
 type TabKey = 'benim' | 'ekip' | 'tanimlar' | 'harita'
 
@@ -48,6 +49,10 @@ function GapPanel({ employee, canAssess, self }: { employee: string; canAssess: 
     () => learningContentApi.assess({ employeeId: gaps.data!.employeeId, competencyId: assess!.competencyId, level: Number(assess!.level), note: assess!.note || undefined }),
     { success: tx('Değerlendirme kaydedildi'), invalidate: [['learning', 'gaps'], ['learning', 'recs'], ['learning', 'team']], onDone: () => setAssess(null) },
   )
+  // Dalga 11 (madde 82): öneriden kendini kaydetme (yalnızca kendi açığında; son tarih yok, otomatik kayıt yok).
+  const enroll = useAction((courseId: string) => learningW11Api.enrollSelf(courseId, gaps.data!.employeeId), {
+    success: tx('Eğitime kaydoldunuz'), invalidate: [['learning', 'recs'], ['learning', 'career']],
+  })
   if (gaps.isPending) return <RowsSkeleton rows={4} columns={3} />
   if (gaps.isError) return <ErrorState message={errMsg(gaps.error)} onRetry={() => void gaps.refetch()} />
   const g: GapView = gaps.data
@@ -70,6 +75,16 @@ function GapPanel({ employee, canAssess, self }: { employee: string; canAssess: 
                     {i.current === null ? tx('değerlendirilmedi') : tx('güncel {0} — {1}, {2}, {3}', [i.current, sourceLabel[i.source ?? ''] ?? '', i.assessedBy ?? '', i.assessedAt ? formatDate(i.assessedAt) : ''])}
                   </span>
                 </span>
+                {i.gap > 0 && (recs.data?.items ?? []).some((r) => r.closes.some((c) => c.competencyId === i.competencyId)) && (
+                  <span className="flex flex-wrap gap-1.5" aria-label={tx('Bu açığı kapatan eğitimler')}>
+                    {(recs.data?.items ?? []).filter((r) => r.closes.some((c) => c.competencyId === i.competencyId)).slice(0, 3).map((r) => (
+                      <Link key={r.courseId} to={`/panel/egitim/${r.courseId}`}
+                        className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[11.5px] text-primary hover:bg-primary/5">
+                        <GraduationCap className="size-3" aria-hidden />{r.title}
+                      </Link>
+                    ))}
+                  </span>
+                )}
                 <span className={cn('tabular rounded-full px-2.5 py-0.5 text-[12px] font-semibold', gapClass(i.gap, i.current))}>
                   {i.gap === 0 ? tx('Karşılıyor') : tx('Açık {0}', [i.gap])}
                 </span>
@@ -85,7 +100,8 @@ function GapPanel({ employee, canAssess, self }: { employee: string; canAssess: 
       </Panel>
 
       <Panel>
-        <PanelHead title={<span className="flex items-center gap-2"><Sparkles className="size-4 text-primary" />{' '}{tx('Açığı kapatabilecek eğitimler')}</span>} />
+        <PanelHead title={<span className="flex items-center gap-2"><Sparkles className="size-4 text-primary" />{' '}{tx('Açığı kapatabilecek eğitimler')}</span>}
+          action={self ? <Link to="/panel/kariyer-yollari" className="text-[12px] text-primary hover:underline">{tx('Kariyer yolum')}</Link> : undefined} />
         <PanelBody className="space-y-3">
           <InfoNote>{recs.data?.notice ?? tx('Bu liste yalnızca bir öneridir: otomatik eğitim kaydı yapılmaz ve kişi hakkında otomatik karar verilmez.')}</InfoNote>
           {recs.isPending ? <RowsSkeleton rows={2} columns={2} /> : !recs.data?.items.length ? (
@@ -103,6 +119,9 @@ function GapPanel({ employee, canAssess, self }: { employee: string; canAssess: 
                   </span>
                   {r.isMandatory && <StatusBadge tone="warning">{tx('Zorunlu')}</StatusBadge>}
                   {r.enrollmentStatus && <StatusBadge tone={r.enrollmentStatus === 'Completed' ? 'success' : 'info'}>{r.enrollmentStatus === 'Completed' ? tx('Tamamlandı') : tx('Kayıtlı')}</StatusBadge>}
+                  {!r.enrollmentStatus && self && (
+                    <Button size="sm" variant="outline" disabled={enroll.isPending} onClick={() => enroll.mutate(r.courseId)}>{tx('Kendimi kaydet')}</Button>
+                  )}
                   <Button asChild size="sm" variant="outline"><Link to={`/panel/egitim/${r.courseId}`}>{tx('İncele')}</Link></Button>
                 </li>
               ))}

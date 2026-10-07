@@ -160,7 +160,8 @@ public class CoursesController : ControllerBase
         if (await _db.Enrollments.AnyAsync(e => e.CourseId == id && e.EmployeeId == request.EmployeeId))
             return Conflict("Bu çalışan bu eğitime zaten kayıtlı");
 
-        var enrollment = new Enrollment { CourseId = id, EmployeeId = request.EmployeeId };
+        // Dalga 11 (madde 84): son tarihi yalnızca yönetici+ verir (çalışanın kendi kaydında yok sayılır).
+        var enrollment = new Enrollment { CourseId = id, EmployeeId = request.EmployeeId, DueOn = IsManagerOrAbove ? request.DueOn : null };
         _db.Enrollments.Add(enrollment);
         await _db.SaveChangesAsync();
         return Created($"/api/courses/{id}", enrollment);
@@ -239,5 +240,5 @@ public class CoursesController : ControllerBase
 public record CreateCourseRequest(
     string Title, string? Description, string? Provider,
     decimal DurationHours, CourseCategory Category, bool IsMandatory, int? CertificateValidityMonths = null);
-public record EnrollRequest(Guid EmployeeId);
+public record EnrollRequest(Guid EmployeeId, DateOnly? DueOn = null);
 public record CompleteEnrollmentRequest(bool Passed, decimal? Score);

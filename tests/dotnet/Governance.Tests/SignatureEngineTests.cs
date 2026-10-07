@@ -186,4 +186,38 @@ public class SignatureEngineTests
         Assert.True(InternalSignaturesController.TokenOk(Token));
         Assert.False(InternalSignaturesController.TokenOk(Token + "x"));
     }
+
+    /* ------------------------------------------------------------ dalga 11: aday (dış imzalayan) */
+
+    [Theory]
+    [InlineData("OfferLetter", "Candidate", "aday@example.com", true, null)]
+    [InlineData("OfferLetter", "Candidate", null, false, null)]
+    [InlineData("OfferLetter", "Candidate", null, true, "no_email")]
+    [InlineData("OfferLetter", "Candidate", "gecersiz", true, "no_email")]
+    [InlineData("OfferLetter", null, "aday@example.com", true, "invalid_signer")]
+    [InlineData("OfferLetter", "Employee", "aday@example.com", true, "invalid_signer")]
+    [InlineData("HrDocument", null, null, true, null)]
+    [InlineData("HrDocument", "Employee", null, true, null)]
+    [InlineData("HrDocument", "Candidate", "aday@example.com", true, "invalid_signer")]
+    [InlineData("HrDocument", null, "baska@example.com", true, "invalid_signer")]
+    public void Imzalayan_turu_kurali(string type, string? kind, string? email, bool requireEmail, string? expected) =>
+        Assert.Equal(expected, Signatures.SignerRule(type, kind, email, requireEmail));
+
+    [Fact]
+    public async Task Ic_uclar_teklif_mektubu_aday_ve_eposta_ister()
+    {
+        var (c, _) = Internal(Token);
+        var r = await c.Otp(new("demo", "OfferLetter", Guid.NewGuid(), Guid.NewGuid(), "x", null, 1), default);
+        Assert.Equal("invalid_signer", JsonSerializer.SerializeToElement(Assert.IsType<BadRequestObjectResult>(r).Value).GetProperty("code").GetString());
+        var (c2, _) = Internal(Token);
+        r = await c2.Otp(new("demo", "OfferLetter", Guid.NewGuid(), Guid.NewGuid(), "x", null, 1, "Candidate", null), default);
+        Assert.Equal("no_email", JsonSerializer.SerializeToElement(Assert.IsType<BadRequestObjectResult>(r).Value).GetProperty("code").GetString());
+        // Çalışan belgesine dış e-posta verilemez (kod başka adrese gönderilemesin).
+        var (c3, _) = Internal(Token);
+        r = await c3.Otp(new("demo", "HrDocument", Guid.NewGuid(), Guid.NewGuid(), "x", null, 1, null, "baska@example.com"), default);
+        Assert.IsType<BadRequestObjectResult>(r);
+        var (c4, _) = Internal(Token);
+        r = await c4.Sign(new("demo", "OfferLetter", Guid.NewGuid(), Guid.NewGuid(), null, "123456", new string('a', 64), 1, null, null, null, null), default);
+        Assert.IsType<BadRequestObjectResult>(r);
+    }
 }

@@ -4281,3 +4281,379 @@ ALTER TABLE governance_ml_model_settings ADD COLUMN IF NOT EXISTS "LastTenantTra
 DO $$ BEGIN
     IF to_regprocedure('hr360_rls_apply_policies()') IS NOT NULL THEN PERFORM hr360_rls_apply_policies(); END IF;
 END $$;
+
+-- ===== 2026-10-24_recruitment_w11
+-- Dalga 11 (işe alım): çalışan aday önerisi (73), aday durum bağlantısı (74), Google for Jobs
+-- alanları (75), aşama geçmişi (78 — huni analizi). İdempotent.
+-- Canlıya: docker exec -i hr360-postgres-1 psql -v ON_ERROR_STOP=1 -q -U hr360admin -d hr360_operational < bu_dosya
+
+-- Kiracı başına işe alım program ayarları: öneri ödülü ve ilan yayın tercihleri.
+CREATE TABLE IF NOT EXISTS recruitment_program_settings (
+    "Id" uuid PRIMARY KEY,
+    "TenantSlug" varchar(64) NOT NULL,
+    "ReferralEnabled" boolean NOT NULL DEFAULT true,
+    "ReferralRewardAmount" numeric(14,2) NULL,
+    "ReferralRewardCurrency" varchar(3) NOT NULL DEFAULT 'TRY',
+    -- Ödül, işe girişten bu kadar gün sonra (deneme süresi; İş K. m.15 en çok 2 ay) hak edilir.
+    "ReferralProbationDays" integer NOT NULL DEFAULT 60,
+    "ReferralRewardNote" varchar(500) NULL,
+    -- Google for Jobs (JobPosting JSON-LD) çıktısında ücret aralığı yalnızca kiracı açarsa yer alır.
+    "PublishSalaryInJobPostings" boolean NOT NULL DEFAULT false,
+    "UpdatedAt" timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_recruitment_program_settings_tenant ON recruitment_program_settings ("TenantSlug");
+
+-- İlanın herkese açık yapılandırılmış veri alanları (75).
+ALTER TABLE recruitment_job_postings ADD COLUMN IF NOT EXISTS "Location" varchar(120) NULL;
+ALTER TABLE recruitment_job_postings ADD COLUMN IF NOT EXISTS "Region" varchar(120) NULL;
+ALTER TABLE recruitment_job_postings ADD COLUMN IF NOT EXISTS "Country" varchar(2) NULL;
+ALTER TABLE recruitment_job_postings ADD COLUMN IF NOT EXISTS "RemoteAllowed" boolean NOT NULL DEFAULT false;
+ALTER TABLE recruitment_job_postings ADD COLUMN IF NOT EXISTS "ValidThrough" timestamptz NULL;
+ALTER TABLE recruitment_job_postings ADD COLUMN IF NOT EXISTS "SalaryMin" numeric(14,2) NULL;
+ALTER TABLE recruitment_job_postings ADD COLUMN IF NOT EXISTS "SalaryMax" numeric(14,2) NULL;
+ALTER TABLE recruitment_job_postings ADD COLUMN IF NOT EXISTS "SalaryCurrency" varchar(3) NULL;
+ALTER TABLE recruitment_job_postings ADD COLUMN IF NOT EXISTS "SalaryPeriod" varchar(10) NULL;
+
+-- Çalışan aday önerisi (73). Aday kişisel verisi burada TUTULMAZ (aday kaydına bağlanır); aday
+-- silinince/anonimleşince bağlantı boşalır, öneri yalnızca öneren + ilan + ödül durumu olarak kalır.
+CREATE TABLE IF NOT EXISTS recruitment_referrals (
+    "Id" uuid PRIMARY KEY,
+    "TenantSlug" varchar(64) NOT NULL,
+    "JobPostingId" uuid NOT NULL REFERENCES recruitment_job_postings("Id") ON DELETE CASCADE,
+    "ReferrerEmployeeId" uuid NOT NULL,
+    "CandidateId" uuid NULL REFERENCES recruitment_candidates("Id") ON DELETE SET NULL,
+    "ApplicationId" uuid NULL REFERENCES recruitment_applications("Id") ON DELETE SET NULL,
+    "Relationship" varchar(40) NULL,
+    "Note" varchar(1000) NULL,
+    -- Öneren, adayın önerilmeyi kabul ettiğini beyan eder (onay kutusu); aday ayrıca KVKK m.10 e-postası alır.
+    "CandidateConsentConfirmed" boolean NOT NULL,
+    "ConsentConfirmedAt" timestamptz NOT NULL,
+    "NoticeSentAt" timestamptz NULL,
+    -- None | Waiting | Eligible | Approved | Paid | Forfeited | NotEligible
+    "RewardStatus" varchar(20) NOT NULL DEFAULT 'None',
+    "HiredAt" timestamptz NULL,
+    "RewardEligibleAt" timestamptz NULL,
+    "RewardAmount" numeric(14,2) NULL,
+    "RewardCurrency" varchar(3) NULL,
+    "RewardDecidedAt" timestamptz NULL,
+    "RewardDecidedByUserId" varchar(64) NULL,
+    "RewardNote" varchar(500) NULL,
+    "CreatedAt" timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS ix_recruitment_referrals_referrer ON recruitment_referrals ("TenantSlug", "ReferrerEmployeeId");
+CREATE UNIQUE INDEX IF NOT EXISTS ux_recruitment_referrals_application ON recruitment_referrals ("ApplicationId") WHERE "ApplicationId" IS NOT NULL;
+
+-- Aday durum bağlantısı (74): yalnızca kaba aşama + sonraki adım gösterir (kişisel veri yok).
+-- Jetonun yalnızca SHA-256 özeti saklanır; İK ya da aday iptal edebilir; süresi dolar.
+CREATE TABLE IF NOT EXISTS recruitment_status_links (
+    "Id" uuid PRIMARY KEY,
+    "TenantSlug" varchar(64) NOT NULL,
+    "ApplicationId" uuid NOT NULL REFERENCES recruitment_applications("Id") ON DELETE CASCADE,
+    "TokenHash" varchar(64) NOT NULL,
+    "CreatedAt" timestamptz NOT NULL DEFAULT now(),
+    "ExpiresAt" timestamptz NOT NULL,
+    "RevokedAt" timestamptz NULL,
+    -- Hr | Candidate | Reissued
+    "RevokedBy" varchar(20) NULL,
+    "LastViewedAt" timestamptz NULL,
+    "ViewCount" integer NOT NULL DEFAULT 0,
+    "CreatedByUserId" varchar(64) NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_recruitment_status_links_hash ON recruitment_status_links ("TokenHash");
+CREATE INDEX IF NOT EXISTS ix_recruitment_status_links_app ON recruitment_status_links ("ApplicationId");
+
+-- Aşama geçmişi (78): aşamada geçen süre ve işe alım süresi için. Tetikleyiciyle doldurulur, böylece
+-- durumu değiştiren her yol (kanban, teklif yanıtı, olay tüketicisi...) kaydedilir. Kişisel veri yok;
+-- başvuru silinince birlikte silinir.
+CREATE TABLE IF NOT EXISTS recruitment_application_stage_events (
+    "Id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    "TenantSlug" varchar(64) NOT NULL,
+    "ApplicationId" uuid NOT NULL REFERENCES recruitment_applications("Id") ON DELETE CASCADE,
+    "FromStatus" varchar(20) NULL,
+    "ToStatus" varchar(20) NOT NULL,
+    "ChangedAt" timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS ix_recruitment_stage_events_app ON recruitment_application_stage_events ("ApplicationId", "ChangedAt");
+CREATE INDEX IF NOT EXISTS ix_recruitment_stage_events_tenant ON recruitment_application_stage_events ("TenantSlug", "ChangedAt");
+
+-- SECURITY DEFINER: servis rolüne (deploy/postgres/roles.sql) bu tabloya yazma yetkisi gerekmeden çalışır.
+CREATE OR REPLACE FUNCTION recruitment_stage_event() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        INSERT INTO recruitment_application_stage_events ("TenantSlug","ApplicationId","FromStatus","ToStatus","ChangedAt")
+        VALUES (NEW."TenantSlug", NEW."Id", NULL, NEW."Status", coalesce(NEW."AppliedAt", now()));
+    ELSIF NEW."Status" IS DISTINCT FROM OLD."Status" THEN
+        INSERT INTO recruitment_application_stage_events ("TenantSlug","ApplicationId","FromStatus","ToStatus","ChangedAt")
+        VALUES (NEW."TenantSlug", NEW."Id", OLD."Status", NEW."Status", now());
+    END IF;
+    RETURN NEW;
+END $$;
+
+DROP TRIGGER IF EXISTS trg_recruitment_stage_event ON recruitment_applications;
+CREATE TRIGGER trg_recruitment_stage_event AFTER INSERT OR UPDATE OF "Status" ON recruitment_applications
+    FOR EACH ROW EXECUTE FUNCTION recruitment_stage_event();
+
+-- Geçmişi olmayan mevcut başvurular için yaklaşık geçmiş: başvuru anı + son durum değişikliği.
+INSERT INTO recruitment_application_stage_events ("TenantSlug","ApplicationId","FromStatus","ToStatus","ChangedAt")
+SELECT a."TenantSlug", a."Id", NULL, 'Applied', a."AppliedAt"
+  FROM recruitment_applications a
+ WHERE NOT EXISTS (SELECT 1 FROM recruitment_application_stage_events e WHERE e."ApplicationId" = a."Id");
+INSERT INTO recruitment_application_stage_events ("TenantSlug","ApplicationId","FromStatus","ToStatus","ChangedAt")
+SELECT a."TenantSlug", a."Id", 'Applied', a."Status", coalesce(a."StatusChangedAt", a."AppliedAt")
+  FROM recruitment_applications a
+ WHERE a."Status" <> 'Applied'
+   AND NOT EXISTS (SELECT 1 FROM recruitment_application_stage_events e WHERE e."ApplicationId" = a."Id" AND e."ToStatus" <> 'Applied');
+
+-- ===== 2026-10-24_offer_esign
+-- Dalga 11 / madde 76: iş teklifi mektubunun aday tarafından basit elektronik imzayla kabulü. İdempotent.
+-- Kod, imza ve kanıt governance-service'teki TEK imza motorundadır (DocumentType 'OfferLetter');
+-- recruitment-service iç uçlarla (X-Internal-Token) çağırır. İmzalayan çalışan değil ADAYDIR:
+-- governance_signatures."SignerEmployeeId" bu satırlarda aday kimliğini taşır, "SignerKind" = 'Candidate'.
+-- Canlıya: docker exec -i hr360-postgres-1 psql -v ON_ERROR_STOP=1 -q -U hr360admin -d hr360_operational < bu_dosya
+
+-- ---------------------------------------------------------------- governance: imzalayan türü
+-- Mevcut satırlar çalışan imzasıdır (varsayılan). Kanıt satırları değiştirilemez (BEFORE UPDATE tetikleyicisi);
+-- sütun ekleme UPDATE sayılmaz.
+ALTER TABLE governance_signatures ADD COLUMN IF NOT EXISTS "SignerKind" text NOT NULL DEFAULT 'Employee';
+
+-- ---------------------------------------------------------------- recruitment: imza bağlantısı ve imzalı belge
+-- SignTokenHash: aday imza bağlantısı jetonunun SHA-256 özeti (jeton saklanmaz; İK yeniler/iptal eder).
+-- LetterSha256: imzalanan mektup metninin özeti (kanıttaki belge özeti).
+-- SignedLetterHtml: imzalı belge (mektup + kanıt bloğu; ücret içerir); SignedDocumentSha256 onun özeti.
+ALTER TABLE recruitment_offers ADD COLUMN IF NOT EXISTS "SignTokenHash" text NULL;
+ALTER TABLE recruitment_offers ADD COLUMN IF NOT EXISTS "SignTokenCreatedAt" timestamp with time zone NULL;
+ALTER TABLE recruitment_offers ADD COLUMN IF NOT EXISTS "LetterSha256" text NULL;
+ALTER TABLE recruitment_offers ADD COLUMN IF NOT EXISTS "SignedLetterHtml" text NULL;
+ALTER TABLE recruitment_offers ADD COLUMN IF NOT EXISTS "SignedDocumentSha256" text NULL;
+ALTER TABLE recruitment_offers ADD COLUMN IF NOT EXISTS "SignatureEvidenceId" uuid NULL;
+ALTER TABLE recruitment_offers ADD COLUMN IF NOT EXISTS "SignedAt" timestamp with time zone NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS "UX_recruitment_offers_sign_token"
+    ON recruitment_offers ("SignTokenHash") WHERE "SignTokenHash" IS NOT NULL;
+
+-- Saklama bağı: teklif silinince (aday KVKK silme talebi / imha — aday kaydından CASCADE) kodlar ve kanıt da silinir.
+-- SECURITY DEFINER: servis başına rollerde recruitment rolüne governance tablolarında yetki verilmez; fonksiyon
+-- yalnızca bu iki DELETE'i, silinen teklifin kimliğiyle yapar (search_path sabit).
+CREATE OR REPLACE FUNCTION governance_signatures_cascade_offer_letter() RETURNS trigger
+    SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+    DELETE FROM governance_signature_otps WHERE "DocumentType" = 'OfferLetter' AND "DocumentId" = OLD."Id";
+    DELETE FROM governance_signatures WHERE "DocumentType" = 'OfferLetter' AND "DocumentId" = OLD."Id";
+    RETURN OLD;
+END;
+$$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS trg_governance_signatures_cascade_offer_letter ON recruitment_offers;
+CREATE TRIGGER trg_governance_signatures_cascade_offer_letter
+    AFTER DELETE ON recruitment_offers
+    FOR EACH ROW EXECUTE FUNCTION governance_signatures_cascade_offer_letter();
+
+-- ===== 2026-10-24_performance_w11
+-- Dalga 11 / performans ve gelişim: kalibrasyon oturumu (79), OKR hizalama ağacı (80),
+-- anonim 360 derece geri bildirim (81). İdempotent: tekrar çalıştırılabilir.
+-- Canlıya: docker exec -i hr360-postgres-1 psql -v ON_ERROR_STOP=1 -q -U hr360admin -d hr360_operational < bu_dosya
+
+/* ============================================================ 79 kalibrasyon oturumu */
+
+-- İK'nın bir dönem için yürüttüğü kalibrasyon toplantısı. Oturum sonuçlanınca (Finalized) değişen
+-- hücreler performance_ninebox_overrides'a gerekçeyle yazılır. Otomatik karar yok: her nihai hücre
+-- İK onayı (Confirmed) ister.
+CREATE TABLE IF NOT EXISTS performance_calibration_sessions (
+    "Id"              uuid PRIMARY KEY,
+    "TenantSlug"      varchar(64) NOT NULL,
+    "CycleId"         uuid NOT NULL REFERENCES performance_cycles("Id") ON DELETE CASCADE,
+    "Name"            varchar(200) NOT NULL,
+    "Status"          varchar(20) NOT NULL DEFAULT 'Open' CHECK ("Status" IN ('Open','Finalized','Cancelled')),
+    "CreatedBy"       varchar(200) NOT NULL,
+    "CreatedAt"       timestamptz NOT NULL DEFAULT now(),
+    "FinalizedBy"     varchar(200),
+    "FinalizedAt"     timestamptz
+);
+CREATE INDEX IF NOT EXISTS "IX_performance_calibration_sessions_TenantSlug" ON performance_calibration_sessions ("TenantSlug");
+-- Bir dönemde aynı anda tek açık oturum.
+CREATE UNIQUE INDEX IF NOT EXISTS "UX_performance_calibration_sessions_open" ON performance_calibration_sessions ("TenantSlug", "CycleId") WHERE "Status" = 'Open';
+
+CREATE TABLE IF NOT EXISTS performance_calibration_items (
+    "Id"                       uuid PRIMARY KEY,
+    "TenantSlug"               varchar(64) NOT NULL,
+    "SessionId"                uuid NOT NULL REFERENCES performance_calibration_sessions("Id") ON DELETE CASCADE,
+    "EmployeeId"               uuid NOT NULL,
+    "OriginalPerformanceBand"  integer NOT NULL CHECK ("OriginalPerformanceBand" BETWEEN 1 AND 3),
+    "OriginalPotentialBand"    integer NOT NULL CHECK ("OriginalPotentialBand" BETWEEN 1 AND 3),
+    "PerformanceBand"          integer NOT NULL CHECK ("PerformanceBand" BETWEEN 1 AND 3),
+    "PotentialBand"            integer NOT NULL CHECK ("PotentialBand" BETWEEN 1 AND 3),
+    "Score"                    numeric(6,2),
+    "DecisionNote"             varchar(1000),
+    "Confirmed"                boolean NOT NULL DEFAULT false,
+    "ConfirmedBy"              varchar(200),
+    "ConfirmedAt"              timestamptz,
+    "UpdatedAt"                timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS "IX_performance_calibration_items_TenantSlug" ON performance_calibration_items ("TenantSlug");
+CREATE UNIQUE INDEX IF NOT EXISTS "UX_performance_calibration_items_emp" ON performance_calibration_items ("SessionId", "EmployeeId");
+
+-- Değişiklik günlüğü (yalnızca ekleme): her taşıma/onay kim, ne zaman, hangi hücreden hangisine.
+CREATE TABLE IF NOT EXISTS performance_calibration_changes (
+    "Id"          uuid PRIMARY KEY,
+    "TenantSlug"  varchar(64) NOT NULL,
+    "SessionId"   uuid NOT NULL REFERENCES performance_calibration_sessions("Id") ON DELETE CASCADE,
+    "EmployeeId"  uuid NOT NULL,
+    "Action"      varchar(20) NOT NULL CHECK ("Action" IN ('Moved','Confirmed','Unconfirmed','Finalized')),
+    "FromCell"    integer,
+    "ToCell"      integer,
+    "Note"        varchar(1000),
+    "ChangedBy"   varchar(200) NOT NULL,
+    "ChangedAt"   timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS "IX_performance_calibration_changes_TenantSlug" ON performance_calibration_changes ("TenantSlug");
+CREATE INDEX IF NOT EXISTS "IX_performance_calibration_changes_session" ON performance_calibration_changes ("SessionId", "ChangedAt" DESC);
+
+/* ============================================================ 80 OKR hizalama ağacı */
+
+-- Şirket ve departman amaçları (kişisel hedefler performance_goals'ta kalır).
+CREATE TABLE IF NOT EXISTS performance_objectives (
+    "Id"            uuid PRIMARY KEY,
+    "TenantSlug"    varchar(64) NOT NULL,
+    "CycleId"       uuid NOT NULL REFERENCES performance_cycles("Id") ON DELETE CASCADE,
+    "Level"         varchar(20) NOT NULL CHECK ("Level" IN ('Company','Department')),
+    "DepartmentId"  uuid,
+    "ParentId"      uuid REFERENCES performance_objectives("Id") ON DELETE SET NULL,
+    "Title"         varchar(200) NOT NULL,
+    "Description"   varchar(2000),
+    "Weight"        integer NOT NULL DEFAULT 100 CHECK ("Weight" BETWEEN 1 AND 100),
+    "CreatedBy"     varchar(200),
+    "CreatedAt"     timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT "CK_performance_objectives_dept" CHECK (("Level" = 'Department') = ("DepartmentId" IS NOT NULL))
+);
+CREATE INDEX IF NOT EXISTS "IX_performance_objectives_TenantSlug" ON performance_objectives ("TenantSlug");
+CREATE INDEX IF NOT EXISTS "IX_performance_objectives_cycle" ON performance_objectives ("CycleId");
+
+-- Kişisel hedefin bağlı olduğu şirket/departman amacı (isteğe bağlı).
+ALTER TABLE performance_goals ADD COLUMN IF NOT EXISTS "ParentObjectiveId" uuid;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_performance_goals_objective') THEN
+        ALTER TABLE performance_goals ADD CONSTRAINT "FK_performance_goals_objective"
+            FOREIGN KEY ("ParentObjectiveId") REFERENCES performance_objectives("Id") ON DELETE SET NULL;
+    END IF;
+END $$;
+CREATE INDEX IF NOT EXISTS "IX_performance_goals_parent_objective" ON performance_goals ("ParentObjectiveId") WHERE "ParentObjectiveId" IS NOT NULL;
+
+/* ============================================================ 81 anonim 360 geri bildirim */
+
+-- 360 talebi: değerlendirilen kişi, yetkinlikler, kapanış. Sonuçlar yalnızca KAPANMIŞ ve en az
+-- "MinResponses" (≥5) yanıt almış talepte gösterilir.
+CREATE TABLE IF NOT EXISTS performance_f360_requests (
+    "Id"                 uuid PRIMARY KEY,
+    "TenantSlug"         varchar(64) NOT NULL,
+    "CycleId"            uuid REFERENCES performance_cycles("Id") ON DELETE SET NULL,
+    "SubjectEmployeeId"  uuid NOT NULL,
+    "Title"              varchar(200) NOT NULL,
+    "CompetenciesJson"   jsonb NOT NULL DEFAULT '[]',
+    "Status"             varchar(20) NOT NULL DEFAULT 'Open' CHECK ("Status" IN ('Open','Closed')),
+    "DueDate"            date,
+    "MinResponses"       integer NOT NULL DEFAULT 5 CHECK ("MinResponses" >= 5),
+    "ReleasedToSubject"  boolean NOT NULL DEFAULT false,
+    "CreatedByEmployeeId" uuid,
+    "CreatedBy"          varchar(200) NOT NULL,
+    "CreatedAt"          timestamptz NOT NULL DEFAULT now(),
+    "ClosedAt"           timestamptz
+);
+CREATE INDEX IF NOT EXISTS "IX_performance_f360_requests_TenantSlug" ON performance_f360_requests ("TenantSlug");
+CREATE INDEX IF NOT EXISTS "IX_performance_f360_requests_subject" ON performance_f360_requests ("SubjectEmployeeId");
+
+-- Katılım: kim davet edildi, yanıtladı mı. Yanıtla İLİŞKİLENDİRİLMEZ (zaman damgası da tutulmaz).
+CREATE TABLE IF NOT EXISTS performance_f360_participants (
+    "Id"                  uuid PRIMARY KEY,
+    "TenantSlug"          varchar(64) NOT NULL,
+    "RequestId"           uuid NOT NULL REFERENCES performance_f360_requests("Id") ON DELETE CASCADE,
+    "ReviewerEmployeeId"  uuid NOT NULL,
+    "Relationship"        varchar(20) NOT NULL CHECK ("Relationship" IN ('Manager','Peer','DirectReport','Other')),
+    "Submitted"           boolean NOT NULL DEFAULT false
+);
+CREATE INDEX IF NOT EXISTS "IX_performance_f360_participants_TenantSlug" ON performance_f360_participants ("TenantSlug");
+CREATE UNIQUE INDEX IF NOT EXISTS "UX_performance_f360_participants" ON performance_f360_participants ("RequestId", "ReviewerEmployeeId");
+CREATE INDEX IF NOT EXISTS "IX_performance_f360_participants_reviewer" ON performance_f360_participants ("ReviewerEmployeeId");
+
+-- Yanıt: değerlendiren kimliği, ilişki türü ve zaman damgası YOK (anonimlik).
+CREATE TABLE IF NOT EXISTS performance_f360_responses (
+    "Id"           uuid PRIMARY KEY,
+    "TenantSlug"   varchar(64) NOT NULL,
+    "RequestId"    uuid NOT NULL REFERENCES performance_f360_requests("Id") ON DELETE CASCADE,
+    "RatingsJson"  jsonb NOT NULL DEFAULT '{}',
+    "Comment"      varchar(2000)
+);
+CREATE INDEX IF NOT EXISTS "IX_performance_f360_responses_TenantSlug" ON performance_f360_responses ("TenantSlug");
+CREATE INDEX IF NOT EXISTS "IX_performance_f360_responses_request" ON performance_f360_responses ("RequestId");
+
+-- Yeni tablolara kiracı yalıtım politikası (RLS isteğe bağlı; açık değilse davranış değişmez).
+DO $$ BEGIN
+    IF to_regprocedure('hr360_rls_apply_policies()') IS NOT NULL THEN PERFORM hr360_rls_apply_policies(); END IF;
+END $$;
+
+-- ===== 2026-10-24_learning_w11
+-- Dalga 11 (madde 82–84): öğrenme ve gelişim.
+--  82) yetkinlik açığı → eğitim önerisi: yeni tablo yok (mevcut learning_course_competencies + ML /skills/recommend)
+--  83) kariyer yolları: rol basamakları (pozisyon unvanı) ve basamak başına beklenen yetkinlik seviyeleri
+--  84) zorunlu eğitim son tarihi (learning_enrollments."DueOn") ve eğitim/İSG eğitimi hatırlatmaları
+--      (30/7/0 gün; çalışana ve yöneticisine) — gönderilen hatırlatma tekrar gitmesin diye kayıt tablosu.
+-- İdempotent; mevcut veriyi değiştirmez.
+-- Canlıya: docker exec -i hr360-postgres-1 psql -v ON_ERROR_STOP=1 -q -U hr360admin -d hr360_operational < bu_dosya
+
+-- ---------------------------------------------------------------- 84) son tarih + hatırlatma kaydı
+ALTER TABLE learning_enrollments ADD COLUMN IF NOT EXISTS "DueOn" date NULL;
+CREATE INDEX IF NOT EXISTS "IX_learning_enrollments_DueOn" ON learning_enrollments ("TenantSlug", "DueOn") WHERE "DueOn" IS NOT NULL;
+
+-- SourceType: Training (learning_enrollments) | Osh (governance_osh_trainings, katılımcı başına).
+-- DueOn anahtarda: son tarih değişirse (yenileme/erteleme) yeni hatırlatma döngüsü başlar.
+CREATE TABLE IF NOT EXISTS learning_due_reminders (
+    "Id"                  uuid PRIMARY KEY,
+    "TenantSlug"          character varying(64) NOT NULL,
+    "SourceType"          character varying(16) NOT NULL,
+    "SourceId"            uuid NOT NULL,
+    "SubjectEmployeeId"   uuid NOT NULL,
+    "Kind"                character varying(16) NOT NULL,
+    "RecipientEmployeeId" uuid NOT NULL,
+    "DueOn"               date NOT NULL,
+    "SentAt"              timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS "IX_learning_due_reminders_TenantSlug" ON learning_due_reminders ("TenantSlug");
+CREATE UNIQUE INDEX IF NOT EXISTS "UX_learning_due_reminders" ON learning_due_reminders
+    ("TenantSlug", "SourceType", "SourceId", "SubjectEmployeeId", "Kind", "RecipientEmployeeId", "DueOn");
+
+-- ---------------------------------------------------------------- 83) kariyer yolları
+CREATE TABLE IF NOT EXISTS learning_career_paths (
+    "Id"          uuid PRIMARY KEY,
+    "TenantSlug"  character varying(64) NOT NULL,
+    "Name"        character varying(150) NOT NULL,
+    "Description" character varying(1000) NULL,
+    "IsActive"    boolean NOT NULL DEFAULT true,
+    "CreatedAt"   timestamptz NOT NULL DEFAULT now(),
+    "UpdatedAt"   timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS "IX_learning_career_paths_TenantSlug" ON learning_career_paths ("TenantSlug");
+
+CREATE TABLE IF NOT EXISTS learning_career_steps (
+    "Id"            uuid PRIMARY KEY,
+    "TenantSlug"    character varying(64) NOT NULL,
+    "PathId"        uuid NOT NULL REFERENCES learning_career_paths("Id") ON DELETE CASCADE,
+    "StepOrder"     integer NOT NULL,
+    "PositionTitle" character varying(150) NOT NULL,
+    "Description"   character varying(1000) NULL,
+    "MinMonths"     integer NULL
+);
+CREATE INDEX IF NOT EXISTS "IX_learning_career_steps_TenantSlug" ON learning_career_steps ("TenantSlug");
+CREATE INDEX IF NOT EXISTS "IX_learning_career_steps_PathId" ON learning_career_steps ("PathId", "StepOrder");
+
+CREATE TABLE IF NOT EXISTS learning_career_step_requirements (
+    "Id"            uuid PRIMARY KEY,
+    "TenantSlug"    character varying(64) NOT NULL,
+    "StepId"        uuid NOT NULL REFERENCES learning_career_steps("Id") ON DELETE CASCADE,
+    "CompetencyId"  uuid NOT NULL REFERENCES learning_competencies("Id") ON DELETE CASCADE,
+    "RequiredLevel" integer NOT NULL CHECK ("RequiredLevel" BETWEEN 1 AND 5)
+);
+CREATE INDEX IF NOT EXISTS "IX_learning_career_step_requirements_TenantSlug" ON learning_career_step_requirements ("TenantSlug");
+CREATE UNIQUE INDEX IF NOT EXISTS "UX_learning_career_step_requirements" ON learning_career_step_requirements ("StepId", "CompetencyId");
+
+-- Yeni tablolara kiracı yalıtım politikası (RLS isteğe bağlı; açık değilse davranış değişmez).
+DO $$ BEGIN
+    IF to_regprocedure('hr360_rls_apply_policies()') IS NOT NULL THEN PERFORM hr360_rls_apply_policies(); END IF;
+END $$;

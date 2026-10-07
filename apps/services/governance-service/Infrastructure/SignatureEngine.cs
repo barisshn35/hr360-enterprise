@@ -22,8 +22,9 @@ public sealed record SignatureError(int Status, string Code, string MessageTr, s
 
 public sealed record OtpIssued(Guid OtpId, string Channel, DateTime ExpiresAt, int MaxAttempts, int SendsLeft);
 
+/// <summary>İmza isteği. <c>EmployeeId</c> imzalayanın kimliğidir; <c>SignerKind</c> = Candidate ise aday kimliğidir.</summary>
 public sealed record SignRequest(string Tenant, string DocumentType, Guid DocumentId, Guid EmployeeId, Guid? OtpId, string? Code,
-    string DocumentSha256, int Version, string? IpRaw, string? UserId, string? UserName, string? Title);
+    string DocumentSha256, int Version, string? IpRaw, string? UserId, string? UserName, string? Title, string SignerKind = Signatures.SignerEmployee);
 
 /// <summary>
 /// Y28 — TEK imza motoru. Belge türünden bağımsızdır: çağıran (DocumentRequest web uçları ya da
@@ -67,14 +68,15 @@ public sealed class SignatureEngine
             ORDER BY "SignedAt" DESC LIMIT 500
             """, Map, ct, tenant, documentType, (object?)documentId ?? DBNull.Value, (object?)ids ?? DBNull.Value);
 
-    /// <summary>Çalışanın imzaladığı tüm belgeler (her tür). Eski kayıtlarda başlık belge talebinden tamamlanır.</summary>
+    /// <summary>Çalışanın imzaladığı tüm belgeler (her tür). Eski kayıtlarda başlık belge talebinden tamamlanır.
+    /// Aday imzaları (SignerKind = Candidate) hariç tutulur.</summary>
     public static Task<List<SignatureEvidence>> MineAsync(Sql sql, string tenant, Guid employeeId, CancellationToken ct) =>
         sql.QueryAsync("""
             SELECT s."Id",s."DocumentType",s."DocumentId",s."DocumentVersion",s."DocumentSha256",s."SignerEmployeeId",s."SignedAt",s."Method",
                    s."IpPrefix",s."Disclaimer",s."EvidenceSha256",COALESCE(s."Title", d."TemplateName")
             FROM governance_signatures s
             LEFT JOIN governance_document_requests d ON s."DocumentType" = 'DocumentRequest' AND d."Id" = s."DocumentId" AND d."TenantSlug" = s."TenantSlug"
-            WHERE s."TenantSlug" = $1 AND s."SignerEmployeeId" = $2 ORDER BY s."SignedAt" DESC LIMIT 300
+            WHERE s."TenantSlug" = $1 AND s."SignerEmployeeId" = $2 AND s."SignerKind" = 'Employee' ORDER BY s."SignedAt" DESC LIMIT 300
             """, Map, ct, tenant, employeeId);
 
     private async Task<bool> SignedAsync(string tenant, string documentType, Guid documentId, int version, CancellationToken ct) =>
@@ -84,11 +86,13 @@ public sealed class SignatureEngine
 
     /* ------------------------------------------------------------------ kod iste */
 
+    /// <param name="externalEmail">Dış imzalayan (aday) için kodun gideceği e-posta; verilirse kanal her zaman Email'dir
+    /// ve bildirim çalışan kaydına bağlanmaz. Kimlik (<paramref name="employeeId"/>) bu durumda aday kimliğidir.</param>
     public async Task<(OtpIssued? Otp, SignatureError? Error)> RequestOtpAsync(string tenant, string documentType, Guid documentId, Guid employeeId,
-        string title, string? channel, int version, CancellationToken ct)
+        string title, string? channel, int version, CancellationToken ct, string? externalEmail = null, bool externalEn = false)
     {
         if (await SignedAsync(tenant, documentType, documentId, version, ct)) return (null, AlreadySigned());
-        var ch = Signatures.NormalizeChannel(channel);
+        var ch = externalEmail is null ? Signatures.NormalizeChannel(channel) : "Email";
         var stats = (await _sql.QueryAsync("""
             SELECT count(*) FILTER (WHERE "CreatedAt" > now() - interval '1 hour')::int, max("CreatedAt")
             FROM governance_signature_otps WHERE "TenantSlug" = $1 AND "DocumentType" = $2 AND "DocumentId" = $3
@@ -102,7 +106,7 @@ public sealed class SignatureEngine
                 return (null, new(429, "otp_cooldown", $"Yeni kod için lütfen biraz bekleyin ({(int)Signatures.ResendCooldown.TotalSeconds} sn).",
                     $"Please wait a moment before requesting a new code ({(int)Signatures.ResendCooldown.TotalSeconds} s)."));
         }
-        if (ch != "InApp")
+        if (ch != "InApp" && externalEmail is null)
         {
             var email = await _sql.ScalarAsync("SELECT \"Email\" FROM employee_employees WHERE \"TenantSlug\" = $1 AND \"Id\" = $2", ct, tenant, employeeId) as string;
             if (string.IsNullOrWhiteSpace(email))
@@ -127,7 +131,10 @@ public sealed class SignatureEngine
         // Kod yalnızca bildirimle gider; yanıtta DÖNMEZ. Belge içeriği bildirime yazılmaz (yalnızca başlık).
         var bodyTr = $"\"{title}\" belgesini imzalamak için tek kullanımlık kodunuz: {code}. Kod {Signatures.ValidMinutes} dakika geçerlidir; kimseyle paylaşmayın, İK dahil kimse sizden bu kodu istemez. {Signatures.DisclaimerTr}";
         var bodyEn = $"Your one-time code to sign \"{title}\": {code}. The code is valid for {Signatures.ValidMinutes} minutes; do not share it — nobody, including HR, will ask you for it. {Signatures.DisclaimerEn}";
-        foreach (var c in ch == "InApp+Email" ? new[] { "InApp", "Email" } : new[] { ch })
+        if (externalEmail is not null)
+            await _notifier.ExternalEmailAsync(tenant, externalEmail, externalEn ? "Document signing code" : "Belge imza kodu", externalEn ? bodyEn : bodyTr,
+                externalEn ? "en" : "tr", "signature.otp", ct);
+        else foreach (var c in ch == "InApp+Email" ? new[] { "InApp", "Email" } : new[] { ch })
             await _notifier.LocalizedAsync(tenant, employeeId, "Belge imza kodu", "Document signing code", bodyTr, bodyEn, "signature.otp", ct, c);
         return (new OtpIssued(otpId, ch, expires, Signatures.MaxAttempts, Math.Max(0, Signatures.MaxCodesPerHour - stats.Recent - 1)), null);
     }
@@ -173,9 +180,10 @@ public sealed class SignatureEngine
         try
         {
             await _sql.ExecuteAsync("""
-                INSERT INTO governance_signatures ("Id","TenantSlug","DocumentType","DocumentId","DocumentVersion","DocumentSha256","SignerEmployeeId","SignedAt","Method","IpPrefix","Disclaimer","EvidenceSha256","Title")
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-                """, ct, sigId, q.Tenant, q.DocumentType, q.DocumentId, q.Version, q.DocumentSha256, q.EmployeeId, signedAt, method, ip, disclaimer, evidenceHash, title);
+                INSERT INTO governance_signatures ("Id","TenantSlug","DocumentType","DocumentId","DocumentVersion","DocumentSha256","SignerEmployeeId","SignedAt","Method","IpPrefix","Disclaimer","EvidenceSha256","Title","SignerKind")
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+                """, ct, sigId, q.Tenant, q.DocumentType, q.DocumentId, q.Version, q.DocumentSha256, q.EmployeeId, signedAt, method, ip, disclaimer, evidenceHash, title,
+                q.SignerKind);
         }
         catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
         {
@@ -185,7 +193,7 @@ public sealed class SignatureEngine
             INSERT INTO audit_log ("TenantSlug","Service","EntityType","EntityId","Action","Changes","UserId","UserName","IpAddress","OccurredAt")
             VALUES ($1,'governance-service',$2,$3,'Signed',$4::jsonb,$5,$6,$7,now())
             """, ct, q.Tenant, q.DocumentType, q.DocumentId.ToString(),
-            JsonSerializer.Serialize(new { documentType = q.DocumentType, method, documentSha256 = q.DocumentSha256, evidence = evidenceHash }),
+            JsonSerializer.Serialize(new { documentType = q.DocumentType, method, documentSha256 = q.DocumentSha256, evidence = evidenceHash, signerKind = q.SignerKind }),
             q.UserId, q.UserName, ip);
         // Olayda kişisel veri yok: kimlikler + belge türü. Başlık yalnızca şablon adıysa (DocumentRequest) eklenir;
         // özlük dokümanının dosya adı kişisel veri içerebilir.
@@ -193,7 +201,8 @@ public sealed class SignatureEngine
         {
             TenantSlug = q.Tenant, DocumentId = q.DocumentId, DocumentType = q.DocumentType,
             TemplateName = q.DocumentType == Signatures.DocumentRequest ? title : null,
-            EmployeeId = q.EmployeeId, SignedAt = signedAt, Method = method, DocumentSha256 = q.DocumentSha256,
+            // Aday imzasında çalışan kimliği yoktur (olay tüketicileri çalışan araması yapmasın).
+            EmployeeId = q.SignerKind == Signatures.SignerEmployee ? q.EmployeeId : (Guid?)null, SignerKind = q.SignerKind, SignedAt = signedAt, Method = method, DocumentSha256 = q.DocumentSha256,
         });
         return (new SignatureEvidence(sigId, q.DocumentType, q.DocumentId, q.Version, q.DocumentSha256, q.EmployeeId, signedAt, method, ip, disclaimer, evidenceHash, title), null);
     }

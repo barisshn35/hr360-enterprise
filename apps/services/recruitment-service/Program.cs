@@ -29,7 +29,12 @@ builder.Services.AddDbContext<RecruitmentDbContext>(options =>
 // kariyer sayfası istek sınırı (bellekte) ve aday verisi imha işçisi.
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddHttpClient<RecruitmentService.Services.ApprovalWorkflowClient>(c => c.Timeout = TimeSpan.FromSeconds(15));
+// Dalga 11: teklif e-imzası governance tek imza motoruna iç uçlarla devredilir.
+builder.Services.AddHttpClient<RecruitmentService.Services.GovernanceSignatureClient>(c => c.Timeout = TimeSpan.FromSeconds(15));
 builder.Services.AddSingleton<RecruitmentService.Services.PublicRateLimiter>();
+// Dalga 11: durum bağlantısı GET sınırı (ayrı sayaç) ve öneri ödülü hak ediş işçisi.
+builder.Services.AddSingleton<RecruitmentService.Services.StatusRateLimiter>();
+builder.Services.AddHostedService<RecruitmentService.Services.ReferralRewardWorker>();
 builder.Services.AddHostedService<RecruitmentService.Messaging.WorkflowEventConsumer>();
 builder.Services.AddHostedService<RecruitmentService.Services.RetentionWorker>();
 

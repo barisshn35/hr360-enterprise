@@ -29,6 +29,7 @@ import { formatDate, formatDateTime, formatNumber } from '@/lib/format'
 import { ApplicationFunnel } from './ApplicationFunnel'
 import { OfferModal, OffersPanel, PipelineBoard, ScheduleInterviewModal, ScorecardsModal, ScorecardTemplatePanel } from './RecruitmentPlus'
 import { MeetingPanel } from '@/features/shared/Meetings'
+import { CareerDetailsPanel, StatusLinksPanel } from './RecruitmentW11'
 import { tx } from '@/lib/i18n'
 import { FitBadge, FitSummary, useCandidateFit } from './CandidateFit'
 import { useConfirm } from '@/components/ui/Confirm'
@@ -497,6 +498,14 @@ export function JobPostingDetailPage() {
         <div className="grid gap-4 xl:grid-cols-[1.4fr_1fr]">
           <OffersPanel postingId={data.id} isHr={canPublish} names={candidateByApplication} />
           <ScorecardTemplatePanel postingId={data.id} canEdit={canManage} />
+        </div>
+      )}
+
+      {/* Dalga 11: aday durum bağlantısı (74) ve Google for Jobs alanları (75) */}
+      {canManage && (
+        <div className="grid gap-4 xl:grid-cols-2">
+          <StatusLinksPanel applications={data.applications ?? []} names={candidateByApplication} />
+          {canPublish && <CareerDetailsPanel posting={data} />}
         </div>
       )}
 

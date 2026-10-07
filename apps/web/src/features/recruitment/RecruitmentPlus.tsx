@@ -38,6 +38,8 @@ import { cn } from '@/lib/utils'
 import { errMsg, isoDate, PersonSelect, useAction } from '@/features/shared/kit'
 import { printDocuments } from '@/features/governance/DocTemplatesPage'
 import { tx } from '@/lib/i18n'
+import { ConsistencyView } from './RecruitmentW11'
+import { OfferSignatureModal, SigningLinkModal } from './OfferSignatureHr'
 
 const PRIVACY_HINT = tx('Özel nitelikli veri yazmayın: sağlık, hamilelik, din, siyasi görüş, sendika, etnik köken, engellilik, medeni hal, çocuk, yaş gibi bilgiler değerlendirmeye konu olamaz (KVKK m.6). Yalnızca işle ilgili yetkinlikleri not edin.')
 
@@ -295,12 +297,14 @@ export function ScorecardModal({ interviewId, title, onClose }: { interviewId: s
   const toast = useToast()
   const form = useQuery({ queryKey: ['recruitment', 'scorecard-form', interviewId], queryFn: ({ signal }) => recruitmentApi.scorecardForm(interviewId!, signal), enabled: !!interviewId })
   const [scores, setScores] = useState<Record<string, number>>({})
+  const [evidence, setEvidence] = useState<Record<string, string>>({})
   const [rec, setRec] = useState<Recommendation | ''>('')
   const [notes, setNotes] = useState('')
   const warnings = useNoteWarnings(notes)
   useEffect(() => {
     const m = form.data?.mine
     setScores(Object.fromEntries((m?.scores ?? []).map((s) => [s.key, s.score])))
+    setEvidence(Object.fromEntries((m?.scores ?? []).filter((s) => s.evidence).map((s) => [s.key, s.evidence!])))
     setRec(m?.recommendation ?? '')
     setNotes(m?.notes ?? '')
   }, [form.data])
@@ -311,7 +315,7 @@ export function ScorecardModal({ interviewId, title, onClose }: { interviewId: s
     return w ? scored.reduce((a, c) => a + c.weight * scores[c.key]!, 0) / w : null
   }, [criteria, scores])
   const save = useAction(() => recruitmentApi.submitScorecard(interviewId!, {
-    scores: Object.entries(scores).map(([key, score]): CriterionScore => ({ key, score })),
+    scores: Object.entries(scores).map(([key, score]): CriterionScore => ({ key, score, evidence: evidence[key]?.trim() || undefined })),
     recommendation: rec || undefined, notes: notes.trim() || undefined,
   }), {
     invalidate: [['recruitment']],
@@ -346,6 +350,10 @@ export function ScorecardModal({ interviewId, title, onClose }: { interviewId: s
                         </button>
                       ))}
                     </div>
+                    {/* Dalga 11: puanı destekleyen kanıt / gözlem (isteğe bağlı) */}
+                    <input aria-label={tx('{0} için kanıt', [c.label])} placeholder={tx('Kanıt / gözlem (isteğe bağlı)')} maxLength={1000}
+                      disabled={!form.data.canSubmit} value={evidence[c.key] ?? ''} onChange={(e) => setEvidence({ ...evidence, [c.key]: e.target.value })}
+                      className="mt-1.5 h-8 w-full rounded-lg border border-input bg-background px-2 text-[12px]" />
                   </td>
                 </tr>
               ))}
@@ -356,7 +364,11 @@ export function ScorecardModal({ interviewId, title, onClose }: { interviewId: s
             options={(Object.keys(recommendationLabels) as Recommendation[]).map((r) => ({ value: r, label: recommendationLabels[r] }))} placeholder={tx('Seçin')} />
           <TextAreaField label={tx('Notlar')} rows={4} maxLength={4000} value={notes} onChange={(e) => setNotes(e.target.value)} hint={tx('İşle ilgili gözlemler; özel nitelikli veri yazmayın.')} />
           <NoteWarnings warnings={warnings} />
-          {!form.data.canSubmit && <p className="text-[12.5px] text-muted-foreground">{tx('Puan kartını yalnızca mülakatın görüşmecileri doldurabilir.')}</p>}
+          {form.data.locked ? <p className="text-[12.5px] text-muted-foreground">{tx('Tüm görüşmeciler puan kartını gönderdi; değerlendirmeler artık değiştirilemez.')}</p>
+            : !form.data.canSubmit && <p className="text-[12.5px] text-muted-foreground">{tx('Puan kartını yalnızca mülakatın görüşmecileri doldurabilir.')}</p>}
+          {(form.data.panelSize ?? 0) > 1 && !form.data.locked && (
+            <p className="text-[12px] text-muted-foreground">{tx('Kör değerlendirme: diğer görüşmecilerin puanları, panelin tamamı ({0} kişi) gönderene kadar gizlidir. Gönderen: {1}.', [form.data.panelSize, form.data.submittedCount ?? 0])}</p>
+          )}
         </div>
       )}
     </Modal>
@@ -373,6 +385,8 @@ export function ScorecardsModal({ interviewId, onClose }: { interviewId: string 
       {q.isPending ? <RowsSkeleton rows={3} /> : q.isError ? <p role="alert" className="text-[13px] text-destructive">{errMsg(q.error)}</p>
         : q.data.scorecards.length === 0 ? <EmptyState icon={ClipboardCheck} title={tx('Henüz puan kartı yok')} detail={tx('Görüşmeciler mülakattan sonra doldurur.')} /> : (
           <ul className="space-y-3">
+            {q.data.blind && <li><InfoNote>{tx('Kör değerlendirme: siz de bu mülakatın görüşmecisi olduğunuz için diğer puan kartları, tüm görüşmeciler gönderene kadar gizli ({0}/{1} gönderildi).', [q.data.submittedCount ?? 0, q.data.panelSize ?? 0])}</InfoNote></li>}
+            {q.data.consistency && <li><ConsistencyView c={q.data.consistency} /></li>}
             {q.data.scorecards.map((s) => (
               <li key={s.id} className="rounded-xl border border-border p-3 text-[13px]">
                 <div className="flex items-center justify-between gap-2">
@@ -380,6 +394,11 @@ export function ScorecardsModal({ interviewId, onClose }: { interviewId: string 
                   <span className="tabular">{s.overallScore?.toFixed(2) ?? '—'} / 5{s.recommendation ? ` · ${recommendationLabels[s.recommendation]}` : ''}</span>
                 </div>
                 <p className="mt-1 text-[12px] text-muted-foreground">{s.scores.map((x) => `${label.get(x.key) ?? x.key}: ${x.score}`).join(' · ')}</p>
+                {s.scores.some((x) => x.evidence) && (
+                  <ul className="mt-1 space-y-0.5 text-[12px]">
+                    {s.scores.filter((x) => x.evidence).map((x) => <li key={x.key}><span className="text-muted-foreground">{label.get(x.key) ?? x.key}:</span> {x.evidence}</li>)}
+                  </ul>
+                )}
                 {s.notes && <p className="mt-1.5 whitespace-pre-wrap border-l-2 border-border pl-2.5">{s.notes}</p>}
                 <div className="mt-1.5"><NoteWarnings warnings={s.warnings} /></div>
               </li>
@@ -485,9 +504,14 @@ function OfferTemplateModal({ open, onClose }: { open: boolean; onClose: () => v
 export function OffersPanel({ postingId, isHr, names }: { postingId: string; isHr: boolean; names: Map<string, string> }) {
   const q = useQuery({ queryKey: ['recruitment', 'offers', postingId], queryFn: ({ signal }) => recruitmentApi.offers({ jobPostingId: postingId }, signal) })
   const [tpl, setTpl] = useState(false)
+  // Dalga 11: imza bağlantısı (bir kez gösterilir) ve kanıt penceresi.
+  const [linkPath, setLinkPath] = useState<string | null>(null)
+  const [evidenceFor, setEvidenceFor] = useState<string | null>(null)
   const inv = { invalidate: [['recruitment']] }
   const decide = useAction(({ id, approve }: { id: string; approve: boolean }) => recruitmentApi.decideOffer(id, approve), { ...inv, success: tx('Karar kaydedildi') })
-  const send = useAction((id: string) => recruitmentApi.sendOffer(id), { ...inv, success: tx('Teklif adaya gönderildi') })
+  const send = useAction((id: string) => recruitmentApi.sendOffer(id), { ...inv, success: tx('Teklif adaya gönderildi'), onDone: (o) => setLinkPath(o.signingPath ?? null) })
+  const renewLink = useAction((id: string) => recruitmentApi.renewSigningLink(id), { ...inv, success: tx('İmza bağlantısı yenilendi'), onDone: (o) => setLinkPath(o.signingPath ?? null) })
+  const revokeLink = useAction((id: string) => recruitmentApi.revokeSigningLink(id), { ...inv, success: tx('İmza bağlantısı iptal edildi') })
   const respond = useAction(({ id, accept }: { id: string; accept: boolean }) => recruitmentApi.respondOffer(id, accept), {
     ...inv, success: (r) => (r.offer.status === 'Accepted' ? tx('Kabul kaydedildi; başvuru "İşe alındı" oldu') : tx('Yanıt kaydedildi')),
   })
@@ -502,11 +526,16 @@ export function OffersPanel({ postingId, isHr, names }: { postingId: string; isH
         </p>
       </div>
       <StatusBadge tone={offerTone[o.status]}>{offerStatusLabels[o.status]}</StatusBadge>
+      {o.signed && <Button size="sm" variant="ghost" onClick={() => setEvidenceFor(o.id)}><FileSignature className="size-4" /> {tx('E-imzalı · kanıt')}</Button>}
       {isHr && (
         <div className="flex flex-wrap gap-1.5">
           {o.hrDecides && <><Button size="sm" onClick={() => decide.mutate({ id: o.id, approve: true })}>{tx('Onayla')}</Button>
             <Button size="sm" variant="outline" onClick={() => decide.mutate({ id: o.id, approve: false })}>{tx('Reddet')}</Button></>}
           {o.status === 'Approved' && <Button size="sm" onClick={() => send.mutate(o.id)}>{tx('Adaya gönder')}</Button>}
+          {o.status === 'Sent' && !o.signed && <>
+            <Button size="sm" variant="outline" onClick={() => renewLink.mutate(o.id)}>{o.signingLinkActive ? tx('İmza bağlantısını yenile') : tx('İmza bağlantısı oluştur')}</Button>
+            {o.signingLinkActive && <Button size="sm" variant="ghost" onClick={() => revokeLink.mutate(o.id)}>{tx('Bağlantıyı iptal et')}</Button>}
+          </>}
           {o.status === 'Sent' && <><Button size="sm" onClick={() => respond.mutate({ id: o.id, accept: true })}>{tx('Kabul etti')}</Button>
             <Button size="sm" variant="outline" onClick={() => respond.mutate({ id: o.id, accept: false })}>{tx('Reddetti')}</Button></>}
           {(o.status === 'PendingApproval' || o.status === 'Approved' || o.status === 'Sent') && <Button size="sm" variant="ghost" onClick={() => withdraw.mutate(o.id)}>{tx('Geri çek')}</Button>}
@@ -523,6 +552,8 @@ export function OffersPanel({ postingId, isHr, names }: { postingId: string; isH
         ? <EmptyState icon={FileSignature} title={tx('Teklif yok')} detail={tx('Panodaki bir adayın kartından "Teklif" ile hazırlayın.')} />
         : <ul className="divide-y divide-border">{q.data.map(row)}</ul>}
       <OfferTemplateModal open={tpl} onClose={() => setTpl(false)} />
+      <SigningLinkModal path={linkPath} onClose={() => setLinkPath(null)} />
+      <OfferSignatureModal offerId={evidenceFor} onClose={() => setEvidenceFor(null)} />
     </Panel>
   )
 }

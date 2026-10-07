@@ -81,9 +81,13 @@ public class InterviewsController : ControllerBase
         if (err is not null) return err;
         var criteria = await CriteriaAsync(iv!.Application!.JobPostingId, ct);
         var mine = me is null ? null : await _db.Scorecards.AsNoTracking().FirstOrDefaultAsync(s => s.InterviewId == id && s.InterviewerEmployeeId == me, ct);
+        var submittedBy = await _db.Scorecards.AsNoTracking().Where(s => s.InterviewId == id).Select(s => s.InterviewerEmployeeId).ToListAsync(ct);
+        var panel = iv.AllInterviewers().ToList();
+        var locked = me is not null && panel.Count > 1 && submittedBy.Contains(me.Value) && panel.All(submittedBy.Contains);
         return Ok(new
         {
-            criteria, canSubmit = me is not null,
+            criteria, canSubmit = me is not null && !locked, locked,
+            panelSize = panel.Count, submittedCount = submittedBy.Distinct().Count(),
             mine = mine is null ? null : new { mine.Scores, mine.OverallScore, mine.Recommendation, mine.Notes, mine.SubmittedAt },
             hint = "Değerlendirmeyi işle ilgili yetkinliklere dayandırın. Sağlık, hamilelik, din, siyasi görüş, sendika, etnik köken, engellilik, medeni hal, çocuk, yaş gibi özel nitelikli ya da ilgisiz kişisel veri yazmayın.",
         });
@@ -103,10 +107,17 @@ public class InterviewsController : ControllerBase
         if (body.Notes is { Length: > 4000 }) return BadRequest(new { message = "Not en fazla 4000 karakter olabilir" });
         if (body.Recommendation is { Length: > 0 } r && !Recommendations.Contains(r)) return BadRequest(new { message = "Öneri geçersiz" });
         var criteria = await CriteriaAsync(iv!.Application!.JobPostingId, ct);
-        var scores = body.Scores ?? new();
+        var scores = (body.Scores ?? new()).Select(x => x with { Evidence = string.IsNullOrWhiteSpace(x.Evidence) ? null : x.Evidence.Trim() }).ToList();
+        if (scores.Any(x => x.Evidence is { Length: > 1000 })) return BadRequest(new { message = "Kanıt notu en fazla 1000 karakter olabilir" });
         var (overall, error) = ScorecardRules.Weighted(criteria, scores);
         if (error is not null) return BadRequest(new { message = error });
         if (overall is null) return BadRequest(new { message = "En az bir ölçütü puanlayın" });
+        // Dalga 11 (77): tüm görüşmeciler gönderince kartlar birbirine açılır; bundan sonra değiştirilemez
+        // (başkalarının puanını gördükten sonra kendi puanını uydurma riskine karşı).
+        var submittedBy = await _db.Scorecards.AsNoTracking().Where(s => s.InterviewId == id).Select(s => s.InterviewerEmployeeId).ToListAsync(ct);
+        var panel = iv.AllInterviewers().ToList();
+        if (panel.Count > 1 && submittedBy.Contains(me.Value) && panel.All(submittedBy.Contains))
+            return Conflict(new { message = "Tüm görüşmeciler puan kartını gönderdi; değerlendirmeler artık değiştirilemez" });
 
         var sc = await _db.Scorecards.FirstOrDefaultAsync(s => s.InterviewId == id && s.InterviewerEmployeeId == me, ct);
         if (sc is null)
@@ -123,7 +134,7 @@ public class InterviewsController : ControllerBase
         return Ok(new
         {
             sc.Id, sc.InterviewId, sc.InterviewerEmployeeId, sc.Scores, sc.OverallScore, sc.Recommendation, sc.Notes, sc.SubmittedAt,
-            warnings = SensitiveNoteDetector.Detect(body.Notes),
+            warnings = SensitiveNoteDetector.Detect(string.Join("\n", new[] { body.Notes }.Concat(scores.Select(x => x.Evidence)).Where(x => !string.IsNullOrEmpty(x)))),
         });
     }
 
@@ -135,20 +146,34 @@ public class InterviewsController : ControllerBase
         var iv = await _db.Interviews.AsNoTracking().Include(i => i.Application).FirstOrDefaultAsync(i => i.Id == id, ct);
         if (iv is null) return NotFound(new { message = "Mülakat bulunamadı" });
         var cards = await _db.Scorecards.AsNoTracking().Where(s => s.InterviewId == id).OrderBy(s => s.SubmittedAt).ToListAsync(ct);
+        var criteria = await CriteriaAsync(iv.Application!.JobPostingId, ct);
+        // Dalga 11 (77): kör değerlendirme — görüşmeci (yönetici de olsa) tüm panel gönderene kadar
+        // başkalarının kartını göremez; yalnızca kendi kartı ve kaç kişinin gönderdiği görünür.
+        var me = await MeAsync(ct);
+        var panel = iv.AllInterviewers().ToList();
+        var submittedIds = cards.Select(c => c.InterviewerEmployeeId).ToHashSet();
+        var allSubmitted = panel.Count > 0 && panel.All(submittedIds.Contains);
+        var blind = me is not null && panel.Contains(me.Value) && !allSubmitted;
+        if (blind) cards = cards.Where(c => c.InterviewerEmployeeId == me).ToList();
         var people = (await _db.PeopleAsync(iv.TenantSlug, cards.Select(c => c.InterviewerEmployeeId).Distinct().ToList(), ct))
             .ToDictionary(p => p.Id, p => $"{p.FirstName} {p.LastName}");
-        var criteria = await CriteriaAsync(iv.Application!.JobPostingId, ct);
+        var consistency = blind ? null : ScorecardConsistency.Compute(criteria, cards.Select(c => ((IReadOnlyList<CriterionScore>)c.Scores, c.Recommendation)).ToList());
         return Ok(new
         {
+            blind,
+            allSubmitted,
+            submittedCount = submittedIds.Count,
+            panelSize = panel.Count,
+            consistency,
             criteria,
-            average = cards.Count(c => c.OverallScore != null) == 0 ? (decimal?)null
+            average = blind || cards.Count(c => c.OverallScore != null) == 0 ? (decimal?)null
                 : Math.Round(cards.Where(c => c.OverallScore != null).Average(c => c.OverallScore!.Value), 2),
-            pending = iv.AllInterviewers().Where(p => cards.All(c => c.InterviewerEmployeeId != p)).ToList(),
+            pending = panel.Where(p => !submittedIds.Contains(p)).ToList(),
             scorecards = cards.Select(c => new
             {
                 c.Id, c.InterviewerEmployeeId, interviewer = people.GetValueOrDefault(c.InterviewerEmployeeId),
                 c.Scores, c.OverallScore, c.Recommendation, c.Notes, c.SubmittedAt,
-                warnings = SensitiveNoteDetector.Detect(c.Notes),
+                warnings = SensitiveNoteDetector.Detect(string.Join("\n", new[] { c.Notes }.Concat(c.Scores.Select(x => x.Evidence)).Where(x => !string.IsNullOrEmpty(x)))),
             }),
         });
     }

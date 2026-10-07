@@ -21,5 +21,7 @@ public class Goal : ITenantOwned
     public GoalStatus Status { get; set; } = GoalStatus.Draft;
     /// <summary>İsteğe bağlı son tarih; dönem başlangıcı ile bitişi arasında olmalı.</summary>
     public DateOnly? DueDate { get; set; }
+    /// <summary>Dalga 11 (OKR): bağlı olduğu şirket/departman amacı (isteğe bağlı).</summary>
+    public Guid? ParentObjectiveId { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }

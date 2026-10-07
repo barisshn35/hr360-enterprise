@@ -169,6 +169,28 @@ public sealed class Notifier
     }
 
     /// <summary>
+    /// Dalga 11: çalışan olmayan alıcıya (aday) e-posta — alıcı kimliği boş, adres çağırandan gelir
+    /// (recruitment EmailCandidateAsync ile aynı biçim). Hata yutulur ve uyarı yazılır.
+    /// </summary>
+    public async Task<bool> ExternalEmailAsync(string tenant, string email, string subject, string body, string language, string code, CancellationToken ct)
+    {
+        try
+        {
+            await _sql.ExecuteAsync(
+                """
+                INSERT INTO notification_messages ("Id","TenantSlug","RecipientEmployeeId","RecipientEmail","Channel","TemplateCode","Subject","Body","Status","AttemptCount","CreatedAt","Language")
+                VALUES ($1,$2,$3,$4,'Email',$5,$6,$7,'Pending',0,now(),$8)
+                """, ct, Guid.NewGuid(), tenant, Guid.Empty, email, code, subject, body, language);
+            return true;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _log.LogWarning(ex, "E-posta bildirimi yazılamadı ({Code})", code);
+            return false;
+        }
+    }
+
+    /// <summary>
     /// G2: alıcının kayıtlı diline göre (tr/en) bildirim. "Email" kanalında alıcının e-postası
     /// çalışan kaydından alınır ve notification-service gönderir. Bağlantı (actionUrl) mutlak olmalı.
     /// </summary>

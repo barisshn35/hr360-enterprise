@@ -122,6 +122,7 @@ builder.Services.AddScoped<ScoreCalculator>();
 builder.Services.AddScoped<SnapshotService>();
 // G12 (Dalga 5c): departman başkanı/çalışan okuyucu + denetim yazıcı.
 builder.Services.AddScoped<PerfPeople>();
+builder.Services.AddScoped<NineBoxGrid>();
 builder.Services.AddMemoryCache();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddHttpClient<DirectoryClient>();

@@ -105,6 +105,21 @@ public static class RetentionPlans
             "\"TenantSlug\" = $1 AND \"ToEmployeeId\" = ANY($2) AND \"Body\" <> '(anonimleştirildi)'"),
         Upd("UPDATE performance_potential_ratings SET", "Potansiyel değerlendirme notu", "\"Note\" = NULL",
             "\"TenantSlug\" = $1 AND \"EmployeeId\" = ANY($2) AND \"Note\" IS NOT NULL"),
+        // Dalga 11: kalibrasyon karar notları (hücre ve onay kanıtı kalır), 360 (kişi hakkındaki talep yanıtlarıyla
+        // silinir; değerlendiren olarak katılım işareti kapanmış taleplerde silinir — yanıtlar zaten kimliksizdir),
+        // eğitim hatırlatma kayıtları, çalışan önerisindeki öneren notu (ödül tutarı/kararı bordro ispatı olarak kalır).
+        Upd("UPDATE performance_calibration_items SET", "Kalibrasyon karar notu (hücre ve onay kalır)", "\"DecisionNote\" = NULL",
+            "\"TenantSlug\" = $1 AND \"EmployeeId\" = ANY($2) AND \"DecisionNote\" IS NOT NULL"),
+        Upd("UPDATE performance_calibration_changes SET", "Kalibrasyon değişiklik notu (değişiklik kaydı kalır)", "\"Note\" = NULL",
+            "\"TenantSlug\" = $1 AND \"EmployeeId\" = ANY($2) AND \"Note\" IS NOT NULL"),
+        Del("DELETE FROM performance_f360_requests", "Kişi hakkındaki 360 geri bildirim talepleri ve yanıtları",
+            "\"TenantSlug\" = $1 AND \"SubjectEmployeeId\" = ANY($2)"),
+        Del("DELETE FROM performance_f360_participants", "360 değerlendiren katılım işareti (kapanmış talepler)",
+            "\"TenantSlug\" = $1 AND \"ReviewerEmployeeId\" = ANY($2) AND \"RequestId\" IN (SELECT \"Id\" FROM performance_f360_requests WHERE \"Status\" <> 'Open')"),
+        Del("DELETE FROM learning_due_reminders", "Eğitim/İSG son tarih hatırlatma kayıtları",
+            "\"TenantSlug\" = $1 AND (\"SubjectEmployeeId\" = ANY($2) OR \"RecipientEmployeeId\" = ANY($2))"),
+        Upd("UPDATE recruitment_referrals SET", "Çalışan önerisi (öneren notu, yakınlık; ödül kararı kalır)", "\"Note\" = NULL, \"Relationship\" = NULL, \"RewardNote\" = NULL",
+            "\"TenantSlug\" = $1 AND \"ReferrerEmployeeId\" = ANY($2) AND (\"Note\" IS NOT NULL OR \"Relationship\" IS NOT NULL OR \"RewardNote\" IS NOT NULL)"),
         Upd("UPDATE learning_certifications SET", "Sertifika kimlik numarası", "\"CredentialId\" = NULL",
             "\"TenantSlug\" = $1 AND \"EmployeeId\" = ANY($2) AND \"CredentialId\" IS NOT NULL"),
         Upd("UPDATE learning_scorm_runtime SET", "SCORM oturum verisi", "\"SuspendData\" = NULL, \"LessonLocation\" = NULL",
@@ -206,6 +221,10 @@ public static class RetentionPlans
 
     /* ---------------------------------------------------------------- olumsuz sonuçlanan adaylar */
 
+    private static readonly RetentionStep ReferralScrub =
+        Upd("UPDATE recruitment_referrals SET", "Çalışan önerisi (adaya dair öneren notu, yakınlık)", "\"Note\" = NULL, \"Relationship\" = NULL",
+            "\"TenantSlug\" = $1 AND \"CandidateId\" = ANY($2) AND (\"Note\" IS NOT NULL OR \"Relationship\" IS NOT NULL)");
+
     /// <summary>recruitment-service RetentionService.AnonymizeAsync ile aynı alanlar. $1 kiracı, $2 aday kimlikleri.</summary>
     public static readonly RetentionStep[] CandidateAnonymizeSteps =
     {
@@ -214,10 +233,15 @@ public static class RetentionPlans
             "\"TenantSlug\" = $1 AND \"CandidateId\" = ANY($2)"),
         Upd("UPDATE recruitment_interviews SET", "Mülakat (not, yer, toplantı bağlantısı)", "\"Notes\" = NULL, \"Location\" = NULL, \"MeetingUrl\" = NULL",
             "\"TenantSlug\" = $1 AND \"ApplicationId\" IN (SELECT \"Id\" FROM recruitment_applications WHERE \"CandidateId\" = ANY($2))"),
-        Upd("UPDATE recruitment_scorecards SET", "Puan kartı notları (puanlar kalır)", "\"Notes\" = NULL",
+        Upd("UPDATE recruitment_scorecards SET", "Puan kartı notları ve ölçüt kanıt notları (puanlar kalır)",
+            "\"Notes\" = NULL, \"ScoresJson\" = coalesce((SELECT jsonb_agg(e - 'evidence' - 'Evidence') FROM jsonb_array_elements(\"ScoresJson\"::jsonb) e)::text, '[]')",
             "\"TenantSlug\" = $1 AND \"InterviewId\" IN (SELECT i.\"Id\" FROM recruitment_interviews i JOIN recruitment_applications a ON a.\"Id\" = i.\"ApplicationId\" WHERE a.\"CandidateId\" = ANY($2))"),
-        Upd("UPDATE recruitment_offers SET", "Teklif mektubu ve yan haklar", "\"LetterText\" = '(anonimleştirildi)', \"Benefits\" = NULL, \"DecisionNote\" = NULL",
+        Upd("UPDATE recruitment_offers SET", "Teklif mektubu, imzalı mektup ve yan haklar",
+            "\"LetterText\" = '(anonimleştirildi)', \"Benefits\" = NULL, \"DecisionNote\" = NULL, \"SignedLetterHtml\" = NULL, \"SignTokenHash\" = NULL",
             "\"TenantSlug\" = $1 AND \"ApplicationId\" IN (SELECT \"Id\" FROM recruitment_applications WHERE \"CandidateId\" = ANY($2))"),
+        Del("DELETE FROM recruitment_status_links", "Aday durum bağlantıları (jeton özeti)",
+            "\"TenantSlug\" = $1 AND \"ApplicationId\" IN (SELECT \"Id\" FROM recruitment_applications WHERE \"CandidateId\" = ANY($2))"),
+        ReferralScrub,
         Upd("UPDATE recruitment_candidates SET", "Aday kaydı (ad, iletişim, özgeçmiş metni ve dosya bağlantısı, beceriler)",
             """
             "FirstName" = 'Anonim', "LastName" = 'Aday', "Email" = 'anon-' || "Id" || '@anonim.invalid', "Phone" = NULL,
@@ -229,7 +253,9 @@ public static class RetentionPlans
 
     public static readonly RetentionStep[] CandidateDeleteSteps =
     {
-        // Başvurular, mülakatlar, puan kartları ve teklifler yabancı anahtar (ON DELETE CASCADE) ile silinir.
+        // Öneri satırı aday silinince kalır (FK SET NULL; ödül kaydı): öneren notu önce temizlenir.
+        ReferralScrub,
+        // Başvurular, mülakatlar, puan kartları, teklifler ve durum bağlantıları yabancı anahtar (ON DELETE CASCADE) ile silinir.
         Del("DELETE FROM recruitment_candidates", "Aday kaydı ve bağlı başvuru/mülakat/puan kartı/teklif kayıtları", "\"TenantSlug\" = $1 AND \"Id\" = ANY($2)"),
     };
 

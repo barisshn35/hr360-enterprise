@@ -311,6 +311,12 @@ services:
       # Teklif onay akisi (workflow-service) ve karar olaylari (Kafka).
       KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
       WORKFLOW_SERVICE_URL: "http://workflow-service:8080"
+      # Dalga 11: teklif e-imzası governance tek imza motoru iç uçlarıyla (X-Internal-Token).
+      GOVERNANCE_SERVICE_URL: "http://governance-service:8080"
+      INTERNAL_SERVICE_TOKEN: "${INTERNAL_SERVICE_TOKEN:-}"
+      INTERNAL_SERVICE_TOKEN_PREVIOUS: "${INTERNAL_SERVICE_TOKEN_PREVIOUS:-}"
+      # Dalga 11: aday durum bağlantısı e-postası ve ilan JSON-LD adresleri için genel adres.
+      PUBLIC_ORIGIN: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}"
       RECRUITMENT_DB_CONNECTION: "Host=postgres;Port=5432;Database=hr360_operational;Username=${HR360_DB_USER_RECRUITMENT:-hr360admin};Password=${HR360_DB_PASSWORD_RECRUITMENT:-${HR360_DB_PASSWORD:-}};Maximum Pool Size=12"
       KEYCLOAK_AUTHORITY: "http://keycloak:8080/auth/realms/hr360"
       KEYCLOAK_VALID_ISSUERS: "${PUBLIC_ORIGIN:-${PUBLIC_URL:-http://localhost}}/auth/realms/hr360"

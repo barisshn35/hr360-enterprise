@@ -191,7 +191,7 @@ public class ScoreCalculator
     /// Asirt gerceklestirme 100'de kirpilir - %300 yapan bir hedef
     /// digerlerinin zayifligini ortmesin.
     /// </summary>
-    private static decimal GoalAchievement(Goal g)
+    public static decimal GoalAchievement(Goal g)
     {
         if (g.TargetValue is > 0m && g.CurrentValue is not null)
             return Math.Clamp(g.CurrentValue.Value / g.TargetValue.Value * 100m, 0m, 100m);

@@ -18,6 +18,8 @@ ROUTES = [
     "/panel/kural-motoru", "/panel/entegrasyonlar", "/panel/entegrasyonlar?sekme=takvim", "/panel/guvenlik",
     "/panel/ice-disa-aktarim", "/panel/abonelik", "/panel/organizasyon/sunum", "/panel/api-belgeleri",
     "/panel/veri-koruma", "/panel/veri-koruma?sekme=uyarilar", "/panel/veri-koruma?sekme=iz-kodu", "/panel/veri-koruma?sekme=ayarlar", "/panel/erisim-gozden-gecirme",
+    "/panel/aday-oner", "/panel/ise-alim/oneriler", "/panel/ise-alim/analiz", "/panel/performans/kalibrasyon", "/panel/performans/okr",
+    "/panel/performans/360", "/panel/performans/360?sekme=yonetim", "/panel/kariyer-yollari", "/panel/egitim-takibi",
 ]
 
 

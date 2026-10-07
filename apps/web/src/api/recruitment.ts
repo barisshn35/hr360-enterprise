@@ -79,6 +79,16 @@ export interface JobPosting {
   applications?: Application[]
   /** Liste ucunda başvuru sayısı (yalnızca aday görme yetkisi olana). */
   applicationCount?: number | null
+  /* Dalga 11: kariyer sayfası / Google for Jobs alanları. */
+  location?: string | null
+  region?: string | null
+  country?: string | null
+  remoteAllowed?: boolean
+  validThrough?: string | null
+  salaryMin?: number | null
+  salaryMax?: number | null
+  salaryCurrency?: string | null
+  salaryPeriod?: string | null
 }
 
 export interface Candidate {
@@ -202,7 +212,7 @@ export interface Pipeline {
 }
 
 export interface ScorecardCriterion { key: string; label: string; weight: number }
-export interface CriterionScore { key: string; score: number }
+export interface CriterionScore { key: string; score: number; evidence?: string | null }
 export interface NoteWarning { category: string; term: string; message: string }
 export type Recommendation = 'StrongNo' | 'No' | 'Yes' | 'StrongYes'
 
@@ -216,6 +226,10 @@ export const recommendationLabels: Record<Recommendation, string> = {
 export interface ScorecardForm {
   criteria: ScorecardCriterion[]
   canSubmit: boolean
+  /** Dalga 11: tüm panel gönderdikten sonra kartlar kilitlenir. */
+  locked?: boolean
+  panelSize?: number
+  submittedCount?: number
   hint: string
   mine: { scores: CriterionScore[]; overallScore: number | null; recommendation: Recommendation | null; notes: string | null; submittedAt: string } | null
 }
@@ -281,6 +295,62 @@ export interface Offer {
   createdAt: string
   hrDecides: boolean
   salaryVisible: boolean
+  /** Dalga 11: e-imza durumu. */
+  signed?: boolean
+  signedAt?: string | null
+  signatureEvidenceId?: string | null
+  signingLinkActive?: boolean
+  signTokenCreatedAt?: string | null
+  /** Yalnızca bağlantının üretildiği yanıtta (gönder / yenile) bir kez dolu gelir. */
+  signingPath?: string | null
+}
+
+/** Dalga 11: teklif imza kanıtı (İK / onaycı). */
+export interface OfferSignatureInfo {
+  signed: boolean
+  signedAt?: string
+  signatureEvidenceId?: string
+  letterSha256?: string
+  signedDocumentSha256?: string
+  letterUnchanged?: boolean
+  documentIntegrityOk?: boolean
+  evidenceAvailable?: boolean
+  evidence?: {
+    id: string; method: string; signedAt: string; documentSha256: string; evidenceSha256: string; integrityOk: boolean
+    disclaimer: string; matchesLetter: boolean
+  } | null
+}
+
+export interface SignedLetter { fileName: string; html: string; sha256: string }
+
+/** Dalga 11: adayın oturumsuz teklif imza sayfası. */
+export interface OfferSignPage {
+  company: string
+  offerId: string
+  positionTitle: string
+  startDate: string
+  expiresAt: string
+  status: OfferStatus
+  letterText: string
+  letterSha256: string
+  canSign: boolean
+  reason: string | null
+  canDecline: boolean
+  emailMasked: string
+  signed: { signedAt: string; evidenceId: string; letterSha256: string; signedDocumentSha256: string } | null
+  disclaimer: string
+}
+
+export interface OfferSignResult {
+  status: OfferStatus
+  signedAt: string
+  evidenceId: string
+  method: string
+  documentSha256: string
+  evidenceSha256: string
+  ipPrefix: string | null
+  integrityOk: boolean
+  signedDocumentSha256: string
 }
 
 export interface OfferInput {
@@ -340,6 +410,8 @@ export interface SelfService {
   posting: string | null
   status: 'Received' | 'InReview' | 'Offer' | 'Positive' | 'Negative' | 'Withdrawn' | 'Closed'
   statusLabel: string
+  /** Dalga 11: kaba sonraki adım açıklaması (sunucu metni). */
+  nextStep?: string
   appliedAt: string
   ownsCandidate: boolean
   data: { firstName: string; lastName: string; email: string; phone: string | null; coverNote: string | null; resumeText: string | null }
@@ -438,7 +510,12 @@ export const recruitmentApi = {
   submitScorecard: (interviewId: string, body: { scores: CriterionScore[]; recommendation?: Recommendation; notes?: string }) =>
     apiFetch<{ overallScore: number; warnings: NoteWarning[] }>(`${BASE}/interviews/${interviewId}/scorecard`, { method: 'POST', body }),
   scorecards: (interviewId: string, signal?: AbortSignal) =>
-    apiFetch<{ criteria: ScorecardCriterion[]; average: number | null; pending: string[]; scorecards: ScorecardView[] }>(
+    apiFetch<{
+      criteria: ScorecardCriterion[]; average: number | null; pending: string[]; scorecards: ScorecardView[]
+      /* Dalga 11: kör değerlendirme ve tutarlılık. */
+      blind?: boolean; allSubmitted?: boolean; submittedCount?: number; panelSize?: number
+      consistency?: import('./recruitmentW11').Consistency | null
+    }>(
       `${BASE}/interviews/${interviewId}/scorecards`, { signal }),
   notesCheck: (text: string, signal?: AbortSignal) =>
     apiFetch<{ warnings: NoteWarning[] }>(`${BASE}/interviews/notes-check`, { method: 'POST', body: { text }, signal }),
@@ -458,6 +535,10 @@ export const recruitmentApi = {
   respondOffer: (id: string, accept: boolean) =>
     apiFetch<{ offer: Offer; applicationStatus: ApplicationStatus }>(`${BASE}/offers/${id}/respond`, { method: 'POST', body: { accept } }),
   withdrawOffer: (id: string) => apiFetch<Offer>(`${BASE}/offers/${id}/withdraw`, { method: 'POST' }),
+  renewSigningLink: (id: string) => apiFetch<Offer>(`${BASE}/offers/${id}/signing-link`, { method: 'POST' }),
+  revokeSigningLink: (id: string) => apiFetch<Offer>(`${BASE}/offers/${id}/signing-link`, { method: 'DELETE' }),
+  offerSignature: (id: string, signal?: AbortSignal) => apiFetch<OfferSignatureInfo>(`${BASE}/offers/${id}/signature`, { signal }),
+  signedLetter: (id: string) => apiFetch<SignedLetter>(`${BASE}/offers/${id}/signed-letter`),
 
   retentionSettings: (signal?: AbortSignal) =>
     apiFetch<{ retentionDays: number; poolMonths: number; noticeVersion: string }>(`${BASE}/retention/settings`, { signal }),
@@ -481,6 +562,20 @@ export const careerApi = {
   respondOffer: (tenant: string, token: string, accept: boolean) =>
     apiFetch<{ status: OfferStatus }>(`${BASE}/public/${encodeURIComponent(tenant)}/self-service/${encodeURIComponent(token)}/offer/respond`,
       { method: 'POST', body: { accept }, anonymous: true, noQueue: true }),
+  /** Dalga 11: teklif e-imzası (teklif imza jetonu ya da öz-hizmet jetonu). */
+  offerSign: (tenant: string, token: string, signal?: AbortSignal) =>
+    apiFetch<OfferSignPage>(`${BASE}/public/${encodeURIComponent(tenant)}/offer-sign/${encodeURIComponent(token)}`, { signal, anonymous: true }),
+  offerSignOtp: (tenant: string, token: string) =>
+    apiFetch<{ otpId: string; channel: string; expiresAt: string; maxAttempts: number; sendsLeft: number; emailMasked: string }>(
+      `${BASE}/public/${encodeURIComponent(tenant)}/offer-sign/${encodeURIComponent(token)}/otp`, { method: 'POST', anonymous: true, noQueue: true }),
+  offerSignSubmit: (tenant: string, token: string, otpId: string | undefined, code: string) =>
+    apiFetch<OfferSignResult>(`${BASE}/public/${encodeURIComponent(tenant)}/offer-sign/${encodeURIComponent(token)}/sign`,
+      { method: 'POST', body: { otpId, code, confirm: true }, anonymous: true, noQueue: true }),
+  offerSignDecline: (tenant: string, token: string) =>
+    apiFetch<{ status: OfferStatus }>(`${BASE}/public/${encodeURIComponent(tenant)}/offer-sign/${encodeURIComponent(token)}/decline`,
+      { method: 'POST', anonymous: true, noQueue: true }),
+  offerSignedDocument: (tenant: string, token: string) =>
+    apiFetch<SignedLetter>(`${BASE}/public/${encodeURIComponent(tenant)}/offer-sign/${encodeURIComponent(token)}/document`, { anonymous: true }),
   remove: (tenant: string, token: string) =>
     apiFetch<{ deleted: boolean; scope: 'candidate' | 'application' }>(`${BASE}/public/${encodeURIComponent(tenant)}/self-service/${encodeURIComponent(token)}`,
       { method: 'DELETE', anonymous: true, noQueue: true }),

@@ -8,7 +8,8 @@ namespace RecruitmentService.Models;
 /// <summary>Puan kartı ölçütü: anahtar, ad ve ağırlık (1-5). Puanlar 1-5 ölçeğinde verilir.</summary>
 public record ScorecardCriterion(string Key, string Label, int Weight);
 
-public record CriterionScore(string Key, int Score);
+/// <summary>Ölçüt puanı; Evidence: puanı destekleyen gözlem/kanıt notu (Dalga 11, isteğe bağlı).</summary>
+public record CriterionScore(string Key, int Score, string? Evidence = null);
 
 /// <summary>Y17: ilan başına yapılandırılmış mülakat değerlendirme şablonu.</summary>
 public class ScorecardTemplate : ITenantOwned

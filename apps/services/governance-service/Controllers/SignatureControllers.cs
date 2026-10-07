@@ -140,21 +140,37 @@ public class InternalSignaturesController : ControllerBase
 
     private IActionResult Fail(SignatureError e) => StatusCode(e.Status, e.Body(En));
 
-    public record OtpBody(string? TenantSlug, string? DocumentType, Guid DocumentId, Guid EmployeeId, string? Title, string? Channel, int? Version);
+    /// <summary>
+    /// Dış imzalayan (dalga 11): DocumentType = OfferLetter iken SignerKind = Candidate ve SignerEmail zorunludur;
+    /// EmployeeId alanı aday kimliğini taşır, kod yalnızca e-postayla gider (Lang: tr | en).
+    /// </summary>
+    public record OtpBody(string? TenantSlug, string? DocumentType, Guid DocumentId, Guid EmployeeId, string? Title, string? Channel, int? Version,
+        string? SignerKind = null, string? SignerEmail = null, string? Lang = null);
+
+    private IActionResult? SignerGuard(string documentType, string? kind, string? email, bool requireEmail) =>
+        Signatures.SignerRule(documentType, kind, email, requireEmail) switch
+        {
+            null => null,
+            "no_email" => BadRequest(new { message = L("İmzalayanın geçerli bir e-posta adresi yok.", "The signer has no valid email address."), code = "no_email" }),
+            var code => BadRequest(new { message = L("Bu belge türü için imzalayan türü geçersiz.", "Invalid signer kind for this document type."), code }),
+        };
 
     [HttpPost("otp")]
     public async Task<IActionResult> Otp([FromBody] OtpBody b, CancellationToken ct)
     {
         if (Guard(b.TenantSlug, b.DocumentType) is { } g) return g;
         if (b.DocumentId == Guid.Empty || b.EmployeeId == Guid.Empty) return BadRequest(new { message = L("Belge ve çalışan gerekli.", "Document and employee are required."), code = "invalid" });
+        if (SignerGuard(b.DocumentType!, b.SignerKind, b.SignerEmail, requireEmail: true) is { } sg) return sg;
+        var external = b.DocumentType == Signatures.OfferLetter ? b.SignerEmail!.Trim() : null;
         var (otp, fail) = await _engine.RequestOtpAsync(_tenant.TenantSlug!, b.DocumentType!, b.DocumentId, b.EmployeeId,
-            string.IsNullOrWhiteSpace(b.Title) ? L("Belge", "Document") : b.Title.Trim(), b.Channel, Math.Max(1, b.Version ?? 1), ct);
+            string.IsNullOrWhiteSpace(b.Title) ? L("Belge", "Document") : b.Title.Trim(), b.Channel, Math.Max(1, b.Version ?? 1), ct,
+            external, externalEn: (b.Lang ?? "").StartsWith("en", StringComparison.OrdinalIgnoreCase));
         if (fail is not null) return Fail(fail);
         return Ok(new { otp!.OtpId, otp.Channel, otp.ExpiresAt, otp.MaxAttempts, otp.SendsLeft, disclaimer = En ? Signatures.DisclaimerEn : Signatures.DisclaimerTr });
     }
 
     public record SignBody(string? TenantSlug, string? DocumentType, Guid DocumentId, Guid EmployeeId, Guid? OtpId, string? Code, string? DocumentSha256,
-        int? Version, string? Ip, string? UserId, string? UserName, string? Title);
+        int? Version, string? Ip, string? UserId, string? UserName, string? Title, string? SignerKind = null);
 
     [HttpPost("sign")]
     public async Task<IActionResult> Sign([FromBody] SignBody b, CancellationToken ct)
@@ -162,8 +178,10 @@ public class InternalSignaturesController : ControllerBase
         if (Guard(b.TenantSlug, b.DocumentType) is { } g) return g;
         if (b.DocumentId == Guid.Empty || b.EmployeeId == Guid.Empty || b.DocumentSha256 is not { Length: 64 } h || !h.All(char.IsAsciiHexDigit))
             return BadRequest(new { message = L("Belge, çalışan ve belge özeti (SHA-256) gerekli.", "Document, employee and document hash (SHA-256) are required."), code = "invalid" });
+        if (SignerGuard(b.DocumentType!, b.SignerKind, null, requireEmail: false) is { } sg) return sg;
+        var kind = b.DocumentType == Signatures.OfferLetter ? Signatures.SignerCandidate : Signatures.SignerEmployee;
         var (e, fail) = await _engine.SignAsync(new SignRequest(_tenant.TenantSlug!, b.DocumentType!, b.DocumentId, b.EmployeeId, b.OtpId, b.Code,
-            h.ToLowerInvariant(), Math.Max(1, b.Version ?? 1), b.Ip, b.UserId, b.UserName, b.Title), ct);
+            h.ToLowerInvariant(), Math.Max(1, b.Version ?? 1), b.Ip, b.UserId, b.UserName, b.Title, kind), ct);
         return fail is not null ? Fail(fail) : Ok(SignatureEngine.View(e!, En));
     }
 

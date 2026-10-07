@@ -52,7 +52,14 @@ const JobPostingDetailPage = page(() => import('@/features/recruitment/JobPostin
 const CandidatesPage = page(() => import('@/features/recruitment/CandidatesPage'), 'CandidatesPage')
 const CareerPage = page(() => import('@/features/recruitment/CareerPages'), 'CareerPage')
 const CandidateSelfServicePage = page(() => import('@/features/recruitment/CareerPages'), 'CandidateSelfServicePage')
+const OfferSignPage = page(() => import('@/features/recruitment/OfferSignPage'), 'OfferSignPage')
 const MyInterviewsPage = page(() => import('@/features/recruitment/RecruitmentPlus'), 'MyInterviewsPage')
+// Dalga 11: çalışan önerisi, işe alım analizi, ilan ayrıntısı (JSON-LD) ve aday durum bağlantısı.
+const MyReferralsPage = page(() => import('@/features/recruitment/RecruitmentW11'), 'MyReferralsPage')
+const ReferralsAdminPage = page(() => import('@/features/recruitment/RecruitmentW11'), 'ReferralsAdminPage')
+const RecruitmentAnalyticsPage = page(() => import('@/features/recruitment/RecruitmentW11'), 'RecruitmentAnalyticsPage')
+const CareerJobPage = page(() => import('@/features/recruitment/CareerW11Pages'), 'CareerJobPage')
+const CandidateStatusPage = page(() => import('@/features/recruitment/CareerW11Pages'), 'CandidateStatusPage')
 const OnboardingPage = page(() => import('@/features/onboarding/OnboardingPage'), 'OnboardingPage')
 const OnboardingPlanPage = page(() => import('@/features/onboarding/OnboardingPlanPage'), 'OnboardingPlanPage')
 const AssetsPage = page(() => import('@/features/onboarding/AssetsPage'), 'AssetsPage')
@@ -76,7 +83,12 @@ const LearningPage = page(() => import('@/features/learning/LearningPage'), 'Lea
 const CoursePlayerPage = page(() => import('@/features/learning/CoursePlayerPage'), 'CoursePlayerPage')
 const CertificatePage = page(() => import('@/features/learning/CertificatePage'), 'CertificatePage')
 const CompetencyMatrixPage = page(() => import('@/features/learning/CompetencyMatrixPage'), 'CompetencyMatrixPage')
+const CareerPathsPage = page(() => import('@/features/learning/CareerPathsPage'), 'CareerPathsPage')
+const DueTrainingPage = page(() => import('@/features/learning/DueTrainingPage'), 'DueTrainingPage')
 const NineBoxPage = page(() => import('@/features/performance/ninebox/NineBoxPage'), 'NineBoxPage')
+const CalibrationPage = page(() => import('@/features/performance/ninebox/CalibrationPage'), 'CalibrationPage')
+const OkrTreePage = page(() => import('@/features/performance/goals/OkrTreePage'), 'OkrTreePage')
+const Feedback360Page = page(() => import('@/features/performance/feedback/Feedback360Page'), 'Feedback360Page')
 const CompensationPage = page(() => import('@/features/compensation/CompensationPage'), 'CompensationPage')
 const PayrollPage = page(() => import('@/features/compensation/PayrollPage'), 'PayrollPage')
 const PayrollPeriodPage = page(() => import('@/features/compensation/PayrollPage'), 'PayrollPeriodPage')
@@ -216,6 +228,9 @@ export function App() {
                 {/* Kariyer sayfası ve aday öz-hizmeti (Y16): oturum gerekmez; aday bağlantısı yalnızca jeton özetiyle eşlenir. */}
                 <Route path="/kariyer/:tenant" element={<Suspense fallback={<FullPageSpinner />}><CareerPage /></Suspense>} />
                 <Route path="/kariyer/:tenant/basvuru/:token" element={<Suspense fallback={<FullPageSpinner />}><CandidateSelfServicePage /></Suspense>} />
+                <Route path="/kariyer/:tenant/ilan/:jobId" element={<Suspense fallback={<FullPageSpinner />}><CareerJobPage /></Suspense>} />
+                <Route path="/kariyer/:tenant/durum/:token" element={<Suspense fallback={<FullPageSpinner />}><CandidateStatusPage /></Suspense>} />
+                <Route path="/kariyer/:tenant/teklif/:token" element={<Suspense fallback={<FullPageSpinner />}><OfferSignPage /></Suspense>} />
 
                 {/* --------------------------- Oturum gerektiren --------------------------- */}
                 <Route
@@ -291,7 +306,10 @@ export function App() {
                     {/* "adaylar" ilan kimliğinden ÖNCE eşleşmeli */}
                     {/* Görüşmeci olan her çalışan (yönetici olmasa da) kendi mülakatlarını görür. */}
                     <Route path="mulakatlarim" element={<MyInterviewsPage />} />
+                    <Route path="aday-oner" element={<MyReferralsPage />} />
                     <Route path="ise-alim" element={guarded('recruitment:view', <JobPostingsPage />)} />
+                    <Route path="ise-alim/oneriler" element={guarded('recruitment:publish', <ReferralsAdminPage />, ['hr-admin', 'tenant-admin', 'platform-admin'])} />
+                    <Route path="ise-alim/analiz" element={guarded('recruitment:publish', <RecruitmentAnalyticsPage />, ['hr-admin', 'tenant-admin', 'platform-admin'])} />
                     <Route
                       path="ise-alim/adaylar"
                       element={guarded('recruitment:view', <CandidatesPage />)}
@@ -333,11 +351,16 @@ export function App() {
                     <Route path="performans/oneriler" element={guarded('performance:manage', <RecommendationsPage />)} />
                     <Route path="performans/benim" element={guarded('performance:view', <MyPerformancePage />)} />
                     <Route path="performans/dokuz-kutu" element={guarded('performance:manage', <NineBoxPage />)} />
+                    <Route path="performans/kalibrasyon" element={guarded('performance:manage', <CalibrationPage />)} />
+                    <Route path="performans/okr" element={guarded('performance:view', <OkrTreePage />)} />
+                    <Route path="performans/360" element={guarded('performance:view', <Feedback360Page />)} />
 
                     <Route path="egitim" element={guarded('learning:view', <LearningPage />)} />
                     <Route path="egitim/sertifika/:id" element={guarded('learning:view', <CertificatePage />)} />
                     <Route path="egitim/:courseId" element={guarded('learning:view', <CoursePlayerPage />)} />
                     <Route path="yetkinlikler" element={guarded('learning:view', <CompetencyMatrixPage />)} />
+                    <Route path="kariyer-yollari" element={guarded('learning:view', <CareerPathsPage />)} />
+                    <Route path="egitim-takibi" element={guarded('learning:view', <DueTrainingPage />)} />
 
                     {/* Ücret hassas veri — yalnızca İK yönetimi */}
                     <Route path="ucret" element={guarded('compensation:view', <CompensationPage />)} />

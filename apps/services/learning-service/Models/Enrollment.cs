@@ -15,4 +15,6 @@ public class Enrollment : ITenantOwned
     public decimal? Score { get; set; }
     public DateTimeOffset EnrolledAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? CompletedAt { get; set; }
+    /// <summary>Dalga 11 (madde 84): atanan eğitimin son tarihi (zorunlu eğitimlerde hatırlatma bu tarihe göre).</summary>
+    public DateOnly? DueOn { get; set; }
 }

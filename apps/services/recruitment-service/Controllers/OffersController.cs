@@ -28,12 +28,14 @@ public class OffersController : ControllerBase
     private readonly RecruitmentDbContext _db;
     private readonly ITenantContext _tenant;
     private readonly ApprovalWorkflowClient _workflow;
+    private readonly GovernanceSignatureClient _signatures;
 
-    public OffersController(RecruitmentDbContext db, ITenantContext tenant, ApprovalWorkflowClient workflow)
+    public OffersController(RecruitmentDbContext db, ITenantContext tenant, ApprovalWorkflowClient workflow, GovernanceSignatureClient signatures)
     {
         _db = db;
         _tenant = tenant;
         _workflow = workflow;
+        _signatures = signatures;
     }
 
     private string Tenant => _tenant.TenantSlug ?? "";
@@ -166,7 +168,7 @@ public class OffersController : ControllerBase
 
     // ------------------------------------------------------------------ görüntüleme
 
-    private static object View(Offer o, bool withSalary) => new
+    private static object View(Offer o, bool withSalary, string? signingPath = null) => new
     {
         o.Id, o.ApplicationId, o.PositionTitle,
         grossSalary = withSalary ? o.GrossSalary : (decimal?)null,
@@ -176,6 +178,10 @@ public class OffersController : ControllerBase
         o.WorkflowRequestId, o.ApproverEmployeeId, o.DecidedByEmployeeId, o.DecisionNote, o.DecidedAt, o.SentAt, o.RespondedAt, o.CreatedAt,
         hrDecides = o.WorkflowRequestId is null && o.Status == OfferStatus.PendingApproval,
         salaryVisible = withSalary,
+        // Dalga 11: e-imza durumu. signingPath yalnızca bağlantı üretildiği yanıtta bir kez döner.
+        signed = o.SignatureEvidenceId is not null, o.SignedAt, o.SignatureEvidenceId,
+        signingLinkActive = o.SignTokenHash is not null && o.SignatureEvidenceId is null && o.Status == OfferStatus.Sent,
+        o.SignTokenCreatedAt, signingPath,
     };
 
     [HttpGet]
@@ -245,20 +251,112 @@ public class OffersController : ControllerBase
         if (o.ExpiresAt < DateOnly.FromDateTime(DateTime.UtcNow)) return Conflict(new { message = "Teklifin geçerlilik tarihi geçmiş" });
         o.Status = OfferStatus.Sent;
         o.SentAt = DateTimeOffset.UtcNow;
+        // Dalga 11: teklife özel e-imza bağlantısı (yalnızca özeti saklanır).
+        var token = IssueSigningToken(o);
         await _db.SaveChangesAsync(ct);
+        await EmailSigningLinkAsync(o, token, ct);
+        await _db.AuditAsync(HttpContext, Tenant, "Offer", o.Id.ToString(), "SigningLinkIssued", new { reason = "sent" }, ct);
+        return Ok(View(o, true, SigningPath(token)));
+    }
 
+    // ------------------------------------------------------------------ dalga 11: e-imza bağlantısı ve kanıt
+
+    private string SigningPath(string token) => $"/kariyer/{Tenant}/teklif/{token}";
+
+    private static string IssueSigningToken(Offer o)
+    {
+        var token = PublicCareerController.NewToken();
+        o.SignTokenHash = PublicCareerController.Hash(token);
+        o.SignTokenCreatedAt = DateTimeOffset.UtcNow;
+        return token;
+    }
+
+    /// <summary>
+    /// Adaya teklif e-postası: imza bağlantısı içerir (kod ayrıca, imza anında aynı adrese gönderilir).
+    /// Ücret ve mektup metni e-postaya yazılmaz. Bağlantı teklife özeldir, İK yenileyebilir/iptal edebilir.
+    /// </summary>
+    private async Task EmailSigningLinkAsync(Offer o, string token, CancellationToken ct)
+    {
         var app = await _db.Applications.AsNoTracking().Include(a => a.Candidate).FirstOrDefaultAsync(a => a.Id == o.ApplicationId, ct);
-        if (app?.Candidate is { AnonymizedAt: null } c)
-        {
-            var company = (await _db.TenantAsync(Tenant, ct))?.Name ?? Tenant;
-            await _db.EmailCandidateAsync(Tenant, c.Email, $"İş teklifi — {company}",
-                $"Merhaba {c.FirstName}, {company} size \"{o.PositionTitle}\" pozisyonu için bir iş teklifi iletti. Teklif mektubu {OfferRules.Date(o.ExpiresAt)} tarihine kadar geçerlidir. "
-                + (app.SelfServiceTokenHash is not null
-                    ? "Mektubu başvurunuzdan sonra size verilen kişisel bağlantıdan görüntüleyip yanıtlayabilirsiniz."
-                    : "Mektup İnsan Kaynakları tarafından ayrıca size iletilecektir."),
-                "recruitment.offer.sent", ct);
-        }
+        if (app?.Candidate is not { AnonymizedAt: null } c) return;
+        var company = (await _db.TenantAsync(Tenant, ct))?.Name ?? Tenant;
+        var origin = (Environment.GetEnvironmentVariable("PUBLIC_ORIGIN") ?? Environment.GetEnvironmentVariable("PUBLIC_URL") ?? "").TrimEnd('/');
+        await _db.EmailCandidateAsync(Tenant, c.Email, $"İş teklifi — {company}",
+            $"Merhaba {c.FirstName}, {company} size \"{o.PositionTitle}\" pozisyonu için bir iş teklifi iletti. Teklif mektubu {OfferRules.Date(o.ExpiresAt)} tarihine kadar geçerlidir. "
+            + $"Mektubu görüntüleyip e-postanıza gelecek tek kullanımlık kodla elektronik olarak imzalayabilir ya da reddedebilirsiniz: {origin}{SigningPath(token)} "
+            + "Bu bağlantı size özeldir; kimseyle paylaşmayın.",
+            "recruitment.offer.sent", ct);
+    }
+
+    /// <summary>İmza bağlantısını yeniler (öncekini geçersiz kılar) ve adaya yeniden e-postalar. Bağlantı yanıtta bir kez döner.</summary>
+    [HttpPost("{id:guid}/signing-link")]
+    [Authorize(Policy = "RequireHrAdmin")]
+    public async Task<IActionResult> RenewSigningLink(Guid id, CancellationToken ct)
+    {
+        var o = await _db.Offers.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (o is null) return NotFound(new { message = "Teklif bulunamadı" });
+        if (OfferSignature.CanSign(o, DateOnly.FromDateTime(DateTime.UtcNow)) is { } reason) return Conflict(new { message = reason });
+        var token = IssueSigningToken(o);
+        await _db.SaveChangesAsync(ct);
+        await EmailSigningLinkAsync(o, token, ct);
+        await _db.AuditAsync(HttpContext, Tenant, "Offer", o.Id.ToString(), "SigningLinkIssued", new { reason = "renewed" }, ct);
+        return Ok(View(o, true, SigningPath(token)));
+    }
+
+    /// <summary>İmza bağlantısını iptal eder (öz-hizmet bağlantısı etkilenmez).</summary>
+    [HttpDelete("{id:guid}/signing-link")]
+    [Authorize(Policy = "RequireHrAdmin")]
+    public async Task<IActionResult> RevokeSigningLink(Guid id, CancellationToken ct)
+    {
+        var o = await _db.Offers.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (o is null) return NotFound(new { message = "Teklif bulunamadı" });
+        o.SignTokenHash = null;
+        await _db.SaveChangesAsync(ct);
+        await _db.AuditAsync(HttpContext, Tenant, "Offer", o.Id.ToString(), "SigningLinkRevoked", new { }, ct);
         return Ok(View(o, true));
+    }
+
+    /// <summary>
+    /// İmza kanıtı (İK ve onaycı): governance kanıtı + bütünlük denetimleri — kanıt özeti, kanıttaki belge
+    /// özetinin mektupla eşleşmesi ve saklanan imzalı belgenin özeti. Görüntüleme denetlenir.
+    /// </summary>
+    [HttpGet("{id:guid}/signature")]
+    public async Task<IActionResult> Signature(Guid id, CancellationToken ct)
+    {
+        var o = await _db.Offers.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (o is null) return NotFound(new { message = "Teklif bulunamadı" });
+        var me = IsHr ? null : await MeAsync(ct);
+        if (!IsHr && (me is null || o.ApproverEmployeeId != me)) return Forbid();
+        if (o.SignatureEvidenceId is null) return Ok(new { signed = false });
+        var ev = (await _signatures.EvidenceAsync(Tenant, o.Id, ct)).FirstOrDefault(e => e.Id == o.SignatureEvidenceId);
+        var letterHash = OfferSignature.LetterHash(o.SalaryLetterText);
+        await _db.AuditAsync(HttpContext, Tenant, "Offer", o.Id.ToString(), "SignatureEvidenceViewed", new { evidenceId = o.SignatureEvidenceId }, ct);
+        return Ok(new
+        {
+            signed = true, o.SignedAt, o.SignatureEvidenceId, o.LetterSha256, o.SignedDocumentSha256,
+            // Mektup metni imzadan sonra değişmediyse (anonimleştirme hariç) eşleşir.
+            letterUnchanged = o.LetterSha256 == letterHash,
+            documentIntegrityOk = o.SignedSalaryLetterHtml is not null && OfferSignature.Sha256Hex(o.SignedSalaryLetterHtml) == o.SignedDocumentSha256,
+            evidenceAvailable = ev is not null,
+            evidence = ev is null ? null : new
+            {
+                ev.Id, ev.Method, ev.SignedAt, ev.DocumentSha256, ev.EvidenceSha256, ev.IntegrityOk, ev.Disclaimer,
+                matchesLetter = ev.DocumentSha256 == o.LetterSha256,
+            },
+        });
+    }
+
+    /// <summary>İmzalı belge (HTML, ücret içerir) — İK ve onaycı; görüntüleme denetlenir.</summary>
+    [HttpGet("{id:guid}/signed-letter")]
+    public async Task<IActionResult> SignedLetter(Guid id, CancellationToken ct)
+    {
+        var o = await _db.Offers.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (o is null) return NotFound(new { message = "Teklif bulunamadı" });
+        var me = IsHr ? null : await MeAsync(ct);
+        if (!IsHr && (me is null || o.ApproverEmployeeId != me)) return Forbid();
+        if (o.SignedSalaryLetterHtml is null) return NotFound(new { message = "İmzalı belge yok" });
+        await _db.AuditAsync(HttpContext, Tenant, "Offer", o.Id.ToString(), "SensitiveViewed", new { field = "signedLetter" }, ct);
+        return Ok(new { fileName = $"is-teklifi-{o.Id.ToString()[..8]}.html", html = o.SignedSalaryLetterHtml, sha256 = o.SignedDocumentSha256 });
     }
 
     public record RespondInput(bool Accept);

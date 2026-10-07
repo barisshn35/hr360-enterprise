@@ -81,6 +81,9 @@ services:
       # imha işçisi dakikada bir (üretimde 6 saatte bir).
       RECRUITMENT_PUBLIC_RATE_LIMIT: "25"
       RECRUITMENT_PUBLIC_RATE_WINDOW_SECONDS: "30"
+      # Dalga 11: durum bağlantısı/öz-hizmet GET sınırı (üretimde 60 istek / 10 dk).
+      RECRUITMENT_STATUS_RATE_LIMIT: "40"
+      RECRUITMENT_STATUS_RATE_WINDOW_SECONDS: "30"
       RECRUITMENT_RETENTION_INTERVAL_MINUTES: "1"
   onboarding-service:
     environment:

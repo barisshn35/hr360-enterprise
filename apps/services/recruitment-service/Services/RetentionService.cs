@@ -57,6 +57,14 @@ public static class RetentionService
     /// yapılır: EF değişiklik izleme üzerinden yapılsaydı denetim kaydı (audit_log, değiştirilemez)
     /// eski değerleri — yani silinen kişisel veriyi — kalıcı olarak saklardı.
     /// </summary>
+    /// <summary>ScoresJson'dan kanıt notlarını çıkaran ifade (puanlar kalır). Süslü parantez içermez (format dizesinde kullanılır).</summary>
+    internal const string ScoresWithoutEvidence =
+        "coalesce((SELECT jsonb_agg(e - 'evidence' - 'Evidence') FROM jsonb_array_elements(\"ScoresJson\"::jsonb) e)::text, '[]')";
+
+    /// <summary>Adaya ait önerilerdeki serbest metni temizler. Aday silinmeden ÖNCE de çağrılır: FK "SET NULL" notu bırakırdı.</summary>
+    internal const string ReferralScrubSql =
+        "UPDATE recruitment_referrals SET \"Note\" = NULL, \"Relationship\" = NULL WHERE \"CandidateId\" = {0} AND (\"Note\" IS NOT NULL OR \"Relationship\" IS NOT NULL)";
+
     public static async Task AnonymizeAsync(RecruitmentDbContext db, Guid candidateId, CancellationToken ct)
     {
         const string apps = "SELECT \"Id\" FROM recruitment_applications WHERE \"CandidateId\" = {0}";
@@ -73,11 +81,16 @@ public static class RetentionService
         await db.Database.ExecuteSqlRawAsync(
             $"UPDATE recruitment_interviews SET \"Notes\" = NULL, \"Location\" = NULL, \"MeetingUrl\" = NULL WHERE \"ApplicationId\" IN ({apps})",
             new object[] { candidateId }, ct);
+        // Dalga 11: ölçüt kanıt notları (ScoresJson içindeki "evidence") da serbest metindir; puanlar kalır.
         await db.Database.ExecuteSqlRawAsync(
-            $"UPDATE recruitment_scorecards SET \"Notes\" = NULL WHERE \"InterviewId\" IN (SELECT \"Id\" FROM recruitment_interviews WHERE \"ApplicationId\" IN ({apps}))",
+            $"UPDATE recruitment_scorecards SET \"Notes\" = NULL, \"ScoresJson\" = {ScoresWithoutEvidence} WHERE \"InterviewId\" IN (SELECT \"Id\" FROM recruitment_interviews WHERE \"ApplicationId\" IN ({apps}))",
             new object[] { candidateId }, ct);
+        // Dalga 11: durum bağlantıları (jeton özeti) silinir; çalışan önerisindeki serbest metin (öneren notu, yakınlık) temizlenir.
         await db.Database.ExecuteSqlRawAsync(
-            $"UPDATE recruitment_offers SET \"LetterText\" = '(anonimleştirildi)', \"Benefits\" = NULL, \"DecisionNote\" = NULL WHERE \"ApplicationId\" IN ({apps})",
+            $"DELETE FROM recruitment_status_links WHERE \"ApplicationId\" IN ({apps})", new object[] { candidateId }, ct);
+        await db.Database.ExecuteSqlRawAsync(ReferralScrubSql, new object[] { candidateId }, ct);
+        await db.Database.ExecuteSqlRawAsync(
+            $"UPDATE recruitment_offers SET \"LetterText\" = '(anonimleştirildi)', \"Benefits\" = NULL, \"DecisionNote\" = NULL, \"SignedLetterHtml\" = NULL, \"SignTokenHash\" = NULL WHERE \"ApplicationId\" IN ({apps})",
             new object[] { candidateId }, ct);
     }
 }

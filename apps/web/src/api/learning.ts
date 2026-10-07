@@ -38,6 +38,8 @@ export interface Enrollment {
   status: EnrollmentStatus
   enrolledAt: string
   completedAt: string | null
+  /** Dalga 11: atamanın son tarihi (yyyy-MM-dd). */
+  dueOn?: string | null
   passed: boolean | null
   score: number | null
 }
@@ -119,10 +121,11 @@ export const learningApi = {
   archiveCourse: (id: string) =>
     apiFetch<Course>(`${BASE}/courses/${id}/archive`, { method: 'POST' }),
 
-  enroll: (courseId: string, employeeId: string) =>
+  /** dueOn (yyyy-MM-dd): dalga 11 — son tarih, yalnızca yönetici+ için dikkate alınır. */
+  enroll: (courseId: string, employeeId: string, dueOn?: string) =>
     apiFetch<Enrollment>(`${BASE}/courses/${courseId}/enroll`, {
       method: 'POST',
-      body: { employeeId },
+      body: { employeeId, dueOn: dueOn || undefined },
     }),
 
   completeEnrollment: (courseId: string, enrollmentId: string, passed: boolean, score?: number) =>

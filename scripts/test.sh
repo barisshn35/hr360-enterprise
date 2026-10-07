@@ -65,11 +65,12 @@ log_scan() {
     # Her hata bir blok (baslik + 3 satir); izin listesindeki bir desen bloğun herhangi bir satırına uyarsa blok atlanır.
     lines="$(docker logs --since "$since" "$c" 2>&1 | grep -A3 -E '^fail: |Unhandled exception|^Traceback' \
       | PATTERNS="$patterns" awk '
-          function flush() { if (blk != "" && !allowed) printf "%s", keep; blk = ""; keep = ""; allowed = 0 }
+          function flush() { if (blk != "" && !allowed) printf "%s", keep; blk = ""; keep = ""; allowed = 0; nl = 0 }
           BEGIN { n = split(ENVIRON["PATTERNS"], pat, "\n") }
           /^--$/ { flush(); next }
-          { blk = blk $0 "\n"; for (i = 1; i <= n; i++) if (pat[i] != "" && $0 ~ pat[i]) allowed = 1
-            if ($0 ~ /^fail: |Exception|Error|^Traceback/) keep = keep $0 "\n" }
+          { blk = blk $0 "\n"; nl++; for (i = 1; i <= n; i++) if (pat[i] != "" && $0 ~ pat[i]) allowed = 1
+            # Başlığın hemen altındaki ileti satırı da gösterilir (ör. "An error occurred using the connection...").
+            if ($0 ~ /^fail: |Exception|Error|^Traceback/ || nl == 2) keep = keep $0 "\n" }
           END { flush() }' || true)"
     if [ -n "$lines" ]; then
       found=1; echo "-- $c"; printf '%s\n' "$lines" | sed 's/^ *//' | cut -c1-200 | sort | uniq -c | sort -rn | head -8
@@ -101,7 +102,7 @@ integration() {
   for t in test_chat test_calendar test_ai_llm test_cache test_report_lang test_email_lang test_kvkk \
            test_payroll_time test_push test_workflow_docs test_kvkk_ops test_payroll_eco test_hr_compliance test_recruitment_plus test_learning_perf test_ops_plus \
            test_platform_reports test_notify_prefs test_identity_sign test_paging test_model_card test_chat_plus test_telemetry test_identity_security \
-           test_time_leave test_kvkk_ml10; do
+           test_time_leave test_kvkk_ml10 test_recruitment_w11 test_offer_esign test_performance_w11 test_learning_w11; do
     step "Entegrasyon: $t"
     run python3 "tests/integration/$t.py"
   done

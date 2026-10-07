@@ -19,10 +19,10 @@ import { careerApi, employmentTypeLabels, interviewTypeLabels, type PublicApplyR
 import { formatDate, formatDateTime } from '@/lib/format'
 import { errMsg, useAction } from '@/features/shared/kit'
 import { printLetter } from './RecruitmentPlus'
-import { tx } from '@/lib/i18n'
+import { tx, txServer } from '@/lib/i18n'
 import { useFormToken } from '@/lib/formGuard'
 
-function Shell({ company, children }: { company?: string; children: React.ReactNode }) {
+export function Shell({ company, children }: { company?: string; children: React.ReactNode }) {
   return (
     <div className="min-h-dvh bg-background px-4 py-8">
       <div className="mx-auto w-full max-w-3xl">
@@ -38,11 +38,11 @@ function Shell({ company, children }: { company?: string; children: React.ReactN
   )
 }
 
-function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+export function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return <section className={`rounded-2xl border border-border bg-card p-5 shadow-sm ${className}`}>{children}</section>
 }
 
-function PrivacyNotice({ text }: { text: string }) {
+export function PrivacyNotice({ text }: { text: string }) {
   return (
     <details className="rounded-xl border border-border bg-muted/30 px-3.5 py-2.5 text-[12.5px]">
       <summary className="cursor-pointer font-medium"><ShieldCheck className="mr-1.5 inline size-4 text-primary" />{tx('KVKK aydınlatma metni (bilgilendirme)')}</summary>
@@ -51,7 +51,7 @@ function PrivacyNotice({ text }: { text: string }) {
   )
 }
 
-function ApplyForm({ tenant, job, notice, version, poolMonths, onDone }: {
+export function ApplyForm({ tenant, job, notice, version, poolMonths, onDone }: {
   tenant: string; job: PublicJob; notice: string; version: string; poolMonths: number; onDone: (r: PublicApplyResult) => void
 }) {
   const [f, setF] = useState({ firstName: '', lastName: '', email: '', phone: '', coverNote: '', resumeText: '', consent: false, website: '' })
@@ -127,7 +127,7 @@ export function CareerPage() {
             <Card key={j.id}>
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div>
-                  <h2 className="text-[16px] font-semibold">{j.title}</h2>
+                  <h2 className="text-[16px] font-semibold"><Link className="hover:underline" to={`/kariyer/${tenant}/ilan/${j.id}`}>{j.title}</Link></h2>
                   <p className="text-[12.5px] text-muted-foreground">{[j.department, employmentTypeLabels[j.employmentType], j.publishedAt ? formatDate(j.publishedAt) : null].filter(Boolean).join(' · ')}</p>
                 </div>
                 {open !== j.id && <Button size="sm" onClick={() => setOpen(j.id)}>{tx('Başvur')}</Button>}
@@ -173,8 +173,9 @@ export function CandidateSelfServicePage() {
                 <h1 className="text-lg font-semibold">{q.data.posting}</h1>
                 <p className="text-[12.5px] text-muted-foreground">{tx('Başvuru tarihi {0}', [formatDate(q.data.appliedAt)])}</p>
               </div>
-              <StatusBadge tone={STATUS_TONE[q.data.status]}>{q.data.statusLabel}</StatusBadge>
+              <StatusBadge tone={STATUS_TONE[q.data.status]}>{txServer(q.data.statusLabel)}</StatusBadge>
             </div>
+            {q.data.nextStep && <p className="mt-3 text-[13px]"><strong>{tx('Sonraki adım:')}</strong> {txServer(q.data.nextStep)}</p>}
             {q.data.interviews.map((i) => (
               <p key={i.scheduledAt} className="mt-3 flex items-center gap-2 text-[13px]">
                 <CalendarClock className="size-4 text-primary" />
@@ -190,7 +191,8 @@ export function CandidateSelfServicePage() {
               <pre className="max-h-96 overflow-auto rounded-xl bg-muted/30 p-3 font-sans text-[12.5px] leading-relaxed whitespace-pre-wrap">{q.data.offer.letterText}</pre>
               <div className="flex flex-wrap gap-2">
                 {q.data.offer.status === 'Sent' ? <>
-                  <Button disabled={respond.isPending} onClick={() => respond.mutate(true)}>{tx('Teklifi kabul ediyorum')}</Button>
+                  {/* Dalga 11: kabul, e-postaya gelen kodla basit elektronik imza ile yapılır. */}
+                  <Button asChild><Link to={`/kariyer/${tenant}/teklif/${token}`}>{tx('E-imza ile kabul et')}</Link></Button>
                   <Button variant="outline" disabled={respond.isPending} onClick={() => respond.mutate(false)}>{tx('Reddet')}</Button>
                 </> : <StatusBadge tone={q.data.offer.status === 'Accepted' ? 'success' : 'neutral'}>{q.data.offer.status === 'Accepted' ? tx('Kabul edildi') : tx('Reddedildi')}</StatusBadge>}
                 <Button variant="ghost" onClick={() => printLetter(tx('Teklif mektubu'), q.data.offer!.letterText)}>{tx('Yazdır / PDF')}</Button>

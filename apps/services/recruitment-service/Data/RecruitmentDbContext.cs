@@ -28,6 +28,10 @@ public class RecruitmentDbContext : DbContext, ITenantAwareContext
     public DbSet<Scorecard> Scorecards => Set<Scorecard>();
     public DbSet<Offer> Offers => Set<Offer>();
     public DbSet<OfferTemplate> OfferTemplates => Set<OfferTemplate>();
+    public DbSet<RecruitmentProgramSettings> ProgramSettings => Set<RecruitmentProgramSettings>();
+    public DbSet<Referral> Referrals => Set<Referral>();
+    public DbSet<StatusLink> StatusLinks => Set<StatusLink>();
+    public DbSet<StageEvent> StageEvents => Set<StageEvent>();
     public DbSet<RecruitmentService.Messaging.ProcessedEvent> ProcessedEvents => Set<RecruitmentService.Messaging.ProcessedEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -76,9 +80,25 @@ public class RecruitmentDbContext : DbContext, ITenantAwareContext
         modelBuilder.Entity<Offer>().Property(o => o.Status).HasConversion<string>();
         modelBuilder.Entity<Offer>().Property(o => o.GrossSalary).HasPrecision(14, 2);
         modelBuilder.Entity<Offer>().Property(o => o.SalaryLetterText).HasColumnName("LetterText");
+        modelBuilder.Entity<Offer>().Property(o => o.SignedSalaryLetterHtml).HasColumnName("SignedLetterHtml");
 
         modelBuilder.Entity<OfferTemplate>().ConfigureTenantColumn();
         modelBuilder.Entity<OfferTemplate>().ToTable("recruitment_offer_templates");
+
+        // Dalga 11 (scripts/sql/2026-10-24_recruitment_w11.sql)
+        modelBuilder.Entity<JobPosting>().Property(p => p.SalaryMin).HasPrecision(14, 2);
+        modelBuilder.Entity<JobPosting>().Property(p => p.SalaryMax).HasPrecision(14, 2);
+        modelBuilder.Entity<RecruitmentProgramSettings>().ConfigureTenantColumn();
+        modelBuilder.Entity<RecruitmentProgramSettings>().ToTable("recruitment_program_settings");
+        modelBuilder.Entity<RecruitmentProgramSettings>().Property(s => s.ReferralRewardAmount).HasPrecision(14, 2);
+        modelBuilder.Entity<Referral>().ConfigureTenantColumn();
+        modelBuilder.Entity<Referral>().ToTable("recruitment_referrals");
+        modelBuilder.Entity<Referral>().Property(r => r.RewardStatus).HasConversion<string>();
+        modelBuilder.Entity<Referral>().Property(r => r.RewardAmount).HasPrecision(14, 2);
+        modelBuilder.Entity<StatusLink>().ConfigureTenantColumn();
+        modelBuilder.Entity<StatusLink>().ToTable("recruitment_status_links");
+        modelBuilder.Entity<StageEvent>().ConfigureTenantColumn();
+        modelBuilder.Entity<StageEvent>().ToTable("recruitment_application_stage_events");
 
         modelBuilder.Entity<RecruitmentService.Messaging.ProcessedEvent>().ToTable("messaging_processed_events");
         modelBuilder.Entity<RecruitmentService.Messaging.ProcessedEvent>().HasKey(p => new { p.EventId, p.Consumer });

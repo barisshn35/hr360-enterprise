@@ -20,6 +20,20 @@ public class JobPosting : ITenantOwned
     public DateTimeOffset? PublishedAt { get; set; }
     public DateTimeOffset? ClosedAt { get; set; }
     public List<Application> Applications { get; set; } = new();
+
+    // Dalga 11 (75): herkese açık yapılandırılmış veri (Google for Jobs JobPosting) alanları.
+    public string? Location { get; set; }
+    public string? Region { get; set; }
+    /// <summary>ISO 3166-1 alfa-2 (varsayılan TR).</summary>
+    public string? Country { get; set; }
+    public bool RemoteAllowed { get; set; }
+    public DateTimeOffset? ValidThrough { get; set; }
+    /// <summary>İlan ücret aralığı; yalnızca kiracı açarsa herkese açık çıktıda yer alır.</summary>
+    public decimal? SalaryMin { get; set; }
+    public decimal? SalaryMax { get; set; }
+    public string? SalaryCurrency { get; set; }
+    /// <summary>MONTH | YEAR | HOUR.</summary>
+    public string? SalaryPeriod { get; set; }
     /// <summary>Liste ucunda başvuru sayısı (yalnızca aday görme yetkisi olana); tabloda tutulmaz.</summary>
     [System.ComponentModel.DataAnnotations.Schema.NotMapped]
     public int? ApplicationCount { get; set; }

@@ -35,6 +35,10 @@ public class LearningDbContext : DbContext, ITenantAwareContext
     public DbSet<ScormFile> ScormFiles => Set<ScormFile>();
     public DbSet<ScormRuntime> ScormRuntime => Set<ScormRuntime>();
     public DbSet<CertReminder> CertReminders => Set<CertReminder>();
+    public DbSet<CareerPath> CareerPaths => Set<CareerPath>();
+    public DbSet<CareerStep> CareerSteps => Set<CareerStep>();
+    public DbSet<CareerStepRequirement> CareerStepRequirements => Set<CareerStepRequirement>();
+    public DbSet<DueReminder> DueReminders => Set<DueReminder>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -86,6 +90,20 @@ public class LearningDbContext : DbContext, ITenantAwareContext
         modelBuilder.Entity<ScormRuntime>().ToTable("learning_scorm_runtime");
         modelBuilder.Entity<CertReminder>().ConfigureTenantColumn();
         modelBuilder.Entity<CertReminder>().ToTable("learning_cert_reminders");
+
+        // Dalga 11 (madde 83/84) — tablolar scripts/sql/2026-10-24_learning_w11.sql'den.
+        modelBuilder.Entity<CareerPath>().ConfigureTenantColumn();
+        modelBuilder.Entity<CareerPath>().ToTable("learning_career_paths");
+        modelBuilder.Entity<CareerStep>().ConfigureTenantColumn();
+        modelBuilder.Entity<CareerStep>().ToTable("learning_career_steps");
+        modelBuilder.Entity<CareerPath>().HasMany(p => p.Steps).WithOne()
+            .HasForeignKey(s => s.PathId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<CareerStepRequirement>().ConfigureTenantColumn();
+        modelBuilder.Entity<CareerStepRequirement>().ToTable("learning_career_step_requirements");
+        modelBuilder.Entity<CareerStep>().HasMany(s => s.Requirements).WithOne()
+            .HasForeignKey(r => r.StepId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<DueReminder>().ConfigureTenantColumn();
+        modelBuilder.Entity<DueReminder>().ToTable("learning_due_reminders");
 
 
         modelBuilder.ApplyTenantFilters(this);

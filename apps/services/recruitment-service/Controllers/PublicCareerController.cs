@@ -261,6 +261,9 @@ public class PublicCareerController : ControllerBase
     [HttpGet("self-service/{token}")]
     public async Task<IActionResult> SelfService(string tenantSlug, string token, CancellationToken ct)
     {
+        // Dalga 11 (74): GET de sınırlanır (jeton tahmini denemelerine karşı; ayrı ve daha geniş sayaç).
+        var getLimiter = HttpContext.RequestServices.GetRequiredService<StatusRateLimiter>();
+        if (!getLimiter.TryAcquire(PublicRateLimiter.ClientKey(HttpContext))) return TooMany();
         var t = await ResolveAsync(tenantSlug, ct);
         if (t is null) return NotFoundPage();
         var a = await ByTokenAsync(token, ct);
@@ -283,6 +286,8 @@ public class PublicCareerController : ControllerBase
             posting = a.JobPosting?.Title,
             status = code,
             statusLabel = label,
+            nextStep = StatusLinkRules.View(a.Status, a.JobPosting?.Status == JobPostingStatus.Closed,
+                interviews.Count > 0 ? interviews[0].ScheduledAt : null, offer?.Status).NextStep,
             appliedAt = a.AppliedAt,
             ownsCandidate = a.OwnsCandidate,
             data = new
@@ -370,6 +375,8 @@ public class PublicCareerController : ControllerBase
         int affected;
         if (a.OwnsCandidate)
             await _db.EnqueueResumeDeletionAsync(tenantSlug, candidateId, "RecruitmentCandidates", ct);
+        if (a.OwnsCandidate)
+            await _db.Database.ExecuteSqlRawAsync(RetentionService.ReferralScrubSql, new object[] { candidateId }, ct); // öneri notu FK "SET NULL" ile kalmasın
         if (a.OwnsCandidate)
             affected = await _db.Candidates.Where(c => c.Id == candidateId).ExecuteDeleteAsync(ct); // FK: başvurular, mülakatlar, puan kartları, teklifler
         else

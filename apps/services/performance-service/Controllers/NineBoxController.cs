@@ -27,10 +27,11 @@ public class NineBoxController : ControllerBase
     private readonly PerformanceDbContext _db;
     private readonly SnapshotService _snapshots;
     private readonly PerfPeople _people;
+    private readonly NineBoxGrid _grid;
 
-    public NineBoxController(PerformanceDbContext db, SnapshotService snapshots, PerfPeople people)
+    public NineBoxController(PerformanceDbContext db, SnapshotService snapshots, PerfPeople people, NineBoxGrid grid)
     {
-        _db = db; _snapshots = snapshots; _people = people;
+        _db = db; _snapshots = snapshots; _people = people; _grid = grid;
     }
 
     private bool IsHr => User.IsHr();
@@ -52,45 +53,16 @@ public class NineBoxController : ControllerBase
         var cycle = await _db.Cycles.AsNoTracking().FirstOrDefaultAsync(c => c.Id == cycleId, ct);
         if (cycle is null) return NotFound(new { message = "Dönem bulunamadı" });
         var (people, _) = await ScopeAsync(ct);
-        var ids = people.Select(p => p.Id).ToList();
-
-        var config = await _snapshots.ActiveConfigAsync(ct);
-        var potentials = await _db.PotentialRatings.AsNoTracking().Where(p => p.CycleId == cycleId && ids.Contains(p.EmployeeId))
-            .ToDictionaryAsync(p => p.EmployeeId, ct);
-        var overrides = (await _db.NineBoxOverrides.AsNoTracking().Where(o => o.CycleId == cycleId && ids.Contains(o.EmployeeId)).ToListAsync(ct))
-            .GroupBy(o => o.EmployeeId).ToDictionary(g => g.Key, g => g.OrderByDescending(o => o.CreatedAt).First());
-        var reviewed = (await _db.Reviews.AsNoTracking().Where(r => r.CycleId == cycleId && r.SubmittedAt != null && ids.Contains(r.EmployeeId))
-            .Select(r => r.EmployeeId).Distinct().ToListAsync(ct)).ToHashSet();
-        var finals = cycle.Status == CycleStatus.Closed
-            ? (await _db.Snapshots.AsNoTracking().Where(s => s.CycleId == cycleId && s.Source == SnapshotSource.CycleClosed && ids.Contains(s.EmployeeId)).ToListAsync(ct))
-                .GroupBy(s => s.EmployeeId).ToDictionary(g => g.Key, g => g.OrderByDescending(s => s.CapturedAt).First())
-            : new Dictionary<Guid, PerformanceSnapshot>();
-
-        var entries = new List<Dictionary<string, object?>>();
-        foreach (var p in people.OrderBy(p => p.LastName))
+        var (rows, config) = await _grid.BuildAsync(cycle, people, ct);
+        var entries = rows.Select(e => new Dictionary<string, object?>
         {
-            decimal? score = null; bool provisional = false;
-            if (finals.TryGetValue(p.Id, out var snap)) { score = snap.Score; provisional = snap.IsProvisional; }
-            else if (reviewed.Contains(p.Id))
-            {
-                var r = await _snapshots.ComputeAsync(p.Id, cycleId, ct);
-                score = r.FinalScore; provisional = r.IsProvisional;
-            }
-            potentials.TryGetValue(p.Id, out var pot);
-            overrides.TryGetValue(p.Id, out var ov);
-            int? perfBand = score is null ? null : NineBoxMath.PerformanceBand(score.Value, config.ImprovementThreshold, config.RecognitionThreshold);
-            int? computed = perfBand is not null && pot is not null ? NineBoxMath.Cell(perfBand.Value, pot.Rating) : null;
-            int? final = ov is not null ? NineBoxMath.Cell(ov.PerformanceBand, ov.PotentialBand) : computed;
-            entries.Add(new Dictionary<string, object?>
-            {
-                ["employeeId"] = p.Id, ["name"] = p.FullName, ["department"] = p.DepartmentName, ["positionTitle"] = p.PositionTitle,
-                ["score"] = score is null ? null : Math.Round(score.Value, 1), ["isProvisional"] = provisional,
-                ["performanceBand"] = perfBand, ["potential"] = pot?.Rating, ["potentialNote"] = pot?.Note,
-                ["potentialRatedBy"] = pot?.RatedByName, ["potentialPublished"] = pot?.PublishedToEmployee ?? false,
-                ["computedCell"] = computed, ["cell"] = final,
-                ["override"] = ov is null ? null : new { ov.PerformanceBand, ov.PotentialBand, ov.Reason, ov.OverriddenBy, ov.CreatedAt },
-            });
-        }
+            ["employeeId"] = e.Person.Id, ["name"] = e.Person.FullName, ["department"] = e.Person.DepartmentName, ["positionTitle"] = e.Person.PositionTitle,
+            ["score"] = e.Score, ["isProvisional"] = e.IsProvisional,
+            ["performanceBand"] = e.PerformanceBand, ["potential"] = e.Potential?.Rating, ["potentialNote"] = e.Potential?.Note,
+            ["potentialRatedBy"] = e.Potential?.RatedByName, ["potentialPublished"] = e.Potential?.PublishedToEmployee ?? false,
+            ["computedCell"] = e.ComputedCell, ["cell"] = e.Cell,
+            ["override"] = e.Override is not { } ov ? null : new { ov.PerformanceBand, ov.PotentialBand, ov.Reason, ov.OverriddenBy, ov.CreatedAt },
+        }).ToList();
         await _people.AuditAsync("NineBox", cycleId.ToString(), "SensitiveViewed", new { field = "nineBox", employees = entries.Count });
         return Ok(new
         {
